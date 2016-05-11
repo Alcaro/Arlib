@@ -17,7 +17,17 @@ void q(size_t row)
 
 int main(int argc, char * argv[])
 {
-	
+	WUTfEnable();
+	puts("a");
+	FILE* e=fopen("sm\xC3\xB6rg\xC3\xA5sr\xC3\xA4ka.txt", "rt");
+	if (!e) { puts("NOOOOOOOOOO"); return 0; }
+	puts("b");
+	char p[42];
+	memset(p,0,42);
+	fread(p,1,42,e);
+	puts("c");
+	puts(p);
+	puts("d");
 	
 	return 0;
 	

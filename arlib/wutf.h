@@ -2,7 +2,7 @@
 
 #ifdef _WIN32
 //Switches the code page of all Windows ANSI and libc functions (for example CreateFileA() and fopen()) to UTF-8.
-extern "C" void WUTfEenable();
+extern "C" void WUTfEnable();
 //Converts argc/argv to UTF-8.
 extern "C" void WUTfArgs(int* argc, char** * argv);
 #else

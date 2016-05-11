@@ -12,6 +12,6 @@
 #ifndef ARGUI_NONE
 #include "gui/window.h"
 #endif
-#ifndef ARLIB_WUTF
+#ifdef ARLIB_WUTF
 #include "wutf.h"
 #endif

@@ -595,8 +595,8 @@ widget_textbox::widget_textbox() : m(new impl)
 	m->invalid=false;
 	
 	measure_text("XXXXXXXXXXXX", NULL, &this->height);
-	this->width=5*xwidth/12 + 6 + g_padding*2;
-	this->height+=6 + g_padding*2;
+	this->width = 5*xwidth/12 + 6 + g_padding*2;
+	this->height += 6 + g_padding*2;
 }
 
 unsigned int widget_textbox::init(window* parent, uintptr_t parenthandle)
@@ -1042,16 +1042,16 @@ widget_listbox_virtual* widget_listbox_virtual::set_contents(function<const char
 	return this;
 }
 
-widget_listbox_virtual* widget_listbox_virtual::refresh(size_t row)
+widget_listbox_virtual* widget_listbox_virtual::refresh()
 {
 	if (m->initialized)
 	{
-		if (row==(size_t)-1) (void)ListView_RedrawItems(m->hwnd, 0, m->rows-1);
-		else (void)ListView_RedrawItems(m->hwnd, row, row);
+		(void)ListView_RedrawItems(m->hwnd, 0, m->rows-1);
 	}
 	return this;
 }
 
+#if 0
 widget_listbox_virtual* widget_listbox_virtual::set_size(unsigned int height, const unsigned int * widths, int expand)
 {
 	int widthpx=-1;
@@ -1088,6 +1088,7 @@ widget_listbox_virtual* widget_listbox_virtual::set_size(unsigned int height, co
 	
 	return this;
 }
+#endif
 
 size_t widget_listbox_virtual::get_active_row()
 //TODO: check retval from ListView_GetSelectionMark if there is no selection

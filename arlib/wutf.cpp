@@ -139,8 +139,4 @@ void WUTfArgs(int* argc, char** * argv)
 	
 }
 
-#ifdef __cplusplus
-}
-#endif
-
 #endif

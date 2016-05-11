@@ -2,7 +2,7 @@ all: $(PROGRAM)_dummy
 
 ifeq ($(OS),Windows_NT)
   OS = windows
-  $(error objdump something and check which sections can be nuked)
+  #$(error objdump something and check which sections can be nuked)
 else
   UNAME_S := $(shell uname -s)
   ifeq ($(UNAME_S),Linux)

@@ -470,18 +470,6 @@ widget_layout* widget_create_layout_grid(unsigned int width, unsigned int height
 
 
 
-
-//If performance is bad, switch to the virtual listbox. This one is implemented as that, anyways.
-widget_listbox::~widget_listbox();
-
-widget_listbox* insert_row(size_t before, const char * const * cols);
-widget_listbox* delete_row(size_t row);
-widget_listbox* replace_row(size_t row, const char * const * cols);
-widget_listbox* replace_cell(size_t row, size_t col, const char * text);
-
-
-
-
 size_t _widget_listbox_search(function<const char *(size_t row, int column)> get_cell, size_t rows,
                               const char * prefix, size_t start, bool up)
 {
