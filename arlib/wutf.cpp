@@ -1,5 +1,3 @@
-//The following applies only to this file, not the entire Arlib.
-
 // MIT License
 //
 // Copyright (c) 2016 Alfred Agrell
@@ -22,6 +20,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+//The above license applies only to this file, not the entire Arlib.
+
 #ifdef _WIN32
 #include "wutf.h"
 #include <windows.h>
@@ -41,7 +41,7 @@ struct MS_UNICODE_STRING {
 };
 
 
-#include<stdio.h>
+//#include<stdio.h>
 static NTSTATUS RtlAnsiStringToUnicodeString_UTF8(struct MS_UNICODE_STRING * DestinationString,
                                                   const struct MS_ANSI_STRING * SourceString,
                                                   BOOLEAN AllocateDestinationString)
@@ -162,9 +162,20 @@ void WUTfEnable()
 }
 
 
-void WUTfArgs(int* argc, char** * argv)
+@TODO: fix
+void WUTfArgs(int* argc_p, char** * argv_p)
 {
+	int argc;
+	wchar_t** wargv = CommandLineToArgvW(GetCommandLineW(), &argc);
+	char** argv = (char**)HeapAlloc(sizeof(char*)*(argc+1));
+	for(uint i = 0; i < argc; i++) {
+		argv[i] = new char[PATH_MAX];
+		strcpy(argv[i], nall::utf8_t(wargv[i]));
+	}
+	argv[argc]=0;
 	
+	*argv_p = argv;
+	*argc_p = argc;
 }
 
 #endif
