@@ -62,9 +62,10 @@ ifeq ($(OS),windows)
 #obj/resource$(OBJSUFFIX).o: ico/*
 #	$(RC) $(RCFLAGS) ico/minir.rc obj/resource$(OBJSUFFIX).o
   OBJSUFFIX = -windows
-  ifeq ($(ARWUTF),1)
-    CONF_CFLAGS += -DARLIB_WUTF
-  endif
+endif
+
+ifeq ($(ARWUTF),1)
+  CONF_CFLAGS += -DARLIB_WUTF
 endif
 
 OPTFLAGS = -Wall -Werror -O3 -fomit-frame-pointer -fmerge-all-constants -fvisibility=hidden
