@@ -18,7 +18,9 @@ void q(size_t row)
 #include<windows.h>
 int main(int argc, char * argv[])
 {
-	WUTfEnable();
+	WUTfEnableArgs(&argc, &argv);
+	// this makes Wine spam 'pf_printf_a multibyte characters printing not supported', lol
+	for (int i=0;argv[1] && argv[1][i];i++) printf("(%c)",argv[1][i]);
 	HANDLE e = CreateFileA("sm\xC3\xB6rg\xC3\xA5sr\xC3\xA4ka.txt", GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, NULL);
 	//HANDLE e = CreateFileW(L"smörgåsräka.txt", GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
 	puts("a");

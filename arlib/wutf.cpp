@@ -176,20 +176,28 @@ void WUTfEnable()
 }
 
 
-//@TODO: fix
-//void WUTfArgs(int* argc_p, char** * argv_p)
-//{
-//	int argc;
-//	wchar_t** wargv = CommandLineToArgvW(GetCommandLineW(), &argc);
-//	char** argv = (char**)HeapAlloc(sizeof(char*)*(argc+1));
-//	for(uint i = 0; i < argc; i++) {
-//		argv[i] = new char[PATH_MAX];
-//		strcpy(argv[i], nall::utf8_t(wargv[i]));
-//	}
-//	argv[argc]=0;
-//	
-//	*argv_p = argv;
-//	*argc_p = argc;
-//}
+static LPSTR wstrdupa(LPCWSTR in)
+{
+	int cb = WideCharToMultiByte(CP_UTF8, 0, in, -1, NULL, 0, NULL, NULL);
+	LPSTR ret = (LPSTR)HeapAlloc(GetProcessHeap(), 0, cb);
+	WideCharToMultiByte(CP_UTF8, 0, in, -1, ret, cb, NULL, NULL);
+	return ret;
+}
+
+void WUTfArgs(int* argc_p, char** * argv_p)
+{
+	int argc;
+	LPWSTR* wargv = CommandLineToArgvW(GetCommandLineW(), &argc);
+	LPSTR* argv = (LPSTR*)HeapAlloc(GetProcessHeap(), 0, sizeof(LPSTR)*(argc+1));
+	
+	for (int i=0;i<argc;i++)
+	{
+		argv[i] = wstrdupa(wargv[i]);
+	}
+	argv[argc]=0;
+	
+	*argv_p = argv;
+	*argc_p = argc;
+}
 
 #endif
