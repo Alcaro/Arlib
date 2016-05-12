@@ -26,6 +26,12 @@
 #include "wutf.h"
 #include <windows.h>
 
+#define DEBUG 0
+
+#if DEBUG>0
+#include <stdio.h>
+#endif
+
 //originally ANSI_STRING and UNICODE_STRING
 //renamed to avoid conflicts if some versions of windows.h includes the real ones
 struct MS_ANSI_STRING {
@@ -41,7 +47,6 @@ struct MS_UNICODE_STRING {
 };
 
 
-//#include<stdio.h>
 static NTSTATUS RtlAnsiStringToUnicodeString_UTF8(struct MS_UNICODE_STRING * DestinationString,
                                                   const struct MS_ANSI_STRING * SourceString,
                                                   BOOLEAN AllocateDestinationString)
@@ -68,15 +73,16 @@ static NTSTATUS RtlAnsiStringToUnicodeString_UTF8(struct MS_UNICODE_STRING * Des
 	
 	DestinationString->Length = ret*2;
 	DestinationString->Buffer[ret] = '\0';
-	//if (ret >= DestinationString->MaximumLength/2)
-//printf("IN:ANSI:");
-//CHAR*l=SourceString->Buffer;
-//for(int i=0;i<SourceString->Length;i++)printf("[%c]",l[i]&255);
-//puts("");
-//printf("OUT:UNI:");
-//WCHAR*q=DestinationString->Buffer;
-//for(int i=0;i<DestinationString->Length/2;i++)printf("(%c)",q[i]&255);
-//puts("");
+#if DEBUG>=2
+printf("IN:ANSI:");
+CHAR*l=SourceString->Buffer;
+for(int i=0;i<SourceString->Length;i++)printf("[%c]",l[i]&255);
+puts("");
+printf("OUT:UNI:");
+WCHAR*q=DestinationString->Buffer;
+for(int i=0;i<DestinationString->Length/2;i++)printf("(%c)",q[i]&255);
+puts("");
+#endif
 	return 0x00000000; // STATUS_SUCCESS
 }
 
@@ -135,7 +141,9 @@ static void RedirectFunction_machine(LPBYTE victim, LPBYTE replacement)
 
 static void RedirectFunction(FARPROC victim, FARPROC replacement)
 {
+#if DEBUG>=1
 printf("replacing %p with %p\n",victim,replacement);
+#endif
 	DWORD prot;
 	// it's bad to have W+X on the same page, but I don't want to remove X from ntdll.dll.
 	// if I hit NtProtectVirtualMemory, I won't be able to fix it
@@ -154,6 +162,12 @@ void WUTfEnable()
 	//ntdll!RtlOemStringToUnicodeString, ntdll!RtlUnicodeStringToOemString
 	// no notable known users
 	//
+	//ntdll!RtlMultiByteToUnicodeN, ntdll!RtlUnicodeToMultiByteN
+	// no notable known users
+	//
+	//ntdll!Rtl{Oem,Ansi}StringToUnicodeSize and reverse
+	// no notable known users
+	//
 	//kernel32!MultiByteToWideChar(CP_ACP), CP_OEM, kernel32!WideCharToMultiByte
 	// used by Wine msvcrt
 	//  https://github.com/wine-mirror/wine/blob/e1970c8547aa7fed5a097faf172eadc282b3394e/dlls/msvcrt/file.c#L4070
@@ -162,20 +176,20 @@ void WUTfEnable()
 }
 
 
-@TODO: fix
-void WUTfArgs(int* argc_p, char** * argv_p)
-{
-	int argc;
-	wchar_t** wargv = CommandLineToArgvW(GetCommandLineW(), &argc);
-	char** argv = (char**)HeapAlloc(sizeof(char*)*(argc+1));
-	for(uint i = 0; i < argc; i++) {
-		argv[i] = new char[PATH_MAX];
-		strcpy(argv[i], nall::utf8_t(wargv[i]));
-	}
-	argv[argc]=0;
-	
-	*argv_p = argv;
-	*argc_p = argc;
-}
+//@TODO: fix
+//void WUTfArgs(int* argc_p, char** * argv_p)
+//{
+//	int argc;
+//	wchar_t** wargv = CommandLineToArgvW(GetCommandLineW(), &argc);
+//	char** argv = (char**)HeapAlloc(sizeof(char*)*(argc+1));
+//	for(uint i = 0; i < argc; i++) {
+//		argv[i] = new char[PATH_MAX];
+//		strcpy(argv[i], nall::utf8_t(wargv[i]));
+//	}
+//	argv[argc]=0;
+//	
+//	*argv_p = argv;
+//	*argc_p = argc;
+//}
 
 #endif
