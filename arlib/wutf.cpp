@@ -176,7 +176,7 @@ void WUTfEnable()
 }
 
 
-static LPSTR wstrdupa(LPCWSTR in)
+static LPSTR wcsdupa(LPCWSTR in)
 {
 	int cb = WideCharToMultiByte(CP_UTF8, 0, in, -1, NULL, 0, NULL, NULL);
 	LPSTR ret = (LPSTR)HeapAlloc(GetProcessHeap(), 0, cb);
@@ -192,7 +192,7 @@ void WUTfArgs(int* argc_p, char** * argv_p)
 	
 	for (int i=0;i<argc;i++)
 	{
-		argv[i] = wstrdupa(wargv[i]);
+		argv[i] = wcsdupa(wargv[i]);
 	}
 	argv[argc]=0;
 	
