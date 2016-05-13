@@ -25,11 +25,10 @@
 // It is well known that Windows supports two flavors of every(*) function that
 // takes or returns strings: A and W. The A ones take strings in the local
 // user's codepage; W uses UTF-16.
-// It is also fairly well known that the codepage can not be set to UTF-8.
+// It is also fairly well known that the system codepage can not be set to UTF-8.
 // 
 //
-// (*) With the exception of CommandLineToArgvW, but that only needs to be used
-//     once, on program startup. Which is exactly when WuTF runs.
+// (*) With the exception of CommandLineToArgvW.
 //
 // - https://wiki.winehq.org/Cygwin_and_More#The_Audience_Applauds
 
@@ -42,6 +41,100 @@
 #if DEBUG>0
 #include <stdio.h>
 #endif
+
+//doesn't throw errors on invalid input
+static int UtfAsWideLen(LPBYTE ptr, LPBYTE end)
+{
+	int ret = 0;
+	LPBYTE at = ptr;
+	while (at<end)
+	{
+		//TODO: don't just implement strlen
+		at++;
+		ret++;
+	}
+	return ret;
+}
+
+//always uses CP_UTF8; ignores invalid flags and parameters for that code page
+static int WINAPI
+MultiByteToWideChar_Utf(UINT CodePage, DWORD dwFlags,
+                        LPCSTR lpMultiByteStr, int cbMultiByte,
+                        LPWSTR lpWideCharStr, int cchWideChar)
+{
+	//I could run a bunch of special cases depending on whether cbMultiByte<0, etc,
+	//but there's no need. I'll optimize it if it ends up a bottleneck.
+	
+	LPBYTE iat = (LPBYTE)lpMultiByteStr;
+	LPBYTE iend;
+	if (cbMultiByte >= 0) iend = iat + cbMultiByte;
+	else iend = iat + strlen(lpMultiByteStr) + 1;
+	
+	if (cchWideChar == 0)
+	{
+		return UtfAsWideLen(iat, iend);
+	}
+	
+	LPWSTR oat = lpWideCharStr;
+	LPWSTR oend = oat + cchWideChar;
+	
+	while (iat < iend && oat < oend)
+	{
+#define FAIL() { if (dwFlags & MB_ERR_INVALID_CHARS) goto fail; *oat++ = 0xFFFD; continue; }
+		BYTE head = *iat++;
+		
+		if (head <= 0x7F)
+		{
+			*oat++ = head;
+			continue;
+		}
+		
+		int numtrail = ((head&0xC0)==0xC0) + ((head&0xE0)==0xE0) + ((head&0xF0)==0xF0);
+		const UINT minforlen[] = { 0x7FFFFFFF, 0x80, 0x800, 0x10000 };
+		
+		if (iat+numtrail > iend) FAIL();
+		
+		UINT codepoint = (head & (0x3F>>numtrail));
+		for (int i=1;i<=3;i++)
+		{
+			if (numtrail>=i)
+			{
+				if ((*iat & 0xC0) != 0x80) numtrail = 0; // ugly hack - can't FAIL() in here because that'd continue() wrong loop
+				codepoint = (codepoint<<6) | ((*iat++) & 0x3F);
+			}
+		}
+		
+		if (codepoint < minforlen[numtrail]) FAIL();
+		
+		if (codepoint < 0xFFFF)
+		{
+			*oat++ = codepoint;
+		}
+		else
+		{
+			if (codepoint > 0x10FFFF) FAIL();
+			*oat++ = 0xD800 | (codepoint>>10);
+			*oat++ = 0xDC00 | (codepoint&0x3FF);
+		}
+	}
+	
+	return oat - lpWideCharStr;
+	
+fail:
+	SetLastError(ERROR_NO_UNICODE_TRANSLATION);
+	return 0;
+}
+
+//same caveats as MultiByteToWideChar_Utf
+int WINAPI
+WideCharToMultiByte_Utf(UINT CodePage, DWORD dwFlags,
+                        LPCWSTR lpWideCharStr, int cchWideChar,
+                        LPSTR lpMultiByteStr, int cbMultiByte,
+                        LPCSTR lpDefaultChar, LPBOOL lpUsedDefaultChar)
+{
+	return 0;
+}
+
 
 //originally ANSI_STRING and UNICODE_STRING
 //renamed to avoid conflicts if some versions of windows.h includes the real ones
@@ -63,7 +156,7 @@ static void PrintAnsiString(const char * prefix, const struct MS_ANSI_STRING * S
 {
 	int i;
 	printf("%s(cchLen=%i,cchMax=%i):", prefix, String->Length, String->MaximumLength);
-	for(int i=0;i<=String->Length;i++)
+	for(i=0;i<=String->Length;i++)
 	{
 		printf("[%c]", String->Buffer[i]&255);
 	}
@@ -74,7 +167,7 @@ static void PrintUnicodeString(const char * prefix, const struct MS_UNICODE_STRI
 {
 	int i;
 	printf("%s(cchLen=%i,cchMax=%i):", prefix, String->Length/2, String->MaximumLength/2);
-	for(int i=0;i<=String->Length/2;i++)
+	for(i=0;i<=String->Length/2;i++)
 	{
 		printf("[%c]", String->Buffer[i]&255);
 	}
@@ -97,24 +190,25 @@ RtlAnsiStringToUnicodeString_UTF8(
 	
 	if (AllocateDestinationString)
 	{
-		cchLen = MultiByteToWideChar(CP_UTF8, 0,
-		                             SourceString->Buffer, SourceString->Length,
-		                             NULL, 0);
+		cchLen = MultiByteToWideChar_Utf(CP_UTF8, 0,
+		                                 SourceString->Buffer, SourceString->Length,
+		                                 NULL, 0);
 		
+printf("###[%i]\n",cchLen);
 		if (cchLen >= 0x10000/2) return 0x80000005; // STATUS_BUFFER_OVERFLOW
 		if (cchLen+1 < 0x10000/2) cchLen += 1; // NUL terminator
 		DestinationString->MaximumLength = cchLen*2;
 		// this pointer is sent to RtlFreeUnicodeString, which ends up in RtlFreeHeap
 		// this is quite clearly mapped up to RtlAllocHeap, but HeapAlloc forwards to that anyways.
 		// and GetProcessHeap is verified to return the same thing as RtlFreeUnicodeString uses.
-printf("ALLOC=cb%i\n",DestinationString->MaximumLength);
 		DestinationString->Buffer = (PWSTR)HeapAlloc(GetProcessHeap(), 0, DestinationString->MaximumLength);
 	}
 	
 	cchMaxOut = DestinationString->MaximumLength/2;
-	cchLen = MultiByteToWideChar(CP_UTF8, 0,
-	                          SourceString->Buffer, SourceString->Length,
-	                          DestinationString->Buffer, cchMaxOut);
+	cchLen = MultiByteToWideChar_Utf(CP_UTF8, 0,
+	                                 SourceString->Buffer, SourceString->Length,
+	                                 DestinationString->Buffer, cchMaxOut);
+printf("###[%i %i]\n",cchLen,DestinationString->MaximumLength);
 	if (!cchLen || cchLen > cchMaxOut) return 0x80000005; // STATUS_BUFFER_OVERFLOW
 	
 	DestinationString->Length = cchLen*2;
@@ -131,36 +225,34 @@ RtlUnicodeStringToAnsiString_UTF8(
                 const struct MS_UNICODE_STRING * SourceString,
                 BOOLEAN AllocateDestinationString)
 {
-	int ret;
+	int cbRet;
 #if DEBUG>=2
 	PrintUnicodeString("IN:UNI", SourceString);
 #endif
 	if (AllocateDestinationString)
 	{
 		int cb = WideCharToMultiByte(CP_UTF8, 0,
-		                             SourceString->Buffer, SourceString->Length,
-		                             NULL, 0,
-		                             NULL, NULL);
+		                                 SourceString->Buffer, SourceString->Length,
+		                                 NULL, 0,
+		                                 NULL, NULL);
 		
 		if (cb >= 0x10000) return 0x80000005; // STATUS_BUFFER_OVERFLOW
 		if (cb+1 < 0x10000) cb += 1; // NUL terminator
 		DestinationString->MaximumLength = cb;
-printf("ALLOC=cb%i\n",cb);
 		DestinationString->Buffer = (PCHAR)HeapAlloc(GetProcessHeap(), 0, DestinationString->MaximumLength+40);
 		DestinationString->Buffer +=20;
 	}
 	
-	ret = WideCharToMultiByte(CP_UTF8, 0,
-	                          SourceString->Buffer, SourceString->Length/2,
-	                          DestinationString->Buffer, DestinationString->MaximumLength,
-	                          NULL, NULL);
-	if (!ret || ret > DestinationString->MaximumLength) return 0x80000005; // STATUS_BUFFER_OVERFLOW
-	if (ret < DestinationString->MaximumLength) DestinationString->Buffer[ret] = '\0';
+	cbRet = WideCharToMultiByte(CP_UTF8, 0,
+	                                SourceString->Buffer, SourceString->Length/2,
+	                                DestinationString->Buffer, DestinationString->MaximumLength,
+	                                NULL, NULL);
+	if (!cbRet || cbRet > DestinationString->MaximumLength) return 0x80000005; // STATUS_BUFFER_OVERFLOW
+	if (cbRet < DestinationString->MaximumLength) DestinationString->Buffer[cbRet] = '\0';
+	DestinationString->Length = cbRet;
 #if DEBUG>=2
 	PrintAnsiString("OUT:ANSI", DestinationString);
 #endif
-	DestinationString->Length = ret;
-	DestinationString->Buffer[ret] = '\0';
 	return 0x00000000; // STATUS_SUCCESS
 }
 
@@ -213,8 +305,9 @@ void WuTF_enable()
 	//ntdll!RtlOemStringToUnicodeString, ntdll!RtlUnicodeStringToOemString
 	// no notable known users
 	//
-	//ntdll!RtlMultiByteToUnicodeN, ntdll!RtlUnicodeToMultiByteN
-	// used everywhere by Windows 7, including by RtlAnsiStringToUnicodeString itself
+	//ntdll!RtlMultiByteToUnicodeN,    ntdll!RtlUnicodeToMultiByteN,
+	//ntdll!RtlMultiByteToUnicodeSize, ntdll!RtlUnicodeToMultiByteSize
+	// used everywhere by Windows internals, including by RtlAnsiStringToUnicodeString itself
 	//
 	//ntdll!Rtl{Oem,Ansi}StringToUnicodeSize and reverse
 	// no notable known users

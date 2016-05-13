@@ -40,10 +40,8 @@ int main(int argc, char * argv[])
 	}
 	else
 	{
-		printf("(3) FAIL: Couldn't open file (errno %i)", GetLastError());
+		printf("(3) FAIL: Couldn't open file (errno %lu)", GetLastError());
 	}
-	
-	MessageBoxA(NULL, "Test", "Test", MB_OK);
 	
 	//this one takes two string arguments, one of which can be way longer than 260
 #define PAD "Stretch string to 260 characters."

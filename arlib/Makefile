@@ -71,6 +71,7 @@ endif
 OPTFLAGS = -Wall -Werror -O3 -fomit-frame-pointer -fmerge-all-constants -fvisibility=hidden
 OPTFLAGS += -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables
 OPTFLAGS += -ffunction-sections -fdata-sections
+OPTFLAGS += -Werror
 
 ifeq ($(DEBUG),1)
   CFLAGS += -g
@@ -119,8 +120,9 @@ ifeq ($(ARTHREADS),1)
   endif
 endif
 
-TRUE_CFLAGS = $(CFLAGS) $(CONF_CFLAGS) -fvisibility=hidden -fno-exceptions -std=c99 -Wno-comment
-TRUE_CXXFLAGS = $(CXXFLAGS) $(CONF_CXXFLAGS) -fvisibility=hidden -fno-exceptions -fno-rtti -std=c++11 -Wno-comment
+CCXXFLAGS = -fvisibility=hidden -fno-exceptions -Wall -Wno-comment
+TRUE_CFLAGS = -std=c99 $(CCXXFLAGS) $(CFLAGS) $(CONF_CFLAGS)
+TRUE_CXXFLAGS =-std=c++11 -fno-rtti $(CCXXFLAGS) $(CXXFLAGS) $(CONF_CXXFLAGS)
 TRUE_LFLAGS = $(LFLAGS) -fvisibility=hidden $(CONF_LFLAGS)
 
 #double gcc bug combo:

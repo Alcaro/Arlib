@@ -4,12 +4,22 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-//Switches the code page of all Windows ANSI and libc functions (for example CreateFileA() and fopen()) to UTF-8.
-//WARNING: Performs ugly shenanigans that immediately voids your warranty.
-//WARNING: Never ever put this in a DLL. If it's unloaded, you'll get segfaults really fast.
-//Don't do it even if the DLL is present for the entire program duration. It will be unloaded during program shutdown.
+//This function switches the code page of all Windows ANSI and libc functions
+// (for example CreateFileA() and fopen()) to UTF-8.
+
+//Limitations:
+//- IMMEDIATELY VOIDS YOUR WARRANTY
+//- Possibly makes antivirus software panic
+//- Will crash if this code is in a DLL that's unloaded, possibly including program shutdown.
+//- Disables support for non-UTF8 code pages in MultiByteToWideChar and WideCharToMultiByte and
+//    treats them as UTF-8, even if explicitly requested otherwise.
+//- Console input and output remains ANSI. Consoles are very strangely implemented in Windows;
+//    judging by struct CHAR_INFO in WriteConsoleOutput's arguments, the consoles don't support
+//    UTF-16, but only UCS-2.
+//- Did I mention it voids your warranty?
 void WuTF_enable();
-//Converts argc/argv to UTF-8.
+
+//Converts argc/argv to UTF-8. (Unlike the above, it uses zero ugly hacks.)
 void WuTF_args(int* argc, char** * argv);
 #ifdef __cplusplus
 }
