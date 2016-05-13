@@ -28,6 +28,7 @@ class mutex : nocopy {
 	int fut;
 	
 public:
+	//TODO: inline fast path
 	void lock();
 	bool try_lock();
 	void unlock();
@@ -75,12 +76,6 @@ public:
 //This is one of few that confuse the optimizer exactly as much as I want.
 template<typename T> char* allow_alias(T* ptr) { return (char*)ptr; }
 
-template<typename T1, typename T2> T1* reinterpret_cast_ptr(T2* in)
-{
-	static_assert(sizeof(T1) == sizeof(T2));
-	return (T1*)allow_alias((char*)in);
-}
-
 //Executes 'calculate' exactly once. The return value is stored in 'item'. If multiple threads call
 // this simultaneously, none returns until calculate() is done.
 //'item' must be initialized to NULL. calculate() must return a valid pointer to an object.
@@ -118,7 +113,7 @@ template<typename T> T* thread_once_create(T* * item)
 }
 
 
-class mutexlocker {
+class mutexlocker : nocopy {
 	mutexlocker();
 	mutex* m;
 public:
@@ -138,7 +133,7 @@ public:
 // half of its time sleeping, instead of filling the system memory.
 //An event is boolean; calling signal() twice will drop the extra signal. It is created in the unsignalled state.
 //Can be used by multiple threads, but each of signal(), wait() and signalled() should only be used by one thread.
-class event {
+class event : nocopy {
 public:
 	event();
 	~event();
@@ -166,6 +161,40 @@ public:
 private:
 	void* data;
 	signed int n_count;//Not used by all implementations.
+};
+
+
+// Roughly like a mutex, but can be shared across processes, under the following constraints:
+// - Must be in shared memory, memcpy is not enough. Can be at different addresses.
+// - The object can only be shared with its immediate children.
+// - ???
+// - This object is potentially much larger, much slower and much more complex than the single-process variety
+class xproc_mutex : nocopy {
+	//Minimum features:
+	//- Only need two processes; in-process sync is optional, but allowed
+	//- No resource leaks; must free resources in right process
+	//- No resource confusion; handle values are different across threads, let them
+	//- Can require object to die after the parent
+	//- Object size 4 on Linux
+	//- Can require callers to identify themselves, though I need to not break the mutexlocker
+	//- Can require an initialization function
+	//- Can fully initialize the object only upon contention
+	//Constraints:
+	//- Windows doesn't let me close handles in another process
+	//- Can't even do it with QueueUserAPC, due to ASLR and it not being properly asynchronous (fires only on wait functions)
+	//Maybe handle values can be shared across processes? Needs further study.
+	
+	//TODO: Decide API
+	// struct item_t { HANDLE h; void init(); void deinit(); void lock(); } child, parent;
+	//  union on Linux
+	//TODO: Decide implementation
+	// Linux: Futex, of course, just skip FUTEX_PRIVATE
+	// Windows: CreateMutex https://msdn.microsoft.com/en-us/library/windows/desktop/ms682418%28v=vs.85%29.aspx
+	//  other sync functions: https://msdn.microsoft.com/en-us/library/windows/desktop/ms686360%28v=vs.85%29.aspx
+	
+	void lock();
+	bool try_lock();
+	void unlock();
 };
 
 

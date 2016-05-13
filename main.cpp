@@ -1,77 +1,53 @@
 #include "arlib.h"
 
-widget_listbox_virtual* vlist;
-const char * c(size_t row, int col)
-{
-	static int i;
-	i++;
-	static char ret[16];
-	sprintf(ret, "%i", i);
-	return ret;
-}
-
-void q(size_t row)
-{
-	vlist->refresh();
-}
+#define SMR_A "sm\xC3\xB6rg\xC3\xA5sr\xC3\xA4ka"
+#define SMR_W L"sm\x00F6rg\x00E5sr\x00E4ka"
 
 #include<windows.h>
 int main(int argc, char * argv[])
 {
-	WUTfEnableArgs(&argc, &argv);
-	// this makes Wine spam 'pf_printf_a multibyte characters printing not supported', lol
-	for (int i=0;argv[1] && argv[1][i];i++) printf("(%c)",argv[1][i]);
-	HANDLE e = CreateFileA("sm\xC3\xB6rg\xC3\xA5sr\xC3\xA4ka.txt", GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, NULL);
-	//HANDLE e = CreateFileW(L"smörgåsräka.txt", GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
-	puts("a");
-	if (e==INVALID_HANDLE_VALUE){ puts("NOOOOOOOOOO"); return 0; }
-	puts("b");
-	char p[42];
-	memset(p,0,42);
-	DWORD i;
-	ReadFile(e,p,42,&i,NULL);
-	puts("c");
-	puts(p);
-	puts("d");
-
-	//puts("a");
-	//FILE* e=fopen("sm\xC3\xB6rg\xC3\xA5sr\xC3\xA4ka.txt", "rt");
-	//if (!e) { puts("NOOOOOOOOOO"); return 0; }
-	//puts("b");
-	//char p[42];
-	//memset(p,0,42);
-	//fread(p,1,42,e);
-	//puts("c");
-	//puts(p);
-	//puts("d");
+	WuTF_enable_args(&argc, &argv);
 	
-	return 0;
+	puts("(1) CHECK " SMR_A);
 	
-	window_init(&argc, &argv);
+	if (!argv[1])
+	{
+		puts("(2) SKIP, please invoke as: test(64).exe " SMR_A);
+	}
+	else if (!strcmp(argv[1], SMR_A))
+	{
+		puts("(2) PASS");
+	}
+	else
+	{
+		puts("(2) FAIL");
+	}
 	
-	widget_listbox_virtual* list = widget_create_listbox_virtual("AAA", "BBB", "CCC");
-	list->set_contents(bind(c), NULL);
-	list->set_num_rows(10000000);
-	const char * g[]={"COWW", "COW", "COW"};
-	list->set_size(10, g, -1);
-	list->add_checkboxes(NULL);
+	DWORD ignore;
+	HANDLE h;
+	h = CreateFileW(SMR_W L".txt", GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, 0, NULL);
+	WriteFile(h, "pokemon", 8, &ignore, NULL);
+	CloseHandle(h);
 	
-	//widget_listbox* list = widget_create_listbox("COW", "COWW", "COW");
-	//for (int i=0;i<200;i++)
-	//{
-	//	list->add_row("COW", "COW", "COWW");
-	//}
-	//const char * g[]={"COW", "COW", "COWW"};
-	//list->set_size(10, g, -1);
-	list->set_on_focus_change(bind(q));
+	h = CreateFileA(SMR_A ".txt", GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, NULL);
+	if (h != INVALID_HANDLE_VALUE)
+	{
+		char p[8];
+		ReadFile(h, p, 42, &ignore, NULL);
+		if (!strcmp(p, "pokemon")) puts("(3) PASS");
+		else puts("(3) FAIL: Wrong contents");
+		CloseHandle(h);
+	}
+	else
+	{
+		printf("(3) FAIL: Couldn't open file (errno %i)", GetLastError());
+	}
 	
-	vlist = list;
+	MessageBoxA(NULL, "Test", "Test", MB_OK);
 	
-	window* w = window_create(list);
-	w->set_resizable(true, NULL);
-	
-	w->set_visible(true);
-	while (w->is_visible()) window_run_wait();
-	
-	delete w;
+	//this one takes two string arguments, one of which can be way longer than 260
+#define PAD "Stretch string to 260 characters."
+#define PAD2 PAD " " PAD
+#define PAD8 PAD2 "\r\n" PAD2 "\r\n" PAD2 "\r\n" PAD2
+	MessageBoxA(NULL, PAD8 "\r\n(5) CHECK: " SMR_A, "(4) CHECK: " SMR_A, MB_OK);
 }

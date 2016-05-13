@@ -74,7 +74,8 @@ OPTFLAGS += -ffunction-sections -fdata-sections
 
 ifeq ($(DEBUG),1)
   CFLAGS += -g
-else
+endif
+ifeq ($(OPT),1)
   CFLAGS += $(OPTFLAGS)
   LFLAGS += -Wl,--gc-sections
 endif
