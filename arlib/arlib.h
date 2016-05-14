@@ -9,6 +9,9 @@
 #ifdef ARLIB_THREADS
 #include "thread/thread.h"
 #endif
+#if !defined(ARGUI_NONE) && !defined(ARGUI_WIN32) && !defined(ARGUI_GTK3)
+#define ARGUI_NONE
+#endif
 #ifndef ARGUI_NONE
 #include "gui/window.h"
 #endif

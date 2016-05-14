@@ -68,17 +68,18 @@ ifeq ($(ARWUTF),1)
   CONF_CFLAGS += -DARLIB_WUTF
 endif
 
-OPTFLAGS = -Wall -Werror -O3 -fomit-frame-pointer -fmerge-all-constants -fvisibility=hidden
+OPTFLAGS := -Os -fomit-frame-pointer -fmerge-all-constants -fvisibility=hidden
 OPTFLAGS += -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables
 OPTFLAGS += -ffunction-sections -fdata-sections
 OPTFLAGS += -Werror
 
-ifeq ($(DEBUG),1)
-  CFLAGS += -g
-endif
 ifeq ($(OPT),1)
   CFLAGS += $(OPTFLAGS)
   LFLAGS += -Wl,--gc-sections
+  DEBUG = 0
+endif
+ifeq ($(DEBUG),1)
+  CFLAGS += -g
 endif
 
 ifeq ($(PROFILE),gen)
@@ -86,8 +87,7 @@ ifeq ($(PROFILE),gen)
   CONF_LFLAGS += -lgcov
 endif
 ifeq ($(PROFILE),use)
-  CONF_CFLAGS += -fprofile-use
-  CONF_LFLAGS += $(CFLAGS)
+  CONF_CFLAGS += -fprofile-use -fprofile-correction
 endif
 
 OUTNAME = $(PROGRAM)$(EXESUFFIX)
@@ -101,7 +101,7 @@ ifeq ($(ARGUI),1)
   OBJS += $(patsubst arlib/gui/%.cpp,obj/arlib-gui-%$(OBJSUFFIX).o,$(wildcard arlib/gui/*.cpp))
   ifeq ($(OS),windows)
     CONF_CFLAGS += -DARGUI_WINDOWS
-    CONF_LFLAGS := -lgdi32 -lcomctl32 -lcomdlg32 -ldinput8 -ldxguid -lopengl32
+    CONF_LFLAGS += -lgdi32 -lcomctl32 -lcomdlg32 -ldinput8 -ldxguid -lopengl32
   endif
   ifeq ($(OS),linux)
     CONF_CFLAGS += $(shell pkg-config --cflags gtk+-3.0) -DARGUI_GTK3 -DARGUIPROT_X11

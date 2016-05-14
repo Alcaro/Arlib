@@ -1,5 +1,5 @@
 PROGRAM = test
-ARGUI = 1
+ARGUI = 0
 ARTHREADS = 0
 ARWUTF = 1
 

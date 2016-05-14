@@ -28,6 +28,9 @@
 #include "wutf.h"
 #include <windows.h>
 
+#ifndef NTSTATUS
+#define NTSTATUS LONG
+#endif
 #ifndef STATUS_SUCCESS
 #define STATUS_SUCCESS 0x00000000
 #endif
@@ -236,5 +239,4 @@ void WuTF_args(int* argc_p, char** * argv_p)
 	*argv_p = argv;
 	*argc_p = argc;
 }
-
 #endif

@@ -43,6 +43,10 @@
 
 void window_init(int * argc, char * * argv[])
 {
+#ifdef ARLIB_WUTF
+	WuTF_enable_args(argc, argv);
+#endif
+	
 	for (unsigned int i=0;(*argv)[0][i];i++)
 	{
 		if ((*argv)[0][i]=='\\') (*argv)[0][i]='/';
@@ -57,7 +61,7 @@ void window_init(int * argc, char * * argv[])
 
 file* file::create(const char * filename)
 {
-	//sorry, Windows - no fancy features for you, you suck
+	//sorry Windows, no fancy features for you, you suck
 	return create_fs(filename);
 }
 

@@ -194,6 +194,13 @@ fail:
 	return NULL;
 }
 
+#ifdef ARGUI_NONE
+file* file::create(const char * filename)
+{
+	return create_fs(filename);
+}
+#endif
+
 #if 0
 namespace {
 	class file_fs_wr : public filewrite {

@@ -36,7 +36,8 @@ static int decode(uint8_t head, const uint8_t* * ptr, const uint8_t* end)
 	if (*ptr + numtrail > end) return WUTF_E_STRICT;
 	
 	int codepoint = (head & (0x3F>>numtrail));
-	for (int i=1;i<=3;i++)
+	int i;
+	for (i=1;i<=3;i++)
 	{
 		if (numtrail>=i)
 		{

@@ -191,6 +191,13 @@ file* file::create_fs(const char * filename)
 	return new file_fs(filename, file, size.QuadPart);
 }
 
+#ifdef ARGUI_NONE
+file* file::create(const char * filename)
+{
+	return create_fs(filename);
+}
+#endif
+
 //namespace {
 //	class file_fs_wr : public filewrite {
 //	public:
