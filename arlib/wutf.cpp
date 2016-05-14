@@ -42,87 +42,22 @@
 #include <stdio.h>
 #endif
 
-//doesn't throw errors on invalid input
-static int UtfAsWideLen(LPBYTE ptr, LPBYTE end)
-{
-	int ret = 0;
-	LPBYTE at = ptr;
-	while (at<end)
-	{
-		//TODO: don't just implement strlen
-		at++;
-		ret++;
-	}
-	return ret;
-}
-
 //always uses CP_UTF8; ignores invalid flags and parameters for that code page
 static int WINAPI
 MultiByteToWideChar_Utf(UINT CodePage, DWORD dwFlags,
                         LPCSTR lpMultiByteStr, int cbMultiByte,
                         LPWSTR lpWideCharStr, int cchWideChar)
 {
-	//I could run a bunch of special cases depending on whether cbMultiByte<0, etc,
-	//but there's no need. I'll optimize it if it ends up a bottleneck.
-	
-	LPBYTE iat = (LPBYTE)lpMultiByteStr;
-	LPBYTE iend;
-	if (cbMultiByte >= 0) iend = iat + cbMultiByte;
-	else iend = iat + strlen(lpMultiByteStr) + 1;
-	
-	if (cchWideChar == 0)
+	int ret = WuTF_utf8_to_utf16(dwFlags&MB_ERR_INVALID_CHARS,
+	                             lpMultiByteStr, cbMultiByte,
+	                             (uint16_t*)lpWideCharStr, cchWideChar);
+	if (ret<0)
 	{
-		return UtfAsWideLen(iat, iend);
+		SetLastError(ERROR_NO_UNICODE_TRANSLATION);
+		return 0;
 	}
 	
-	LPWSTR oat = lpWideCharStr;
-	LPWSTR oend = oat + cchWideChar;
-	
-	while (iat < iend && oat < oend)
-	{
-#define FAIL() { if (dwFlags & MB_ERR_INVALID_CHARS) goto fail; *oat++ = 0xFFFD; continue; }
-		BYTE head = *iat++;
-		
-		if (head <= 0x7F)
-		{
-			*oat++ = head;
-			continue;
-		}
-		
-		int numtrail = ((head&0xC0)==0xC0) + ((head&0xE0)==0xE0) + ((head&0xF0)==0xF0);
-		const UINT minforlen[] = { 0x7FFFFFFF, 0x80, 0x800, 0x10000 };
-		
-		if (iat+numtrail > iend) FAIL();
-		
-		UINT codepoint = (head & (0x3F>>numtrail));
-		for (int i=1;i<=3;i++)
-		{
-			if (numtrail>=i)
-			{
-				if ((*iat & 0xC0) != 0x80) numtrail = 0; // ugly hack - can't FAIL() in here because that'd continue() wrong loop
-				codepoint = (codepoint<<6) | ((*iat++) & 0x3F);
-			}
-		}
-		
-		if (codepoint < minforlen[numtrail]) FAIL();
-		
-		if (codepoint < 0xFFFF)
-		{
-			*oat++ = codepoint;
-		}
-		else
-		{
-			if (codepoint > 0x10FFFF) FAIL();
-			*oat++ = 0xD800 | (codepoint>>10);
-			*oat++ = 0xDC00 | (codepoint&0x3FF);
-		}
-	}
-	
-	return oat - lpWideCharStr;
-	
-fail:
-	SetLastError(ERROR_NO_UNICODE_TRANSLATION);
-	return 0;
+	return ret;
 }
 
 //same caveats as MultiByteToWideChar_Utf
@@ -344,6 +279,8 @@ void WuTF_args(int* argc_p, char** * argv_p)
 	
 	*argv_p = argv;
 	*argc_p = argc;
+	
+	
 }
 
 #endif
