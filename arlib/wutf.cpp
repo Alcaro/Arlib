@@ -53,7 +53,8 @@ MultiByteToWideChar_Utf(UINT CodePage, DWORD dwFlags,
 	                             (uint16_t*)lpWideCharStr, cchWideChar);
 	if (ret<0)
 	{
-		SetLastError(ERROR_NO_UNICODE_TRANSLATION);
+		if (ret==-1) SetLastError(ERROR_NO_UNICODE_TRANSLATION);
+		if (ret==-2) SetLastError(ERROR_INSUFFICIENT_BUFFER);
 		return 0;
 	}
 	

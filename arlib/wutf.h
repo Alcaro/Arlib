@@ -63,11 +63,12 @@ static inline void WuTF_enable_args(int* argc, char** * argv) { WuTF_enable(); W
 //Return value is number of code units emitted.
 //'strict' means 'return -1 if the input is invalid'; otherwise, it emits an undefined number of U+FFFD for invalid inputs.
 //If the output parameters are NULL/0, it discards the output, and only returns the required number of code units.
+//If the output buffer is too small, returns -2.
 //In short, it roughly mirrors MultiByteToWideChar().
 int WuTF_utf8_to_utf32(bool strict, const char* utf8, int utf8_len, uint32_t* utf32, int utf32_len);
 int WuTF_utf32_to_utf8(bool strict, const uint32_t* utf32, int utf32_len, char* utf8, int utf8_len);
 
-//Used internally in WuTF. It's STRONGLY RECOMMENDED to NOT use these; use the above instead.
+//Used internally in WuTF. It's STRONGLY RECOMMENDED to not use these; use the above instead.
 int WuTF_utf8_to_utf16(bool strict, const char* utf8, int utf8_len, uint16_t* utf16, int utf16_len);
 int WuTF_utf16_to_utf8(bool strict, const uint16_t* utf16, int utf16_len, char* utf8, int utf8_len);
 
