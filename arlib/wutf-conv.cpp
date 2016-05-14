@@ -22,6 +22,8 @@
 
 //The above license applies only to this file, not the entire Arlib.
 
+//See wutf.h for documentation.
+
 #include "wutf.h"
 
 //WARNING: Treats 0xF8..FF as F0..F7. The caller is expected to validate this if the codepoint is outside the BMP.

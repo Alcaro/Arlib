@@ -22,15 +22,7 @@
 
 //The above license applies only to this file, not the entire Arlib.
 
-// It is well known that Windows supports two flavors of every(*) function that
-// takes or returns strings: A and W. The A ones take strings in the local
-// user's codepage; W uses UTF-16.
-// It is also fairly well known that the system codepage can not be set to UTF-8.
-// 
-//
-// (*) With the exception of CommandLineToArgvW.
-//
-// - https://wiki.winehq.org/Cygwin_and_More#The_Audience_Applauds
+//See wutf.h for documentation.
 
 #ifdef _WIN32
 #include "wutf.h"
@@ -42,52 +34,6 @@
 #ifndef STATUS_BUFFER_OVERFLOW
 #define STATUS_BUFFER_OVERFLOW 0x80000005
 #endif
-
-#define DEBUG 1
-
-#if DEBUG>0
-#include <stdio.h>
-#endif
-
-//always uses CP_UTF8; ignores invalid flags and parameters for that code page
-static int WINAPI
-MultiByteToWideChar_Utf(UINT CodePage, DWORD dwFlags,
-                        LPCSTR lpMultiByteStr, int cbMultiByte,
-                        LPWSTR lpWideCharStr, int cchWideChar)
-{
-	int ret = WuTF_utf8_to_utf16((dwFlags&MB_ERR_INVALID_CHARS) ? WUTF_STRICT : 0,
-	                             lpMultiByteStr, cbMultiByte,
-	                             (uint16_t*)lpWideCharStr, cchWideChar);
-	if (ret<0)
-	{
-		if (ret == WUTF_E_STRICT) SetLastError(ERROR_NO_UNICODE_TRANSLATION);
-		if (ret == WUTF_E_TRUNCATE) SetLastError(ERROR_INSUFFICIENT_BUFFER);
-		return 0;
-	}
-	
-	return ret;
-}
-
-//same caveats as MultiByteToWideChar_Utf
-static int WINAPI
-WideCharToMultiByte_Utf(UINT CodePage, DWORD dwFlags,
-                        LPCWSTR lpWideCharStr, int cchWideChar,
-                        LPSTR lpMultiByteStr, int cbMultiByte,
-                        LPCSTR lpDefaultChar, LPBOOL lpUsedDefaultChar)
-{
-	int ret = WuTF_utf16_to_utf8((dwFlags&MB_ERR_INVALID_CHARS) ? WUTF_STRICT : 0,
-	                             (uint16_t*)lpWideCharStr, cchWideChar,
-	                             lpMultiByteStr, cbMultiByte);
-	if (ret<0)
-	{
-		if (ret == WUTF_E_STRICT) SetLastError(ERROR_NO_UNICODE_TRANSLATION);
-		if (ret == WUTF_E_TRUNCATE) SetLastError(ERROR_INSUFFICIENT_BUFFER);
-		return 0;
-	}
-	
-	return ret;
-}
-
 
 static NTSTATUS WINAPI
 RtlMultiByteToUnicodeN_Utf(
@@ -146,15 +92,51 @@ RtlUnicodeToMultiByteSize_Utf(
 }
 
 
+//ignores invalid flags and parameters
+static int WINAPI
+MultiByteToWideChar_Utf(UINT CodePage, DWORD dwFlags,
+                        LPCSTR lpMultiByteStr, int cbMultiByte,
+                        LPWSTR lpWideCharStr, int cchWideChar)
+{
+	int ret = WuTF_utf8_to_utf16((dwFlags&MB_ERR_INVALID_CHARS) ? WUTF_STRICT : 0,
+	                             lpMultiByteStr, cbMultiByte,
+	                             (uint16_t*)lpWideCharStr, cchWideChar);
+	
+	if (ret<0)
+	{
+		if (ret == WUTF_E_STRICT) SetLastError(ERROR_NO_UNICODE_TRANSLATION);
+		if (ret == WUTF_E_TRUNCATE) SetLastError(ERROR_INSUFFICIENT_BUFFER);
+		return 0;
+	}
+	return ret;
+}
+
+static int WINAPI
+WideCharToMultiByte_Utf(UINT CodePage, DWORD dwFlags,
+                        LPCWSTR lpWideCharStr, int cchWideChar,
+                        LPSTR lpMultiByteStr, int cbMultiByte,
+                        LPCSTR lpDefaultChar, LPBOOL lpUsedDefaultChar)
+{
+	int ret = WuTF_utf16_to_utf8((dwFlags&MB_ERR_INVALID_CHARS) ? WUTF_STRICT : 0,
+	                             (uint16_t*)lpWideCharStr, cchWideChar,
+	                             lpMultiByteStr, cbMultiByte);
+	
+	if (ret<0)
+	{
+		if (ret == WUTF_E_STRICT) SetLastError(ERROR_NO_UNICODE_TRANSLATION);
+		if (ret == WUTF_E_TRUNCATE) SetLastError(ERROR_INSUFFICIENT_BUFFER);
+		return 0;
+	}
+	return ret;
+}
+
 
 //https://sourceforge.net/p/predef/wiki/Architectures/
 #if defined(_M_IX86) || defined(__i386__)
 static void RedirectFunction_machine(LPBYTE victim, LPBYTE replacement)
 {
-	LONG_PTR ptrdiff = replacement-victim-5;
-	
-	victim[0] = 0xE9; // jmp (offset from next instruction)
-	*(LONG_PTR*)(victim+1) = ptrdiff;
+	victim[0] = 0xE9; // jmp <offset from next instruction>
+	*(LONG_PTR*)(victim+1) = replacement-victim-5;
 }
 
 #elif defined(_M_X64) || defined(__x86_64__)
@@ -174,9 +156,6 @@ static void RedirectFunction_machine(LPBYTE victim, LPBYTE replacement)
 
 static void RedirectFunction(FARPROC victim, FARPROC replacement)
 {
-#if DEBUG>=1
-printf("replacing %p with %p\n",victim,replacement);
-#endif
 	DWORD prot;
 	// it's bad to have W+X on the same page, but I don't want to remove X from ntdll.dll.
 	// if I hit NtProtectVirtualMemory, I won't be able to fix it.
@@ -235,6 +214,7 @@ void WuTF_enable()
 	RedirectFunction(GetProcAddress(kernel32, "MultiByteToWideChar"), (FARPROC)MultiByteToWideChar_Utf);
 	RedirectFunction(GetProcAddress(kernel32, "WideCharToMultiByte"), (FARPROC)WideCharToMultiByte_Utf);
 }
+
 
 
 void WuTF_args(int* argc_p, char** * argv_p)
