@@ -3,7 +3,6 @@
 
 #ifdef _WIN32
 #define SMR "sm\xC3\xB6rg\xC3\xA5sr\xC3\xA4ka"
-#define SMR_C "sm\x94rg\x86sr\x84ka"
 #define SMR_W L"sm\x00F6rg\x00E5sr\x00E4ka"
 #include <windows.h>
 
