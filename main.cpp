@@ -71,6 +71,10 @@ void test816(const char* utf8, const char16_t* utf16_exp, int inlen=0, int outle
 	
 	int outpos_a=0;
 	int outpos_e=0;
+	
+	int outlen_a2 = WuTF_utf8_to_utf16(false, utf8, inlen, NULL, 0);
+	if (outlen_a != outlen_a2) goto fail;
+	
 	while (outpos_e < outlen_e && outpos_a < outlen_a)
 	{
 		uint16_t exp = utf16_exp[outpos_e++];

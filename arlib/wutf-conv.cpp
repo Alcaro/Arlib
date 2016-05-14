@@ -49,15 +49,22 @@ static int decode(uint8_t head, const uint8_t* * ptr, const uint8_t* end)
 }
 
 //doesn't throw errors on invalid input
-static int UtfAsWideLen(const uint8_t* ptr, const uint8_t* end)
+static int utf8_to_utf16_len(const uint8_t* ptr, const uint8_t* end)
 {
 	int ret = 0;
 	const uint8_t* at = ptr;
 	while (at<end)
 	{
-		//TODO: don't just implement strlen
-		at++;
+		uint8_t head = *at++;
+		if (head <= 0x7F)
+		{
+			ret++;
+			continue;
+		}
+		
+		uint32_t codepoint = (uint32_t)decode(head, &at, end);
 		ret++;
+		if (codepoint>=0x10000 && codepoint<=0x10FFFF && head<0xF8) ret++; // surrogate
 	}
 	return ret;
 }
@@ -82,7 +89,7 @@ int WuTF_utf8_to_utf16(bool strict, const char* utf8, int utf8_len, uint16_t* ut
 	
 	if (utf16_len == 0)
 	{
-		return UtfAsWideLen(iat, iend);
+		return utf8_to_utf16_len(iat, iend);
 	}
 	
 	uint16_t* oat = utf16;
@@ -97,25 +104,22 @@ int WuTF_utf8_to_utf16(bool strict, const char* utf8, int utf8_len, uint16_t* ut
 			continue;
 		}
 		
-		int codepoint = decode(head, &iat, iend);
-		if (codepoint<0)
-		{
-		fail:
-			if (strict) return -1;
-			*oat++ = 0xFFFD;
-		}
-		else if (codepoint <= 0xFFFF)
+		uint32_t codepoint = (uint32_t)decode(head, &iat, iend); // -1 -> 0xFFFF
+		if (codepoint <= 0xFFFF)
 		{
 			*oat++ = codepoint;
 		}
 		else
 		{
-			if (codepoint > 0x10FFFF) goto fail;
-			
 			// for heads >= 0xF0, the 08 bit is ignored
 			// F0 means 4+ bytes, which conveniently must be outside the BMP
 			// so I can put the check here, on the cold path
-			if (head >= 0xF8) goto fail;
+			if (head >= 0xF8 || codepoint > 0x10FFFF)
+			{
+				if (strict) return -1;
+				*oat++ = 0xFFFD;
+				continue;
+			}
 			
 			codepoint -= 0x10000;
 			*oat++ = 0xD800 | (codepoint>>10);
