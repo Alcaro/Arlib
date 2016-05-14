@@ -21,35 +21,34 @@
 // SOFTWARE.
 
 //The above license applies only to this file, not the entire Arlib.
-#include<stdio.h>
 
 #include "wutf.h"
 
-//WARNING: Treats 0xF8..FF as F0..F7. The caller is expected to validate this if the codepoint is
-//outside the BMP.
+//WARNING: Treats 0xF8..FF as F0..F7. The caller is expected to validate this if the codepoint is outside the BMP.
+//If it ends up inside BMP, it's rejected as overlong encoding. Right for wrong reason, but it works.
 static int decode(uint8_t head, const uint8_t* * ptr, const uint8_t* end)
 {
 	int numtrail = ((head&0xC0)==0xC0) + ((head&0xE0)==0xE0) + ((head&0xF0)==0xF0);
 	const int minforlen[] = { 0x7FFFFFFF, 0x80, 0x800, 0x10000 };
 	
-	if (*ptr + numtrail > end) return -1;
+	if (*ptr + numtrail > end) return WUTF_E_STRICT;
 	
 	int codepoint = (head & (0x3F>>numtrail));
 	for (int i=1;i<=3;i++)
 	{
 		if (numtrail>=i)
 		{
-			if ((**ptr & 0xC0) != 0x80) return -1;
+			if ((**ptr & 0xC0) != 0x80) return WUTF_E_STRICT;
 			codepoint = (codepoint<<6) | ((*(*ptr)++) & 0x3F);
 		}
 	}
 	
-	if (codepoint < minforlen[numtrail]) return -1;
+	if (codepoint < minforlen[numtrail]) return WUTF_E_STRICT;
 	
 	return codepoint;
 }
 
-static int utf8_to_utf16_len(bool strict, const uint8_t* ptr, const uint8_t* end)
+static int utf8_to_utf16_len(int flags, const uint8_t* ptr, const uint8_t* end)
 {
 	int ret = 0;
 	const uint8_t* at = ptr;
@@ -67,7 +66,8 @@ static int utf8_to_utf16_len(bool strict, const uint8_t* ptr, const uint8_t* end
 		ret++;
 		if (codepoint>0x10FFFF || head>=0xF8)
 		{
-			if (strict) return -1;
+			if (flags & WUTF_STRICT) return WUTF_E_STRICT;
+			//else ignore, FFFD is same size as a real character
 		}
 		else if (codepoint>=0x10000) ret++; // surrogate
 	}
@@ -88,7 +88,7 @@ static const uint8_t* utf8_end(const uint8_t* utf8, int utf8_len)
 	}
 }
 
-int WuTF_utf8_to_utf16(bool strict, const char* utf8, int utf8_len, uint16_t* utf16, int utf16_len)
+int WuTF_utf8_to_utf16(int flags, const char* utf8, int utf8_len, uint16_t* utf16, int utf16_len)
 {
 	//I could run a bunch of special cases depending on whether cbMultiByte<0, etc,
 	//but there's no need. I'll optimize it if it ends up a bottleneck.
@@ -98,15 +98,15 @@ int WuTF_utf8_to_utf16(bool strict, const char* utf8, int utf8_len, uint16_t* ut
 	
 	if (utf16_len == 0)
 	{
-		return utf8_to_utf16_len(strict, iat, iend);
+		return utf8_to_utf16_len(flags, iat, iend);
 	}
 	
 	uint16_t* oat = utf16;
 	uint16_t* oend = oat + utf16_len;
 	
-	while (iat < iend && oat < oend)
+	while (iat < iend)
 	{
-		if (oat+1 > oend) return -2;
+		if (oat+1 > oend) break;
 		
 		uint8_t head = *iat++;
 		if (head <= 0x7F)
@@ -127,16 +127,21 @@ int WuTF_utf8_to_utf16(bool strict, const char* utf8, int utf8_len, uint16_t* ut
 			// so I can put the check here, on the cold path
 			if (head >= 0xF8 || codepoint > 0x10FFFF)
 			{
-				if (strict) return -1;
+				if (flags & WUTF_STRICT) return WUTF_E_STRICT;
 				*oat++ = 0xFFFD;
 				continue;
 			}
 			
-			if (oat+2 > oend) return -2;
+			if (oat+2 > oend) break;
 			codepoint -= 0x10000;
 			*oat++ = 0xD800 | (codepoint>>10);
 			*oat++ = 0xDC00 | (codepoint&0x3FF);
 		}
+	}
+	if (iat != iend)
+	{
+		if (!(flags & WUTF_TRUNCATE)) return WUTF_E_TRUNCATE;
+		while (oat < oend) *oat++ = 0xFFFD;
 	}
 	
 	return oat - utf16;
@@ -144,7 +149,7 @@ int WuTF_utf8_to_utf16(bool strict, const char* utf8, int utf8_len, uint16_t* ut
 
 
 
-static int utf8_to_utf32_len(bool strict, const uint8_t* ptr, const uint8_t* end)
+static int utf8_to_utf32_len(int flags, const uint8_t* ptr, const uint8_t* end)
 {
 	int ret = 0;
 	const uint8_t* at = ptr;
@@ -162,21 +167,21 @@ static int utf8_to_utf32_len(bool strict, const uint8_t* ptr, const uint8_t* end
 		ret++;
 		if (codepoint>0x10FFFF || head>=0xF8)
 		{
-			if (strict) return -1;
+			if (flags & WUTF_STRICT) return WUTF_E_STRICT;
 		}
 		//identical to utf16_len, just discard the surrogate check
 	}
 	return ret;
 }
 
-int WuTF_utf8_to_utf32(bool strict, const char* utf8, int utf8_len, uint32_t* utf32, int utf32_len)
+int WuTF_utf8_to_utf32(int flags, const char* utf8, int utf8_len, uint32_t* utf32, int utf32_len)
 {
 	const uint8_t* iat = (const uint8_t*)utf8;
 	const uint8_t* iend = utf8_end(iat, utf8_len);
 	
 	if (utf32_len == 0)
 	{
-		return utf8_to_utf32_len(strict, iat, iend);
+		return utf8_to_utf32_len(flags, iat, iend);
 	}
 	
 	uint32_t* oat = utf32;
@@ -184,7 +189,7 @@ int WuTF_utf8_to_utf32(bool strict, const char* utf8, int utf8_len, uint32_t* ut
 	
 	while (iat < iend)
 	{
-		if (oat+1 > oend) return -2;
+		if (oat+1 > oend) break;
 		
 		uint8_t head = *iat++;
 		if (head <= 0x7F)
@@ -197,12 +202,17 @@ int WuTF_utf8_to_utf32(bool strict, const char* utf8, int utf8_len, uint32_t* ut
 		
 		if (head >= 0xF8 || codepoint > 0x10FFFF)
 		{
-			if (strict) return -1;
+			if (flags & WUTF_STRICT) return WUTF_E_STRICT;
 			*oat++ = 0xFFFD;
 			continue;
 		}
 		
 		*oat++ = codepoint;
+	}
+	if (iat != iend)
+	{
+		if (!(flags & WUTF_TRUNCATE)) return WUTF_E_TRUNCATE;
+		while (oat < oend) *oat++ = 0xFFFD;
 	}
 	
 	return oat - utf32;
@@ -212,7 +222,7 @@ int WuTF_utf8_to_utf32(bool strict, const char* utf8, int utf8_len, uint32_t* ut
 
 
 
-static int utf16_to_utf8_len(bool strict, const uint16_t* ptr, const uint16_t* end)
+static int utf16_to_utf8_len(int flags, const uint16_t* ptr, const uint16_t* end)
 {
 	int ret = 0;
 	const uint16_t* at = ptr;
@@ -251,14 +261,14 @@ static const uint16_t* utf16_end(const uint16_t* utf16, int utf16_len)
 	}
 }
 
-int WuTF_utf16_to_utf8(bool strict, const uint16_t* utf16, int utf16_len, char* utf8, int utf8_len)
+int WuTF_utf16_to_utf8(int flags, const uint16_t* utf16, int utf16_len, char* utf8, int utf8_len)
 {
 	const uint16_t* iat = utf16;
 	const uint16_t* iend = utf16_end(iat, utf16_len);
 	
 	if (utf8_len == 0)
 	{
-		return utf16_to_utf8_len(strict, iat, iend);
+		return utf16_to_utf8_len(flags, iat, iend);
 	}
 	
 	uint8_t* oat = (uint8_t*)utf8;
@@ -269,12 +279,12 @@ int WuTF_utf16_to_utf8(bool strict, const uint16_t* utf16, int utf16_len, char* 
 		uint16_t head = *iat++;
 		if (head <= 0x7F)
 		{
-			if (oat+1 > oend) return -2;
+			if (oat+1 > oend) break;
 			*oat++ = head;
 		}
 		else if (head <= 0x07FF)
 		{
-			if (oat+2 > oend) return -2;
+			if (oat+2 > oend) break;
 			*oat++ = (((head>> 6)     )|0xC0);
 			*oat++ = (((head    )&0x3F)|0x80);
 		}
@@ -286,7 +296,7 @@ int WuTF_utf16_to_utf8(bool strict, const uint16_t* utf16, int utf16_len, char* 
 				if (tail >= 0xDC00 && tail <= 0xDFFF)
 				{
 					iat++;
-					if (oat+4 > oend) return -2;
+					if (oat+4 > oend) break;
 					uint32_t codepoint = 0x10000+((head&0x03FF)<<10)+(tail&0x03FF);
 					*oat++ = (((codepoint>>18)&0x07)|0xF0);
 					*oat++ = (((codepoint>>12)&0x3F)|0x80);
@@ -295,11 +305,16 @@ int WuTF_utf16_to_utf8(bool strict, const uint16_t* utf16, int utf16_len, char* 
 					continue;
 				}
 			}
-			if (oat+3 > oend) return -2;
+			if (oat+3 > oend) break;
 			*oat++ = (((head>>12)&0x0F)|0xE0);
 			*oat++ = (((head>>6 )&0x3F)|0x80);
 			*oat++ = (((head    )&0x3F)|0x80);
 		}
+	}
+	if (iat != iend)
+	{
+		if (!(flags & WUTF_TRUNCATE)) return WUTF_E_TRUNCATE;
+		while (oat < oend) *oat++ = '?'; // (probably) can't fit a U+FFFD, just shove in something
 	}
 	
 	return oat - (uint8_t*)utf8;
@@ -307,7 +322,7 @@ int WuTF_utf16_to_utf8(bool strict, const uint16_t* utf16, int utf16_len, char* 
 
 
 
-static int utf32_to_utf8_len(bool strict, const uint32_t* ptr, const uint32_t* end)
+static int utf32_to_utf8_len(int flags, const uint32_t* ptr, const uint32_t* end)
 {
 	int ret = 0;
 	const uint32_t* at = ptr;
@@ -319,7 +334,7 @@ static int utf32_to_utf8_len(bool strict, const uint32_t* ptr, const uint32_t* e
 		if (head >= 0x80) ret++;
 		if (head >= 0x0800) ret++;
 		if (head >= 0x10000) ret++;
-		if (head > 0x10FFFF) return -1;
+		if (head > 0x10FFFF) return WUTF_E_STRICT;
 	}
 	return ret;
 }
@@ -338,14 +353,14 @@ static const uint32_t* utf32_end(const uint32_t* utf32, int utf32_len)
 	}
 }
 
-int WuTF_utf32_to_utf8(bool strict, const uint32_t* utf32, int utf32_len, char* utf8, int utf8_len)
+int WuTF_utf32_to_utf8(int flags, const uint32_t* utf32, int utf32_len, char* utf8, int utf8_len)
 {
 	const uint32_t* iat = utf32;
 	const uint32_t* iend = utf32_end(iat, utf32_len);
 	
 	if (utf8_len == 0)
 	{
-		return utf32_to_utf8_len(strict, iat, iend);
+		return utf32_to_utf8_len(flags, iat, iend);
 	}
 	
 	uint8_t* oat = (uint8_t*)utf8;
@@ -356,31 +371,43 @@ int WuTF_utf32_to_utf8(bool strict, const uint32_t* utf32, int utf32_len, char* 
 		uint32_t head = *iat++;
 		if (head <= 0x7F)
 		{
-			if (oat+1 > oend) return -2;
+			if (oat+1 > oend) break;
 			*oat++ = head;
 		}
 		else if (head <= 0x07FF)
 		{
-			if (oat+2 > oend) return -2;
+			if (oat+2 > oend) break;
 			*oat++ = (((head>> 6)     )|0xC0);
 			*oat++ = (((head    )&0x3F)|0x80);
 		}
 		else if (head <= 0xFFFF)
 		{
-			if (oat+3 > oend) return -2;
+			if (oat+3 > oend) break;
 			*oat++ = (((head>>12)&0x0F)|0xE0);
 			*oat++ = (((head>>6 )&0x3F)|0x80);
 			*oat++ = (((head    )&0x3F)|0x80);
 		}
 		else if (head <= 0x10FFFF)
 		{
-			if (oat+4 > oend) return -2;
+			if (oat+4 > oend) break;
 			*oat++ = (((head>>18)&0x07)|0xF0);
 			*oat++ = (((head>>12)&0x3F)|0x80);
 			*oat++ = (((head>>6 )&0x3F)|0x80);
 			*oat++ = (((head    )&0x3F)|0x80);
 		}
-		else return -1;
+		else
+		{
+			if (flags & WUTF_STRICT) return WUTF_E_STRICT;
+			if (oat+3 > oend) break;
+			*oat++ = 0xEF; // U+FFFD
+			*oat++ = 0xBF;
+			*oat++ = 0xBD;
+		}
+	}
+	if (iat != iend)
+	{
+		if (!(flags & WUTF_TRUNCATE)) return WUTF_E_TRUNCATE;
+		while (oat < oend) *oat++ = '?';
 	}
 	
 	return oat - (uint8_t*)utf8;

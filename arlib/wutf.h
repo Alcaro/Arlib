@@ -47,6 +47,7 @@ extern "C" {
 void WuTF_enable();
 
 //Converts argc/argv to UTF-8. (Unlike the above, it uses zero ugly hacks.)
+//However, it does leak memory, so don't call it more than once. (The leaks are cleaned up on process exit anyways.)
 void WuTF_args(int* argc, char** * argv);
 
 #else
@@ -58,19 +59,21 @@ static inline void WuTF_args(int* argc, char** * argv) {}
 //This one just combines the above.
 static inline void WuTF_enable_args(int* argc, char** * argv) { WuTF_enable(); WuTF_args(argc, argv); }
 
+
 //Lengths are in code units, and includes the NUL terminator.
 //-1 is valid for the input length, and means 'use strlen()+1'.
 //Return value is number of code units emitted.
-//'strict' means 'return -1 if the input is invalid'; otherwise, it emits an undefined number of U+FFFD for invalid inputs.
 //If the output parameters are NULL/0, it discards the output, and only returns the required number of code units.
-//If the output buffer is too small, returns -2.
-//In short, it roughly mirrors MultiByteToWideChar().
-int WuTF_utf8_to_utf32(bool strict, const char* utf8, int utf8_len, uint32_t* utf32, int utf32_len);
-int WuTF_utf32_to_utf8(bool strict, const uint32_t* utf32, int utf32_len, char* utf8, int utf8_len);
+#define WUTF_TRUNCATE 1 // If the output string doesn't fit, truncate it. If not set, returns -2.
+#define WUTF_STRICT 2   // If the input is not valid in its encoding, return -1. If not set, uses U+FFFD.
+#define WUTF_E_TRUNCATE -1
+#define WUTF_E_STRICT -2
+int WuTF_utf8_to_utf32(int flags, const char* utf8, int utf8_len, uint32_t* utf32, int utf32_len);
+int WuTF_utf32_to_utf8(int flags, const uint32_t* utf32, int utf32_len, char* utf8, int utf8_len);
 
 //Used internally in WuTF. It's STRONGLY RECOMMENDED to not use these; use the above instead.
-int WuTF_utf8_to_utf16(bool strict, const char* utf8, int utf8_len, uint16_t* utf16, int utf16_len);
-int WuTF_utf16_to_utf8(bool strict, const uint16_t* utf16, int utf16_len, char* utf8, int utf8_len);
+int WuTF_utf8_to_utf16(int flags, const char* utf8, int utf8_len, uint16_t* utf16, int utf16_len);
+int WuTF_utf16_to_utf8(int flags, const uint16_t* utf16, int utf16_len, char* utf8, int utf8_len);
 
 #ifdef __cplusplus
 }

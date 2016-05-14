@@ -36,7 +36,14 @@
 #include "wutf.h"
 #include <windows.h>
 
-#define DEBUG 2
+#ifndef STATUS_SUCCESS
+#define STATUS_SUCCESS 0x00000000
+#endif
+#ifndef STATUS_BUFFER_OVERFLOW
+#define STATUS_BUFFER_OVERFLOW 0x80000005
+#endif
+
+#define DEBUG 1
 
 #if DEBUG>0
 #include <stdio.h>
@@ -48,13 +55,13 @@ MultiByteToWideChar_Utf(UINT CodePage, DWORD dwFlags,
                         LPCSTR lpMultiByteStr, int cbMultiByte,
                         LPWSTR lpWideCharStr, int cchWideChar)
 {
-	int ret = WuTF_utf8_to_utf16(dwFlags&MB_ERR_INVALID_CHARS,
+	int ret = WuTF_utf8_to_utf16((dwFlags&MB_ERR_INVALID_CHARS) ? WUTF_STRICT : 0,
 	                             lpMultiByteStr, cbMultiByte,
 	                             (uint16_t*)lpWideCharStr, cchWideChar);
 	if (ret<0)
 	{
-		if (ret==-1) SetLastError(ERROR_NO_UNICODE_TRANSLATION);
-		if (ret==-2) SetLastError(ERROR_INSUFFICIENT_BUFFER);
+		if (ret == WUTF_E_STRICT) SetLastError(ERROR_NO_UNICODE_TRANSLATION);
+		if (ret == WUTF_E_TRUNCATE) SetLastError(ERROR_INSUFFICIENT_BUFFER);
 		return 0;
 	}
 	
@@ -62,135 +69,82 @@ MultiByteToWideChar_Utf(UINT CodePage, DWORD dwFlags,
 }
 
 //same caveats as MultiByteToWideChar_Utf
-int WINAPI
+static int WINAPI
 WideCharToMultiByte_Utf(UINT CodePage, DWORD dwFlags,
                         LPCWSTR lpWideCharStr, int cchWideChar,
                         LPSTR lpMultiByteStr, int cbMultiByte,
                         LPCSTR lpDefaultChar, LPBOOL lpUsedDefaultChar)
 {
-	return 0;
-}
-
-
-//originally ANSI_STRING and UNICODE_STRING
-//renamed to avoid conflicts if some versions of windows.h includes the real ones
-struct MS_ANSI_STRING {
-	USHORT Length;
-	USHORT MaximumLength;
-	PCHAR Buffer;
-};
-
-struct MS_UNICODE_STRING {
-	USHORT Length;
-	USHORT MaximumLength; // lengths are bytes (cb), not characters (cch)
-	PWSTR Buffer;
-};
-
-
-#if DEBUG>=2
-static void PrintAnsiString(const char * prefix, const struct MS_ANSI_STRING * String)
-{
-	int i;
-	printf("%s(cchLen=%i,cchMax=%i):", prefix, String->Length, String->MaximumLength);
-	for(i=0;i<=String->Length;i++)
+	int ret = WuTF_utf16_to_utf8((dwFlags&MB_ERR_INVALID_CHARS) ? WUTF_STRICT : 0,
+	                             (uint16_t*)lpWideCharStr, cchWideChar,
+	                             lpMultiByteStr, cbMultiByte);
+	if (ret<0)
 	{
-		printf("[%c]", String->Buffer[i]&255);
+		if (ret == WUTF_E_STRICT) SetLastError(ERROR_NO_UNICODE_TRANSLATION);
+		if (ret == WUTF_E_TRUNCATE) SetLastError(ERROR_INSUFFICIENT_BUFFER);
+		return 0;
 	}
-	puts("");
+	
+	return ret;
 }
 
-static void PrintUnicodeString(const char * prefix, const struct MS_UNICODE_STRING * String)
-{
-	int i;
-	printf("%s(cchLen=%i,cchMax=%i):", prefix, String->Length/2, String->MaximumLength/2);
-	for(i=0;i<=String->Length/2;i++)
-	{
-		printf("[%c]", String->Buffer[i]&255);
-	}
-	puts("");
-}
-#endif
 
 static NTSTATUS WINAPI
-RtlAnsiStringToUnicodeString_UTF8(
-                struct MS_UNICODE_STRING * DestinationString,
-                const struct MS_ANSI_STRING * SourceString,
-                BOOLEAN AllocateDestinationString)
+RtlMultiByteToUnicodeN_Utf(
+                PWCH   UnicodeString,
+                ULONG  MaxBytesInUnicodeString,
+                PULONG BytesInUnicodeString,
+          const CHAR   *MultiByteString,
+                ULONG  BytesInMultiByteString)
 {
-	int cchMaxOut;
-	int cchLen;
-	
-#if DEBUG>=2
-	PrintAnsiString("IN:ANSI", SourceString);
-#endif
-	
-	if (AllocateDestinationString)
-	{
-		cchLen = MultiByteToWideChar_Utf(CP_UTF8, 0,
-		                                 SourceString->Buffer, SourceString->Length,
-		                                 NULL, 0);
-		
-printf("###[%i]\n",cchLen);
-		if (cchLen >= 0x10000/2) return 0x80000005; // STATUS_BUFFER_OVERFLOW
-		if (cchLen+1 < 0x10000/2) cchLen += 1; // NUL terminator
-		DestinationString->MaximumLength = cchLen*2;
-		// this pointer is sent to RtlFreeUnicodeString, which ends up in RtlFreeHeap
-		// this is quite clearly mapped up to RtlAllocHeap, but HeapAlloc forwards to that anyways.
-		// and GetProcessHeap is verified to return the same thing as RtlFreeUnicodeString uses.
-		DestinationString->Buffer = (PWSTR)HeapAlloc(GetProcessHeap(), 0, DestinationString->MaximumLength);
-	}
-	
-	cchMaxOut = DestinationString->MaximumLength/2;
-	cchLen = MultiByteToWideChar_Utf(CP_UTF8, 0,
-	                                 SourceString->Buffer, SourceString->Length,
-	                                 DestinationString->Buffer, cchMaxOut);
-printf("###[%i %i]\n",cchLen,DestinationString->MaximumLength);
-	if (!cchLen || cchLen > cchMaxOut) return 0x80000005; // STATUS_BUFFER_OVERFLOW
-	
-	DestinationString->Length = cchLen*2;
-	if (cchLen < cchMaxOut) DestinationString->Buffer[cchLen] = '\0';
-#if DEBUG>=2
-	PrintUnicodeString("OUT:UNI", DestinationString);
-#endif
-	return 0x00000000; // STATUS_SUCCESS
+	int len = WuTF_utf8_to_utf16(WUTF_TRUNCATE,
+	                             MultiByteString, BytesInMultiByteString,
+	                             (uint16_t*)UnicodeString, MaxBytesInUnicodeString/2);
+	if (BytesInUnicodeString) *BytesInUnicodeString = len*2;
+	return STATUS_SUCCESS;
 }
 
 static NTSTATUS WINAPI
-RtlUnicodeStringToAnsiString_UTF8(
-                struct MS_ANSI_STRING * DestinationString,
-                const struct MS_UNICODE_STRING * SourceString,
-                BOOLEAN AllocateDestinationString)
+RtlUnicodeToMultiByteN_Utf(
+                PCHAR  MultiByteString,
+                ULONG  MaxBytesInMultiByteString,
+                PULONG BytesInMultiByteString,
+                PCWCH  UnicodeString,
+                ULONG  BytesInUnicodeString)
 {
-	int cbRet;
-#if DEBUG>=2
-	PrintUnicodeString("IN:UNI", SourceString);
-#endif
-	if (AllocateDestinationString)
-	{
-		int cb = WideCharToMultiByte(CP_UTF8, 0,
-		                                 SourceString->Buffer, SourceString->Length,
-		                                 NULL, 0,
-		                                 NULL, NULL);
-		
-		if (cb >= 0x10000) return 0x80000005; // STATUS_BUFFER_OVERFLOW
-		if (cb+1 < 0x10000) cb += 1; // NUL terminator
-		DestinationString->MaximumLength = cb;
-		DestinationString->Buffer = (PCHAR)HeapAlloc(GetProcessHeap(), 0, DestinationString->MaximumLength+40);
-		DestinationString->Buffer +=20;
-	}
-	
-	cbRet = WideCharToMultiByte(CP_UTF8, 0,
-	                                SourceString->Buffer, SourceString->Length/2,
-	                                DestinationString->Buffer, DestinationString->MaximumLength,
-	                                NULL, NULL);
-	if (!cbRet || cbRet > DestinationString->MaximumLength) return 0x80000005; // STATUS_BUFFER_OVERFLOW
-	if (cbRet < DestinationString->MaximumLength) DestinationString->Buffer[cbRet] = '\0';
-	DestinationString->Length = cbRet;
-#if DEBUG>=2
-	PrintAnsiString("OUT:ANSI", DestinationString);
-#endif
-	return 0x00000000; // STATUS_SUCCESS
+	int len = WuTF_utf16_to_utf8(WUTF_TRUNCATE,
+	                             (uint16_t*)UnicodeString, BytesInUnicodeString/2,
+	                             MultiByteString, MaxBytesInMultiByteString);
+	if (BytesInMultiByteString) *BytesInMultiByteString = len;
+	return STATUS_SUCCESS;
 }
+
+static NTSTATUS WINAPI
+RtlMultiByteToUnicodeSize_Utf(
+                PULONG BytesInUnicodeString,
+          const CHAR   *MultiByteString,
+                ULONG  BytesInMultiByteString)
+{
+	int len = WuTF_utf8_to_utf16(0,
+	                             MultiByteString, BytesInMultiByteString,
+	                             NULL, 0);
+	*BytesInUnicodeString = len*2;
+	return STATUS_SUCCESS;
+}
+
+static NTSTATUS WINAPI
+RtlUnicodeToMultiByteSize_Utf(
+                PULONG BytesInMultiByteString,
+                PCWCH  UnicodeString,
+                ULONG  BytesInUnicodeString)
+{
+	int len = WuTF_utf16_to_utf8(0,
+	                             (uint16_t*)UnicodeString, BytesInUnicodeString/2,
+	                             NULL, 0);
+	*BytesInMultiByteString = len;
+	return STATUS_SUCCESS;
+}
+
 
 
 //https://sourceforge.net/p/predef/wiki/Architectures/
@@ -225,7 +179,7 @@ printf("replacing %p with %p\n",victim,replacement);
 #endif
 	DWORD prot;
 	// it's bad to have W+X on the same page, but I don't want to remove X from ntdll.dll.
-	// if I hit NtProtectVirtualMemory, I won't be able to fix it
+	// if I hit NtProtectVirtualMemory, I won't be able to fix it.
 	VirtualProtect((void*)victim, 64, PAGE_EXECUTE_READWRITE, &prot);
 	RedirectFunction_machine((LPBYTE)victim, (LPBYTE)replacement);
 	VirtualProtect((void*)victim, 64, prot, &prot);
@@ -234,35 +188,54 @@ printf("replacing %p with %p\n",victim,replacement);
 void WuTF_enable()
 {
 	HMODULE ntdll = GetModuleHandle("ntdll.dll");
-	RedirectFunction(GetProcAddress(ntdll, "RtlAnsiStringToUnicodeString"), (FARPROC)RtlAnsiStringToUnicodeString_UTF8);
-	RedirectFunction(GetProcAddress(ntdll, "RtlUnicodeStringToAnsiString"), (FARPROC)RtlUnicodeStringToAnsiString_UTF8);
+	//list of possibly relevant functions in ntdll.dll (pulled from 'strings ntdll.dll'):
+	//some are documented at https://msdn.microsoft.com/en-us/library/windows/hardware/ff553354%28v=vs.85%29.aspx
+	//many are implemented in terms of other functions, often rooting in the ones I've hijacked
+	// RtlAnsiCharToUnicodeChar
+	// RtlAnsiStringToUnicodeSize
+	// RtlAnsiStringToUnicodeString
+	// RtlAppendAsciizToString
+	// RtlAppendPathElement
+	// RtlAppendStringToString
+	// RtlAppendUnicodeStringToString
+	// RtlAppendUnicodeToString
+	// RtlCreateUnicodeStringFromAsciiz
+	// RtlMultiAppendUnicodeStringBuffer
+	RedirectFunction(GetProcAddress(ntdll, "RtlMultiByteToUnicodeN"), (FARPROC)RtlMultiByteToUnicodeN_Utf);
+	RedirectFunction(GetProcAddress(ntdll, "RtlMultiByteToUnicodeSize"), (FARPROC)RtlMultiByteToUnicodeSize_Utf);
+	// RtlOemStringToUnicodeSize
+	// RtlOemStringToUnicodeString
+	// RtlOemToUnicodeN
+	// RtlRunDecodeUnicodeString
+	// RtlRunEncodeUnicodeString
+	// RtlUnicodeStringToAnsiSize
+	// RtlUnicodeStringToAnsiString
+	// RtlUnicodeStringToCountedOemString
+	// RtlUnicodeStringToInteger
+	// RtlUnicodeStringToOemSize
+	// RtlUnicodeStringToOemString
+	// RtlUnicodeToCustomCPN
+	RedirectFunction(GetProcAddress(ntdll, "RtlUnicodeToMultiByteN"), (FARPROC)RtlUnicodeToMultiByteN_Utf);
+	RedirectFunction(GetProcAddress(ntdll, "RtlUnicodeToMultiByteSize"), (FARPROC)RtlUnicodeToMultiByteSize_Utf);
+	// RtlUnicodeToOemN
+	// RtlUpcaseUnicodeChar
+	// RtlUpcaseUnicodeString
+	// RtlUpcaseUnicodeStringToAnsiString
+	// RtlUpcaseUnicodeStringToCountedOemString
+	// RtlUpcaseUnicodeStringToOemString
+	// RtlUpcaseUnicodeToCustomCPN
+	// RtlUpcaseUnicodeToMultiByteN
+	// RtlUpcaseUnicodeToOemN
+	// RtlxAnsiStringToUnicodeSize
+	// RtlxOemStringToUnicodeSize
+	// RtlxUnicodeStringToAnsiSize
+	// RtlxUnicodeStringToOemSize
 	
-	//possible extensions:
-	//ntdll!RtlOemStringToUnicodeString, ntdll!RtlUnicodeStringToOemString
-	// no notable known users
-	//
-	//ntdll!RtlMultiByteToUnicodeN,    ntdll!RtlUnicodeToMultiByteN,
-	//ntdll!RtlMultiByteToUnicodeSize, ntdll!RtlUnicodeToMultiByteSize
-	// used everywhere by Windows internals, including by RtlAnsiStringToUnicodeString itself
-	//
-	//ntdll!Rtl{Oem,Ansi}StringToUnicodeSize and reverse
-	// no notable known users
-	//
-	//kernel32!MultiByteToWideChar(CP_ACP), CP_OEM, kernel32!WideCharToMultiByte
-	// used by Wine msvcrt
-	//  https://github.com/wine-mirror/wine/blob/e1970c8547aa7fed5a097faf172eadc282b3394e/dlls/msvcrt/file.c#L4070
-	//  https://github.com/wine-mirror/wine/blob/e1970c8547aa7fed5a097faf172eadc282b3394e/dlls/msvcrt/file.c#L4042
-	//  https://github.com/wine-mirror/wine/blob/e1970c8547aa7fed5a097faf172eadc282b3394e/dlls/msvcrt/data.c#L289
+	HMODULE kernel32 = GetModuleHandle("kernel32.dll");
+	RedirectFunction(GetProcAddress(kernel32, "MultiByteToWideChar"), (FARPROC)MultiByteToWideChar_Utf);
+	RedirectFunction(GetProcAddress(kernel32, "WideCharToMultiByte"), (FARPROC)WideCharToMultiByte_Utf);
 }
 
-
-static LPSTR wcsdupa(LPCWSTR in)
-{
-	int cb = WideCharToMultiByte(CP_UTF8, 0, in, -1, NULL, 0, NULL, NULL);
-	LPSTR ret = (LPSTR)HeapAlloc(GetProcessHeap(), 0, cb);
-	WideCharToMultiByte(CP_UTF8, 0, in, -1, ret, cb, NULL, NULL);
-	return ret;
-}
 
 void WuTF_args(int* argc_p, char** * argv_p)
 {
@@ -274,14 +247,14 @@ void WuTF_args(int* argc_p, char** * argv_p)
 	
 	for (i=0;i<argc;i++)
 	{
-		argv[i] = wcsdupa(wargv[i]);
+		int cb = WuTF_utf16_to_utf8(0, (uint16_t*)wargv[i], -1, NULL, 0);
+		argv[i] = (char*)HeapAlloc(GetProcessHeap(), 0, cb);
+		WuTF_utf16_to_utf8(0, (uint16_t*)wargv[i], -1, argv[i], cb);
 	}
 	argv[argc]=0;
 	
 	*argv_p = argv;
 	*argc_p = argc;
-	
-	
 }
 
 #endif

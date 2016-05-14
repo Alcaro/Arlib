@@ -39,12 +39,12 @@ static void test816(const char* utf8, const char16_t* utf16_exp, int inlen=0, in
 	}
 	
 	uint16_t utf16_act[128];
-	int outlen_a = WuTF_utf8_to_utf16(false, utf8, inlen, utf16_act, 128);
+	int outlen_a = WuTF_utf8_to_utf16(0, utf8, inlen, utf16_act, 128);
 	
 	int outpos_a=0;
 	int outpos_e=0;
 	
-	int outlen_a2 = WuTF_utf8_to_utf16(false, utf8, inlen, NULL, 0);
+	int outlen_a2 = WuTF_utf8_to_utf16(0, utf8, inlen, NULL, 0);
 	if (outlen_a != outlen_a2) { printf("Expected length %i, got %i\n", outlen_a, outlen_a2); goto fail; }
 	
 	while (outpos_e < outlen_e && outpos_a < outlen_a)
@@ -78,12 +78,12 @@ static void test168(const char16_t* utf16, const char* utf8_exp, int inlen=0, in
 	}
 	
 	char utf8_act[128];
-	int outlen_a = WuTF_utf16_to_utf8(false, (const uint16_t*)utf16, inlen, utf8_act, 128);
+	int outlen_a = WuTF_utf16_to_utf8(0, (const uint16_t*)utf16, inlen, utf8_act, 128);
 	
 	int outpos_a=0;
 	int outpos_e=0;
 	
-	int outlen_a2 = WuTF_utf16_to_utf8(false, (const uint16_t*)utf16, inlen, NULL, 0);
+	int outlen_a2 = WuTF_utf16_to_utf8(0, (const uint16_t*)utf16, inlen, NULL, 0);
 	if (outlen_a != outlen_a2) { printf("Expected length %i, got %i\n", outlen_a, outlen_a2); goto fail; }
 	
 	while (outpos_e < outlen_e && outpos_a < outlen_a)
