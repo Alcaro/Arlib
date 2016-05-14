@@ -64,10 +64,6 @@ ifeq ($(OS),windows)
   OBJSUFFIX = -windows
 endif
 
-ifeq ($(ARWUTF),1)
-  CONF_CFLAGS += -DARLIB_WUTF
-endif
-
 OPTFLAGS := -Os -fomit-frame-pointer -fmerge-all-constants -fvisibility=hidden
 OPTFLAGS += -fno-exceptions -fno-unwind-tables -fno-asynchronous-unwind-tables
 OPTFLAGS += -ffunction-sections -fdata-sections
@@ -118,6 +114,11 @@ ifeq ($(ARTHREADS),1)
     CONF_CFLAGS += -pthread
     CONF_LFLAGS += -pthread
   endif
+endif
+
+ifeq ($(ARWUTF),1)
+  OBJS += $(patsubst arlib/wutf/%.cpp,obj/arlib-wutf-%$(OBJSUFFIX).o,$(wildcard arlib/wutf/*.cpp))
+  CONF_CFLAGS += -DARLIB_WUTF
 endif
 
 CCXXFLAGS = -fvisibility=hidden -fno-exceptions -Wall -Wno-comment

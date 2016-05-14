@@ -21,7 +21,8 @@
 // SOFTWARE.
 
 //The above license applies only to this file, not the entire Arlib.
-#if 1
+#if 0
+//You don't need this. It's just a bunch of tests for the UTF8-16 converters.
 #include "wutf.h"
 #include <stdio.h>
 
