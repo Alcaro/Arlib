@@ -22,7 +22,7 @@
 
 //The above license applies only to this file, not the entire Arlib.
 #if 0
-//You don't need this. It's just a bunch of tests for the UTF8-16 converters.
+//You don't need this. It's just a bunch of tests for WuTF itself.
 #include "wutf.h"
 #include <stdio.h>
 
@@ -100,7 +100,7 @@ static void test168(const char16_t* utf16, const char* utf8_exp, int inlen=0, in
 	}
 }
 
-void WuTF_utf16_test()
+void WuTF_test_encoder()
 {
 	test816("a", u"a");
 	test816("smörgåsräka", u"smörgåsräka");
@@ -279,4 +279,54 @@ void WuTF_utf16_test()
 	test168(u"#\xDC00#",       "#\xed\xb0\x80#");
 	test168(u"#\xDFFF#",       "#\xed\xbf\xbf#");
 }
+
+
+
+
+#ifdef _WIN32
+#define SMR "sm\xC3\xB6rg\xC3\xA5sr\xC3\xA4ka"
+#define SMR_W L"sm\x00F6rg\x00E5sr\x00E4ka"
+#include <windows.h>
+
+//To pass, the five numbered strings must be either 'CHECK: smörgåsräka' or 'PASS'.
+void WuTF_test_ansiutf()
+{
+	WuTF_enable();
+	
+	DWORD ignore;
+	HANDLE h;
+	h = CreateFileW(SMR_W L".txt", GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, 0, NULL);
+	WriteFile(h, "pokemon", 8, &ignore, NULL);
+	CloseHandle(h);
+	
+	h = CreateFileA(SMR ".txt", GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, NULL);
+	if (h != INVALID_HANDLE_VALUE)
+	{
+		char p[8];
+		ReadFile(h, p, 42, &ignore, NULL);
+		if (!strcmp(p, "pokemon")) puts("(1) PASS");
+		else puts("(1) FAIL: Wrong contents");
+		CloseHandle(h);
+	}
+	else
+	{
+		printf("(1) FAIL: Couldn't open file (errno %lu)", GetLastError());
+	}
+	DeleteFileW(SMR_W L".txt");
+	
+	HWND wnd = CreateWindowW(L"BUTTON", L"(3) CHECK: " SMR_W, WS_OVERLAPPEDWINDOW|WS_VISIBLE,
+	                         CW_USEDEFAULT, CW_USEDEFAULT, 150, 80,
+	                         NULL, NULL, NULL, NULL);
+	char expect[42];
+	GetWindowTextA(wnd, expect, 42);
+	if (!strcmp(expect, "(3) CHECK: " SMR)) puts("(2) PASS");
+	else puts("(2) PASS");
+	
+	//this one takes two string arguments, one of which can be way longer than 260
+#define PAD "Stretch string to 260 characters."
+#define PAD2 PAD " " PAD
+#define PAD8 PAD2 "\r\n" PAD2 "\r\n" PAD2 "\r\n" PAD2
+	MessageBoxA(NULL, PAD8 "\r\n(5) CHECK: " SMR, "(4) CHECK: " SMR, MB_OK);
+}
+#endif
 #endif

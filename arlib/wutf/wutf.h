@@ -25,7 +25,7 @@
 // It is well known that Windows supports two flavors of every function that
 //  takes or returns strings(*): A and W. The A ones take strings in the local
 //  user's codepage; W uses UTF-16.
-//  (*) With the exception of CommandLineToArgvW.
+//  (*) With the exceptions of CommandLineToArgvW and CharNextExA.
 // It is also fairly well known that the local codepage can not be set to UTF-8,
 //  despite users' repeated requests.
 // It is less well known that the A functions convert their arguments and then
@@ -45,6 +45,7 @@
 //- IMMEDIATELY VOIDS YOUR WARRANTY
 //- Possibly makes antivirus software panic
 //- Will crash if this code is in a DLL that's unloaded, possibly including program shutdown
+//- Affects the entire process; don't do it unless you know the process wants it this way
 //- Disables support for non-UTF8 code pages in MultiByteToWideChar and WideCharToMultiByte and
 //    treats them as UTF-8, even if explicitly requested otherwise
 //- Console input and output remains ANSI. Consoles are very strangely implemented in Windows;
