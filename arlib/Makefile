@@ -88,13 +88,24 @@ endif
 
 OUTNAME = $(PROGRAM)$(EXESUFFIX)
 
+#stolen from http://stackoverflow.com/questions/22586084/makefile-with-multiple-rules-sharing-same-recipe-with-patternrules
+define ADDDIR_CORE
+OBJS += $(patsubst arlib/$(1)/%.cpp,obj/_arlib_$(1)_%$(OBJSUFFIX).o,$(wildcard arlib/$(1)/*.cpp))
+obj/_arlib_$(1)_%$(OBJSUFFIX).o: arlib/$(1)/%.cpp | obj
+	$$(CXX) $$(TRUE_CXXFLAGS) -c $$< -o $$@
+endef
+
+define ADDDIR
+$(eval $(call ADDDIR_CORE,$(1)))
+endef
+
 OBJS := $(patsubst %.cpp,obj/%$(OBJSUFFIX).o,$(wildcard *.cpp))
-OBJS += $(patsubst arlib/%.cpp,obj/arlib-%$(OBJSUFFIX).o,$(wildcard arlib/*.cpp))
+$(call ADDDIR,.)
 OBJS += $(EXTRAOBJ)
 # obj/miniz$(OBJSUFFIX).o
 
 ifeq ($(ARGUI),1)
-  OBJS += $(patsubst arlib/gui/%.cpp,obj/arlib-gui-%$(OBJSUFFIX).o,$(wildcard arlib/gui/*.cpp))
+  $(call ADDDIR,gui)
   ifeq ($(OS),windows)
     CONF_CFLAGS += -DARGUI_WINDOWS
     CONF_LFLAGS += -lgdi32 -lcomctl32 -lcomdlg32 -ldinput8 -ldxguid -lopengl32
@@ -108,7 +119,7 @@ else
 endif
 
 ifeq ($(ARTHREADS),1)
-  OBJS += $(patsubst arlib/thread/%.cpp,obj/arlib-thread-%$(OBJSUFFIX).o,$(wildcard arlib/thread/*.cpp))
+  $(call ADDDIR,threads)
   CONF_CFLAGS += -DARLIB_THREADS
   ifeq ($(OS),linux)
     CONF_CFLAGS += -pthread
@@ -117,7 +128,7 @@ ifeq ($(ARTHREADS),1)
 endif
 
 ifeq ($(ARWUTF),1)
-  OBJS += $(patsubst arlib/wutf/%.cpp,obj/arlib-wutf-%$(OBJSUFFIX).o,$(wildcard arlib/wutf/*.cpp))
+  $(call ADDDIR,wutf)
   CONF_CFLAGS += -DARLIB_WUTF
 endif
 
@@ -148,18 +159,6 @@ obj:
 
 obj/miniz$(OBJSUFFIX).o: miniz.c | obj
 	$(CC) $(TRUE_CFLAGS) -c $< -o $@
-
-obj/arlib-gui-%$(OBJSUFFIX).o: arlib/gui/%.cpp | obj
-	$(CXX) $(TRUE_CXXFLAGS) -c $< -o $@
-
-obj/arlib-thread-%$(OBJSUFFIX).o: arlib/thread/%.cpp | obj
-	$(CXX) $(TRUE_CXXFLAGS) -c $< -o $@
-
-obj/arlib-wutf-%$(OBJSUFFIX).o: arlib/wutf/%.cpp | obj
-	$(CXX) $(TRUE_CXXFLAGS) -c $< -o $@
-
-obj/arlib-%$(OBJSUFFIX).o: arlib/%.cpp | obj
-	$(CXX) $(TRUE_CXXFLAGS) -c $< -o $@
 
 obj/%$(OBJSUFFIX).o: %.cpp | obj
 	$(CXX) $(TRUE_CXXFLAGS) -c $< -o $@
