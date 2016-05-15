@@ -71,7 +71,7 @@ OPTFLAGS += -Werror
 
 ifeq ($(OPT),1)
   CFLAGS += $(OPTFLAGS)
-  LFLAGS += -Wl,--gc-sections
+  LFLAGS += -Wl,--gc-sections -s
   DEBUG = 0
 endif
 ifeq ($(DEBUG),1)
@@ -153,6 +153,9 @@ obj/arlib-gui-%$(OBJSUFFIX).o: arlib/gui/%.cpp | obj
 	$(CXX) $(TRUE_CXXFLAGS) -c $< -o $@
 
 obj/arlib-thread-%$(OBJSUFFIX).o: arlib/thread/%.cpp | obj
+	$(CXX) $(TRUE_CXXFLAGS) -c $< -o $@
+
+obj/arlib-wutf-%$(OBJSUFFIX).o: arlib/wutf/%.cpp | obj
 	$(CXX) $(TRUE_CXXFLAGS) -c $< -o $@
 
 obj/arlib-%$(OBJSUFFIX).o: arlib/%.cpp | obj
