@@ -25,7 +25,7 @@
 // It is well known that Windows supports two flavors of every function that
 //  takes or returns strings(*): A and W. The A ones take strings in the local
 //  user's codepage; W uses UTF-16.
-//  (*) With the exceptions of CommandLineToArgvW and CharNextExA.
+//  (*) With a few exceptions, for example CommandLineToArgvW, CharNextExA and GetProcAddress.
 // It is also fairly well known that the local codepage can not be set to UTF-8,
 //  despite users' repeated requests.
 // It is less well known that the A functions convert their arguments and then
@@ -53,12 +53,20 @@
 //    treats them as UTF-8, even if explicitly requested otherwise.
 //- Console input and output remains ANSI. Consoles are very strangely implemented in Windows;
 //    judging by struct CHAR_INFO in WriteConsoleOutput's arguments, the consoles don't support
-//    UTF-16, but only UCS-2. (WuTF supports non-BMP characters, of course.)
+//    UTF-16, but only UCS-2. (The rest of WuTF supports non-BMP characters, of course.)
+//   A more technical explanation: The most common ways to write to the console (the ones in msvcrt)
+//    end up in _write, then WriteFile. I can't replace either of them; I need to call them, and
+//    there's no reasonably sane and reliable way to redirect a function while retaining the ability
+//    to use the original.
+//   _setmode(_O_U8TEXT) doesn't help; it makes puts() convert from UTF-16 to UTF-8. I need the
+//    other direction.
+//   SetConsoleOutputCP(CP_UTF8) seems more promising, but it reports success and does nothing on
+//    Windows XP and 7.
 //- Actually uses WTF-8 <https://simonsapin.github.io/wtf-8/>; you may see the surrogate characters
 //    if you somehow get invalid UTF-16 (it's fairly permissive on UTF8->16, too; it accepts CESU-8)
-//- Windows filenames are limited to ~260 characters; I believe functions that return filenames will
-//    count the UTF-8 bytes, though the ones taking filename inputs should work up to 260 UTF-16
-//    codepoints.
+//- Windows filenames are limited to ~260 characters; but I believe functions that return filenames
+//    will count the UTF-8 bytes. (The ones taking filename inputs should work up to 260 UTF-16
+//    codepoints.)
 //- Did I mention it voids your warranty?
 //
 // Keywords:

@@ -169,6 +169,7 @@ static void RedirectFunction(FARPROC victim, FARPROC replacement)
 	VirtualProtect((char*)(void*)victim-16, 64, prot, &prot);
 }
 
+#include<stdio.h>
 void WuTF_enable()
 {
 	HMODULE ntdll = GetModuleHandle("ntdll.dll");
