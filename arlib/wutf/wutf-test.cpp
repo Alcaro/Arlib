@@ -21,7 +21,7 @@
 // SOFTWARE.
 
 //The above license applies only to this file, not the entire Arlib.
-#if 0
+#if 1
 //You don't need this. It's just a bunch of tests for WuTF itself.
 #include "wutf.h"
 #include <stdio.h>
@@ -315,7 +315,7 @@ void WuTF_test_ansiutf()
 	DeleteFileW(SMR_W L".txt");
 	
 	HWND wnd = CreateWindowW(L"BUTTON", L"(3) CHECK: " SMR_W, WS_OVERLAPPEDWINDOW|WS_VISIBLE,
-	                         CW_USEDEFAULT, CW_USEDEFAULT, 150, 80,
+	                         CW_USEDEFAULT, CW_USEDEFAULT, 200, 60,
 	                         NULL, NULL, NULL, NULL);
 	char expect[42];
 	GetWindowTextA(wnd, expect, 42);
@@ -327,6 +327,11 @@ void WuTF_test_ansiutf()
 #define PAD2 PAD " " PAD
 #define PAD8 PAD2 "\r\n" PAD2 "\r\n" PAD2 "\r\n" PAD2
 	MessageBoxA(NULL, PAD8 "\r\n(5) CHECK: " SMR, "(4) CHECK: " SMR, MB_OK);
+	
+	
+	//GetOpenFileNameA(
+  //_Inout_ LPOPENFILENAME lpofn
+//);
 }
 #endif
 #endif

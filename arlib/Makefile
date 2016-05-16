@@ -16,6 +16,8 @@ endif
 ARGUI ?= 0
 ARTHREADS ?= 0
 ARWUTF ?= 0
+ARSOCKET ?= 0
+
 DEBUG ?= 1
 
 CC = gcc
@@ -99,10 +101,10 @@ define ADDDIR
 $(eval $(call ADDDIR_CORE,$(1)))
 endef
 
-OBJS := $(patsubst %.cpp,obj/%$(OBJSUFFIX).o,$(wildcard *.cpp))
-$(call ADDDIR,.)
-OBJS += $(EXTRAOBJ)
+OBJS := $(patsubst %.cpp,obj/%$(OBJSUFFIX).o,$(wildcard *.cpp)) $(EXTRAOBJ)
 # obj/miniz$(OBJSUFFIX).o
+
+$(call ADDDIR,.)
 
 ifeq ($(ARGUI),1)
   $(call ADDDIR,gui)
@@ -130,6 +132,11 @@ endif
 ifeq ($(ARWUTF),1)
   $(call ADDDIR,wutf)
   CONF_CFLAGS += -DARLIB_WUTF
+endif
+
+ifeq ($(ARSOCKET),1)
+  $(call ADDDIR,socket)
+  CONF_CFLAGS += -DARLIB_SOCKET
 endif
 
 CCXXFLAGS = -fvisibility=hidden -fno-exceptions -Wall -Wno-comment

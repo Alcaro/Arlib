@@ -160,11 +160,13 @@ static void RedirectFunction_machine(LPBYTE victim, LPBYTE replacement)
 static void RedirectFunction(FARPROC victim, FARPROC replacement)
 {
 	DWORD prot;
-	// it's bad to have W+X on the same page, but I don't want to remove X from ntdll.dll.
-	// if I hit NtProtectVirtualMemory, I won't be able to fix it.
-	VirtualProtect((void*)victim, 64, PAGE_EXECUTE_READWRITE, &prot);
+	//it's usually considered bad to have W+X on the same page, but the alternative is risking
+	// removing X from VirtualProtect or NtProtectVirtualMemory, and then I can't fix it.
+	//it doesn't matter, anyways; we (should be) called so early no hostile input has been processed
+	// yet, and even if hostile code is running, it can just wait until I put back X.
+	VirtualProtect((char*)(void*)victim-16, 64, PAGE_EXECUTE_READWRITE, &prot);
 	RedirectFunction_machine((LPBYTE)victim, (LPBYTE)replacement);
-	VirtualProtect((void*)victim, 64, prot, &prot);
+	VirtualProtect((char*)(void*)victim-16, 64, prot, &prot);
 }
 
 void WuTF_enable()

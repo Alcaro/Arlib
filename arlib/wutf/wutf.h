@@ -43,14 +43,22 @@
 //
 //Limitations:
 //- IMMEDIATELY VOIDS YOUR WARRANTY
-//- Possibly makes antivirus software panic
-//- Will crash if this code is in a DLL that's unloaded, possibly including program shutdown
-//- Affects the entire process; don't do it unless you know the process wants it this way
+//- Possibly makes antivirus software panic.
+//- Will crash if this code is in a DLL that's unloaded, possibly including program shutdown.
+//- Affects the entire process; don't do it unless you know the process wants it this way.
+//   I believe most processes actually wants it this way; everything I've seen either expects ASCII
+//    only, uses the W APIs, or is console output (which is another codepage). I am not aware of
+//    anything that actually expects the ANSI codepage.
 //- Disables support for non-UTF8 code pages in MultiByteToWideChar and WideCharToMultiByte and
-//    treats them as UTF-8, even if explicitly requested otherwise
+//    treats them as UTF-8, even if explicitly requested otherwise.
 //- Console input and output remains ANSI. Consoles are very strangely implemented in Windows;
 //    judging by struct CHAR_INFO in WriteConsoleOutput's arguments, the consoles don't support
-//    UTF-16, but only UCS-2
+//    UTF-16, but only UCS-2. (WuTF supports non-BMP characters, of course.)
+//- Actually uses WTF-8 <https://simonsapin.github.io/wtf-8/>; you may see the surrogate characters
+//    if you somehow get invalid UTF-16 (it's fairly permissive on UTF8->16, too; it accepts CESU-8)
+//- Windows filenames are limited to ~260 characters; I believe functions that return filenames will
+//    count the UTF-8 bytes, though the ones taking filename inputs should work up to 260 UTF-16
+//    codepoints.
 //- Did I mention it voids your warranty?
 //
 // Keywords:
