@@ -5,19 +5,10 @@ class socket {
 protected:
 	socket(){}
 public:
-	enum {
-		E_EOF = -1,
-		E_COULDNT_CONNECT = -2,
-		E_BROKEN = -3,
-		E_UDP_TOO_SMALL = -4,
-		E_SSL_FAILURE = -4,
-	};
-	
 	//Returns NULL on connection failure.
 	static socket* create(const char * domain, int port);
-	//Always succeeds. If the server can't be contacted, it will report error later.
+	//Always succeeds. If the server can't be contacted, 
 	static socket* create_async(const char * domain, int port);
-	//Never returns less than a whole packet; if your buffer is too small, you get an error.
 	static socket* create_udp(const char * domain, int port);
 	
 	//Negative means error; close the socket and create a new one.
@@ -25,9 +16,7 @@ public:
 	virtual int read(uint8_t* data, int len) = 0;
 	virtual int write(const uint8_t* data, int len) = 0;
 	
-	//These keep trying until they've fetched all required data.
-	int writeall(const uint8_t* data, int len);
-	int readall(uint8_t* data, int len);
+	int writeb(const uint8_t* data, int len);
 	
 	//Returns an index to the sockets array, or negative if timeout expires.
 	//Negative timeouts mean wait forever.

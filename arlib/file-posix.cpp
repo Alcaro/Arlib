@@ -15,6 +15,7 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 
+//other platforms: http://stackoverflow.com/questions/1023306/finding-current-executables-path-without-proc-self-exe
 const char * window_get_proc_path()
 {
 	//we could lstat it, but apparently that just returns zero on /proc on Linux.

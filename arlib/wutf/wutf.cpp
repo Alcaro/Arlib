@@ -34,9 +34,6 @@
 #ifndef STATUS_SUCCESS
 #define STATUS_SUCCESS 0x00000000
 #endif
-#ifndef STATUS_BUFFER_OVERFLOW
-#define STATUS_BUFFER_OVERFLOW 0x80000005
-#endif
 
 static NTSTATUS WINAPI
 RtlMultiByteToUnicodeN_Utf(
@@ -136,14 +133,14 @@ WideCharToMultiByte_Utf(UINT CodePage, DWORD dwFlags,
 
 //https://sourceforge.net/p/predef/wiki/Architectures/
 #if defined(_M_IX86) || defined(__i386__)
-static void RedirectFunction_machine(LPBYTE victim, LPBYTE replacement)
+static void redirect_machine(LPBYTE victim, LPBYTE replacement)
 {
 	victim[0] = 0xE9; // jmp <offset from next instruction>
 	*(LONG_PTR*)(victim+1) = replacement-victim-5;
 }
 
 #elif defined(_M_X64) || defined(__x86_64__)
-static void RedirectFunction_machine(LPBYTE victim, LPBYTE replacement)
+static void redirect_machine(LPBYTE victim, LPBYTE replacement)
 {
 	// this destroys %rax, but that register is caller-saved (and the return value).
 	// https://msdn.microsoft.com/en-us/library/9z1stfyw.aspx
@@ -157,21 +154,23 @@ static void RedirectFunction_machine(LPBYTE victim, LPBYTE replacement)
 #endif
 
 
-static void RedirectFunction(FARPROC victim, FARPROC replacement)
+void WuTF_redirect_function(WuTF_funcptr victim, WuTF_funcptr replacement)
 {
 	DWORD prot;
 	//it's usually considered bad to have W+X on the same page, but the alternative is risking
 	// removing X from VirtualProtect or NtProtectVirtualMemory, and then I can't fix it.
 	//it doesn't matter, anyways; we (should be) called so early no hostile input has been processed
 	// yet, and even if hostile code is running, it can just wait until I put back X.
-	VirtualProtect((char*)(void*)victim-16, 64, PAGE_EXECUTE_READWRITE, &prot);
-	RedirectFunction_machine((LPBYTE)victim, (LPBYTE)replacement);
-	VirtualProtect((char*)(void*)victim-16, 64, prot, &prot);
+	VirtualProtect((void*)victim, 64, PAGE_EXECUTE_READWRITE, &prot);
+	redirect_machine((LPBYTE)victim, (LPBYTE)replacement);
+	VirtualProtect((void*)victim, 64, prot, &prot);
 }
 
-#include<stdio.h>
 void WuTF_enable()
 {
+#define STRINGIFY_(x) #x
+#define STRINGIFY(x) STRINGIFY_(x)
+#define REDIR(dll, func) WuTF_redirect_function((WuTF_funcptr)GetProcAddress(dll, STRINGIFY(func)), (WuTF_funcptr)func##_Utf)
 	HMODULE ntdll = GetModuleHandle("ntdll.dll");
 	//list of possibly relevant functions in ntdll.dll (pulled from 'strings ntdll.dll'):
 	//some are documented at https://msdn.microsoft.com/en-us/library/windows/hardware/ff553354%28v=vs.85%29.aspx
@@ -186,8 +185,8 @@ void WuTF_enable()
 	// RtlAppendUnicodeToString
 	// RtlCreateUnicodeStringFromAsciiz
 	// RtlMultiAppendUnicodeStringBuffer
-	RedirectFunction(GetProcAddress(ntdll, "RtlMultiByteToUnicodeN"), (FARPROC)RtlMultiByteToUnicodeN_Utf);
-	RedirectFunction(GetProcAddress(ntdll, "RtlMultiByteToUnicodeSize"), (FARPROC)RtlMultiByteToUnicodeSize_Utf);
+	REDIR(ntdll, RtlMultiByteToUnicodeN);
+	REDIR(ntdll, RtlMultiByteToUnicodeSize);
 	// RtlOemStringToUnicodeSize
 	// RtlOemStringToUnicodeString
 	// RtlOemToUnicodeN
@@ -200,8 +199,8 @@ void WuTF_enable()
 	// RtlUnicodeStringToOemSize
 	// RtlUnicodeStringToOemString
 	// RtlUnicodeToCustomCPN
-	RedirectFunction(GetProcAddress(ntdll, "RtlUnicodeToMultiByteN"), (FARPROC)RtlUnicodeToMultiByteN_Utf);
-	RedirectFunction(GetProcAddress(ntdll, "RtlUnicodeToMultiByteSize"), (FARPROC)RtlUnicodeToMultiByteSize_Utf);
+	REDIR(ntdll, RtlUnicodeToMultiByteN);
+	REDIR(ntdll, RtlUnicodeToMultiByteSize);
 	// RtlUnicodeToOemN
 	// RtlUpcaseUnicodeChar
 	// RtlUpcaseUnicodeString
@@ -217,8 +216,9 @@ void WuTF_enable()
 	// RtlxUnicodeStringToOemSize
 	
 	HMODULE kernel32 = GetModuleHandle("kernel32.dll");
-	RedirectFunction(GetProcAddress(kernel32, "MultiByteToWideChar"), (FARPROC)MultiByteToWideChar_Utf);
-	RedirectFunction(GetProcAddress(kernel32, "WideCharToMultiByte"), (FARPROC)WideCharToMultiByte_Utf);
+	REDIR(kernel32, MultiByteToWideChar);
+	REDIR(kernel32, WideCharToMultiByte);
+#undef REDIR
 }
 
 

@@ -22,11 +22,10 @@
 
 //The above license applies only to this file, not the entire Arlib.
 
-// It is well known that Windows supports two flavors of almost every function
-//  that takes or returns strings: A and W. The A ones take strings in the local
+// It is well known that Windows supports two flavors of every function that
+//  takes or returns strings(*): A and W. The A ones take strings in the local
 //  user's codepage; W uses UTF-16.
-// (Exceptions include CommandLineToArgvW, CharNextExA and GetProcAddress, and
-//  a couple of others.)
+//  (*) With a few exceptions, for example CommandLineToArgvW, CharNextExA and GetProcAddress.
 // It is also fairly well known that the local codepage can not be set to UTF-8,
 //  despite users' repeated requests.
 // It is less well known that the A functions convert their arguments and then
@@ -34,52 +33,40 @@
 // It is even less well known (though easy to guess) that there are only a few
 //  conversion functions in the entire Windows.
 //
-// It is somewhat well known that you can mark memory executable using
+// It is not very well known that you can mark memory executable using
 //  VirtualProtect, and use that to create your own functions.
-// It is a lot less well known that you can mark existing functions writable.
+// It is even less well known that you can mark existing functions writable.
 //
 // Combining those lead to an evil idea: What if we replace the A->W conversion
 //  function with an UTF8->UTF16 converter?
-// And this is exactly what I did. Surprisingly, Windows seems perfectly happy
-//  with this; everything I've tried works perfectly.
+// And this is exactly what I did.
 //
 //Limitations:
 //- IMMEDIATELY VOIDS YOUR WARRANTY
-//- Possibly makes antivirus software panic
+//- Possibly makes antivirus software panic.
 //- Will crash if this code is in a DLL that's unloaded, possibly including program shutdown.
 //- Affects the entire process; don't do it unless you know the process wants it this way.
-//   However, I believe most processes actually wants it this way; everything I've seen either
-//    expects ASCII only, uses the W functions, or is console output (which is another codepage). I
-//    am not aware of anything that actually expects the ANSI codepage.
+//   I believe most processes actually wants it this way; everything I've seen either expects ASCII
+//    only, uses the W APIs, or is console output (which is another codepage). I am not aware of
+//    anything that actually expects the ANSI codepage.
 //- Disables support for non-UTF8 code pages in MultiByteToWideChar and WideCharToMultiByte and
-//    treats them as UTF-8, even if the caller explicitly requests something else.
-//- Console input and output remain unchanged. Consoles are very strangely implemented in Windows;
+//    treats them as UTF-8, even if explicitly requested otherwise.
+//- Console input and output remains ANSI. Consoles are very strangely implemented in Windows;
 //    judging by struct CHAR_INFO in WriteConsoleOutput's arguments, the consoles don't support
-//    UTF-16, but only UCS-2.
+//    UTF-16, but only UCS-2. (The rest of WuTF supports non-BMP characters, of course.)
 //   A more technical explanation: The most common ways to write to the console (the ones in msvcrt)
 //    end up in _write, then WriteFile. I can't replace either of them; I need to call them, and
 //    there's no reasonably sane and reliable way to redirect a function while retaining the ability
-//    to use the original. Messing with the DLL import tables doesn't help me either; if the DLL
-//    calls itself, it doesn't go through that table.
+//    to use the original.
 //   _setmode(_O_U8TEXT) doesn't help; it makes puts() convert from UTF-16 to UTF-8. I need the
 //    other direction.
 //   SetConsoleOutputCP(CP_UTF8) seems more promising, but it reports success and does nothing on
-//    Windows XP and 7. I'm not sure what it actually does.
-//- CharNextA/etc are unchanged and still expect the ANSI code page. (Does anything ever use them?)
-//- SetFileApisToOEM is untested. I don't know if it's ignored or if it actually does set them to
-//    OEM. Either way, the fix is easy: don't use it.
-//- Windows filenames are limited to ~260 characters; I believe functions that return filenames will
-//    count the UTF-8 bytes. (The ones taking filename inputs should work up to 260 UTF-16
+//    Windows XP and 7.
+//- Actually uses WTF-8 <https://simonsapin.github.io/wtf-8/>; you may see the surrogate characters
+//    if you somehow get invalid UTF-16 (it's fairly permissive on UTF8->16, too; it accepts CESU-8)
+//- Windows filenames are limited to ~260 characters; but I believe functions that return filenames
+//    will count the UTF-8 bytes. (The ones taking filename inputs should work up to 260 UTF-16
 //    codepoints.)
-//- According to Larry Osterman <https://blogs.msdn.microsoft.com/larryosterman/2007/03/20/other-fun-things-to-do-with-the-endpointvolume-interfaces/>,
-//    "all new APIs are unicode only" (aka UTF-16).
-//- The UTF8/16 converter is not identical to MultiByteToWideChar(CP_UTF8):
-//  - While it does support UTF-16 surrogate pairs, it's perfectly happy to encode lone surrogate
-//    characters, as per WTF-8 <https://simonsapin.github.io/wtf-8/>. MBtWC rejects them.
-//  - It supports decoding lone surrogates, too - or even paired surrogates (also known as CESU-8).
-//  - If given invalid input (and MB_ERR_INVALID_CHARS is absent), it emits one or more U+FFFD
-//    REPLACEMENT CHARACTER, rather than dropping them or creating question marks.
-//   It does reject overlong encodings, and processes surrogate pairs correctly.
 //- Did I mention it voids your warranty?
 //
 // Keywords:
@@ -104,6 +91,12 @@ void WuTF_enable();
 //Converts argc/argv to UTF-8. Uses only documented functions, so it has zero chance of blowing up.
 //However, it does leak memory, so don't call it more than once. (The leaks are cleaned up on process exit anyways.)
 void WuTF_args(int* argc, char** * argv);
+
+//DO NOT USE THIS UNLESS YOU'RE INSANE
+//This replaces the 'victim' function such that all calls instead go to 'replacement'.
+//Make sure their signatures, including calling convention, are identical.
+typedef void(*WuTF_funcptr)();
+void WuTF_redirect_function(WuTF_funcptr victim, WuTF_funcptr replacement);
 
 #else
 //Other OSes already use UTF-8.

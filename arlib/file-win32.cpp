@@ -13,8 +13,10 @@
 static void window_cwd_enter(const char * dir);
 static void window_cwd_leave();
 
+//other platforms: http://stackoverflow.com/questions/1023306/finding-current-executables-path-without-proc-self-exe
 const char * window_get_proc_path()
 {
+	//TODO: not thread safe
 	static char path[MAX_PATH];
 	GetModuleFileName(NULL, path, MAX_PATH);
 	for (int i=0;path[i];i++)

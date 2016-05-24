@@ -1,7 +1,7 @@
 #pragma once
 #include "../global.h"
 
-#ifdef ARLIB_THREADS
+#ifdef ARLIB_THREAD
 //Any data associated with this thread is freed once the thread procedure returns.
 //It is safe to malloc() something in one thread and free() it in another.
 //It is not safe to call window_run_*() from a thread other than the one entering main().
@@ -164,40 +164,6 @@ private:
 };
 
 
-// Roughly like a mutex, but can be shared across processes, under the following constraints:
-// - Must be in shared memory, memcpy is not enough. Can be at different addresses.
-// - The object can only be shared with its immediate children.
-// - ???
-// - This object is potentially much larger, much slower and much more complex than the single-process variety
-class xproc_mutex : nocopy {
-	//Minimum features:
-	//- Only need two processes; in-process sync is optional, but allowed
-	//- No resource leaks; must free resources in right process
-	//- No resource confusion; handle values are different across threads, let them
-	//- Can require object to die after the parent
-	//- Object size 4 on Linux
-	//- Can require callers to identify themselves, though I need to not break the mutexlocker
-	//- Can require an initialization function
-	//- Can fully initialize the object only upon contention
-	//Constraints:
-	//- Windows doesn't let me close handles in another process
-	//- Can't even do it with QueueUserAPC, due to ASLR and it not being properly asynchronous (fires only on wait functions)
-	//Maybe handle values can be shared across processes? Needs further study.
-	
-	//TODO: Decide API
-	// struct item_t { HANDLE h; void init(); void deinit(); void lock(); } child, parent;
-	//  union on Linux
-	//TODO: Decide implementation
-	// Linux: Futex, of course, just skip FUTEX_PRIVATE
-	// Windows: CreateMutex https://msdn.microsoft.com/en-us/library/windows/desktop/ms682418%28v=vs.85%29.aspx
-	//  other sync functions: https://msdn.microsoft.com/en-us/library/windows/desktop/ms686360%28v=vs.85%29.aspx
-	
-	void lock();
-	bool try_lock();
-	void unlock();
-};
-
-
 void thread_sleep(unsigned int usec);
 
 //Returns a value that's unique to the current thread for as long as the process lives. Does not
@@ -224,7 +190,7 @@ void thread_split(unsigned int count, function<void(unsigned int id)> work);
 
 #else
 
-//Some parts of arlib wants to work with threads disabled.
+//Some parts of arlib want to work with threads disabled.
 class mutex : nocopy {
 public:
 	void lock() {}

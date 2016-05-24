@@ -118,7 +118,7 @@ template<typename T> T* lock_cmpxchg(T** val, T* old, T* newval) { return (T*)lo
 template<typename T> T* lock_xchg(T** val, T* newval) { return (T*)lock_xchg((void**)val, (void*)newval); }
 
 #if NULL==0
-//the NULL/0 duality is one of the dumbest things I have ever seen. at least C++11 fixes that garbage
+//the NULL/0 duality is one of the dumbest things I have ever seen. at least C++11 somewhat fixes that garbage
 class null_only;
 template<typename T> void lock_write(T** val, null_only* newval) { lock_write((void**)val, NULL); }
 template<typename T> T* lock_cmpxchg(T** val, null_only* old, T* newval) { return (T*)lock_cmpxchg((void**)val, NULL, (void*)newval); }

@@ -59,6 +59,9 @@ dylib* dylib::create(const char * filename, bool * owned)
 	{
 		if (!GetModuleHandleEx(0, filename, (HMODULE*)&ret)) ret=NULL;
 		*owned=(!ret);
+		//Windows seems able to force load a DLL twice using ntdll!LdrLoadDll
+		// <https://github.com/wine-mirror/wine/blob/master/dlls/ntdll/loader.c#L2324>
+		//but Linux can't, and calling ntdll is generally discouraged, so I'm not using that.
 	}
 	
 	if (!ret)

@@ -14,19 +14,20 @@ else
 endif
 
 ARGUI ?= 0
-ARTHREADS ?= 0
+ARTHREAD ?= 0
+ARSANDBOX ?= 0
 ARWUTF ?= 0
 ARSOCKET ?= 0
 
 DEBUG ?= 1
 
 CC = gcc
-CFLAGS ?=
+CFLAGS =
 CXX = g++
-CXXFLAGS ?= $(CFLAGS)
+CXXFLAGS = $(CFLAGS)
 LD = g++
-LFLAGS ?=
-OBJSUFFIX ?=
+LFLAGS =
+OBJSUFFIX =
 
 EXESUFFIX =
 EXTRAOBJ =
@@ -98,7 +99,7 @@ obj/_arlib_$(1)_%$(OBJSUFFIX).o: arlib/$(1)/%.cpp | obj
 endef
 
 define ADDDIR
-$(eval $(call ADDDIR_CORE,$(1)))
+  $(eval $(call ADDDIR_CORE,$(1)))
 endef
 
 OBJS := $(patsubst %.cpp,obj/%$(OBJSUFFIX).o,$(wildcard *.cpp)) $(EXTRAOBJ)
@@ -120,12 +121,23 @@ else
   CONF_CFLAGS += -DARGUI_NONE
 endif
 
-ifeq ($(ARTHREADS),1)
-  $(call ADDDIR,threads)
-  CONF_CFLAGS += -DARLIB_THREADS
+ifeq ($(ARTHREAD),1)
+  $(call ADDDIR,thread)
+  CONF_CFLAGS += -DARLIB_THREAD
   ifeq ($(OS),linux)
     CONF_CFLAGS += -pthread
     CONF_LFLAGS += -pthread
+  endif
+endif
+
+ifeq ($(ARSANDBOX),1)
+  $(call ADDDIR,sandbox)
+  CONF_CFLAGS += -DARLIB_SANDBOX
+  ifeq ($(OS),windows)
+    #both sandbox and WuTF need to redirect functions; this implementation is in WuTF
+    #if linux ends up needing it too, I'll split out the redirector to a top-level Arlib file
+    #Arlib is designed for use with -Wl,--gc-sections anyways
+    ARWUTF = 1
   endif
 endif
 
