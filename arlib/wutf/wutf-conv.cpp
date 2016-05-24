@@ -33,20 +33,20 @@ static int decode(uint8_t head, const uint8_t* * ptr, const uint8_t* end)
 	int numtrail = ((head&0xC0)==0xC0) + ((head&0xE0)==0xE0) + ((head&0xF0)==0xF0);
 	const int minforlen[] = { 0x7FFFFFFF, 0x80, 0x800, 0x10000 };
 	
-	if (*ptr + numtrail > end) return WUTF_E_STRICT;
+	if (*ptr + numtrail > end) return -1;
 	
 	int codepoint = (head & (0x3F>>numtrail));
 	int i;
-	for (i=1;i<=3;i++)
+	for (i=1;i<=3;i++) // hopefully this gets unrolled.
 	{
 		if (numtrail>=i)
 		{
-			if ((**ptr & 0xC0) != 0x80) return WUTF_E_STRICT;
+			if ((**ptr & 0xC0) != 0x80) return -1;
 			codepoint = (codepoint<<6) | ((*(*ptr)++) & 0x3F);
 		}
 	}
 	
-	if (codepoint < minforlen[numtrail]) return WUTF_E_STRICT;
+	if (codepoint < minforlen[numtrail]) return -1;
 	
 	return codepoint;
 }
@@ -118,7 +118,7 @@ int WuTF_utf8_to_utf16(int flags, const char* utf8, int utf8_len, uint16_t* utf1
 			continue;
 		}
 		
-		uint32_t codepoint = (uint32_t)decode(head, &iat, iend); // -1 -> 0xFFFF
+		uint32_t codepoint = (uint32_t)decode(head, &iat, iend); // -1 -> 0xFFFFFFFF
 		if (codepoint <= 0xFFFF)
 		{
 			*oat++ = codepoint;
@@ -128,6 +128,7 @@ int WuTF_utf8_to_utf16(int flags, const char* utf8, int utf8_len, uint16_t* utf1
 			// for heads >= 0xF0, the 08 bit is ignored
 			// F0 means 4+ bytes, which conveniently must be outside the BMP
 			// so I can put the check here, on the cold path
+			// if the codepoint is invalid, it ends up as (uint32_t)-1, which is above 0x10FFFF
 			if (head >= 0xF8 || codepoint > 0x10FFFF)
 			{
 				if (flags & WUTF_STRICT) return WUTF_E_STRICT;
