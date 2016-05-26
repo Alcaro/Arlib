@@ -21,8 +21,11 @@
 // SOFTWARE.
 
 //The above license applies only to this file, not the entire Arlib.
-#if 1
+#if 0
 //You don't need this. It's just a bunch of tests for WuTF itself.
+//To run: Flip the above #if, then
+// $ g++ *.cpp -std=c++11 -lcomdlg32
+//(The tests require C++11, for char16_t. WuTF itself is plain C.)
 #include "wutf.h"
 #include <stdio.h>
 
@@ -336,12 +339,12 @@ void WuTF_test_ansiutf()
 	}
 	DeleteFileW(SMR_W L".txt");
 	
-	HWND wnd = CreateWindowW(L"BUTTON", L"(4) CHECK: " SMR_W, WS_OVERLAPPEDWINDOW|WS_VISIBLE,
+	HWND wnd = CreateWindowA("BUTTON", "(4) CHECK: " SMR, WS_OVERLAPPEDWINDOW|WS_VISIBLE,
 	                         CW_USEDEFAULT, CW_USEDEFAULT, 200, 60,
 	                         NULL, NULL, NULL, NULL);
-	char expect[42];
-	GetWindowTextA(wnd, expect, 42);
-	if (!strcmp(expect, "(4) CHECK: " SMR)) puts("(2) PASS");
+	WCHAR expect[42];
+	GetWindowTextW(wnd, expect, 42);
+	if (!wcscmp(expect, L"(4) CHECK: " SMR_W)) puts("(2) PASS");
 	else puts("(2) PASS");
 	
 	testOFN();
