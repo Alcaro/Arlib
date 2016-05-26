@@ -61,12 +61,24 @@
 //   _setmode(_O_U8TEXT) doesn't help; it makes puts() convert from UTF-16 to UTF-8. I need the
 //    other direction.
 //   SetConsoleOutputCP(CP_UTF8) seems more promising, but it reports success and does nothing on
-//    Windows XP and 7.
+//    Windows XP and 7. I'm not sure what it actually does.
+//- CharNextA/etc are unchanged and still expect the ANSI code page. (Does anything ever use them?)
+//- SetFileApisToOEM is untested. I don't know if it's ignored or if it actually does set them to
+//    OEM. Either way, the fix is easy: don't use it.
 //- Actually uses WTF-8 <https://simonsapin.github.io/wtf-8/>; you may see the surrogate characters
 //    if you somehow get invalid UTF-16 (it's fairly permissive on UTF8->16, too; it accepts CESU-8)
 //- Windows filenames are limited to ~260 characters; but I believe functions that return filenames
 //    will count the UTF-8 bytes. (The ones taking filename inputs should work up to 260 UTF-16
 //    codepoints.)
+//- According to Larry Osterman <https://blogs.msdn.microsoft.com/larryosterman/2007/03/20/other-fun-things-to-do-with-the-endpointvolume-interfaces/>,
+//    "all new APIs are unicode only" (aka UTF-16).
+//- The UTF8/16 converter is not identical to MultiByteToWideChar(CP_UTF8):
+//  - While it does support UTF-16 surrogate pairs, it's perfectly happy to encode lone surrogate
+//    characters, as per WTF-8 <https://simonsapin.github.io/wtf-8/>. MBtWC rejects them.
+//  - It supports decoding lone surrogates, too - or even paired surrogates (also known as CESU-8).
+//  - If given invalid input (and MB_ERR_INVALID_CHARS is absent), it emits one or more U+FFFD
+//    REPLACEMENT CHARACTER, rather than dropping them or creating question marks.
+//   It does reject overlong encodings, and processes surrogate pairs correctly.
 //- Did I mention it voids your warranty?
 //
 // Keywords:

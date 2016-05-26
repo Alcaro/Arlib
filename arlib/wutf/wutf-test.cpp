@@ -286,9 +286,31 @@ void WuTF_test_encoder()
 #ifdef _WIN32
 #define SMR "sm\xC3\xB6rg\xC3\xA5sr\xC3\xA4ka"
 #define SMR_W L"sm\x00F6rg\x00E5sr\x00E4ka"
+#define SMR3 "\xC3\xA5\xC3\xA4\xC3\xB6"
+#define SMR3_W L"\x00E5\x00E4\x00F6"
 #include <windows.h>
-
-//To pass, the five numbered strings must be either 'CHECK: smörgåsräka' or 'PASS'.
+ 
+static void testOFN();
+//To pass,
+//(1) "(1) PASS" must show up in the console.
+//(2) "(2) PASS" must show up in the console.
+//(3) The five .åäö files must show up in the filename chooser dialog.
+//(3) you_shouldnt_see_this.txt must NOT show up.
+//(3) The instructions (file type field) must be ungarbled.
+//(3) You must follow the filetype instructions.
+//(3) "(3) PASS" must show up in the console.
+//(4) The text on the button must be correct.
+//(4) The text on the button window's title must be correct.
+//(5) The message box title must be correct.
+//(6) The message box title must be correct.
+//Explanation:
+//(1) CreateFileA(); a simple thing
+//(2) GetWindowTextA(); it returns strings, rather than taking them
+//(3) GetOpenFileNameA(); a complex thing
+//(4) Test text on a button; also on the window title, but (5) also tests that
+//(5) Message box title
+//(6) Message box body, and a string that's longer than the 260 limit
+//4, 5 and 6 should be verified before dismissing the message box.
 void WuTF_test_ansiutf()
 {
 	WuTF_enable();
@@ -314,19 +336,73 @@ void WuTF_test_ansiutf()
 	}
 	DeleteFileW(SMR_W L".txt");
 	
-	HWND wnd = CreateWindowW(L"BUTTON", L"(3) CHECK: " SMR_W, WS_OVERLAPPEDWINDOW|WS_VISIBLE,
-	                         CW_USEDEFAULT, CW_USEDEFAULT, 150, 80,
+	HWND wnd = CreateWindowW(L"BUTTON", L"(4) CHECK: " SMR_W, WS_OVERLAPPEDWINDOW|WS_VISIBLE,
+	                         CW_USEDEFAULT, CW_USEDEFAULT, 200, 60,
 	                         NULL, NULL, NULL, NULL);
 	char expect[42];
 	GetWindowTextA(wnd, expect, 42);
-	if (!strcmp(expect, "(3) CHECK: " SMR)) puts("(2) PASS");
+	if (!strcmp(expect, "(4) CHECK: " SMR)) puts("(2) PASS");
 	else puts("(2) PASS");
+	
+	testOFN();
 	
 	//this one takes two string arguments, one of which can be way longer than 260
 #define PAD "Stretch string to 260 characters."
 #define PAD2 PAD " " PAD
 #define PAD8 PAD2 "\r\n" PAD2 "\r\n" PAD2 "\r\n" PAD2
-	MessageBoxA(NULL, PAD8 "\r\n(5) CHECK: " SMR, "(4) CHECK: " SMR, MB_OK);
+	MessageBoxA(NULL, PAD8 "\r\n(6) CHECK: " SMR, "(5) CHECK: " SMR, MB_OK);
+}
+
+static void testOFN()
+{
+	CreateDirectoryA(SMR, NULL);
+	CloseHandle(CreateFileW(SMR_W L"/" SMR_W L"1." SMR3_W, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, 0, NULL));
+	CloseHandle(CreateFileW(SMR_W L"/" SMR_W L"2." SMR3_W, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, 0, NULL));
+	CloseHandle(CreateFileW(SMR_W L"/" SMR_W L"3." SMR3_W, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, 0, NULL));
+	CloseHandle(CreateFileW(SMR_W L"/" SMR_W L"4." SMR3_W, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, 0, NULL));
+	CloseHandle(CreateFileW(SMR_W L"/" SMR_W L"5." SMR3_W, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, 0, NULL));
+	CloseHandle(CreateFileW(SMR_W L"/you_shouldnt_see_this.txt", GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, 0, NULL));
+	
+	OPENFILENAME ofn;
+	char ofnret[65536];
+	memset(&ofn, 0, sizeof(ofn));
+	ofn.lStructSize = sizeof(ofn);
+	ofn.lpstrFilter = "Select the " SMR3 " files\0*." SMR3 "\0";
+	ofn.nFilterIndex = 1;
+	ofn.lpstrFile = ofnret;
+	ofn.nMaxFile = 65536;
+	ofn.lpstrInitialDir = SMR;
+	ofn.Flags = OFN_ALLOWMULTISELECT|OFN_EXPLORER;
+	
+	GetOpenFileNameA(&ofn);
+	
+	char* filenames = ofnret;
+	int numcorrect = 0;
+	while (*filenames)
+	{
+		puts(filenames);
+		if (strlen(filenames)==strlen(SMR "?." SMR3))
+		{
+			filenames[strlen(SMR)]='?';
+			if (!strcmp(filenames, SMR "?." SMR3)) numcorrect++;
+			else numcorrect = -1000;
+		}
+		filenames += strlen(filenames)+1;
+	}
+	if (numcorrect == 5)
+	{
+		puts("(3) PASS");
+	}
+	else
+	{
+		puts("(3) FAIL");
+	}
+}
+
+int main()
+{
+	WuTF_test_encoder();
+	WuTF_test_ansiutf();
 }
 #endif
 #endif
