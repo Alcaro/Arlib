@@ -1,14 +1,14 @@
 #pragma once
-#include "thread/thread.h"
-
+#include "containers.h"
 #include "endian.h"
 #include "file.h"
 #include "function.h"
 #include "intwrap.h"
 #include "os.h"
-#ifdef ARLIB_THREAD
+
+//not in #ifdef, there's a check inside that header
 #include "thread/thread.h"
-#endif
+
 #if !defined(ARGUI_NONE) && !defined(ARGUI_WIN32) && !defined(ARGUI_GTK3)
 #define ARGUI_NONE
 #endif

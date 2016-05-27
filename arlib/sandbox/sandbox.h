@@ -4,16 +4,39 @@
 #ifdef ARLIB_SANDBOX
 //Allows safely executing untrusted code.
 //
-//Technical specification:
+//Exact rules:
 // If the child process is running hostile code, the parent may deadlock or _exit(), but may not crash or use an invalid handle.
-// It is implementation defined whether an access violation will fail in the child, or kill it entirely.
-void sandbox_enter(int argc, char** argv);
+// Failing an access check in the child yields undefined behavior (subject to the above, of course). It can return EACCES, kill the process, or whatever.
+//
+//WARNING: There is NO SECURITY WHATSOEVER on Windows. A "sandboxed" process can do anything the parent can.
+//Windows provides plenty of ways to restrict a process, but
+//- Most of them are blacklists, disabling a particular privilege; I want whitelists
+//- There's so many resource kinds I can't keep track how to restrict everything, or even list them; it will also fail open if a new resource kind is introduced
+//- Many lockdown functions temporarily disable privileges, rather than completely delete them
+//- There's little or no documentation on which privileges are required for the operations I need
+//- The lockdown functions are often annoying to call, involving variable-width arrays in structures, and LCIDs that likely vary between reboots
+//And I cannot trust such a system. I only trust whitelists, like Linux seccomp.
+//Even Chrome couldn't find anything comprehensive; they use everything they can find (restricted token, job, desktop, SetProcessMitigationPolicy, whatever),
+// but some operations (such as accessing FAT32 volumes) still pass through.
+//It feels like the Windows sandboxing functions are designed for trusted code operating on untrusted data, rather than untrusted code.
+//Since I can't create satisfactory results in such an environment, I won't even try.
+//
+//The Linux implementation is, of course, secure. It has a solid whitelist mechanism (seccomp),
+// denying access to creating any and all unauthorized resources - and even using authorized
+// resources in an unauthorized way. I don't even need to drop privileges, it won't get a chance to
+// use them.
+//Documentation is also excellent; source code is available everywhere, all syscalls (both Linux-only and Unix-global) are well documented,
+// and if I miss something, strace quickly tells me what.
+//
+//Chrome sandbox entry points: http://stackoverflow.com/questions/1590337/using-the-google-chrome-sandbox
+
 class sandbox : nocopy {
 public:
 	//Must be the first thing in main(), before window_init() and similar.
 	//If the process is created via sandbox::create, this doesn't return. Otherwise, it does nothing.
 	static void enter(int argc, char** argv);
 	
+	//TODO: half of those aren't used
 	struct params {
 		enum flags_t {
 			//Always allowed: Allocate memory, synchronization operations, terminate self.
@@ -21,11 +44,8 @@ public:
 			//stdout and stderr go to the same places as in the parent. Default is /dev/null.
 			allow_stdout = 1,
 			
-			//Grants access to all file operations (subject to the usual UID checks, of course). See also file_access.
-			allow_file = 2,
-			
 			//Creates a sandbox facade; it acts like a normal sandbox, but the child process isn't restricted. It could even be a thread in the same process.
-			no_security = 4,
+			no_security = 2,
 		};
 		unsigned int flags;
 		
@@ -41,7 +61,7 @@ public:
 		//If the allow_file flag is not set, this is called when the child tries to open a file.
 		//If it returns true, the request is granted. If false, or if the function is NULL, EACCES is returned.
 		//Can be called at any time when a function is executed on this sandbox object. The sandbox manager creates a thread to handle such requests.
-		function<bool(const char *, bool write)> file_access;
+		//function<bool(const char *, bool write)> file_access;
 		
 		//Called in the child. setup(), if not NULL, is called first and has access to everything; minimize the amount of code here.
 		//Since this goes cross-process, passing a normal userdata won't work. Instead, it's provided by the sandbox object, via shalloc.
@@ -49,15 +69,15 @@ public:
 		void(*run)(sandbox* box);
 	};
 	//The params object is used only during this call. You can free it afterwards.
-	static sandbox* create(const params* par);
+	static sandbox* create(const params* param);
 	
 	//Used to synchronize the two processes. 'chan' can be any number 0 through 7. Negative channels may be used internally.
 	//While this may look like a mutex, it's also usable as event; release and wait can be in different processes.
 	//Each channel may only be used by one thread on each side.
-	//The channels start in the released state.
+	//The channels start in the locked state.
 	void wait(int chan);
 	bool try_wait(int chan);
-	bool release(int chan); // Returns whether it changed.
+	void release(int chan);
 	
 	//Allows synchronized(box->channel(1)) {}.
 	struct channel_t
@@ -78,40 +98,23 @@ public:
 	//  fails, the other does too. For this reason, the two processes must perform the same sequence
 	//  of calls; they must also agree on the sizes.
 	// You can resize a memory area by calling this function again with the same index. However,
-	//  unlike realloc, the new contents are undefined. It is also allowed to call it with the same
-	//  size as last time; this just retrieves the same pointer as last time, and doesn't need to be
-	//  matched.
+	//  unlike realloc, the new contents are always zero. Whether it fails or succeeds, the old shared
+	//  area is deleted.
 	// The implementation must ensure the parent does not crash even if the child's internal
 	//  structures are corrupt, including but not limited to size mismatch.
-	// It is safe to call this from multiple threads, but not with the same index. The threads may
-	//  block as long as there are threads in this function, even if they've found their own partner,
-	//  but foo.
+	// This function is not thread safe.
+	// It is implementation defined which processes are charged for these bytes. It could be parent,
+	//  child, a little of each, both, or something weirder.
 	void* shalloc(int index, size_t bytes);
 	
+	//Convenience function, just calls the above.
+	template<typename T> T* shalloc(int index, int count=1) { return (T*)this->shalloc(index, sizeof(T)*count); }
+	
 	//This forcibly terminates the child process. If called from the child, undefined behaviour; instead, call exit() or return from run().
+	//Also unmaps all shared memory.
 	~sandbox();
 	
-public:
-	//List of Linux security objects: https://chromium.googlesource.com/chromium/src/+/master/docs/linux_sandboxing.md
-	//seccomp is enough
-	
-	//List of Windows security objects: https://www.chromium.org/developers/design-documents/sandbox
-	//CreateFile ends up in NtCreateFile, ObjectAttributes.ObjectName = "a.cpp", ObjectAttributes.RootDirectory non-NULL (use GetFinalPathNameByHandle)
-	//LoadLibrary ends up in NtOpenFile, ObjectAttributes.ObjectName = "\??\C:\Windows\system32\opengl32.dll" - not \\?\ for whatever reason
-	//The Chrome sandbox <https://code.google.com/p/chromium/codesearch#chromium/src/sandbox/win/src/> is barely comprehensible;
-	//  it does cross-process shenanigans and can somehow call the original functions. It looks like it hijacks every DLL load and replaces the export table.
-	// I don't need that, replacing a few selected functions is enough.
-	//Chrome also seems to initially contact its children via WriteProcessMemory. I could steal that...
-	//But I need a way to initialize the Linux version too. Preferably without ptrace. (dup something to fd 3?)
-	//
-	//But the real issue isn't getting things working - it's getting things to NOT work. Denying all syscalls that can be denied.
-	//And unlike Linux seccomp, there is no way to say "default deny all syscalls, allow only this whitelist".
-	//I have to lock everything I can find and hope the list is comprehensive, and I don't like that model. It makes me paranoid I missed something obscure.
-	//
-	//I'll just make sure I pass the Chrome self tests. That should be enough for all practical purposes.
-	
-	//Chrome sandbox entry points: http://stackoverflow.com/questions/1590337/using-the-google-chrome-sandbox
-	
+private:
 	struct impl;
 	impl * m;
 	

@@ -8,11 +8,13 @@ struct sandbox::impl {
 	//child process control block is in shared memory, so parent can update it
 	//parent control block is unshared (child isn't trusted, and handle values vary between processes)
 	
-	HANDLE childproc; // process
+	HANDLE child_handle; // process
+	sandbox::impl* child_struct;
 	
-	HANDLE shalloc_handle[8]; // file mapping
 	void* shalloc_ptr[8];
-	//size_t shalloc_size[8]; // use VirtualQuery instead
+	HANDLE shalloc_handle; // file mapping
+	HANDLE shalloc_wake_parent; // event
+	HANDLE shalloc_wake_child; // event
 	
 	HANDLE channel_handle[8]; // event
 	
@@ -20,71 +22,14 @@ struct sandbox::impl {
 	void(*setup)(sandbox* box);
 	void(*run)(sandbox* box);
 	
-	//bitwise
-	//0x01 - there is an ongoing transaction
-	//0x80 - the waiting queue is not empty
-	//int because msvc doesn't support single-byte cmpxchg
-	int fopen_status;
-	
-	enum {
-		//you always get read access
-		o_write   = 0x01,
-		o_append  = 0x02,
-		o_replace = 0x04,
-		
-		o_exec    = 0x10, // this execute flag isn't present in CreateFileW, not sure what it actually is
-		o_seq     = 0x20,
-		o_random  = 0x40,
-	};
-	uint8_t fopen_flags;
-	char fopen_path[PATH_MAX];
-	
-	HANDLE fopen_parent_wake; // event (this handle is shared between all sandboxes)
-	HANDLE fopen_child_wake; // event
-	HANDLE fopen_ret; // file
-	//If two threads try to fopen at once.
-	HANDLE fopen_queue; // event
-	
-	//To open a file, the child must:
-	// cmpxchg fopen_status from 0 to 1.
-	// If failure:
-	//  Ensure fopen_queue exists. If it didn't, restart.
-	//  cmpxchg fopen_status.0x80 to true.
-	//  If success, or if the old value was the desired target value already, sleep on fopen_queue.
-	//  Restart.
-	// 
-	// Set fopen_flags and fopen_path, converting from UTF-16 to UTF-8 and from the native flags to something simpler.
-	// Set fopen_ret to NULL.
-	// Signal fopen_parent_wake.
-	// Sleep on fopen_child_wake.
-	// Copy fopen_ret to the stack.
-	// xchg fopen_status to 0.
-	//  If the 0x80 bit was set:
-	//  Ensure fopen_queue exists.
-	//  Signal fopen_queue, whether it existed or not.
-	//
-	//To ensure fopen_queue exists:
-	// If fopen_queue is not NULL, return that it does exist.
-	// Create an event object.
-	// cmpxchg fopen_queue from NULL to this object. If failure, delete the created object.
-	// Return that it did not exist.
-	
-	//The parent will:
-	// Sleep on fopen_parent_wake.
-	// For every sandbox:
-	//  If fopen_status is not set, skip this one.
-	//  Copy fopen_flags and fopen_path to local memory.
-	//  If it's a system file, pretend the policy function will return true for read and false for write.
-	//  Call the policy function.
-	//  If success:
-	//   Convert from UTF-8 to UTF-16.
-	//   Call NtOpenFile with the local parameters, converting from fopen_flags to the native values.
-	//   If failure, break.
-	//   Duplicate the handle and put it in fopen_ret.
-	//   Close the local handle.
-	//  Signal fopen_child_wake.
-	// Restart.
+	//if a sandbox is ever added, hijack ntdll!NtOpenFile and ntdll!NtCreateFile and send requests to a thread on the parent
+	//use GetFinalPathNameByHandle if ObjectAttributes->RootDirectory is non-NULL
+	//there are \??\ prefixes sometimes; according to <https://msdn.microsoft.com/en-us/library/windows/hardware/ff565384%28v=vs.85%29.aspx>,
+	// it means "this is an absolute file path", somewhat like \\?\; I think \\?\ is only used in userspace
 };
+
+#define DupRaw(process, in, out) DuplicateHandle(GetCurrentProcess(), in, process, &out, 0, FALSE, DUPLICATE_SAME_ACCESS)
+#define Dup(impl, name) DupRaw(impl->child_handle, impl->name, impl->child_struct->name)
 
 static HANDLE shmem_par = NULL;
 
@@ -92,7 +37,7 @@ void sandbox::enter(int argc, char** argv)
 {
 	if (!shmem_par) return;
 	
-	sandbox::impl* box = (sandbox::impl*)MapViewOfFile(shmem_par, FILE_MAP_WRITE, 0,0, 65536);
+	sandbox::impl* box = (sandbox::impl*)MapViewOfFile(shmem_par, FILE_MAP_WRITE, 0,0, sizeof(sandbox::impl));
 	
 	sandbox boxw(box);
 	if (box->setup) box->setup(&boxw);
@@ -105,7 +50,7 @@ void sandbox::enter(int argc, char** argv)
 
 
 
-static WCHAR* selfpath()
+static WCHAR* selfpathw()
 {
 	static WCHAR* ret = NULL;
 	if (ret) return ret;
@@ -134,58 +79,128 @@ again:
 	}
 }
 
-sandbox* sandbox::create(const params* par)
+sandbox* sandbox::create(const params* param)
 {
 	STARTUPINFOW sti;
 	memset(&sti, 0, sizeof(sti));
 	sti.cb=sizeof(sti);
 	
 	PROCESS_INFORMATION pi;
-	CreateProcessW(selfpath(), NULL, NULL, NULL, FALSE, CREATE_SUSPENDED, NULL, NULL, &sti, &pi);
+	CreateProcessW(selfpathw(), NULL, NULL, NULL, FALSE, CREATE_SUSPENDED, NULL, NULL, &sti, &pi);
 	
-	//this assumes the allocation granularity is at least as big as the shared control block
-	//no system has page size below 4096, and I need just a few hundred, so that's safe (and it's 65536 in practice)
-	SYSTEM_INFO si;
-	GetSystemInfo(&si);
-	HANDLE shmem = CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0,si.dwAllocationGranularity, NULL);
+	HANDLE shmem = CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0,sizeof(sandbox::impl), NULL);
 	
 	HANDLE shmem_tar;
-	DuplicateHandle(GetCurrentProcess(), shmem, pi.hProcess, &shmem_tar, 0, FALSE, DUPLICATE_SAME_ACCESS);
+	DupRaw(pi.hProcess, shmem, shmem_tar);
 	SIZE_T ignore;
 	WriteProcessMemory(pi.hProcess, &shmem_par, &shmem_tar, sizeof(HANDLE), &ignore);
 	
-	sandbox::impl* m = (sandbox::impl*)MapViewOfFile(shmem, FILE_MAP_WRITE, 0,0, si.dwAllocationGranularity);
-	memset(m, 0, sizeof(*m));
+	sandbox::impl* par = new sandbox::impl;
+	memset(par, 0, sizeof(*par));
+	sandbox* ret = new sandbox(par);
+	sandbox::impl* chi = (sandbox::impl*)MapViewOfFile(shmem, FILE_MAP_WRITE, 0,0, sizeof(sandbox::impl));
+	//<https://msdn.microsoft.com/en-us/library/windows/desktop/aa366537%28v=vs.85%29.aspx> says
+	// The initial contents of the pages in a file mapping object backed by the operating system paging file are 0 (zero).
+	//so no need to clear chi
 	
-	m->setup = par->setup;
-	m->run = par->run;
+	CloseHandle(shmem);
+	par->child_handle = pi.hProcess;
+	par->child_struct = chi;
+	
+	chi->setup = param->setup;
+	chi->run = param->run;
+	
+	for (int i=0;i<param->n_channel;i++)
+	{
+		par->channel_handle[i] = CreateEvent(NULL, FALSE, FALSE, NULL);
+		Dup(par, channel_handle[i]);
+	}
+	
+	par->shalloc_wake_parent = CreateEvent(NULL, FALSE, FALSE, NULL);
+	Dup(par, shalloc_wake_parent);
+	par->shalloc_wake_child = CreateEvent(NULL, FALSE, FALSE, NULL);
+	Dup(par, shalloc_wake_child);
 	
 	ResumeThread(pi.hThread);
-	return new sandbox(m);
+	CloseHandle(pi.hThread);
+	
+	return ret;
 }
 
 void sandbox::wait(int chan)
 {
+	WaitForSingleObject(m->channel_handle[chan], INFINITE);
 }
 
 bool sandbox::try_wait(int chan)
 {
-	return true;
+	return WaitForSingleObject(m->channel_handle[chan], 0)==WAIT_OBJECT_0;
 }
 
-bool sandbox::release(int chan)
+void sandbox::release(int chan)
 {
-	return true;
+	SetEvent(m->channel_handle[chan]);
 }
 
 void* sandbox::shalloc(int index, size_t bytes)
 {
-	return NULL;
+	if (m->shalloc_ptr[index]) UnmapViewOfFile(m->shalloc_ptr[index]);
+	
+	void* ret;
+	if (m->child_handle) // parent
+	{
+		m->shalloc_handle = CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0,bytes, NULL);
+		ret = MapViewOfFile(m->shalloc_handle, FILE_MAP_WRITE, 0,0, bytes);
+		
+		Dup(m, shalloc_handle);
+		//<https://msdn.microsoft.com/en-us/library/windows/desktop/aa366882%28v=vs.85%29.aspx> says
+		// Although an application may close the file handle used to create a file mapping object,
+		// the system holds the corresponding file open until the last view of the file is unmapped.
+		// Files for which the last view has not yet been unmapped are held open with no sharing restrictions.
+		//making use of that will simplify stuff
+		CloseHandle(m->shalloc_handle);
+		
+		SetEvent(m->shalloc_wake_child);
+		WaitForSingleObject(m->shalloc_wake_parent, INFINITE);
+		
+		if (!m->child_struct->shalloc_handle)
+		{
+			UnmapViewOfFile(ret);
+			ret=NULL;
+		}
+	}
+	else // child
+	{
+		WaitForSingleObject(m->shalloc_wake_child, INFINITE);
+		
+		ret = MapViewOfFile(m->shalloc_handle, FILE_MAP_WRITE, 0,0, bytes);
+		CloseHandle(m->shalloc_handle);
+		if (!ret) m->shalloc_handle = NULL;
+		SetEvent(m->shalloc_wake_parent);
+	}
+	
+	m->shalloc_ptr[index] = ret;
+	return ret;
 }
 
 sandbox::~sandbox()
 {
-	TerminateProcess(m->childproc, 0);
+	TerminateProcess(m->child_handle, 0);
+	CloseHandle(m->child_handle);
+	
+	UnmapViewOfFile(m->child_struct);
+	
+	for (int i=0;i<8;i++)
+	{
+		if (m->channel_handle[i]) CloseHandle(m->channel_handle[i]);
+	}
+	for (int i=0;i<8;i++)
+	{
+		if (m->shalloc_ptr[index])
+		{
+			UnmapViewOfFile(m->shalloc_ptr[index]);
+		}
+	}
 	
 	free(m);
 }
