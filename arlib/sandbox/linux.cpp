@@ -4,15 +4,15 @@
 #include <signal.h>
 #include <string.h>
 #include <unistd.h>
-#include <sys/shm.h>
+#include <sys/mman.h>
 #include <sys/syscall.h>
 #include <linux/futex.h>
+#include <fcntl.h>
+#include <sys/wait.h> 
 
 void sandbox_lockdown();
 
-#error fill in the sandbox
-#error replace with open(O_TMPFILE, "/run") (on failure, use /tmp instead)
-#error fd passing via unix socket, as usual
+//#error fill in the sandbox
 
 struct sandbox::impl {
 	int childpid; // pid, or 0 if this is the child
@@ -28,8 +28,9 @@ struct sandbox::impl {
 	//1 - child's turn
 	//also used during initialization, with same values
 	int sh_futex; // futex
-	int sh_newid; // shmid
+	int sh_fd[8];
 	void* sh_ptr[8];
+	size_t sh_len[8];
 	
 	void(*setup)(sandbox* box);
 	void(*run)(sandbox* box);
@@ -62,9 +63,9 @@ static void futex_set_and_wake(int * uaddr, int val)
 
 void sandbox::enter(int argc, char** argv)
 {
-	if (argc!=2 || strcmp(argv[0], "[Arlib sandboxed process]")!=0) return;
+	if (strcmp(argv[0], "[Arlib sandboxed process]")!=0) return;
 	
-	sandbox::impl* box = (sandbox::impl*)shmat(atoi(argv[1]), NULL, 0);
+	sandbox::impl* box = (sandbox::impl*)mmap(NULL, sizeof(sandbox::impl), PROT_READ|PROT_WRITE, MAP_SHARED, atoi(argv[1]), 0);
 	
 	futex_set_and_wake(&box->sh_futex, 1);
 	
@@ -78,44 +79,52 @@ void sandbox::enter(int argc, char** argv)
 }
 
 
+static int tmp_create()
+{
+	const char * paths[] = { "/run/", "/tmp/", "/home/", "/", NULL };
+	for (int i=0;paths[i];i++)
+	{
+		int fd = open(paths[i], O_TMPFILE|O_EXCL|0666);
+		if (fd >= 0) return fd;
+	}
+	return -1;
+}
+
 sandbox* sandbox::create(const params* param)
 {
-	for (int i=0;i<10000;i++)
-	{
-		struct shmid_ds g;
-		int id = shmctl(i, SHM_STAT, &g);
-		if (id >= 0 && g.shm_segsz == sizeof(sandbox::impl) && g.shm_nattch == 0)
-		{
-			printf("shmgc: %i %i %lu %lu\n", id, i, g.shm_segsz, g.shm_nattch);
-			shmctl(id, IPC_RMID, NULL);
-		}
-	}
-	
 	sandbox::impl* par = (sandbox::impl*)malloc(sizeof(sandbox::impl));
-	int shmid = shmget(IPC_PRIVATE, sizeof(sandbox::impl), IPC_CREAT | 0666);
-	sandbox::impl* chi = (sandbox::impl*)shmat(shmid, NULL, 0);
+	int shmfd = tmp_create();
+	ftruncate(shmfd, sizeof(sandbox::impl));
+	sandbox::impl* chi = (sandbox::impl*)mmap(NULL, sizeof(sandbox::impl), PROT_READ|PROT_WRITE, MAP_SHARED, shmfd, 0);
 	memset(par, 0, sizeof(*par));
 	memset(chi, 0, sizeof(*chi));
 	
 	par->childdat = chi;
 	chi->setup = param->setup;
 	chi->run = param->run;
-	for (int i=0;i<8;i++)
+	for (int i=0;i<8;i++) par->sh_fd[8] = -1;
+	for (int i=0;i<param->n_channel;i++)
 	{
 		chi->channels[i] = 1;
+	}
+	for (int i=0;i<param->n_shmem;i++)
+	{
+		par->sh_fd[i] = tmp_create();
+		chi->sh_fd[i] = par->sh_fd[i];
 	}
 	
 	int childpid = fork();
 	if (childpid < 0)
 	{
-		shmdt(chi);
+		close(shmfd);
 		return NULL;
 	}
 	if (childpid == 0)
 	{
-		char shmid_s[16];
-		sprintf(shmid_s, "%i", shmid);
-		const char * argv[] = {"[Arlib sandboxed process]", shmid_s, NULL};
+		char shmfd_s[16];
+		sprintf(shmfd_s, "%i", shmfd);
+		const char * argv[3] = { "[Arlib sandboxed process]", shmfd_s, NULL };
+		
 		execv("/proc/self/exe", (char**)argv);
 		_exit(0);
 	}
@@ -125,7 +134,6 @@ sandbox* sandbox::create(const params* param)
 		lock_write(&chi->sh_futex, 0);
 		
 		par->childpid = childpid;
-		shmctl(shmid, IPC_RMID, NULL);
 		return new sandbox(par);
 	}
 	return NULL; // unreachable, but gcc doesn't know this
@@ -159,41 +167,47 @@ void sandbox::release(int chan)
 
 void* sandbox::shalloc(int index, size_t bytes)
 {
-	if (m->sh_ptr[index]) shmdt(m->sh_ptr[index]);
+	if (m->sh_ptr[index]) munmap(m->sh_ptr[index], m->sh_len[index]);
+	m->sh_ptr[index] = NULL;
 	
 	void* ret;
-	if (m->childpid) // parent
+	if (!m->childpid) // child, tell parent we're unmapped (if shrinking, we risk SIGBUS in child if we don't wait)
 	{
-		int shmid = shmget(IPC_PRIVATE, bytes, IPC_CREAT | 0666);
-		ret = shmat(shmid, NULL, 0);
-		
-		m->childdat->sh_newid = shmid;
-		
-		futex_set_and_wake(&m->childdat->sh_futex, 1);
-		futex_wait_while_eq(&m->childdat->sh_futex, 1);
-		
-		//fut = 2
-		
-		shmctl(shmid, IPC_RMID, NULL);
-		
-		if (!m->childdat->sh_newid)
-		{
-			shmdt(ret);
-			ret = NULL;
-		}
-		lock_write_loose(&m->childdat->sh_futex, 0);
+		futex_set_and_wake(&m->sh_futex, 1);
 	}
-	else // child
+	if (m->childpid) // parent, resize and map
 	{
-		futex_wait_while_eq(&m->sh_futex, 0);
+		futex_wait_while_eq(&m->childdat->sh_futex, 0);
 		
-		ret = shmat(m->sh_newid, NULL, 0);
-		if (!ret) m->sh_newid = 0;
+		ftruncate(m->sh_fd[index], bytes);
 		
-		futex_set_and_wake(&m->sh_futex, 0);
+		ret = mmap(NULL, bytes, PROT_READ|PROT_WRITE, MAP_SHARED, m->sh_fd[index], 0);
+		if (ret == MAP_FAILED) ret = NULL;
+		
+		futex_set_and_wake(&m->childdat->sh_futex, (ret ? 2 : 0));
+	}
+	if (!m->childpid) // child, map
+	{
+		futex_wait_while_eq(&m->sh_futex, 1);
+		
+		if (m->sh_futex == 0) return NULL;
+		
+		ret = mmap(NULL, bytes, PROT_READ|PROT_WRITE, MAP_SHARED, m->sh_fd[index], 0);
+		if (ret == MAP_FAILED) ret = NULL;
+		
+		futex_set_and_wake(&m->sh_futex, (ret ? 3 : 0));
+	}
+	if (m->childpid) // parent, check that child succeeded
+	{
+		futex_wait_while_eq(&m->childdat->sh_futex, 2);
+		
+		if (m->childdat->sh_futex == 0) return NULL;
+		
+		futex_set_and_wake(&m->childdat->sh_futex, 0);
 	}
 	
 	m->sh_ptr[index] = ret;
+	m->sh_len[index] = bytes;
 	return ret;
 }
 
@@ -205,9 +219,10 @@ sandbox::~sandbox()
 	
 	for (int i=0;i<8;i++)
 	{
-		if (m->sh_ptr[i]) shmdt(m->sh_ptr[i]);
+		if (m->sh_ptr[i]) munmap(m->sh_ptr[i], m->sh_len[i]);
+		if (m->sh_fd[i]>=0) close(m->sh_fd[i]);
 	}
-	shmdt(m->childdat);
+	munmap(m->childdat, sizeof(sandbox::impl));
 	free(m);
 }
 #endif
