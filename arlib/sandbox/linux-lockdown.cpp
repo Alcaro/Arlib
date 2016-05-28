@@ -1,5 +1,5 @@
 #ifdef __linux__
-#include "sandbox.h"
+#include "sandbox-internal.h"
 #include <errno.h>
 #include <limits.h>
 #include <signal.h>
@@ -28,36 +28,64 @@
 #include <sys/wait.h> 
 
 
-static void close_fds()
+static bool int_in(int* list, int len, int val)
 {
-	//from http://www.opensource.apple.com/source/sudo/sudo-46/src/closefrom.c, license BSD-2
-	struct dirent *dent;
-	DIR* dirp;
-	char* endp;
-	long fd;
-	
-	/* Use /proc/self/fd directory if it exists. */
-	if ((dirp = opendir("/proc/self/fd")) != NULL) {
-		while ((dent = readdir(dirp)) != NULL) {
-			fd = strtol(dent->d_name, &endp, 10);
-			if (dent->d_name != endp && *endp == '\0' &&
-				fd >= 0 && fd < INT_MAX && fd != dirfd(dirp))
-				(void) close((int) fd);
-		}
-		(void) closedir(dirp);
-	}
-	else
+	for (int i=0;i<len;i++)
 	{
-		_exit(0);
+		if (list[i] == val) return true;
 	}
+	return false;
 }
 
-void sandbox_lockdown()
+static void close_fds(int* allow_fd, int n_allow_fd)
 {
-	prctl(PR_SET_DUMPABLE, 0);
+	//based on http://www.opensource.apple.com/source/sudo/sudo-46/src/closefrom.c, license BSD-2, but fairly rewritten
+	bool changed;
+	
+	do {
+		changed = false;
+		
+		DIR* dirp = opendir("/proc/self/fd/");
+		if (!dirp) _exit(0);
+		
+		while (true)
+		{
+			dirent* dent = readdir(dirp);
+			if (dent == NULL) break;
+			
+			if (strcmp(dent->d_name, ".") == 0) continue;
+			if (strcmp(dent->d_name, "..") == 0) continue;
+			
+			char* endp;
+			long fd = strtol(dent->d_name, &endp, 10);
+			if (dent->d_name==endp || *endp!='\0' || fd<0 || fd>=INT_MAX)
+			{
+				_exit(0);
+			}
+			
+			if (fd <= 2) continue;
+			
+			if (fd != dirfd(dirp) && !int_in(allow_fd, n_allow_fd, (int)fd))
+			{
+				close((int)fd);
+				changed = true;
+			}
+		}
+		closedir(dirp);
+	} while (changed);
+}
+
+void sandbox_lockdown(int* allow_fd, int n_allow_fd)
+{
+	prctl(PR_SET_DUMPABLE, false);
 	prctl(PR_SET_TSC, PR_TSC_SIGSEGV);
 	prctl(PR_SET_PDEATHSIG, SIGKILL);
 	
-	//close_fds();
+	close_fds(allow_fd, n_allow_fd);
+	
+	//TODO: rlimit?
+	
+	prctl(PR_SET_NO_NEW_PRIVS, true);
+	//TODO: seccomp
 }
 #endif

@@ -25,7 +25,7 @@ unsigned int thread_num_cores();
 //Remember to create all relevant mutexes before creating a thread.
 class mutex : nocopy {
 #if defined(__linux__)
-	int fut;
+	int fut = 0;
 	
 public:
 	//TODO: inline fast path

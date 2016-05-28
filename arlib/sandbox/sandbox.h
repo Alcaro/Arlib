@@ -71,9 +71,7 @@ public:
 		//  manager creates a thread to handle such requests.
 		//function<bool(const char *, bool write)> file_access;
 		
-		//Called in the child. setup(), if not NULL, is called first and has access to everything; minimize the amount of code here.
 		//Since this goes cross-process, passing a normal userdata won't work. Instead, it's provided by the sandbox object, via shalloc.
-		void(*setup)(sandbox* box);
 		void(*run)(sandbox* box);
 	};
 	//The params object is used only during this call. You can free it afterwards.

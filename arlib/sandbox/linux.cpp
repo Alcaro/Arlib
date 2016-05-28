@@ -1,18 +1,16 @@
 #ifdef __linux__
-#include "sandbox.h"
+#include "sandbox-internal.h"
 #include "../thread/atomic.h"
 #include <signal.h>
 #include <string.h>
+#include <fcntl.h>
 #include <unistd.h>
 #include <sys/mman.h>
 #include <sys/syscall.h>
-#include <linux/futex.h>
-#include <fcntl.h>
 #include <sys/wait.h> 
+#include <linux/futex.h>
 
-void sandbox_lockdown();
-
-//#error fill in the sandbox
+#include<errno.h>
 
 struct sandbox::impl {
 	int childpid; // pid, or 0 if this is the child
@@ -20,19 +18,20 @@ struct sandbox::impl {
 	
 #define CH_FREE 0
 #define CH_LOCKED 1
-#define CH_SLEEPER 2 // someone is futexing on this
+#define CH_SLEEPER 2 // someone is sleeping on this
 	int channels[8]; // futex
 	//they could be merged to one int (16 bits), but there's no point saving 56 bytes. the shmem will be rounded to 4K anyways
 	
 	//0 - parent's turn
 	//1 - child's turn
 	//also used during initialization, with same values
-	int sh_futex; // futex
+	int sh_futex;
 	int sh_fd[8];
 	void* sh_ptr[8];
 	size_t sh_len[8];
 	
-	void(*setup)(sandbox* box);
+	int fopensock; // used only in parent
+	
 	void(*run)(sandbox* box);
 };
 
@@ -71,10 +70,20 @@ void sandbox::enter(int argc, char** argv)
 	futex_set_and_wake(&box->sh_futex, 1);
 	
 	sandbox boxw(box);
-	if (box->setup) box->setup(&boxw);
 	
-	sandbox_lockdown();
+	//don't bother keeping the control data share, the mem map remains anyways
+	int keep_fd[8+1];
+	memcpy(&keep_fd[0], box->sh_fd, sizeof(box->sh_fd));
+	keep_fd[8] = box->fopensock;
+	sandbox_lockdown(keep_fd, 9);
 	
+int newfd=sandbox_cross_recv(box->fopensock);
+printf("recv:%i\n",newfd);
+char hhh[42];
+read(newfd,hhh,41);
+hhh[41]=0;
+puts(hhh);
+close(newfd);
 	box->run(&boxw);
 	exit(0);
 }
@@ -101,7 +110,6 @@ sandbox* sandbox::create(const params* param)
 	memset(chi, 0, sizeof(*chi));
 	
 	par->childdat = chi;
-	chi->setup = param->setup;
 	chi->run = param->run;
 	for (int i=0;i<8;i++)
 	{
@@ -114,25 +122,32 @@ sandbox* sandbox::create(const params* param)
 		chi->sh_fd[i] = par->sh_fd[i];
 	}
 	
+	sandbox_cross_init(&par->fopensock, &chi->fopensock);
+	
 	int childpid = fork();
 	if (childpid < 0)
 	{
 		close(shmfd);
+		close(par->fopensock);
+		close(chi->fopensock);
 		return NULL;
 	}
 	if (childpid == 0)
 	{
 		char shmfd_s[16];
 		sprintf(shmfd_s, "%i", shmfd);
-		const char * argv[3] = { "[Arlib sandboxed process]", shmfd_s, NULL };
-		
+		const char * argv[] = { "[Arlib sandboxed process]", shmfd_s, NULL };
 		execv("/proc/self/exe", (char**)argv);
 		_exit(0);
 	}
 	if (childpid > 0)
 	{
 		close(shmfd); // apparently mappings survive even if the fd is closed
+		close(chi->fopensock);
 		
+int test = open("a.cpp", O_RDONLY);
+sandbox_cross_send(par->fopensock, test);
+close(test);
 		futex_wait_while_eq(&chi->sh_futex, 0);
 		lock_write(&chi->sh_futex, 0);
 		

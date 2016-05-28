@@ -18,8 +18,6 @@ struct sandbox::impl {
 	
 	HANDLE channel_handle[8]; // event
 	
-	//For initialization purposes.
-	void(*setup)(sandbox* box);
 	void(*run)(sandbox* box);
 	
 	//if a sandbox is ever added, hijack ntdll!NtOpenFile and ntdll!NtCreateFile and send requests to a thread on the parent
@@ -40,7 +38,6 @@ void sandbox::enter(int argc, char** argv)
 	sandbox::impl* box = (sandbox::impl*)MapViewOfFile(shmem_par, FILE_MAP_WRITE, 0,0, sizeof(sandbox::impl));
 	
 	sandbox boxw(box);
-	if (box->setup) box->setup(&boxw);
 	
 	//TODO: lockdown
 	
@@ -105,8 +102,6 @@ sandbox* sandbox::create(const params* param)
 	CloseHandle(shmem);
 	par->child_handle = pi.hProcess;
 	par->child_struct = chi;
-	
-	chi->setup = param->setup;
 	chi->run = param->run;
 	
 	for (int i=0;i<param->n_channel;i++)
