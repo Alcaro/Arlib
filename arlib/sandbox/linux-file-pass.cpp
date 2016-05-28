@@ -14,78 +14,51 @@ void sandbox_cross_init(int* pfd, int* cfd)
 }
 
 //from http://blog.varunajayasiri.com/passing-file-descriptors-between-processes-using-sendmsg-and-recvmsg
+//somewhat reformatted
 void sandbox_cross_send(int socket, int fd_to_send)
 {
- struct msghdr message;
- struct iovec iov[1];
- struct cmsghdr *control_message = NULL;
- char ctrl_buf[CMSG_SPACE(sizeof(int))];
- char data[1];
-
- memset(&message, 0, sizeof(struct msghdr));
- memset(ctrl_buf, 0, CMSG_SPACE(sizeof(int)));
-
- /* We are passing at least one byte of data so that recvmsg() will not return 0 */
- data[0] = ' ';
- iov[0].iov_base = data;
- iov[0].iov_len = sizeof(data);
-
- message.msg_name = NULL;
- message.msg_namelen = 0;
- message.msg_iov = iov;
- message.msg_iovlen = 1;
- message.msg_controllen =  CMSG_SPACE(sizeof(int));
- message.msg_control = ctrl_buf;
-
- control_message = CMSG_FIRSTHDR(&message);
- control_message->cmsg_level = SOL_SOCKET;
- control_message->cmsg_type = SCM_RIGHTS;
- control_message->cmsg_len = CMSG_LEN(sizeof(int));
-
- *((int *) CMSG_DATA(control_message)) = fd_to_send;
-
- sendmsg(socket, &message, 0);
+	/* We are passing at least one byte of data so that recvmsg() will not return 0 */
+	struct iovec iov = { (char*)" ", 1 };
+	char ctrl_buf[CMSG_SPACE(sizeof(int))] = {};
+	struct msghdr message = {
+		.msg_name = NULL, .msg_namelen = 0,
+		.msg_iov = &iov, .msg_iovlen = 1,
+		.msg_control = ctrl_buf, .msg_controllen = sizeof(ctrl_buf),
+		.msg_flags = 0,
+	};
+	
+	cmsghdr* ctrl_msg = CMSG_FIRSTHDR(&message);
+	ctrl_msg->cmsg_level = SOL_SOCKET;
+	ctrl_msg->cmsg_type = SCM_RIGHTS;
+	ctrl_msg->cmsg_len = CMSG_LEN(sizeof(int));
+	*(int*)CMSG_DATA(ctrl_msg) = fd_to_send;
+	
+	sendmsg(socket, &message, 0);
 }
 
 int sandbox_cross_recv(int socket)
 {
- struct msghdr message;
- struct iovec iov[1];
- struct cmsghdr *control_message = NULL;
- char ctrl_buf[CMSG_SPACE(sizeof(int))];
- char data[1];
- int res;
-
- memset(&message, 0, sizeof(struct msghdr));
- memset(ctrl_buf, 0, CMSG_SPACE(sizeof(int)));
-
- /* For the dummy data */
- iov[0].iov_base = data;
- iov[0].iov_len = sizeof(data);
-
- message.msg_name = NULL;
- message.msg_namelen = 0;
- message.msg_control = ctrl_buf;
- message.msg_controllen = CMSG_SPACE(sizeof(int));
- message.msg_iov = iov;
- message.msg_iovlen = 1;
-
- if((res = recvmsg(socket, &message, 0)) <= 0)
-  return res;
-
- /* Iterate through header to find if there is a file descriptor */
- for(control_message = CMSG_FIRSTHDR(&message);
-     control_message != NULL;
-     control_message = CMSG_NXTHDR(&message,
-                                   control_message))
- {
-  if( (control_message->cmsg_level == SOL_SOCKET) &&
-      (control_message->cmsg_type == SCM_RIGHTS) )
-  {
-   return *((int *) CMSG_DATA(control_message));
-  }
- }
-
- return -1;
+	char data;
+	struct iovec iov = { &data, 1 };
+	char ctrl_buf[CMSG_SPACE(sizeof(int))] = {};
+	struct msghdr message = {
+		.msg_name = NULL, .msg_namelen = 0,
+		.msg_iov = &iov, .msg_iovlen = 1,
+		.msg_control = ctrl_buf, .msg_controllen = sizeof(ctrl_buf),
+		.msg_flags = 0,
+	};
+	
+	if (recvmsg(socket, &message, 0) < 0) return -1;
+	
+	/* Iterate through header to find if there is a file descriptor */
+	for (cmsghdr* ctrl_msg=CMSG_FIRSTHDR(&message);ctrl_msg!=NULL;ctrl_msg=CMSG_NXTHDR(&message, ctrl_msg))
+	{
+		if (ctrl_msg->cmsg_level == SOL_SOCKET && ctrl_msg->cmsg_type == SCM_RIGHTS)
+		{
+			return *(int*)CMSG_DATA(ctrl_msg);
+		}
+	}
+	
+	return -1;
 }
 #endif
