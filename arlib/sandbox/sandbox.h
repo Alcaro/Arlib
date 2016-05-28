@@ -6,18 +6,23 @@
 //
 //Exact rules:
 // If the child process is running hostile code, the parent may deadlock or _exit(), but may not crash or use an invalid handle.
-// Failing an access check in the child yields undefined behavior (subject to the above, of course). It can return EACCES, kill the process, or whatever.
+// Failing an access check in the child yields undefined behavior (subject to the above, of course).
+// It can return EACCES, kill the process, or whatever.
+//
+//May require ARLIB_THREAD enabled.
 //
 //WARNING: There is NO SECURITY WHATSOEVER on Windows. A "sandboxed" process can do anything the parent can.
 //Windows provides plenty of ways to restrict a process, but
 //- Most of them are blacklists, disabling a particular privilege; I want whitelists
-//- There's so many resource kinds I can't keep track how to restrict everything, or even list them; it will also fail open if a new resource kind is introduced
+//- There are so many resource kinds I can't keep track how to restrict everything, or even list
+//    them; it will also fail open if a new resource kind is introduced
 //- Many lockdown functions temporarily disable privileges, rather than completely delete them
 //- There's little or no documentation on which privileges are required for the operations I need
-//- The lockdown functions are often annoying to call, involving variable-width arrays in structures, and LCIDs that likely vary between reboots
+//- The lockdown functions are often annoying to call, involving variable-width arrays in
+//    structures, and LCIDs that likely vary between reboots
 //And I cannot trust such a system. I only trust whitelists, like Linux seccomp.
-//Even Chrome couldn't find anything comprehensive; they use everything they can find (restricted token, job, desktop, SetProcessMitigationPolicy, whatever),
-// but some operations (such as accessing FAT32 volumes) still pass through.
+//Even Chrome couldn't find anything comprehensive; they use everything they can find (restricted token, job, desktop,
+// SetProcessMitigationPolicy, whatever), but some operations, such as accessing FAT32 volumes, still pass through.
 //It feels like the Windows sandboxing functions are designed for trusted code operating on untrusted data, rather than untrusted code.
 //Since I can't create satisfactory results in such an environment, I won't even try.
 //
@@ -25,8 +30,8 @@
 // denying access to creating any and all unauthorized resources - and even using authorized
 // resources in an unauthorized way. I don't even need to drop privileges, it won't get a chance to
 // use them.
-//Documentation is also excellent; source code is available everywhere, all syscalls (both Linux-only and Unix-global) are well documented,
-// and if I miss something, strace quickly tells me what.
+//Documentation is also excellent; source code is available everywhere, all syscalls (both Linux-only and Unix-global)
+// are well documented, and if I miss something, strace quickly tells me what.
 //
 //Chrome sandbox entry points: http://stackoverflow.com/questions/1590337/using-the-google-chrome-sandbox
 
@@ -44,7 +49,8 @@ public:
 			//stdout and stderr go to the same places as in the parent. Default is /dev/null.
 			allow_stdout = 1,
 			
-			//Creates a sandbox facade; it acts like a normal sandbox, but the child process isn't restricted. It could even be a thread in the same process.
+			//Creates a sandbox facade; it acts like a normal sandbox, but the child process isn't
+			//  restricted. It could even be a thread in the same process.
 			no_security = 2,
 		};
 		unsigned int flags;
@@ -58,9 +64,11 @@ public:
 		int n_channel;
 		int n_shmem;
 		
+		//TODO: replace with some kind of stringlist thing
 		//If the allow_file flag is not set, this is called when the child tries to open a file.
 		//If it returns true, the request is granted. If false, or if the function is NULL, EACCES is returned.
-		//Can be called at any time when a function is executed on this sandbox object. The sandbox manager creates a thread to handle such requests.
+		//Can be called at any time when a function is executed on this sandbox object. The sandbox
+		//  manager creates a thread to handle such requests.
 		//function<bool(const char *, bool write)> file_access;
 		
 		//Called in the child. setup(), if not NULL, is called first and has access to everything; minimize the amount of code here.
@@ -98,8 +106,8 @@ public:
 	//  fails, the other does too. For this reason, the two processes must perform the same sequence
 	//  of calls; they must also agree on the sizes.
 	// You can resize a memory area by calling this function again with the same index. However,
-	//  unlike realloc, the new contents are always zero. Whether it fails or succeeds, the old shared
-	//  area is deleted.
+	//  unlike realloc, the new contents are implementation defined. Whether it fails or succeeds, the
+	//  old shared area is deleted.
 	// The implementation must ensure the parent does not crash even if the child's internal
 	//  structures are corrupt, including but not limited to size mismatch.
 	// This function is not thread safe.

@@ -10,9 +10,12 @@ void sandproc(sandbox* box)
 	printf("allow: %p deny: %p\n", ok, deny);
 	
 	char* g = box->shalloc<char>(0, 10);
+	printf("c:%p\n", g);
 	strcpy(g, "test");
 	
 	box->release(0);
+	
+	//while(true)puts("a");
 }
 
 int main(int argc, char * argv[])
@@ -31,6 +34,7 @@ for (int i=0;i<argc;i++)printf("%i:%s\n",i,argv[i]);
 	char* g = (char*)box->shalloc(0, 10);
 	
 	box->wait(0);
+	printf("p:%p\n", g);
 	
 	puts(g);
 }

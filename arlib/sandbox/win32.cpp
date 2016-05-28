@@ -97,7 +97,6 @@ sandbox* sandbox::create(const params* param)
 	
 	sandbox::impl* par = new sandbox::impl;
 	memset(par, 0, sizeof(*par));
-	sandbox* ret = new sandbox(par);
 	sandbox::impl* chi = (sandbox::impl*)MapViewOfFile(shmem, FILE_MAP_WRITE, 0,0, sizeof(sandbox::impl));
 	//<https://msdn.microsoft.com/en-us/library/windows/desktop/aa366537%28v=vs.85%29.aspx> says
 	// The initial contents of the pages in a file mapping object backed by the operating system paging file are 0 (zero).
@@ -124,7 +123,7 @@ sandbox* sandbox::create(const params* param)
 	ResumeThread(pi.hThread);
 	CloseHandle(pi.hThread);
 	
-	return ret;
+	return new sandbox(par);
 }
 
 void sandbox::wait(int chan)
@@ -188,20 +187,15 @@ sandbox::~sandbox()
 	TerminateProcess(m->child_handle, 0);
 	CloseHandle(m->child_handle);
 	
-	UnmapViewOfFile(m->child_struct);
-	
 	for (int i=0;i<8;i++)
 	{
 		if (m->channel_handle[i]) CloseHandle(m->channel_handle[i]);
 	}
 	for (int i=0;i<8;i++)
 	{
-		if (m->shalloc_ptr[index])
-		{
-			UnmapViewOfFile(m->shalloc_ptr[index]);
-		}
+		if (m->shalloc_ptr[index]) UnmapViewOfFile(m->shalloc_ptr[index]);
 	}
-	
+	UnmapViewOfFile(m->child_struct);
 	free(m);
 }
 #endif

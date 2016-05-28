@@ -50,15 +50,9 @@ void thread_sleep(unsigned int usec)
 
 
 //spurious wakeups are possible
-//TODO: use the return to tell if the wakeup is bogus
+//return can tell if the wakeup is bogus, but I don't really need that
 static int futex_wait(int * uaddr, int val, const struct timespec * timeout = NULL)
 {
-	//while (true)
-	//{
-	//	int ret = syscall(__NR_futex, uaddr, FUTEX_WAIT_PRIVATE, val, timeout);
-	//	if (ret<0 && errno==EINTR) continue;
-	//	return ret;
-	//}
 	return syscall(__NR_futex, uaddr, FUTEX_WAIT_PRIVATE, val, timeout);
 }
 static int futex_wake(int * uaddr)
@@ -79,7 +73,7 @@ static int futex_wake_all(int * uaddr)
 void mutex::lock()
 {
 	int result = lock_cmpxchg_acq(&fut, MUT_UNLOCKED, MUT_LOCKED);
-	if (result == MUT_UNLOCKED)
+	if (LIKELY(result == MUT_UNLOCKED))
 	{
 		return; // unlocked, fast path
 	}
@@ -87,6 +81,7 @@ void mutex::lock()
 	//If it was locked, mark it contended and force whoever to wake us.
 	//In the common contended case, it was previously MUT_LOCKED, so the futex would instantly return.
 	//Therefore, the xchg should be run first.
+	//loose is fine, since we already did an acquire above (and futex() probably performs a memory barrier).
 	
 	while (true)
 	{
