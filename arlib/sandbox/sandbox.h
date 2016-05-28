@@ -9,7 +9,7 @@
 // Failing an access check in the child yields undefined behavior (subject to the above, of course).
 // It can return EACCES, kill the process, or whatever.
 //
-//May require ARLIB_THREAD enabled.
+//On Linux, requires exclusive control over SIGSYS in the child.
 //
 //WARNING: There is NO SECURITY WHATSOEVER on Windows. A "sandboxed" process can do anything the parent can.
 //Windows provides plenty of ways to restrict a process, but

@@ -66,6 +66,7 @@ void sandbox::enter(int argc, char** argv)
 	if (strcmp(argv[0], "[Arlib sandboxed process]")!=0) return;
 	
 	sandbox::impl* box = (sandbox::impl*)mmap(NULL, sizeof(sandbox::impl), PROT_READ|PROT_WRITE, MAP_SHARED, atoi(argv[1]), 0);
+	box->childdat = box; // this simplifies the channel handling
 	
 	futex_set_and_wake(&box->sh_futex, 1);
 	
@@ -102,10 +103,10 @@ sandbox* sandbox::create(const params* param)
 	par->childdat = chi;
 	chi->setup = param->setup;
 	chi->run = param->run;
-	for (int i=0;i<8;i++) par->sh_fd[8] = -1;
-	for (int i=0;i<param->n_channel;i++)
+	for (int i=0;i<8;i++)
 	{
-		chi->channels[i] = 1;
+		par->sh_fd[i] = -1;
+		chi->channels[i] = CH_LOCKED;
 	}
 	for (int i=0;i<param->n_shmem;i++)
 	{
@@ -130,6 +131,8 @@ sandbox* sandbox::create(const params* param)
 	}
 	if (childpid > 0)
 	{
+		close(shmfd); // apparently mappings survive even if the fd is closed
+		
 		futex_wait_while_eq(&chi->sh_futex, 0);
 		lock_write(&chi->sh_futex, 0);
 		
@@ -141,28 +144,28 @@ sandbox* sandbox::create(const params* param)
 
 void sandbox::wait(int chan)
 {
-	if (lock_cmpxchg(&m->channels[chan], CH_FREE, CH_LOCKED) == CH_FREE) return;
+	if (lock_cmpxchg(&m->childdat->channels[chan], CH_FREE, CH_LOCKED) == CH_FREE) return;
 	
 	while (true)
 	{
 		//already did a barrier above, don't need another one
-		int prev = lock_xchg_loose(&m->channels[chan], CH_SLEEPER);
+		int prev = lock_xchg_loose(&m->childdat->channels[chan], CH_SLEEPER);
 		if (prev == CH_FREE) return;
-		futex_wait(&m->channels[chan], CH_SLEEPER);
+		futex_wait(&m->childdat->channels[chan], CH_SLEEPER);
 	}
 }
 
 bool sandbox::try_wait(int chan)
 {
-	int old = lock_cmpxchg(&m->channels[chan], 0, 1);
+	int old = lock_cmpxchg(&m->childdat->channels[chan], 0, 1);
 	return (old == 0);
 }
 
 void sandbox::release(int chan)
 {
-	int old = lock_xchg(&m->channels[chan], 0);
+	int old = lock_xchg(&m->childdat->channels[chan], 0);
 	if (LIKELY(old != CH_SLEEPER)) return;
-	futex_wake(&m->channels[chan]);
+	futex_wake(&m->childdat->channels[chan]);
 }
 
 void* sandbox::shalloc(int index, size_t bytes)
@@ -214,13 +217,14 @@ void* sandbox::shalloc(int index, size_t bytes)
 sandbox::~sandbox()
 {
 	//this can blow up if our caller has a SIGCHLD handler that discards everything, and the PID was reused
+	//but the risk of that is very low, so I'll just not care.
 	kill(m->childpid, SIGKILL);
 	waitpid(m->childpid, NULL, WNOHANG);
 	
 	for (int i=0;i<8;i++)
 	{
 		if (m->sh_ptr[i]) munmap(m->sh_ptr[i], m->sh_len[i]);
-		if (m->sh_fd[i]>=0) close(m->sh_fd[i]);
+		if (m->sh_fd[i] >= 0) close(m->sh_fd[i]);
 	}
 	munmap(m->childdat, sizeof(sandbox::impl));
 	free(m);

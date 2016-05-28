@@ -10,9 +10,9 @@ void sandproc(sandbox* box)
 	printf("allow: %p deny: %p\n", ok, deny);
 	
 	char* g = box->shalloc<char>(0, 10);
-	printf("c:%p\n", g);
 	strcpy(g, "test");
 	
+	printf("c:%p\n", g);
 	box->release(0);
 	
 	//while(true)puts("a");
