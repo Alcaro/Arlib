@@ -84,6 +84,8 @@ read(newfd,hhh,41);
 hhh[41]=0;
 puts(hhh);
 close(newfd);
+int newfd2=sandbox_cross_recv(box->fopensock);
+printf("recv:%i:%i\n",newfd2,errno);
 	box->run(&boxw);
 	exit(0);
 }
@@ -146,8 +148,9 @@ sandbox* sandbox::create(const params* param)
 		close(chi->fopensock);
 		
 int test = open("a.cpp", O_RDONLY);
-sandbox_cross_send(par->fopensock, test);
+sandbox_cross_send(par->fopensock, test, 0);
 close(test);
+sandbox_cross_send(par->fopensock, -1, 42);
 		futex_wait_while_eq(&chi->sh_futex, 0);
 		lock_write(&chi->sh_futex, 0);
 		
@@ -232,6 +235,7 @@ void* sandbox::shalloc(int index, size_t bytes)
 sandbox::~sandbox()
 {
 	//this can blow up if our caller has a SIGCHLD handler that discards everything, and the PID was reused
+	//even if the child remains alive here, we could end up waiting for something unrelated created between kill/waitpid
 	//but the risk of that is very low, so I'll just not care.
 	kill(m->childpid, SIGKILL);
 	waitpid(m->childpid, NULL, WNOHANG);
