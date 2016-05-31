@@ -123,10 +123,9 @@ static int req_sub(const char * path, int flags, mode_t mode, void* userdata)
 {
 	req_dat* dat = (req_dat*)userdata;
 	
-	errno = EACCES;
 	if (flags & O_CREAT)
 	{
-		if (mode & ~0777) return -1;
+		if (mode & ~0777) goto deny;
 	}
 	else mode=0;
 	
@@ -138,10 +137,16 @@ static int req_sub(const char * path, int flags, mode_t mode, void* userdata)
 	const int flag_read = O_CLOEXEC|O_LARGEFILE; // allow these flags
 	const int flag_write = O_WRONLY|O_RDWR|O_APPEND|O_CREAT|O_EXCL|O_TRUNC; // allow these flags, but they mark it as a write request
 	flags &= ~flag_ignore;
-	if (flags & (flag_read | flag_write)) return -1;
+	if (flags & (flag_read | flag_write)) goto deny;
+	if ((flags & (O_WRONLY|O_RDWR)) == (O_WRONLY|O_RDWR)) goto deny;
 	
-	if (!dat->access(path, (flags & flag_write), dat->userdata)) { errno=EACCES; return -1; }
+	if (!dat->access(path, (flags & flag_write), dat->userdata)) goto deny;
+	
 	return open(path, flags, mode);
+	
+deny:
+	errno = EACCES;
+	return -1;
 }
 void sandbox_cross_serve_request(int socket, bool (*access)(const char * path, bool write, void* userdata), void* userdata)
 {

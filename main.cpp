@@ -1,7 +1,8 @@
 #include "arlib.h"
 #include <stdio.h>
 
-void sandproc(sandbox* box)
+#ifdef ARLIB_SANDBOX
+static void sandproc(sandbox* box)
 {
 	puts("Hi!");
 	
@@ -18,7 +19,7 @@ void sandproc(sandbox* box)
 	//while(true)puts("a");
 }
 
-int main(int argc, char * argv[])
+void sandtest(int argc, char * argv[])
 {
 for (int i=0;i<argc;i++)printf("%i:%s\n",i,argv[i]);
 	sandbox::enter(argc, argv);
@@ -35,4 +36,42 @@ for (int i=0;i<argc;i++)printf("%i:%s\n",i,argv[i]);
 	printf("HELLO %p\n",g);
 	box->wait(0);
 	puts(g);
+}
+#endif
+
+static void teststr(const char * g)
+{
+	string a = g;
+	a[2]='!';
+	string b = a;
+	puts(b);                // hi!
+	a[3]='!';
+	puts(a);                // hi!!
+	puts(b);                // hi!
+	a = b;
+	puts(a);                // hi!
+	puts(b);                // hi!
+	
+	a.replace(1,1, "ello");
+	puts(a);                // hello!
+	a.replace(1,4, "i");
+	puts(a);                // hi!
+	a.replace(1,2, "ey");
+	puts(a);                // hey
+	
+	cstring c = g;
+	printf("%p %p %p %p\n", g, (const char*)c, (const char*)a, (const char*)b);
+	a = c;
+	b = a;
+	printf("%p %p %p %p\n", g, (const char*)c, (const char*)a, (const char*)b);
+	a[1] = '!';
+	printf("%p %p %p %p\n", g, (const char*)c, (const char*)a, (const char*)b);
+}
+
+int main(int argc, char * argv[])
+{
+	//sandtest(argc, argv);
+	
+	teststr("hi");
+	teststr("1234567890123456789012345678901234567890");
 }

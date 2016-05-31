@@ -188,7 +188,7 @@ sandbox::~sandbox()
 	}
 	for (int i=0;i<8;i++)
 	{
-		if (m->shalloc_ptr[index]) UnmapViewOfFile(m->shalloc_ptr[index]);
+		if (m->shalloc_ptr[i]) UnmapViewOfFile(m->shalloc_ptr[i]);
 	}
 	UnmapViewOfFile(m->child_struct);
 	free(m);

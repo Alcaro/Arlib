@@ -5,6 +5,7 @@
 #include "function.h"
 #include "intwrap.h"
 #include "os.h"
+#include "string.h"
 
 //not in #ifdef, there's a check inside that header
 #include "thread/thread.h"

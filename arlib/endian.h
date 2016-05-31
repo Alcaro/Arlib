@@ -15,11 +15,28 @@
     defined(_M_IX86) || defined(_M_AMD64) || \
     defined(__ARM_EABI__) || defined(__arm__)
 #define ENDIAN END_LITTLE
+#define BIGEND_SWAP1(a)               a // pointless, but for consistency
+#define BIGEND_SWAP2(a,b)             a b
+#define BIGEND_SWAP3(a,b,c)           a b c
+#define BIGEND_SWAP4(a,b,c,d)         a b c d
+#define BIGEND_SWAP5(a,b,c,d,e)       a b c d e
+#define BIGEND_SWAP6(a,b,c,d,e,f)     a b c d e f
+#define BIGEND_SWAP7(a,b,c,d,e,f,g)   a b c d e f g
+#define BIGEND_SWAP8(a,b,c,d,e,f,g,h) a b c d e f g h
 #elif (defined(__BYTE_ORDER) && defined(__BIG_ENDIAN) && __BYTE_ORDER == __BIG_ENDIAN) || defined(__BIG_ENDIAN__) || \
     defined(__powerpc__) || defined(_M_PPC)
 #define ENDIAN END_BIG
+#define BIGEND_SWAP1(a)               a
+#define BIGEND_SWAP2(a,b)             b a
+#define BIGEND_SWAP3(a,b,c)           c b a
+#define BIGEND_SWAP4(a,b,c,d)         d c b a
+#define BIGEND_SWAP5(a,b,c,d,e)       e d c b a
+#define BIGEND_SWAP6(a,b,c,d,e,f)     f e d c b a
+#define BIGEND_SWAP7(a,b,c,d,e,f,g)   g f e d c b a
+#define BIGEND_SWAP8(a,b,c,d,e,f,g,h) h g f e d c b a
+#else
+#error please define your endianness
 #endif
-//for crazy endians, just leave it undefined
 
 #if defined(__GNUC__)
 //This one is mostly useless (GCC detects the pattern and optimizes it).

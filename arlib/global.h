@@ -308,24 +308,8 @@ template<typename T> static inline T bitround(T in)
 // their name. For example, _window_init_misc on GTK+ instead initializes a component needed by the
 // listboxes.
 
-//This file, and many other parts of minir, uses a weird mix between Windows- and Linux-style
+//This file, and many other parts of Arlib, uses a weird mix between Windows- and Linux-style
 // filenames and paths. This is intentional; the author prefers Linux-style paths and directory
 // structures, but Windows file extensions. .exe is less ambigous than no extension, and Windows'
 // insistence on overloading the escape character is irritating. Since this excludes following
 // any single OS, the rest is personal preference.
-
-//This one doesn't really belong here, but it's used by both image.h and minir.h (and io.h, but image.h uses that).
-//If minir.h grows a dependency on image.h or io.h, move this to image.h.
-enum videoformat {
-	//these three are same values and order as in libretro - do not change
-	fmt_xrgb1555,
-	fmt_xrgb8888,
-	fmt_rgb565,
-	
-	//these are used only in minir
-	fmt_none,//this should be 0, but libretro compatibility means I can't do that
-	
-	fmt_rgb888,
-	fmt_argb1555,
-	fmt_argb8888,
-};

@@ -87,5 +87,6 @@ void sandbox_lockdown(int* allow_fd, int n_allow_fd)
 	
 	prctl(PR_SET_NO_NEW_PRIVS, true);
 	//TODO: seccomp
+	//TODO: test vsyscall and vdso with seccomp enabled
 }
 #endif
