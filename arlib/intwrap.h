@@ -1,4 +1,5 @@
 #pragma once
+#include "global.h"
 
 //Given class U, where U supports operator T() and operator=(T), intwrap<U> enables all the integer operators.
 //Most are already supported by casting to the integer type, but this one adds the assignment operators too.
