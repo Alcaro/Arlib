@@ -166,6 +166,8 @@ ifeq ($(ARSOCKET),1)
   else ifeq ($(ARSOCKET_SSL),wolfssl)
     WOLFSSL_DIR = arlib/socket/wolfssl-3.9.0
     CONF_CFLAGS += -DARLIB_SSL_WOLFSSL -I$(WOLFSSL_DIR)
+    OBJS += obj/_arlib_sp_wolfssl$(OBJSUFFIX).o
+    #CFLAGS += $(OPTFLAGS)
   else
     CONF_CFLAGS += -DARLIB_SSL_OPENSSL
     CONF_LFLAGS += -lssl -lcrypto
@@ -199,6 +201,9 @@ obj:
 
 obj/miniz$(OBJSUFFIX).o: miniz.c | obj
 	$(CC) $(TRUE_CFLAGS) -c $< -o $@
+
+obj/_arlib_sp_wolfssl$(OBJSUFFIX).o: arlib/socket/wolfssl-lib.c | obj
+	$(CC) -DARLIB_SSL_WOLFSSL_SP $(TRUE_CFLAGS) $(OPTFLAGS) -c $< -o $@
 
 obj/%$(OBJSUFFIX).o: %.cpp | obj
 	$(CXX) $(TRUE_CXXFLAGS) -c $< -o $@

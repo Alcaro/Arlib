@@ -1,4 +1,4 @@
-#ifdef ARLIB_SSL_WOLFSSL
+#ifdef ARLIB_SSL_WOLFSSL_SP
 //I'll have to #include the parts of WolfSSL I need
 //it's easier in preprocessor than in makefile
 
@@ -6,6 +6,7 @@
 #define _GNU_SOURCE
 #endif
 #define NO_WOLFSSL_MEMORY // use malloc like a sane program
+#define NO_WOLFSSL_DIR // we scan the directories ourelves
 #define WOLFSSL_USER_IO // we set our own read/write callbacks
 
 #ifdef _WIN32
@@ -59,8 +60,16 @@
 #include "wolfssl-3.9.0/wolfcrypt/src/integer.c"
 #include "wolfssl-3.9.0/wolfcrypt/src/logging.c"
 #include "wolfssl-3.9.0/wolfcrypt/src/md2.c"
+#define Transform Transform_md4
+#define AddLength AddLength_md4
 #include "wolfssl-3.9.0/wolfcrypt/src/md4.c"
+#undef Transform
+#undef AddLength
+#define Transform Transform_md5
+#define AddLength AddLength_md5
 #include "wolfssl-3.9.0/wolfcrypt/src/md5.c"
+#undef Transform
+#undef AddLength
 #undef XTRANSFORM // this macro is used multiple times
 #include "wolfssl-3.9.0/wolfcrypt/src/memory.c"
 #include "wolfssl-3.9.0/wolfcrypt/src/misc.c"
@@ -71,10 +80,18 @@
 #include "wolfssl-3.9.0/wolfcrypt/src/random.c"
 #include "wolfssl-3.9.0/wolfcrypt/src/ripemd.c"
 #include "wolfssl-3.9.0/wolfcrypt/src/rsa.c"
+#define Transform Transform_sha256
+#define AddLength AddLength_sha256
 #include "wolfssl-3.9.0/wolfcrypt/src/sha256.c"
+#undef Transform
+#undef AddLength
 #include "wolfssl-3.9.0/wolfcrypt/src/sha512.c"
 #undef XTRANSFORM
+#define Transform Transform_sha
+#define AddLength AddLength_sha
 #include "wolfssl-3.9.0/wolfcrypt/src/sha.c"
+#undef Transform
+#undef AddLength
 #include "wolfssl-3.9.0/wolfcrypt/src/signature.c"
 #include "wolfssl-3.9.0/wolfcrypt/src/srp.c"
 #include "wolfssl-3.9.0/wolfcrypt/src/tfm.c"

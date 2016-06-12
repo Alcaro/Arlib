@@ -4,6 +4,10 @@
 #include <wolfssl/ssl.h>
 #ifdef __unix__
 #include <sys/socket.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <dirent.h>
 #endif
 
 static WOLFSSL_CTX* ctx;
@@ -55,6 +59,7 @@ public:
 	
 	int recv(uint8_t* data, int len)
 	{
+		nonblock = false;
 		return fixret(wolfSSL_read(ssl, data, len));
 	}
 	
@@ -93,8 +98,32 @@ static void initialize()
 	wolfSSL_SetIORecv(ctx, socketssl_impl::recv_raw);
 	wolfSSL_SetIOSend(ctx, socketssl_impl::send_raw);
 	
-	//use this because it's what Let's Encrypt roots to
-	wolfSSL_CTX_load_verify_locations(ctx, "/etc/ssl/certs/DST_Root_CA_X3.pem", 0);
+#ifdef __unix__
+	//mostly copypasta from wolfSSL_CTX_load_verify_locations,
+	//minus the abort-on-first-error thingy
+	struct dirent* entry;
+	DIR* dir = opendir("/etc/ssl/certs/");
+	
+	if (dir)
+	{
+		while (true)
+		{
+			entry = readdir(dir);
+			if (!entry) break;
+			char name[256];
+			snprintf(name, sizeof(name), "%s%s", "/etc/ssl/certs/", entry->d_name);
+			
+			struct stat s;
+			if (stat(name, &s) == 0 && (s.st_mode & S_IFREG))
+			{
+				wolfSSL_CTX_load_verify_locations(ctx, name, NULL);
+			}
+		}
+		closedir(dir);
+	}
+#else
+#error unsupported
+#endif
 }
 
 socketssl* socketssl::create(socket* parent, const char * domain, bool permissive)
