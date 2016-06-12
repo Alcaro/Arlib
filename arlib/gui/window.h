@@ -754,3 +754,5 @@ struct window_x11_info {
 };
 extern struct window_x11_info window_x11;
 #endif
+
+//TODO: If porting to Qt, use https://woboq.com/blog/verdigris-qt-without-moc.html
