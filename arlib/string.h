@@ -130,8 +130,12 @@ protected:
 		memcpy(this, &other, sizeof(string));
 		if (!inlined)
 		{
-			if (owning) addref();
-			else data_outline = clone(str, len_outline);
+			if (owning32) addref();
+			else
+			{
+				data_outline = clone(data_outline, len_outline);
+				owning32 = 1;
+			}
 		}
 	}
 	

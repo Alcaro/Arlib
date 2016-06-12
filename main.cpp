@@ -39,6 +39,7 @@ for (int i=0;i<argc;i++)printf("%i:%s\n",i,argv[i]);
 }
 #endif
 
+#if 0
 static void teststr(const char * g)
 {
 	string a = g;
@@ -67,11 +68,18 @@ static void teststr(const char * g)
 	a[1] = '!';
 	printf("%p %p %p %p\n", g, (const char*)c, (const char*)a, (const char*)b);
 }
+#endif
 
 int main(int argc, char * argv[])
 {
 	//sandtest(argc, argv);
 	
-	teststr("hi");
-	teststr("1234567890123456789012345678901234567890");
+	//teststr("hi");
+	//teststr("1234567890123456789012345678901234567890");
+	
+	socket* sock = socket::create("floating.muncher.se", 80);
+	sock->send("GET / HTTP/1.1\nHost: floating.muncher.se\nConnection: close\n\n");
+	char ret[1024];
+	while (!sock->recv(ret, 1024)) {}
+	puts(ret);
 }

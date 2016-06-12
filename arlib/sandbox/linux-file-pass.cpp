@@ -133,12 +133,12 @@ static int req_sub(const char * path, int flags, mode_t mode, void* userdata)
 	static_assert(O_WRONLY==1);
 	static_assert(O_RDWR==2);
 	
-	const int flag_ignore = 0; // allow these flags, but don't pass them on
-	const int flag_read = O_CLOEXEC|O_LARGEFILE; // allow these flags
-	const int flag_write = O_WRONLY|O_RDWR|O_APPEND|O_CREAT|O_EXCL|O_TRUNC; // allow these flags, but they mark it as a write request
+	static const int flag_ignore = 0; // allow these flags, but ignore them
+	static const int flag_read = O_CLOEXEC|O_LARGEFILE; // allow these flags
+	static const int flag_write = O_WRONLY|O_RDWR|O_APPEND|O_CREAT|O_EXCL|O_TRUNC; // allow these flags, but only if write access is fine
 	flags &= ~flag_ignore;
-	if (flags & (flag_read | flag_write)) goto deny;
-	if ((flags & (O_WRONLY|O_RDWR)) == (O_WRONLY|O_RDWR)) goto deny;
+	if ((flags & (O_WRONLY|O_RDWR)) == (O_WRONLY|O_RDWR)) goto deny; // invalid open mode
+	if (flags & ~(flag_read | flag_write)) goto deny; // unacceptable flags
 	
 	if (!dat->access(path, (flags & flag_write), dat->userdata)) goto deny;
 	

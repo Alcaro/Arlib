@@ -1,4 +1,4 @@
 #include "socket.h"
 
-#ifdef __linux__
+#ifdef ARLIB_SSL_OPENSSL
 #endif

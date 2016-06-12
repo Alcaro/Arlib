@@ -22,3 +22,6 @@
 #ifdef ARLIB_SANDBOX
 #include "sandbox.h"
 #endif
+#ifdef ARLIB_SOCKET
+#include "socket.h"
+#endif

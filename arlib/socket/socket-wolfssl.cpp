@@ -1,4 +1,4 @@
 #include "socket.h"
 
-#ifdef ARLIB_SSL_SCHANNEL
+#ifdef ARLIB_SSL_WOLFSSL
 #endif

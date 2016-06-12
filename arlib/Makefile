@@ -97,7 +97,6 @@ OBJS += $(patsubst arlib/$(1)/%.cpp,obj/_arlib_$(1)_%$(OBJSUFFIX).o,$(wildcard a
 obj/_arlib_$(1)_%$(OBJSUFFIX).o: arlib/$(1)/%.cpp | obj
 	$$(CXX) $$(TRUE_CXXFLAGS) -c $$< -o $$@
 endef
-
 define ADDDIR
   $(eval $(call ADDDIR_CORE,$(1)))
 endef
@@ -133,12 +132,13 @@ endif
 ifeq ($(ARSANDBOX),1)
   $(call ADDDIR,sandbox)
   CONF_CFLAGS += -DARLIB_SANDBOX
-  ifeq ($(OS),windows)
-    #both sandbox and WuTF need to redirect functions; this implementation is in WuTF
-    #if linux ends up needing it too, I'll split out the redirector to a top-level Arlib file
-    #Arlib is designed for use with -Wl,--gc-sections anyways
-    ARWUTF = 1
-  endif
+  #not true since the windows sandbox isn't a real sandbox
+  #ifeq ($(OS),windows)
+  #  #both sandbox and WuTF need to redirect functions; this implementation is in WuTF
+  #  #if linux ends up needing it too, I'll split out the redirector to a top-level Arlib file
+  #  #Arlib is designed for use with -Wl,--gc-sections anyways
+  #  ARWUTF = 1
+  #endif
 endif
 
 ifeq ($(ARWUTF),1)
@@ -149,6 +149,27 @@ endif
 ifeq ($(ARSOCKET),1)
   $(call ADDDIR,socket)
   CONF_CFLAGS += -DARLIB_SOCKET
+  
+  ifeq ($(OS),windows)
+    CONF_LFLAGS += -lws2_32
+  endif
+  
+  ifeq ($(ARSOCKET_SSL),no)
+    #no SSL
+  else ifeq ($(OS),windows)
+    CONF_CFLAGS += -DARLIB_SSL
+    CONF_CFLAGS += -DARLIB_SSL_SCHANNEL
+    CONF_LFLAGS += -lcrypt32
+    #not sure if these are needed, looks like mingw bug workarounds that were probably relevant four years ago
+    #CONF_LFLAGS += lib/crypt32.exp -l:lib/crypt32.lib -Wl,--enable-stdcall-fixup
+  else ifeq ($(ARSOCKET_SSL),wolfssl)
+    CONF_CFLAGS += -DARLIB_SSL
+    CONF_CFLAGS += -DARLIB_SSL_WOLFSSL
+  else
+    CONF_CFLAGS += -DARLIB_SSL
+    CONF_CFLAGS += -DARLIB_SSL_OPENSSL
+    CONF_LFLAGS += -lssl -lcrypto
+  endif
 endif
 
 CCXXFLAGS = -fvisibility=hidden -fno-exceptions -Wall -Wno-comment
