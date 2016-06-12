@@ -1,7 +1,7 @@
 #include "arlib.h"
 #include <stdio.h>
 
-#ifdef ARLIB_SANDBOX
+#if 0
 static void sandproc(sandbox* box)
 {
 	puts("Hi!");
@@ -19,7 +19,7 @@ static void sandproc(sandbox* box)
 	//while(true)puts("a");
 }
 
-void sandtest(int argc, char * argv[])
+static void sandtest(int argc, char * argv[])
 {
 for (int i=0;i<argc;i++)printf("%i:%s\n",i,argv[i]);
 	sandbox::enter(argc, argv);
@@ -77,9 +77,9 @@ int main(int argc, char * argv[])
 	//teststr("hi");
 	//teststr("1234567890123456789012345678901234567890");
 	
-	socket* sock = socket::create("floating.muncher.se", 80);
-	sock->send("GET / HTTP/1.1\nHost: floating.muncher.se\nConnection: close\n\n");
+	socket* sock = socketssl::create("floating.muncher.se", 443);
+	printf("s=%i\n", sock->send("GET / HTTP/1.1\nHost: floating.muncher.se\nConnection: close\n\n"));
 	char ret[1024];
-	while (!sock->recv(ret, 1024)) {}
+	printf("r=%i\n", sock->recv(ret, 1024));
 	puts(ret);
 }

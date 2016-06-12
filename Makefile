@@ -7,6 +7,6 @@ ARSOCKET_SSL = wolfssl
 #defaults to openssl on linux
 #ignored on windows, always uses schannel
 #can also be set to 'no'
-ARSANDBOX = 1
+ARSANDBOX = 0
 
 include arlib/Makefile

@@ -93,8 +93,9 @@ OUTNAME = $(PROGRAM)$(EXESUFFIX)
 
 #stolen from http://stackoverflow.com/questions/22586084/makefile-with-multiple-rules-sharing-same-recipe-with-patternrules
 define ADDDIR_CORE
-OBJS += $(patsubst arlib/$(1)/%.cpp,obj/_arlib_$(1)_%$(OBJSUFFIX).o,$(wildcard arlib/$(1)/*.cpp))
-obj/_arlib_$(1)_%$(OBJSUFFIX).o: arlib/$(1)/%.cpp | obj
+$(eval OBJPREFIX := obj/_arlib_$(subst /,_,$(1))_)
+OBJS += $(patsubst $(1)/%.cpp,$(OBJPREFIX)%$(OBJSUFFIX).o,$(wildcard $(1)/*.cpp))
+$(OBJPREFIX)%$(OBJSUFFIX).o: $(1)/%.cpp | obj
 	$$(CXX) $$(TRUE_CXXFLAGS) -c $$< -o $$@
 endef
 define ADDDIR
@@ -104,10 +105,10 @@ endef
 OBJS := $(patsubst %.cpp,obj/%$(OBJSUFFIX).o,$(wildcard *.cpp)) $(EXTRAOBJ)
 # obj/miniz$(OBJSUFFIX).o
 
-$(call ADDDIR,.)
+$(call ADDDIR,arlib)
 
 ifeq ($(ARGUI),1)
-  $(call ADDDIR,gui)
+  $(call ADDDIR,arlib/gui)
   ifeq ($(OS),windows)
     CONF_CFLAGS += -DARGUI_WINDOWS
     CONF_LFLAGS += -lgdi32 -lcomctl32 -lcomdlg32 -ldinput8 -ldxguid -lopengl32
@@ -121,7 +122,7 @@ else
 endif
 
 ifeq ($(ARTHREAD),1)
-  $(call ADDDIR,thread)
+  $(call ADDDIR,arlib/thread)
   CONF_CFLAGS += -DARLIB_THREAD
   ifeq ($(OS),linux)
     CONF_CFLAGS += -pthread
@@ -130,7 +131,7 @@ ifeq ($(ARTHREAD),1)
 endif
 
 ifeq ($(ARSANDBOX),1)
-  $(call ADDDIR,sandbox)
+  $(call ADDDIR,arlib/sandbox)
   CONF_CFLAGS += -DARLIB_SANDBOX
   #not true since the windows sandbox isn't a real sandbox
   #ifeq ($(OS),windows)
@@ -142,12 +143,12 @@ ifeq ($(ARSANDBOX),1)
 endif
 
 ifeq ($(ARWUTF),1)
-  $(call ADDDIR,wutf)
+  $(call ADDDIR,arlib/wutf)
   CONF_CFLAGS += -DARLIB_WUTF
 endif
 
 ifeq ($(ARSOCKET),1)
-  $(call ADDDIR,socket)
+  $(call ADDDIR,arlib/socket)
   CONF_CFLAGS += -DARLIB_SOCKET
   
   ifeq ($(OS),windows)
@@ -156,17 +157,16 @@ ifeq ($(ARSOCKET),1)
   
   ifeq ($(ARSOCKET_SSL),no)
     #no SSL
+    #socketssl will still be available at compile time, but fails linking
   else ifeq ($(OS),windows)
-    CONF_CFLAGS += -DARLIB_SSL
     CONF_CFLAGS += -DARLIB_SSL_SCHANNEL
     CONF_LFLAGS += -lcrypt32
     #not sure if these are needed, looks like mingw bug workarounds that were probably relevant four years ago
     #CONF_LFLAGS += lib/crypt32.exp -l:lib/crypt32.lib -Wl,--enable-stdcall-fixup
   else ifeq ($(ARSOCKET_SSL),wolfssl)
-    CONF_CFLAGS += -DARLIB_SSL
-    CONF_CFLAGS += -DARLIB_SSL_WOLFSSL
+    WOLFSSL_DIR = arlib/socket/wolfssl-3.9.0
+    CONF_CFLAGS += -DARLIB_SSL_WOLFSSL -I$(WOLFSSL_DIR)
   else
-    CONF_CFLAGS += -DARLIB_SSL
     CONF_CFLAGS += -DARLIB_SSL_OPENSSL
     CONF_LFLAGS += -lssl -lcrypto
   endif

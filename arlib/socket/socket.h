@@ -8,6 +8,10 @@ protected:
 	socket(){}
 	int fd; // Used by select().
 	
+	//apparently protected becomes private when dealing with another instance of the object, or something
+	//probably spec bug, let's just work around it.
+	static int get_fd(socket* sock) { return sock->fd; }
+	
 public:
 	//Returns NULL on connection failure.
 	static socket* create(const char * domain, int port);
@@ -24,7 +28,8 @@ public:
 	
 	//Negative means error, see above.
 	//Positive is number of bytes handled. Zero means try again, and can be treated as byte count.
-	//send() sends all bytes before returning. send1() tries to send at least one byte. send0() can send zero, but is fully nonblocking.
+	//send() sends all bytes before returning. send1() waits until it can send at least one byte.
+	//send0() can send zero, but is fully nonblocking.
 	//For UDP sockets, partial reads or writes aren't possible; you always get one or zero packets.
 	virtual int recv(uint8_t* data, int len) = 0;
 	virtual int send0(const uint8_t* data, int len) = 0;
@@ -55,22 +60,29 @@ public:
 	
 	virtual ~socket() {}
 	
-	//Use only if you're up to no good.
-	//Remember to serialize the SSL socket if this is used.
+	//Can be used to keep a socket alive across exec().
+	//Remember to serialize the SSL socket if this is used. (SSL sockets don't foo.)
 #ifdef __linux__
 	static socket* create_from_fd(int fd);
 	int get_fd() { return fd; }
 #endif
 };
 
-class sslsocket : public socket {
+class socketssl : public socket {
 protected:
-	sslsocket();
+	socketssl(){}
 public:
 	//If 'permissive' is true, the server certificate won't be verified.
-	static sslsocket* create(const char * domain, int port, bool permissive=false)
+	static socketssl* create(const char * domain, int port, bool permissive=false)
 	{
-		return sslsocket::create(socket::create(domain, port), domain, permissive);
+		return socketssl::create(socket::create(domain, port), domain, permissive);
 	}
-	static sslsocket* create(socket* parent, const char * domain, bool permissive=false);
+	static socketssl* create(socket* parent, const char * domain, bool permissive=false);
+	
+	
+	//Can be used to keep a socket alive across exec().
+	//Returns the number of bytes required. Call with data=NULL len=0 to find how many bytes to use.
+	//If return value is 0, this SSL implementation doesn't support serialization. (OpenSSL can't serialize.)
+	virtual size_t serialize(uint8_t* data, size_t len) = 0;
+	static socketssl* unserialize(const uint8_t* data, size_t len);
 };

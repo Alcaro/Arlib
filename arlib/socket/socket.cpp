@@ -8,6 +8,7 @@
 	#define MSG_NOSIGNAL 0
 	#define MSG_DONTWAIT 0
 	#define close closesocket
+	#define usleep(n) Sleep(n/1000)
 	#ifdef _MSC_VER
 		#pragma comment(lib, "ws2_32.lib")
 	#endif
@@ -15,6 +16,7 @@
 	#include <netdb.h>
 	#include <errno.h>
 	#include <unistd.h>
+	#include <fcntl.h>
 #endif
 
 static void initialize()
@@ -60,10 +62,12 @@ static int connect(const char * domain, int port)
 		close(fd);
 		return -1;
 	}
-//let's just make send0 blocking on windows.
+	//let read0 block on windows
 //#ifdef _WIN32
 //	u_long yes = 1;
 //	ioctlsocket(fd, FIONBIO, &yes);
+//#else
+//	fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0)|O_NONBLOCK);
 //#endif
 	
 	freeaddrinfo(addr);
