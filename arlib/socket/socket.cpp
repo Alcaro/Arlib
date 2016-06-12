@@ -81,6 +81,7 @@ public:
 	
 	/*private*/ int fixret(int ret)
 	{
+printf("RAWDAT=%i,%i\n",ret,errno);
 		if (ret > 0) return ret;
 		if (ret == 0) return e_closed;
 #ifdef __unix__
@@ -94,16 +95,19 @@ public:
 	
 	int recv(uint8_t* data, int len)
 	{
+errno=0;
 		return fixret(::recv(fd, (char*)data, len, MSG_NOSIGNAL));
 	}
 	
 	int send0(const uint8_t* data, int len)
 	{
+errno=0;
 		return fixret(::send(fd, (char*)data, len, MSG_NOSIGNAL|MSG_DONTWAIT));
 	}
 	
 	int send1(const uint8_t* data, int len)
 	{
+errno=0;
 		return fixret(::send(fd, (char*)data, len, MSG_NOSIGNAL));
 	}
 	

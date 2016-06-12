@@ -88,6 +88,7 @@ endif
 ifeq ($(PROFILE),use)
   CONF_CFLAGS += -fprofile-use -fprofile-correction
 endif
+CONF_LFLAGS += -fuse-ld=gold
 
 OUTNAME = $(PROGRAM)$(EXESUFFIX)
 
@@ -204,6 +205,7 @@ obj/miniz$(OBJSUFFIX).o: miniz.c | obj
 
 obj/_arlib_sp_wolfssl$(OBJSUFFIX).o: arlib/socket/wolfssl-lib.c | obj
 	$(CC) -DARLIB_SSL_WOLFSSL_SP $(TRUE_CFLAGS) $(OPTFLAGS) -c $< -o $@
+#	$(CC) -DARLIB_SSL_WOLFSSL_SP $(TRUE_CFLAGS) -c $< -o $@
 
 obj/%$(OBJSUFFIX).o: %.cpp | obj
 	$(CXX) $(TRUE_CXXFLAGS) -c $< -o $@

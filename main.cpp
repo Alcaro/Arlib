@@ -77,8 +77,13 @@ int main(int argc, char * argv[])
 	//teststr("hi");
 	//teststr("1234567890123456789012345678901234567890");
 	
-	socket* sock = socketssl::create("floating.muncher.se", 443);
-	printf("s=%i\n", sock->send("GET / HTTP/1.1\nHost: floating.muncher.se\nConnection: close\n\n"));
+//#define DOMAIN "www.microsoft.com"
+//#define DOMAIN "muncher.se"
+#define DOMAIN "www.howsmyssl.com"
+//#define DOC    "/"
+#define DOC    "/a/check"
+	socket* sock = socketssl::create(DOMAIN, 443);
+	printf("s=%i\n", sock->send("GET " DOC " HTTP/1.1\nHost: " DOMAIN "\nConnection: close\n\n"));
 	char ret[1024];
 	printf("r=%i\n", sock->recv(ret, 1024));
 	puts(ret);
