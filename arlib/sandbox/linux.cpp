@@ -36,7 +36,7 @@ struct sandbox::impl {
 };
 
 //waits while *uaddr == val
-//non-private because this goes on multiple address spaces
+//non-private because this goes across multiple address spaces
 static int futex_wait(int * uaddr, int val, const struct timespec * timeout = NULL)
 {
 	return syscall(__NR_futex, uaddr, FUTEX_WAIT, val, timeout);
@@ -71,11 +71,16 @@ void sandbox::enter(int argc, char** argv)
 	
 	sandbox boxw(box);
 	
-	//don't bother keeping the control data share, the mem map remains anyways
-	int keep_fd[8+1];
+	//don't bother keeping the control data fd, the mem map remains anyways
+	int keep_fd[8+1+3];
 	memcpy(&keep_fd[0], box->sh_fd, sizeof(box->sh_fd));
 	keep_fd[8] = box->fopensock;
-	sandbox_lockdown(keep_fd, 9);
+	
+	keep_fd[9] = 0;
+	keep_fd[10] = 1;
+	keep_fd[11] = 2;
+	
+	sandbox_lockdown(keep_fd, 8+1+3);
 	
 int newfd=sandbox_cross_recv(box->fopensock);
 printf("recv:%i\n",newfd);
@@ -146,6 +151,22 @@ sandbox* sandbox::create(const params* param)
 	{
 		close(shmfd); // apparently mappings survive even if the fd is closed
 		close(chi->fopensock);
+		
+		//<http://man7.org/linux/man-pages/man2/open.2.html> says
+		// The file descriptor returned by a successful call will be the lowest-numbered file descriptor not currently open for the process.
+		//and 0 is fairly low, and /dev/null is readable by anything, so I'll just assume it works.
+		//Worst case, fds 0-2 aren't open in the child.
+		close(0);
+		open("/dev/null", O_RDONLY);
+		
+		if ((param->flags & params::allow_stdout) == 0)
+		{
+			close(1);
+			close(2);
+			open("/dev/null", O_WRONLY);
+			open("/dev/null", O_WRONLY);
+		}
+		
 		
 int test = open("a.cpp", O_RDONLY);
 sandbox_cross_send(par->fopensock, test, 0);
@@ -237,6 +258,7 @@ sandbox::~sandbox()
 	//this can blow up if our caller has a SIGCHLD handler that discards everything, and the PID was reused
 	//even if the child remains alive here, we could end up waiting for something unrelated created between kill/waitpid
 	//but the risk of that is very low, so I'll just not care.
+	//(windows process handles make more sense)
 	kill(m->childpid, SIGKILL);
 	waitpid(m->childpid, NULL, WNOHANG);
 	

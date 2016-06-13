@@ -12,9 +12,12 @@
 //Strings are always NUL terminated. It is safe to overwrite the NUL on a string; that will extend the string.
 
 class string {
-protected:
+private:
 	static const int obj_size = 24; // maximum 32, or len_inline overflows
 	static const int max_inline = obj_size-1-1; // -1 for length, -1 for NUL
+	
+	friend class cstring;
+	friend class wstring;
 	
 	union {
 		struct { // .inlined = 1 (checking .inlined is always allowed)
@@ -26,21 +29,24 @@ protected:
 			//so I need the low bit first on little endian, MSVC or both; and high bit first on bigend GCC.
 			//Luckily, Windows doesn't operate on bigend, per <https://support.microsoft.com/en-us/kb/102025>
 			// Windows NT was designed around Little Endian architecture and was not designed to be compatible with Big Endian
-			//so I can ignore that combination. Swapping based on endian gives what I want.
+			//so I can ignore that combination, and swapping based on endian gives what I want.
 			BIGEND_SWAP2(
 			uint8_t inlined : 1;
 			uint8_t owning : 1;
-			uint8_t wcache : 1;
+			mutable uint8_t wcache : 1;
 			,
 			uint8_t len_inline : 5;
 			)
+			//it would be possible to use the last byte of the inlined data as both length indicator and NUL terminator
+			//(0x00 = length 23, other = outlined or shorter)
+			//but the extra effort required makes it not worth it. 22 is a perfectly fine SSO length, I don't need 23.
 			char data_inline[max_inline+1];
 		};
 		struct { // .inlined = 0
 			BIGEND_SWAP2(
 			uint32_t inlined32 : 1;
 			uint32_t owning32 : 1;
-			uint32_t wcache32 : 1;
+			mutable uint32_t wcache32 : 1;
 			,
 			uint32_t len_outline : 29;
 			)
@@ -102,8 +108,8 @@ public:
 		owning = 1;
 		data_outline = clone(data_outline, len_outline);
 	}
-protected:
 	
+private:
 	void init_from(const char * str)
 	{
 		uint32_t len = strlen(str);
@@ -130,12 +136,8 @@ protected:
 		memcpy(this, &other, sizeof(string));
 		if (!inlined)
 		{
-			if (owning32) addref();
-			else
-			{
-				data_outline = clone(data_outline, len_outline);
-				owning32 = 1;
-			}
+			if (owning) addref();
+			else data_outline = clone(data_outline, len_outline);
 		}
 	}
 	
@@ -156,6 +158,8 @@ protected:
 				data_outline = realloc(data_outline-sizeof(int), bytes_for(newsize));
 			}
 			inlined32 = 0;
+			owning32 = 1; // set this unconditionally, it allows the compiler to merge the writed
+			wcache32 = 0;
 			len_outline = newsize;
 			data_outline[newsize] = '\0';
 		}
@@ -164,6 +168,8 @@ protected:
 			if (!inlined) memcpy(data_inline, data(), oldsize);
 			data_inline[newsize] = '\0';
 			inlined = 1;
+			owning = 1;
+			wcache = 0;
 			len_inline = newsize;
 		}
 	}
@@ -203,8 +209,6 @@ public:
 	const char * data() const { return inlined ? data_inline : data_outline; }
 	uint32_t size() const { return inlined ? len_inline : len_outline; }
 	operator const char * () const { return data(); }
-	
-protected:
 	
 private:
 	class charref {
@@ -261,13 +265,49 @@ public:
 class wstring : public string {
 	mutable uint32_t pos_bytes;
 	mutable uint32_t pos_chars;
+	mutable uint32_t wsize;
+	//char pad[4];
+	const uint32_t WSIZE_UNKNOWN = -1;
 	
-public:
-	wstring() : string() { pos_bytes=0; pos_chars=0; }
-	wstring(const string& other) : string(other) { pos_bytes=0; pos_chars=0; }
-	wstring(const char * str) : string(str) { pos_bytes=0; pos_chars=0; }
+	void clearcache() const
+	{
+		pos_bytes = 0;
+		pos_chars = 0;
+		wsize = WSIZE_UNKNOWN;
+		wcache = 1;
+	}
 	
-private:
+	void checkcache() const
+	{
+		if (!wcache) clearcache();
+	}
+	
+	uint32_t findcp(uint32_t index) const
+	{
+		checkcache();
+		
+		if (pos_chars > index)
+		{
+			pos_bytes=0;
+			pos_chars=0;
+		}
+		
+		uint8_t* scan = (uint8_t*)data() + pos_bytes;
+		uint32_t chars = pos_chars;
+		while (chars != index)
+		{
+			if ((*scan&0xC0) != 0x80) chars++;
+			scan++;
+		}
+		pos_bytes = scan - (uint8_t*)data();
+		pos_chars = index;
+		
+		return pos_bytes;
+	}
+	
+	uint32_t getcp(uint32_t index) const { return 42; }
+	void setcp(uint32_t index, uint32_t val) { }
+	
 	class charref {
 		wstring* parent;
 		uint32_t index;
@@ -280,18 +320,30 @@ private:
 	};
 	friend class charref;
 	
-	uint32_t findcp(uint32_t index)
-	{
-		return 42;
-	}
-	
-	uint32_t getcp(uint32_t index) const { return 42; }
-	void setcp(uint32_t index, uint32_t val) { }
-	
 public:
+	wstring() : string() { clearcache(); }
+	wstring(const string& other) : string(other) { clearcache(); }
+	wstring(const char * str) : string(str) { clearcache(); }
+	
 	charref operator[](uint32_t index) { return charref(this, index); }
 	charref operator[](int index) { return charref(this, index); }
 	uint32_t operator[](uint32_t index) const { return getcp(index); }
 	uint32_t operator[](int index) const { return getcp(index); }
 	
+	uint32_t size() const
+	{
+		checkcache();
+		if (wsize == WSIZE_UNKNOWN)
+		{
+			uint8_t* scan = (uint8_t*)data() + pos_bytes;
+			uint32_t chars = pos_chars;
+			while (*scan)
+			{
+				if ((*scan&0xC0) != 0x80) chars++;
+				scan++;
+			}
+			wsize = chars;
+		}
+		return wsize;
+	}
 };

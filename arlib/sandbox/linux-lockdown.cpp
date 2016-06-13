@@ -63,8 +63,6 @@ static void close_fds(int* allow_fd, int n_allow_fd)
 				_exit(0);
 			}
 			
-			if (fd <= 2) continue;
-			
 			if (fd != dirfd(dirp) && !int_in(allow_fd, n_allow_fd, (int)fd))
 			{
 				close((int)fd);

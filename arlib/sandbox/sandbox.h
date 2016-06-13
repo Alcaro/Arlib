@@ -9,8 +9,6 @@
 // Failing an access check in the child yields undefined behavior (subject to the above, of course).
 // It can return EACCES, kill the process, or whatever.
 //
-//On Linux, requires exclusive control over SIGSYS in the child.
-//
 //WARNING: There is NO SECURITY WHATSOEVER on Windows. A "sandboxed" process can do anything the parent can.
 //Windows provides plenty of ways to restrict a process, but
 //- Most of them are blacklists, disabling a particular privilege; I want whitelists
@@ -21,8 +19,8 @@
 //- The lockdown functions are often annoying to call, involving variable-width arrays in
 //    structures, and LCIDs that likely vary between reboots
 //And I cannot trust such a system. I only trust whitelists, like Linux seccomp.
-//Even Chrome couldn't find anything comprehensive; they use everything they can find (restricted token, job, desktop,
-// SetProcessMitigationPolicy, whatever), but some operations, such as accessing FAT32 volumes, still pass through.
+//Even Chrome couldn't find anything comprehensive; they use everything they can find (restricted token, job object, desktop,
+// SetProcessMitigationPolicy, firewall, etc), but some operations, such as accessing FAT32 volumes, still pass through.
 //It feels like the Windows sandboxing functions are designed for trusted code operating on untrusted data, rather than untrusted code.
 //Since I can't create satisfactory results in such an environment, I won't even try.
 //
@@ -32,6 +30,11 @@
 // use them.
 //Documentation is also excellent; source code is available everywhere, all syscalls (both Linux-only and Unix-global)
 // are well documented, and if I miss something, strace quickly tells me what.
+//
+//On Linux, this requires exclusive control over SIGSYS in the child process.
+//<http://lxr.free-electrons.com/ident?i=SIGSYS> (as of kernel version 4.6) shows me about fifty references to SIGSYS,
+// but they're all seccomp-related (mostly in seccomp tests), #define SIGSYS 123, or otherwise uninteresting to handle,
+// so it's safe to claim this signal for myself.
 //
 //Chrome sandbox entry points: http://stackoverflow.com/questions/1590337/using-the-google-chrome-sandbox
 
@@ -46,7 +49,7 @@ public:
 		enum flags_t {
 			//Always allowed: Allocate memory, synchronization operations, terminate self.
 			
-			//stdout and stderr go to the same places as in the parent. Default is /dev/null.
+			//If true, stdout and stderr go to the same places as in the parent. If false, /dev/null.
 			allow_stdout = 1,
 			
 			//Creates a sandbox facade; it acts like a normal sandbox, but the child process isn't
@@ -66,7 +69,7 @@ public:
 		
 		//TODO: replace with some kind of stringlist thing
 		//If the allow_file flag is not set, this is called when the child tries to open a file.
-		//If it returns true, the request is granted. If false, or if the function is NULL, EACCES is returned.
+		//If it returns true, the request is granted. If false, or if the function is NULL, the child's attempt fails with EACCES.
 		//Can be called at any time when a function is executed on this sandbox object. The sandbox
 		//  manager creates a thread to handle such requests.
 		//function<bool(const char *, bool write)> file_access;
@@ -114,7 +117,18 @@ public:
 	void* shalloc(int index, size_t bytes);
 	
 	//Convenience function, just calls the above.
-	template<typename T> T* shalloc(int index, int count=1) { return (T*)this->shalloc(index, sizeof(T)*count); }
+	template<typename T> T* shalloc(int index, size_t count=1) { return (T*)this->shalloc(index, sizeof(T)*count); }
+	
+	//This will be called if the child process attempts to open a file, but the attempt is rejected by policy.
+	//If the return value from this callback is not equal to -1, that will be returned as a file handle.
+	//It is safe to call accept_fd() from this function.
+	//On Windows, the intptr_t is a casted HANDLE. On Linux, int.
+	void set_fopen_fallback(function<intptr_t(const char * path, bool write)> callback); // Child only.
+	
+	//Clones a file handle into the child. The handle remains open in the parent. The child may get another ID.
+	//Like shalloc(), neither process returns until the other enters.
+	void give_fd(intptr_t fd); // Parent only.
+	intptr_t accept_fd(); // Child only.
 	
 	//This forcibly terminates the child process. If called from the child, undefined behaviour; instead, call exit() or return from run().
 	//Also unmaps all shared memory.
