@@ -81,7 +81,6 @@ public:
 	
 	/*private*/ int fixret(int ret)
 	{
-printf("RAWDAT=%i,%i\n",ret,errno);
 		if (ret > 0) return ret;
 		if (ret == 0) return e_closed;
 #ifdef __unix__

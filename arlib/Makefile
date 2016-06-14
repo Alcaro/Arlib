@@ -169,9 +169,14 @@ ifeq ($(ARSOCKET),1)
     CONF_CFLAGS += -DARLIB_SSL_WOLFSSL -I$(WOLFSSL_DIR)
     OBJS += obj/_arlib_sp_wolfssl$(OBJSUFFIX).o
     #CFLAGS += $(OPTFLAGS)
-  else
+  else ifeq ($(ARSOCKET_SSL),openssl)
     CONF_CFLAGS += -DARLIB_SSL_OPENSSL
     CONF_LFLAGS += -lssl -lcrypto
+  else ifeq ($(ARSOCKET_SSL),tlse)
+    CONF_CFLAGS += -DARLIB_SSL_TLSE
+    OBJS += obj/_arlib_sp_tlse$(OBJSUFFIX).o
+  else
+    $(error unknown SSL library)
   endif
 endif
 
@@ -205,7 +210,9 @@ obj/miniz$(OBJSUFFIX).o: miniz.c | obj
 
 obj/_arlib_sp_wolfssl$(OBJSUFFIX).o: arlib/socket/wolfssl-lib.c | obj
 	$(CC) -DARLIB_SSL_WOLFSSL_SP $(TRUE_CFLAGS) $(OPTFLAGS) -c $< -o $@
-#	$(CC) -DARLIB_SSL_WOLFSSL_SP $(TRUE_CFLAGS) -c $< -o $@
+
+obj/_arlib_sp_tlse$(OBJSUFFIX).o: arlib/socket/tlse.c | obj
+	$(CC) -DTLSE_IMPL -DTLS_AMALGAMATION $(TRUE_CFLAGS) $(OPTFLAGS) -w -c $< -o $@
 
 obj/%$(OBJSUFFIX).o: %.cpp | obj
 	$(CXX) $(TRUE_CXXFLAGS) -c $< -o $@

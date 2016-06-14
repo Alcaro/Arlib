@@ -78,12 +78,13 @@ int main(int argc, char * argv[])
 	//teststr("1234567890123456789012345678901234567890");
 	
 //#define DOMAIN "www.microsoft.com"
-//#define DOMAIN "muncher.se"
-#define DOMAIN "www.howsmyssl.com"
-//#define DOC    "/"
-#define DOC    "/a/check"
+#define DOMAIN "muncher.se"
+//#define DOMAIN "www.howsmyssl.com"
+#define DOC    "/"
+//#define DOC    "/a/check"
 	socket* sock = socketssl::create(DOMAIN, 443);
 	printf("s=%i\n", sock->send("GET " DOC " HTTP/1.1\nHost: " DOMAIN "\nConnection: close\n\n"));
+	
 	char ret[8192];
 	printf("r=%i\n", sock->recv(ret, sizeof(ret)));
 	puts(ret);

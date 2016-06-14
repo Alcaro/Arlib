@@ -1,11 +1,9 @@
 #include "socket.h"
 
 #ifdef ARLIB_SSL_OPENSSL
-
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/x509_vfy.h>
-//#include <openssl/bio.h>
 
 static SSL_CTX * ctx;
 
@@ -48,12 +46,12 @@ public:
 		//plausible cert failure cases: unrooted (including self-signed), expired, wrong domain
 		//permissive should allow the former two, but still block the third
 #if OPENSSL_VERSION_NUMBER >= 0x10100000 // >= 1.1.0
-#error test
+#error test, especially set0 vs set1
 		SSL_set1_host(ssl, "example.com");
 #endif
 		
 #if OPENSSL_VERSION_NUMBER >= 0x10002000 && OPENSSL_VERSION_NUMBER < 0x10100000 // >= 1.0.2, < 1.1.0
-#error test
+#error test, especially [gs]et0 vs [gs]et1
 		X509_VERIFY_PARAM* param = SSL_get0_param(ssl);
 		//optional?
 		//X509_VERIFY_PARAM_set_hostflags(param, X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS);
@@ -178,8 +176,8 @@ SOFTWARE.
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
 #endif
 
-#include <openssl/x509v3.h>
-#include <openssl/ssl.h>
+//#include <openssl/x509v3.h>
+//#include <openssl/ssl.h>
 
 //#include "openssl_hostname_validation.h"
 //#include "hostcheck.h"

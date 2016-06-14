@@ -3,10 +3,10 @@ ARGUI = 0
 ARTHREAD = 0
 ARWUTF = 0
 ARSOCKET = 1
-#defaults to openssl on linux
-#ignored on windows, always uses schannel
-#can also be set to 'no'
-ARSOCKET_SSL = openssl
+#valid values: openssl, wolfssl, tlse, no
+#ignored on windows (other than 'no', which is obeyed), always uses schannel
+#default openssl
+ARSOCKET_SSL = tlse
 ARSANDBOX = 1
 
 include arlib/Makefile
