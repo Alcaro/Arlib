@@ -49,8 +49,8 @@ static void initialize()
 				int fd = open(name, O_RDONLY);
 				if (fd >= 0)
 				{
-					read(fd, cert, s.st_size);
-					tls_load_root_certificates(rootcerts, cert, s.st_size);
+					off_t actualsize = read(fd, cert, s.st_size);
+					tls_load_root_certificates(rootcerts, cert, actualsize);
 				}
 			}
 		}

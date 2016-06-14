@@ -85,7 +85,7 @@ void sandbox::enter(int argc, char** argv)
 int newfd=sandbox_cross_recv(box->fopensock);
 printf("recv:%i\n",newfd);
 char hhh[42];
-read(newfd,hhh,41);
+if (read(newfd,hhh,41)==666) puts("shut up gcc");
 hhh[41]=0;
 puts(hhh);
 close(newfd);
@@ -109,9 +109,13 @@ static int tmp_create()
 
 sandbox* sandbox::create(const params* param)
 {
-	sandbox::impl* par = (sandbox::impl*)malloc(sizeof(sandbox::impl));
 	int shmfd = tmp_create();
-	ftruncate(shmfd, sizeof(sandbox::impl));
+	if (ftruncate(shmfd, sizeof(sandbox::impl)) < 0)
+	{
+		close(shmfd);
+		return NULL;
+	}
+	sandbox::impl* par = (sandbox::impl*)malloc(sizeof(sandbox::impl));
 	sandbox::impl* chi = (sandbox::impl*)mmap(NULL, sizeof(sandbox::impl), PROT_READ|PROT_WRITE, MAP_SHARED, shmfd, 0);
 	memset(par, 0, sizeof(*par));
 	memset(chi, 0, sizeof(*chi));
@@ -212,7 +216,7 @@ void* sandbox::shalloc(int index, size_t bytes)
 	if (m->sh_ptr[index]) munmap(m->sh_ptr[index], m->sh_len[index]);
 	m->sh_ptr[index] = NULL;
 	
-	void* ret;
+	void* ret = NULL;
 	if (!m->childpid) // child, tell parent we're unmapped (if shrinking, we risk SIGBUS in child if we don't wait)
 	{
 		futex_set_and_wake(&m->sh_futex, 1);
@@ -221,29 +225,29 @@ void* sandbox::shalloc(int index, size_t bytes)
 	{
 		futex_wait_while_eq(&m->childdat->sh_futex, 0);
 		
-		ftruncate(m->sh_fd[index], bytes);
+		if (ftruncate(m->sh_fd[index], bytes) < 0) goto fail;
 		
 		ret = mmap(NULL, bytes, PROT_READ|PROT_WRITE, MAP_SHARED, m->sh_fd[index], 0);
-		if (ret == MAP_FAILED) ret = NULL;
+		if (ret == MAP_FAILED) goto fail;
 		
-		futex_set_and_wake(&m->childdat->sh_futex, (ret ? 2 : 0));
+		futex_set_and_wake(&m->childdat->sh_futex, 2);
 	}
 	if (!m->childpid) // child, map
 	{
 		futex_wait_while_eq(&m->sh_futex, 1);
 		
-		if (m->sh_futex == 0) return NULL;
+		if (m->sh_futex == 0) goto fail;
 		
 		ret = mmap(NULL, bytes, PROT_READ|PROT_WRITE, MAP_SHARED, m->sh_fd[index], 0);
-		if (ret == MAP_FAILED) ret = NULL;
+		if (ret == MAP_FAILED) goto fail;
 		
-		futex_set_and_wake(&m->sh_futex, (ret ? 3 : 0));
+		futex_set_and_wake(&m->sh_futex, 3);
 	}
 	if (m->childpid) // parent, check that child succeeded
 	{
 		futex_wait_while_eq(&m->childdat->sh_futex, 2);
 		
-		if (m->childdat->sh_futex == 0) return NULL;
+		if (m->childdat->sh_futex == 0) goto fail;
 		
 		futex_set_and_wake(&m->childdat->sh_futex, 0);
 	}
@@ -251,6 +255,10 @@ void* sandbox::shalloc(int index, size_t bytes)
 	m->sh_ptr[index] = ret;
 	m->sh_len[index] = bytes;
 	return ret;
+	
+fail:
+	futex_set_and_wake(&m->sh_futex, 0);
+	return NULL;
 }
 
 sandbox::~sandbox()

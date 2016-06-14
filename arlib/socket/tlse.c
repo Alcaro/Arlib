@@ -4809,9 +4809,6 @@ int tls_parse_hello(struct TLSContext *context, const unsigned char *buf, int bu
 }
 
 int tls_parse_certificate(struct TLSContext *context, const unsigned char *buf, int buf_len, int is_client) {
-int muncher=0;
-for (int i=0;i<buf_len-7;i++) { if (!strncmp(buf+i, "floatin", 7)) { muncher=i; break; } }
-printf("muncher: %i %p in %p-%p\n", muncher, buf+muncher, buf, buf+buf_len);
     int res = 0;
     CHECK_SIZE(3, buf_len, TLS_NEED_MORE_DATA)
     unsigned int size_of_all_certificates = buf[0] * 0x10000 + buf[1] * 0x100 + buf[2];
@@ -4847,7 +4844,6 @@ printf("muncher: %i %p in %p-%p\n", muncher, buf+muncher, buf, buf+buf_len);
             }
             remaining -= certificate_size2;
             
-printf("asn1: %p-%p\n", &buf[res2], &buf[res2] + certificate_size2);
             struct TLSCertificate *cert = asn1_parse(context, &buf[res2], certificate_size2, is_client);
             if (cert) {
                 if (certificate_size2) {
