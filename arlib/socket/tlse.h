@@ -1,3 +1,6 @@
+// from https://github.com/eduardsui/tlse
+// slightly modified
+
 #ifndef TLSE_H
 #define TLSE_H
 
@@ -5,7 +8,7 @@
 
 // define TLS_LEGACY_SUPPORT to support TLS 1.1/1.0 (legacy)
 // legacy support it will use an additional 272 bytes / context
-#define TLS_LEGACY_SUPPORT
+//#define TLS_LEGACY_SUPPORT
 // SSL_* style blocking APIs
 #define SSL_COMPATIBLE_INTERFACE
 // support forward secrecy (Diffie-Hellman ephemeral)

@@ -212,7 +212,7 @@ obj/_arlib_sp_wolfssl$(OBJSUFFIX).o: arlib/socket/wolfssl-lib.c | obj
 	$(CC) -DARLIB_SSL_WOLFSSL_SP $(TRUE_CFLAGS) $(OPTFLAGS) -c $< -o $@
 
 obj/_arlib_sp_tlse$(OBJSUFFIX).o: arlib/socket/tlse.c | obj
-	$(CC) -DTLSE_IMPL -DTLS_AMALGAMATION $(TRUE_CFLAGS) $(OPTFLAGS) -w -c $< -o $@
+	$(CC) -DTLSE_IMPL -DTLS_AMALGAMATION $(TRUE_CFLAGS)  -w -c $< -o $@
 
 obj/%$(OBJSUFFIX).o: %.cpp | obj
 	$(CXX) $(TRUE_CXXFLAGS) -c $< -o $@

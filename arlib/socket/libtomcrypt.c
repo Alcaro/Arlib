@@ -1,3 +1,6 @@
+// from https://github.com/eduardsui/tlse
+// slightly modified
+
 #ifdef TLSE_IMPL
 #define CRYPT 0x0117
 #define LTC_NO_ROLC
