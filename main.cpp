@@ -1,7 +1,7 @@
 #include "arlib.h"
 #include <stdio.h>
 
-#if 1
+#if 0
 static void sandproc(sandbox* box)
 {
 	puts("Hi!");
@@ -72,7 +72,7 @@ static void teststr(const char * g)
 
 int main(int argc, char * argv[])
 {
-	sandtest(argc, argv);
+	//sandtest(argc, argv);
 	
 	//teststr("hi");
 	//teststr("1234567890123456789012345678901234567890");
@@ -82,9 +82,9 @@ int main(int argc, char * argv[])
 #define DOMAIN "www.howsmyssl.com"
 //#define DOC    "/"
 #define DOC    "/a/check"
-	//socket* sock = socketssl::create(DOMAIN, 443);
-	//printf("s=%i\n", sock->send("GET " DOC " HTTP/1.1\nHost: " DOMAIN "\nConnection: close\n\n"));
-	//char ret[1024];
-	//printf("r=%i\n", sock->recv(ret, 1024));
-	//puts(ret);
+	socket* sock = socketssl::create(DOMAIN, 443);
+	printf("s=%i\n", sock->send("GET " DOC " HTTP/1.1\nHost: " DOMAIN "\nConnection: close\n\n"));
+	char ret[8192];
+	printf("r=%i\n", sock->recv(ret, sizeof(ret)));
+	puts(ret);
 }

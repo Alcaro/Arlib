@@ -95,19 +95,16 @@ printf("RAWDAT=%i,%i\n",ret,errno);
 	
 	int recv(uint8_t* data, int len)
 	{
-errno=0;
 		return fixret(::recv(fd, (char*)data, len, MSG_NOSIGNAL));
 	}
 	
 	int send0(const uint8_t* data, int len)
 	{
-errno=0;
 		return fixret(::send(fd, (char*)data, len, MSG_NOSIGNAL|MSG_DONTWAIT));
 	}
 	
 	int send1(const uint8_t* data, int len)
 	{
-errno=0;
 		return fixret(::send(fd, (char*)data, len, MSG_NOSIGNAL));
 	}
 	

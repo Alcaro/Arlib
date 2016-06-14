@@ -8,9 +8,18 @@ protected:
 	socket(){}
 	int fd; // Used by select().
 	
+	enum {
+		t_tcp,
+		t_udp,
+		t_tcpssl,
+		t_other,
+	};
+	int type;
+	
 	//apparently protected becomes private when dealing with another instance of the object, or something
 	//probably spec bug, let's just work around it.
 	static int get_fd(socket* sock) { return sock->fd; }
+	static int get_type(socket* sock) { return sock->type; }
 	
 public:
 	//Returns NULL on connection failure.
@@ -61,7 +70,7 @@ public:
 	virtual ~socket() {}
 	
 	//Can be used to keep a socket alive across exec().
-	//Remember to serialize the SSL socket if this is used. (SSL sockets don't foo.)
+	//Remember to serialize the SSL socket if this is used.
 #ifdef __linux__
 	static socket* create_from_fd(int fd);
 	int get_fd() { return fd; }
@@ -77,12 +86,14 @@ public:
 	{
 		return socketssl::create(socket::create(domain, port), domain, permissive);
 	}
+	//On entry, this takes ownership of the connection. Even if connection fails, the socket may not be used anymore.
+	//The socket must be a normal TCP socket. UDP and nested SSL is not supported.
 	static socketssl* create(socket* parent, const char * domain, bool permissive=false);
 	
 	
 	//Can be used to keep a socket alive across exec().
 	//Returns the number of bytes required. Call with data=NULL len=0 to find how many bytes to use.
-	//If return value is 0, this SSL implementation doesn't support serialization. (OpenSSL can't serialize.)
-	virtual size_t serialize(uint8_t* data, size_t len) = 0;
-	static socketssl* unserialize(const uint8_t* data, size_t len);
+	//If return value is 0, this SSL implementation doesn't support serialization.
+	virtual size_t serialize(uint8_t* data, size_t len) { return 0; }
+	static socketssl* unserialize(socket* inner, const uint8_t* data, size_t len);
 };
