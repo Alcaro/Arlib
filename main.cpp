@@ -80,7 +80,10 @@ socket* roundtrip(socket* sock_)
 	//
 //printf("serialize: %i u8[%i]\n", fd, datalen);
 	//return socketssl::unserialize(fd, data, datalen);
+	return sock;
 }
+
+int main2( int argc, char *argv[] );
 
 int main(int argc, char * argv[])
 {
@@ -88,6 +91,8 @@ int main(int argc, char * argv[])
 	
 	//teststr("hi");
 	//teststr("1234567890123456789012345678901234567890");
+	
+	//main2(argc,argv);
 	
 //#define DOMAIN "www.microsoft.com"
 #define DOMAIN "muncher.se"

@@ -2,6 +2,7 @@
 #include <stdio.h>
 
 #undef socket
+#undef bind
 #if defined(_WIN32)
 	#include <winsock2.h>
 	#include <ws2tcpip.h>
@@ -18,6 +19,8 @@
 	#include <unistd.h>
 	#include <fcntl.h>
 #endif
+
+namespace {
 
 static void initialize()
 {
@@ -92,9 +95,14 @@ public:
 		return e_broken;
 	}
 	
-	int recv(uint8_t* data, int len)
+	int recvnb(uint8_t* data, int len)
 	{
 		return fixret(::recv(fd, (char*)data, len, MSG_NOSIGNAL|MSG_DONTWAIT));
+	}
+	
+	int recv(uint8_t* data, int len)
+	{
+		return fixret(::recv(fd, (char*)data, len, MSG_NOSIGNAL));
 	}
 	
 	int send0(const uint8_t* data, int len)
@@ -121,12 +129,12 @@ static socket* socket_wrap(int fd)
 	return new socket_impl(fd);
 }
 
-#ifdef __unix__
+}
+
 socket* socket::create_from_fd(int fd)
 {
 	return socket_wrap(fd);
 }
-#endif
 
 socket* socket::create(const char * domain, int port)
 {

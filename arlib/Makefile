@@ -88,7 +88,6 @@ endif
 ifeq ($(PROFILE),use)
   CONF_CFLAGS += -fprofile-use -fprofile-correction
 endif
-CONF_LFLAGS += -fuse-ld=gold
 
 OUTNAME = $(PROGRAM)$(EXESUFFIX)
 
@@ -161,7 +160,7 @@ ifeq ($(ARSOCKET),1)
     #socketssl will still be available at compile time, but fails linking
   else ifeq ($(OS),windows)
     CONF_CFLAGS += -DARLIB_SSL_SCHANNEL
-    CONF_LFLAGS += -lcrypt32
+    CONF_LFLAGS += -lcrypt32 -lsecur32
     #not sure if these are needed, looks like mingw bug workarounds that were probably relevant four years ago
     #CONF_LFLAGS += lib/crypt32.exp -l:lib/crypt32.lib -Wl,--enable-stdcall-fixup
   else ifeq ($(ARSOCKET_SSL),wolfssl)

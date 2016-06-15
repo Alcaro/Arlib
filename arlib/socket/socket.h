@@ -1,21 +1,17 @@
+#include "../global.h"
+#include "../bytearray.h"
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
 
 #define socket socket_t
-class socket {
+class socket : nocopy {
 protected:
 	socket(){}
 	int fd; // Used by select().
 	
-	//apparently protected becomes private when dealing with another instance of the object, or something
-	//probably spec bug, let's just work around it.
-	static int get_fd(socket* sock) { return sock->fd; }
-	
-#ifdef __unix__
 	//deallocates the socket, returning its fd, while letting the fd remain valid
 	static int decompose(socket* sock) { int ret = sock->fd; sock->fd=-1; delete sock; return ret; }
-#endif
 	
 public:
 	//Returns NULL on connection failure.
@@ -36,6 +32,8 @@ public:
 	//send() sends all bytes before returning. send1() waits until it can send at least one byte.
 	//send0() can send zero, but is fully nonblocking.
 	//For UDP sockets, partial reads or writes aren't possible; you always get one or zero packets.
+	//recv() corresponds to send1(); recvnb() is send0(). There is no counterpart to send(); use socketbuffer if you need that.
+	virtual int recvnb(uint8_t* data, int len) = 0;
 	virtual int recv(uint8_t* data, int len) = 0;
 	virtual int send0(const uint8_t* data, int len) = 0;
 	virtual int send1(const uint8_t* data, int len) = 0;
@@ -52,7 +50,8 @@ public:
 	}
 	
 	//Convenience functions for handling textual data.
-	int recv(char* data, int len) { int ret = recv((uint8_t*)data, len-1); if (ret>=0) data[ret]='\0'; else data[0]='\0'; return ret; }
+	int recvnb(char* data, int len) { int ret = recvnb((uint8_t*)data, len-1); if (ret>=0) data[ret]='\0'; else data[0]='\0'; return ret; }
+	int recv  (char* data, int len) { int ret = recv  ((uint8_t*)data, len-1); if (ret>=0) data[ret]='\0'; else data[0]='\0'; return ret; }
 	int send0(const char * data) { return send0((uint8_t*)data, strlen(data)); }
 	int send1(const char * data) { return send1((uint8_t*)data, strlen(data)); }
 	int send (const char * data) { return send ((uint8_t*)data, strlen(data)); }
@@ -67,10 +66,8 @@ public:
 	
 	//Can be used to keep a socket alive across exec().
 	//Remember to serialize the SSL socket if this is used.
-#ifdef __unix__
 	static socket* create_from_fd(int fd);
 	int get_fd() { return fd; }
-#endif
 };
 
 class socketssl : public socket {
@@ -89,12 +86,10 @@ public:
 	
 	virtual void q(){}
 	
-#ifdef __unix__
 	//Can be used to keep a socket alive across exec().
 	//If successful, serialize() returns the the file descriptor needed to unserialize, and the socket is deleted.
 	//If failure, negative return and nothing happens.
 	virtual size_t serialize_size() { return 0; }
 	virtual int serialize(uint8_t* data, size_t len) { return -1; }
 	static socketssl* unserialize(int fd, const uint8_t* data, size_t len);
-#endif
 };
