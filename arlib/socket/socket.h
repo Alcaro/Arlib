@@ -8,18 +8,14 @@ protected:
 	socket(){}
 	int fd; // Used by select().
 	
-	enum {
-		t_tcp,
-		t_udp,
-		t_tcpssl,
-		t_other,
-	};
-	int type;
-	
 	//apparently protected becomes private when dealing with another instance of the object, or something
 	//probably spec bug, let's just work around it.
 	static int get_fd(socket* sock) { return sock->fd; }
-	static int get_type(socket* sock) { return sock->type; }
+	
+#ifdef __unix__
+	//deallocates the socket, returning its fd, while letting the fd remain valid
+	static int decompose(socket* sock) { int ret = sock->fd; sock->fd=-1; delete sock; return ret; }
+#endif
 	
 public:
 	//Returns NULL on connection failure.
@@ -71,7 +67,7 @@ public:
 	
 	//Can be used to keep a socket alive across exec().
 	//Remember to serialize the SSL socket if this is used.
-#ifdef __linux__
+#ifdef __unix__
 	static socket* create_from_fd(int fd);
 	int get_fd() { return fd; }
 #endif
@@ -91,9 +87,14 @@ public:
 	static socketssl* create(socket* parent, const char * domain, bool permissive=false);
 	
 	
+	virtual void q(){}
+	
+#ifdef __unix__
 	//Can be used to keep a socket alive across exec().
-	//Returns the number of bytes required. Call with data=NULL len=0 to find how many bytes to use.
-	//If return value is 0, this SSL implementation doesn't support serialization.
-	virtual size_t serialize(uint8_t* data, size_t len) { return 0; }
-	static socketssl* unserialize(socket* inner, const uint8_t* data, size_t len);
+	//If successful, serialize() returns the the file descriptor needed to unserialize, and the socket is deleted.
+	//If failure, negative return and nothing happens.
+	virtual size_t serialize_size() { return 0; }
+	virtual int serialize(uint8_t* data, size_t len) { return -1; }
+	static socketssl* unserialize(int fd, const uint8_t* data, size_t len);
+#endif
 };

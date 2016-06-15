@@ -117,14 +117,6 @@ socketssl* socketssl::create(socket* parent, const char * domain, bool permissiv
 	return socketssl_impl::create(parent, domain, permissive);
 }
 
-socketssl* socketssl::unserialize(socket* inner, const uint8_t* data, size_t len)
-{
-	initialize();
-	if (!ctx) return NULL;
-	
-	return NULL;
-}
-
 
 #if OPENSSL_VERSION_NUMBER < 0x10002000
 //actually not from curl

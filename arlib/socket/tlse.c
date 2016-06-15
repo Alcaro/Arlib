@@ -6931,6 +6931,7 @@ int tls_export_context(struct TLSContext *context, unsigned char *buffer, unsign
     return size;
 }
 
+#include <valgrind/memcheck.h>
 struct TLSContext *tls_import_context(unsigned char *buffer, unsigned int buf_len) {
     if ((!buffer) || (buf_len < 64) || (buffer[0] != TLS_SERIALIZED_OBJECT) || (buffer[5] != 0x01)) {
         DEBUG_PRINT("CANNOT IMPORT CONTEXT BUFFER\n");
@@ -6939,6 +6940,7 @@ struct TLSContext *tls_import_context(unsigned char *buffer, unsigned int buf_le
     // create a context object
     struct TLSContext *context = tls_create_context(0, TLS_V12);
     if (context) {
+//VALGRIND_MAKE_MEM_UNDEFINED(context,sizeof(*context));
         unsigned char temp[0xFF];
         context->version = ntohs(*(unsigned short *)&buffer[1]);
         unsigned short length = ntohs(*(unsigned short *)&buffer[3]);

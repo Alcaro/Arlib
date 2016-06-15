@@ -178,8 +178,6 @@ printf("SSLERR=%i\n",err);
 		return fixret(wolfSSL_write(ssl, data, len));
 	}
 	
-	virtual size_t serialize(uint8_t* data, size_t len) { return 0; }
-	
 	~socketssl_impl()
 	{
 		wolfSSL_free(ssl);
@@ -239,13 +237,5 @@ socketssl* socketssl::create(socket* parent, const char * domain, bool permissiv
 	//if (!ctx) return NULL;
 	
 	return new socketssl_impl(parent, domain, permissive);
-}
-
-socketssl* socketssl::unserialize(const uint8_t* data, size_t len)
-{
-	initialize();
-	if (!ctx) return NULL;
-	
-	return NULL;
 }
 #endif

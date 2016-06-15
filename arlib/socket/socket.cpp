@@ -94,16 +94,18 @@ public:
 	
 	int recv(uint8_t* data, int len)
 	{
-		return fixret(::recv(fd, (char*)data, len, MSG_NOSIGNAL));
+		return fixret(::recv(fd, (char*)data, len, MSG_NOSIGNAL|MSG_DONTWAIT));
 	}
 	
 	int send0(const uint8_t* data, int len)
 	{
+printf("snd=%i\n",len);
 		return fixret(::send(fd, (char*)data, len, MSG_NOSIGNAL|MSG_DONTWAIT));
 	}
 	
 	int send1(const uint8_t* data, int len)
 	{
+printf("snd=%i\n",len);
 		return fixret(::send(fd, (char*)data, len, MSG_NOSIGNAL));
 	}
 	

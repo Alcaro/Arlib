@@ -70,6 +70,18 @@ static void teststr(const char * g)
 }
 #endif
 
+socket* roundtrip(socket* sock_)
+{
+	socketssl* sock = (socketssl*)sock_;
+	sock->q();
+	//uint8_t data[4096];
+	//int datalen = sock->serialize_size();
+	//int fd = sock->serialize(data, datalen);
+	//
+//printf("serialize: %i u8[%i]\n", fd, datalen);
+	//return socketssl::unserialize(fd, data, datalen);
+}
+
 int main(int argc, char * argv[])
 {
 	//sandtest(argc, argv);
@@ -80,12 +92,22 @@ int main(int argc, char * argv[])
 //#define DOMAIN "www.microsoft.com"
 #define DOMAIN "muncher.se"
 //#define DOMAIN "www.howsmyssl.com"
-#define DOC    "/"
+//#define DOC    "/"
+#define DOC    "/404.html"
 //#define DOC    "/a/check"
 	socket* sock = socketssl::create(DOMAIN, 443);
-	printf("s=%i\n", sock->send("GET " DOC " HTTP/1.1\nHost: " DOMAIN "\nConnection: close\n\n"));
-	
-	char ret[8192];
-	printf("r=%i\n", sock->recv(ret, sizeof(ret)));
-	puts(ret);
+	printf("s=%i\n", sock->send("GET " DOC " HTTP/1.1\n"));
+	//sock = roundtrip(sock);
+	roundtrip(sock);
+	printf("s=%i\n", sock->send("Host: " DOMAIN "\nConnection: close\n\n"));
+	//for (int i=0;i<5;i++)
+	while (true)
+	{
+		char ret[8192];
+		int b = sock->recv(ret, sizeof(ret));
+		if (b==0) continue;
+		printf("r=%i\n", b);
+		if (b<0) break;
+		puts(ret);
+	}
 }
