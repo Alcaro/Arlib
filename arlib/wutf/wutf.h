@@ -124,14 +124,26 @@ static inline void WuTF_enable_args(int* argc, char** * argv) { WuTF_enable(); W
 //-1 is valid for the input length, and means 'use strlen()+1'.
 //Return value is number of code units emitted.
 //If the output parameters are NULL/0, it discards the output, and only returns the required number of code units.
-#define WUTF_TRUNCATE 1 // If the output string doesn't fit, truncate it. If not set, returns WUTF_E_TRUNCATE.
-#define WUTF_STRICT 2   // If the input is not valid in its encoding, return WUTF_E_STRICT. If not set, uses U+FFFD.
-#define WUTF_E_TRUNCATE -1
-#define WUTF_E_STRICT -2
+
+//If input is not valid,
+#define WUTF_INVALID_ABORT 0x00 // return error (default)
+#define WUTF_INVALID_DROP  0x01 // ignore the bad codepoints
+#define WUTF_INVALID_FFFD  0x02 // replace each bad byte with U+FFFD
+#define WUTF_INVALID_DCXX  0x03 // encode the invalid bytes as U+DC00 plus the bad byte (lossless)
+#define WUTF_INVALID_MASK  0x03 // (used internally)
+
+#define WUTF_TRUNCATE 0x04 // If the output string doesn't fit, truncate it. Without this flag, truncation yields WUTF_E_TRUNCATE.
+
+#define WUTF_CESU8 0x08 // If the input UTF-8 contains paired UTF-16 surrogates, decode it to a single codepoint. utf8_to only.
+#define WUTF_WTF8  0x10 // If the input contains unpaired UTF-16 surrogates, treat as normal codepoints. Incompatible with INVALID_DCXX.
+
+#define WUTF_E_TRUNCATE -2
+#define WUTF_E_INVALID -1
+
 int WuTF_utf8_to_utf32(int flags, const char* utf8, int utf8_len, uint32_t* utf32, int utf32_len);
 int WuTF_utf32_to_utf8(int flags, const uint32_t* utf32, int utf32_len, char* utf8, int utf8_len);
 
-//Used internally in WuTF. It's STRONGLY RECOMMENDED to not use these; use the above instead.
+//Used internally in WuTF. It's STRONGLY RECOMMENDED to not use these; use UTF-32 instead.
 int WuTF_utf8_to_utf16(int flags, const char* utf8, int utf8_len, uint16_t* utf16, int utf16_len);
 int WuTF_utf16_to_utf8(int flags, const uint16_t* utf16, int utf16_len, char* utf8, int utf8_len);
 

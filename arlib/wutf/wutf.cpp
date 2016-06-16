@@ -43,7 +43,7 @@ RtlMultiByteToUnicodeN_Utf(
           const CHAR   *MultiByteString,
                 ULONG  BytesInMultiByteString)
 {
-	int len = WuTF_utf8_to_utf16(WUTF_TRUNCATE,
+	int len = WuTF_utf8_to_utf16(WUTF_TRUNCATE | WUTF_INVALID_DROP,
 	                             MultiByteString, BytesInMultiByteString,
 	                             (uint16_t*)UnicodeString, MaxBytesInUnicodeString/2);
 	if (BytesInUnicodeString) *BytesInUnicodeString = len*2;
@@ -58,7 +58,7 @@ RtlUnicodeToMultiByteN_Utf(
                 PCWCH  UnicodeString,
                 ULONG  BytesInUnicodeString)
 {
-	int len = WuTF_utf16_to_utf8(WUTF_TRUNCATE,
+	int len = WuTF_utf16_to_utf8(WUTF_TRUNCATE | WUTF_INVALID_DROP,
 	                             (uint16_t*)UnicodeString, BytesInUnicodeString/2,
 	                             MultiByteString, MaxBytesInMultiByteString);
 	if (BytesInMultiByteString) *BytesInMultiByteString = len;
@@ -71,7 +71,7 @@ RtlMultiByteToUnicodeSize_Utf(
           const CHAR   *MultiByteString,
                 ULONG  BytesInMultiByteString)
 {
-	int len = WuTF_utf8_to_utf16(0,
+	int len = WuTF_utf8_to_utf16(WUTF_INVALID_DROP,
 	                             MultiByteString, BytesInMultiByteString,
 	                             NULL, 0);
 	*BytesInUnicodeString = len*2;
@@ -84,7 +84,7 @@ RtlUnicodeToMultiByteSize_Utf(
                 PCWCH  UnicodeString,
                 ULONG  BytesInUnicodeString)
 {
-	int len = WuTF_utf16_to_utf8(0,
+	int len = WuTF_utf16_to_utf8(WUTF_INVALID_DROP,
 	                             (uint16_t*)UnicodeString, BytesInUnicodeString/2,
 	                             NULL, 0);
 	*BytesInMultiByteString = len;
@@ -98,13 +98,13 @@ MultiByteToWideChar_Utf(UINT CodePage, DWORD dwFlags,
                         LPCSTR lpMultiByteStr, int cbMultiByte,
                         LPWSTR lpWideCharStr, int cchWideChar)
 {
-	int ret = WuTF_utf8_to_utf16((dwFlags&MB_ERR_INVALID_CHARS) ? WUTF_STRICT : 0,
+	int ret = WuTF_utf8_to_utf16((dwFlags&MB_ERR_INVALID_CHARS) ? WUTF_E_ABORT : WUTF_E_DROP,
 	                             lpMultiByteStr, cbMultiByte,
 	                             (uint16_t*)lpWideCharStr, cchWideChar);
 	
 	if (ret<0)
 	{
-		if (ret == WUTF_E_STRICT) SetLastError(ERROR_NO_UNICODE_TRANSLATION);
+		if (ret == WUTF_E_INVALID) SetLastError(ERROR_NO_UNICODE_TRANSLATION);
 		if (ret == WUTF_E_TRUNCATE) SetLastError(ERROR_INSUFFICIENT_BUFFER);
 		return 0;
 	}
@@ -117,13 +117,13 @@ WideCharToMultiByte_Utf(UINT CodePage, DWORD dwFlags,
                         LPSTR lpMultiByteStr, int cbMultiByte,
                         LPCSTR lpDefaultChar, LPBOOL lpUsedDefaultChar)
 {
-	int ret = WuTF_utf16_to_utf8((dwFlags&MB_ERR_INVALID_CHARS) ? WUTF_STRICT : 0,
+	int ret = WuTF_utf16_to_utf8((dwFlags&MB_ERR_INVALID_CHARS) ? WUTF_E_ABORT : WUTF_E_DROP,
 	                             (uint16_t*)lpWideCharStr, cchWideChar,
 	                             lpMultiByteStr, cbMultiByte);
 	
 	if (ret<0)
 	{
-		if (ret == WUTF_E_STRICT) SetLastError(ERROR_NO_UNICODE_TRANSLATION);
+		if (ret == WUTF_E_INVALID) SetLastError(ERROR_NO_UNICODE_TRANSLATION);
 		if (ret == WUTF_E_TRUNCATE) SetLastError(ERROR_INSUFFICIENT_BUFFER);
 		return 0;
 	}

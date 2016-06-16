@@ -26,27 +26,30 @@
 
 #include "wutf.h"
 
-//WARNING: Treats 0xF8..FF as F0..F7. The caller is expected to validate this if the codepoint is outside the BMP.
-//If it ends up inside BMP, it's rejected as overlong encoding. Right for wrong reason, but it works.
-static int decode(uint8_t head, const uint8_t* * ptr, const uint8_t* end)
+static int decode(uint8_t head, const uint8_t* * tailptr, const uint8_t* end)
 {
-	int numtrail = ((head&0xC0)==0xC0) + ((head&0xE0)==0xE0) + ((head&0xF0)==0xF0);
-	const int minforlen[] = { 0x7FFFFFFF, 0x80, 0x800, 0x10000 };
+	const int minforlen[] = { 0x7FFFFFFF, 0x80, 0x800, 0x10000, 0x7FFFFFFF };
 	
-	if (*ptr + numtrail > end) return WUTF_E_STRICT;
+	const uint8_t * tail = *tailptr;
+	int numtrail = ((head&0xC0)==0xC0) + ((head&0xE0)==0xE0) + ((head&0xF0)==0xF0) + ((head&0xF8)==0xF8);
 	
 	int codepoint = (head & (0x3F>>numtrail));
 	int i;
-	for (i=1;i<=3;i++)
+	
+	if (tail + numtrail > end) return -1;
+	
+	for (i=0;i<3;i++)
 	{
-		if (numtrail>=i)
+		if (numtrail>i)
 		{
-			if ((**ptr & 0xC0) != 0x80) return WUTF_E_STRICT;
-			codepoint = (codepoint<<6) | ((*(*ptr)++) & 0x3F);
+			if ((tail[i] & 0xC0) != 0x80) return -1;
+			codepoint = (codepoint<<6) | (tail[i] & 0x3F);
 		}
 	}
 	
-	if (codepoint < minforlen[numtrail]) return WUTF_E_STRICT;
+	if (codepoint < minforlen[numtrail]) return -1;
+	
+	*tailptr += numtrail;
 	
 	return codepoint;
 }
@@ -67,10 +70,26 @@ static int utf8_to_utf16_len(int flags, const uint8_t* ptr, const uint8_t* end)
 		
 		uint32_t codepoint = (uint32_t)decode(head, &at, end);
 		ret++;
-		if (codepoint>0x10FFFF || head>=0xF8)
+		if ((codepoint&0xF800) == 0xD800 && !(flags & WUTF_WTF8))
 		{
-			if (flags & WUTF_STRICT) return WUTF_E_STRICT;
-			//else ignore, FFFD is same size as a real character
+			if ((flags & WUTF_CESU8) && (codepoint&0xFC00) == 0xD800 &&
+			    at+3 <= end && at[0]==0xED && (at[1]&0xF0)==0xB0 && (at[2]&0xC0)==0x80)
+			{
+				at+=3;
+				ret++;
+			}
+			else
+			{
+				at-=2;
+				goto fail;
+			}
+		}
+		if (codepoint>0x10FFFF)
+		{
+			if (codepoint != (uint32_t)-1) at-=3; // restore the tail
+		fail:
+			if ((flags&WUTF_INVALID_MASK) == WUTF_INVALID_ABORT) return WUTF_E_INVALID;
+			if ((flags&WUTF_INVALID_MASK) == WUTF_INVALID_DROP) ret--;
 		}
 		else if (codepoint>=0x10000) ret++; // surrogate
 	}
@@ -93,6 +112,9 @@ static const uint8_t* utf8_end(const uint8_t* utf8, int utf8_len)
 
 int WuTF_utf8_to_utf16(int flags, const char* utf8, int utf8_len, uint16_t* utf16, int utf16_len)
 {
+	if ((flags&WUTF_WTF8) && (flags&WUTF_CESU8)) return WUTF_E_INVALID;
+	if ((flags&WUTF_WTF8) && (flags&WUTF_INVALID_MASK)==WUTF_INVALID_DCXX) return WUTF_E_INVALID;
+	
 	//I could run a bunch of special cases depending on whether cbMultiByte<0, etc,
 	//but there's no need. I'll optimize it if it ends up a bottleneck.
 	
@@ -118,20 +140,38 @@ int WuTF_utf8_to_utf16(int flags, const char* utf8, int utf8_len, uint16_t* utf1
 			continue;
 		}
 		
-		uint32_t codepoint = (uint32_t)decode(head, &iat, iend); // -1 -> 0xFFFF
+		uint32_t codepoint = (uint32_t)decode(head, &iat, iend); // -1 -> 0xFFFFFFFF
 		if (codepoint <= 0xFFFF)
 		{
+			if ((codepoint&0xF800) == 0xD800 && !(flags & WUTF_WTF8))
+			{
+				if ((flags & WUTF_CESU8) && (codepoint&0xFC00) == 0xD800 &&
+						iat+3 <= iend && iat[0]==0xED && (iat[1]&0xF0)==0xB0 && (iat[2]&0xC0)==0x80)
+				{
+					*oat++ = codepoint;
+					codepoint = (uint32_t)decode(*iat++, &iat, iend);
+				}
+				else
+				{
+					iat-=2;
+					goto fail;
+				}
+			}
 			*oat++ = codepoint;
 		}
 		else
 		{
-			// for heads >= 0xF0, the 08 bit is ignored
-			// F0 means 4+ bytes, which conveniently must be outside the BMP
-			// so I can put the check here, on the cold path
-			if (head >= 0xF8 || codepoint > 0x10FFFF)
+			if (codepoint > 0x10FFFF)
 			{
-				if (flags & WUTF_STRICT) return WUTF_E_STRICT;
-				*oat++ = 0xFFFD;
+				if (codepoint != (uint32_t)-1) iat-=3; // restore the tail
+			fail:
+				switch (flags & WUTF_INVALID_MASK)
+				{
+					case WUTF_INVALID_ABORT: return WUTF_E_INVALID;
+					case WUTF_INVALID_DROP: break;
+					case WUTF_INVALID_FFFD: *oat++ = 0xFFFD; break;
+					case WUTF_INVALID_DCXX: *oat++ = 0xDC00 + head; break;
+				}
 				continue;
 			}
 			
@@ -168,9 +208,15 @@ static int utf8_to_utf32_len(int flags, const uint8_t* ptr, const uint8_t* end)
 		
 		uint32_t codepoint = (uint32_t)decode(head, &at, end);
 		ret++;
-		if (codepoint>0x10FFFF || head>=0xF8)
+		if (codepoint>0x10FFFF)
 		{
-			if (flags & WUTF_STRICT) return WUTF_E_STRICT;
+			switch (flags & WUTF_INVALID_MASK)
+			{
+				case WUTF_INVALID_ABORT: return WUTF_E_INVALID;
+				case WUTF_INVALID_DROP: ret--; break;
+				case WUTF_INVALID_FFFD: break;
+				case WUTF_INVALID_DCXX: break;
+			}
 		}
 		//identical to utf16_len, just discard the surrogate check
 	}
@@ -179,6 +225,9 @@ static int utf8_to_utf32_len(int flags, const uint8_t* ptr, const uint8_t* end)
 
 int WuTF_utf8_to_utf32(int flags, const char* utf8, int utf8_len, uint32_t* utf32, int utf32_len)
 {
+	if (flags&WUTF_CESU8) return WUTF_E_INVALID;
+	if ((flags&WUTF_WTF8) && (flags&WUTF_INVALID_MASK)==WUTF_INVALID_DCXX) return WUTF_E_INVALID;
+	
 	const uint8_t* iat = (const uint8_t*)utf8;
 	const uint8_t* iend = utf8_end(iat, utf8_len);
 	
@@ -201,12 +250,28 @@ int WuTF_utf8_to_utf32(int flags, const char* utf8, int utf8_len, uint32_t* utf3
 			continue;
 		}
 		
-		uint32_t codepoint = (uint32_t)decode(head, &iat, iend); // -1 -> 0xFFFF
-		
-		if (head >= 0xF8 || codepoint > 0x10FFFF)
+		uint32_t codepoint = (uint32_t)decode(head, &iat, iend); // -1 -> 0xFFFFFFFF
+		if (!(flags&WUTF_WTF8) && (codepoint&0xFFFFF800) == 0xD800)
 		{
-			if (flags & WUTF_STRICT) return WUTF_E_STRICT;
-			*oat++ = 0xFFFD;
+			if ((flags & WUTF_INVALID_MASK) == WUTF_INVALID_ABORT) return WUTF_E_INVALID;
+			if ((flags & WUTF_INVALID_MASK) == WUTF_INVALID_DROP) continue;
+			if ((flags & WUTF_INVALID_MASK) == WUTF_INVALID_FFFD) {}
+			if ((flags & WUTF_INVALID_MASK) == WUTF_INVALID_DCXX)
+			{
+				if ((head&0xFF00)==0xDC00) {}
+				else return WUTF_E_INVALID;
+			}
+		}
+		
+		if (codepoint > 0x10FFFF)
+		{
+			switch (flags & WUTF_INVALID_MASK)
+			{
+				case WUTF_INVALID_ABORT: return WUTF_E_INVALID;
+				case WUTF_INVALID_DROP: break;
+				case WUTF_INVALID_FFFD: *oat++ = 0xFFFD; break;
+				case WUTF_INVALID_DCXX: *oat++ = 0xDC00 + head; break;
+			}
 			continue;
 		}
 		
@@ -238,12 +303,26 @@ static int utf16_to_utf8_len(int flags, const uint16_t* ptr, const uint16_t* end
 		if (head >= 0x0800)
 		{
 			ret++;
-			if (head>=0xD800 && head<=0xDBFF &&
-			    at < end && *at >= 0xDC00 && *at <= 0xDFFF)
+			if ((head&0xF800)==0xD800)
 			{
-				at++;
-				ret++;
-				continue;
+				if (head<=0xDBFF && at < end && *at >= 0xDC00 && *at <= 0xDFFF)
+				{
+					at++;
+					ret++;
+					continue;
+				}
+				
+				if (!(flags & WUTF_WTF8))
+				{
+					if ((flags & WUTF_INVALID_MASK) == WUTF_INVALID_ABORT) return WUTF_E_INVALID;
+					if ((flags & WUTF_INVALID_MASK) == WUTF_INVALID_DROP) ret--; continue;
+					if ((flags & WUTF_INVALID_MASK) == WUTF_INVALID_FFFD) continue;
+					if ((flags & WUTF_INVALID_MASK) == WUTF_INVALID_DCXX)
+					{
+						if ((head&0xFF00)==0xDC00) continue;
+						else return WUTF_E_INVALID;
+					}
+				}
 			}
 		}
 	}
@@ -266,6 +345,9 @@ static const uint16_t* utf16_end(const uint16_t* utf16, int utf16_len)
 
 int WuTF_utf16_to_utf8(int flags, const uint16_t* utf16, int utf16_len, char* utf8, int utf8_len)
 {
+	if (flags&WUTF_CESU8) return WUTF_E_INVALID;
+	if ((flags&WUTF_WTF8) && (flags&WUTF_INVALID_MASK) == WUTF_INVALID_DCXX) return WUTF_E_INVALID;
+	
 	const uint16_t* iat = utf16;
 	const uint16_t* iend = utf16_end(iat, utf16_len);
 	
@@ -293,19 +375,42 @@ int WuTF_utf16_to_utf8(int flags, const uint16_t* utf16, int utf16_len, char* ut
 		}
 		else
 		{
-			if (head>=0xD800 && head<=0xDBFF && iat < iend)
+			if ((head&0xF800)==0xD800)
 			{
-				uint16_t tail = *iat;
-				if (tail >= 0xDC00 && tail <= 0xDFFF)
+				if (head<=0xDBFF && iat < iend)
 				{
-					iat++;
-					if (oat+4 > oend) break;
-					uint32_t codepoint = 0x10000+((head&0x03FF)<<10)+(tail&0x03FF);
-					*oat++ = (((codepoint>>18)&0x07)|0xF0);
-					*oat++ = (((codepoint>>12)&0x3F)|0x80);
-					*oat++ = (((codepoint>>6 )&0x3F)|0x80);
-					*oat++ = (((codepoint    )&0x3F)|0x80);
-					continue;
+					uint16_t tail = *iat;
+					if (tail >= 0xDC00 && tail <= 0xDFFF)
+					{
+						iat++;
+						if (oat+4 > oend) break;
+						uint32_t codepoint = 0x10000+((head&0x03FF)<<10)+(tail&0x03FF);
+						*oat++ = (((codepoint>>18)&0x07)|0xF0);
+						*oat++ = (((codepoint>>12)&0x3F)|0x80);
+						*oat++ = (((codepoint>>6 )&0x3F)|0x80);
+						*oat++ = (((codepoint    )&0x3F)|0x80);
+						continue;
+					}
+				}
+				
+				if (!(flags & WUTF_WTF8))
+				{
+					if ((flags & WUTF_INVALID_MASK) == WUTF_INVALID_ABORT) return WUTF_E_INVALID;
+					if ((flags & WUTF_INVALID_MASK) == WUTF_INVALID_DROP) continue;
+					if ((flags & WUTF_INVALID_MASK) == WUTF_INVALID_FFFD) { head = 0xFFFD; continue; }
+					if ((flags & WUTF_INVALID_MASK) == WUTF_INVALID_DCXX)
+					{
+						if ((head&0xFF00)==0xDC00)
+						{
+							if (oat+1 > oend) break;
+							*oat++ = (head&0x00FF); // don't bother ensuring that this ends up as invalid utf8, too much effort
+							continue;
+						}
+						else
+						{
+							return WUTF_E_INVALID;
+						}
+					}
 				}
 			}
 			if (oat+3 > oend) break;
@@ -337,7 +442,16 @@ static int utf32_to_utf8_len(int flags, const uint32_t* ptr, const uint32_t* end
 		if (head >= 0x80) ret++;
 		if (head >= 0x0800) ret++;
 		if (head >= 0x10000) ret++;
-		if (head > 0x10FFFF) return WUTF_E_STRICT;
+		if (head > 0x10FFFF)
+		{
+			switch (flags & WUTF_INVALID_MASK)
+			{
+				case WUTF_INVALID_ABORT: return WUTF_E_INVALID;
+				case WUTF_INVALID_DROP: ret-=4; break;
+				case WUTF_INVALID_FFFD: ret-=4; ret+=3; break;
+				case WUTF_INVALID_DCXX: ret-=4; ret+=3; break;
+			}
+		}
 	}
 	return ret;
 }
@@ -358,6 +472,12 @@ static const uint32_t* utf32_end(const uint32_t* utf32, int utf32_len)
 
 int WuTF_utf32_to_utf8(int flags, const uint32_t* utf32, int utf32_len, char* utf8, int utf8_len)
 {
+	if (flags&WUTF_CESU8) return WUTF_E_INVALID;
+	if ((flags&WUTF_INVALID_MASK) == WUTF_INVALID_DCXX) return WUTF_E_INVALID;
+	
+	if (flags&WUTF_WTF8) return WUTF_E_INVALID; // TODO
+	if ((flags&WUTF_INVALID_MASK) != -1) return WUTF_E_INVALID; // TODO
+	
 	const uint32_t* iat = utf32;
 	const uint32_t* iend = utf32_end(iat, utf32_len);
 	
@@ -400,11 +520,19 @@ int WuTF_utf32_to_utf8(int flags, const uint32_t* utf32, int utf32_len, char* ut
 		}
 		else
 		{
-			if (flags & WUTF_STRICT) return WUTF_E_STRICT;
-			if (oat+3 > oend) break;
-			*oat++ = 0xEF; // U+FFFD
-			*oat++ = 0xBF;
-			*oat++ = 0xBD;
+			switch (flags & WUTF_INVALID_MASK)
+			{
+				case WUTF_INVALID_ABORT: return WUTF_E_INVALID;
+				case WUTF_INVALID_DROP: break;
+				case WUTF_INVALID_FFFD:
+					if (oat+3 <= oend)
+					{
+						*oat++ = 0xEF; // U+FFFD
+						*oat++ = 0xBF;
+						*oat++ = 0xBD;
+					}
+					break;
+			}
 		}
 	}
 	if (iat != iend)
