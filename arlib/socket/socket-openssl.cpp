@@ -3,7 +3,7 @@
 #ifdef ARLIB_SSL_OPENSSL
 #include <openssl/ssl.h>
 #include <openssl/err.h>
-#include <openssl/x509_vfy.h>
+#include <openssl/x509v3.h>
 
 static SSL_CTX * ctx;
 
@@ -25,7 +25,7 @@ class socketssl_impl : public socketssl {
 public:
 	socket* sock;
 	SSL* ssl;
-	bool nonblock;
+	//bool nonblock;
 	
 	static socketssl_impl* create(socket* parent, const char * domain, bool permissive)
 	{
@@ -33,9 +33,9 @@ public:
 		
 		socketssl_impl* ret = new socketssl_impl();
 		ret->sock = parent;
-		ret->fd = get_fd(parent);
+		ret->fd = parent->get_fd();
 		ret->ssl = SSL_new(ctx);
-		ret->nonblock = false;
+		//ret->nonblock = false;
 		SSL_set_fd(ret->ssl, ret->fd);
 		
 		if (!permissive)
@@ -86,17 +86,13 @@ public:
 		return e_ssl_failure;
 	}
 	
-	int recv(uint8_t* data, int len)
+	//only supports nonblocking
+	int recv(uint8_t* data, unsigned int len, bool block = false)
 	{
 		return fixret(SSL_read(ssl, data, len));
 	}
 	
-	int send0(const uint8_t* data, int len)
-	{
-		return fixret(SSL_write(ssl, data, len));
-	}
-	
-	int send1(const uint8_t* data, int len)
+	int sendp(const uint8_t* data, unsigned int len, bool block = true)
 	{
 		return fixret(SSL_write(ssl, data, len));
 	}
@@ -168,7 +164,6 @@ SOFTWARE.
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
 #endif
 
-//#include <openssl/x509v3.h>
 //#include <openssl/ssl.h>
 
 //#include "openssl_hostname_validation.h"

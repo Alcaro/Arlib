@@ -17,7 +17,10 @@ extern "C" {
 //- have to load root certs myself
 //- had to implement Subject Alternative Name myself
 //- turns out tls_consume_stream(buf_len=0) throws an error - and no debug output
-//- tls_export_context return value seems be 'bytes expected' for inputlen=0 and inputlen>=expected, but 'additional bytes expected' for inputlen=1
+//- tls_export_context return value seems be 'bytes expected' for inputlen=0 and inputlen>=expected,
+//     but 'additional bytes expected' for inputlen=1
+//- lacks extern "C" on header
+//- lack of documentation
 
 // separate context here to ensure they're not loaded multiple times, saves memory and time
 static TLSContext* rootcerts;
@@ -125,7 +128,7 @@ public:
 		}
 		
 		uint8_t in[0x2000];
-		int inlen = sock->recv(in, sizeof(in));
+		int inlen = sock->recv(in, sizeof(in), block);
 		if (inlen<0) { error(); return; }
 		if (inlen>0) tls_consume_stream(ssl, in, inlen, verify);
 	}
@@ -142,7 +145,7 @@ public:
 		
 		socketssl_impl* ret = new socketssl_impl();
 		ret->sock = parent;
-		ret->fd = get_fd(parent);
+		ret->fd = parent->get_fd();
 		
 		ret->ssl = tls_create_context(false, TLS_V12);
 		
@@ -159,9 +162,9 @@ public:
 		return ret;
 	}
 	
-	int recv(uint8_t* data, int len)
+	int recv(uint8_t* data, unsigned int len, bool block = false)
 	{
-		process(true);
+		process(block);
 		
 		int ret = tls_read(ssl, data, len);
 		if (ret==0 && !sock) return e_broken;
@@ -169,21 +172,12 @@ public:
 		return ret;
 	}
 	
-	int send0(const uint8_t* data, int len)
+	int sendp(const uint8_t* data, unsigned int len, bool block = true)
 	{
 		if (!sock) return -1;
 		
 		int ret = tls_write(ssl, (uint8_t*)data, len);
 		process(false);
-		return ret;
-	}
-	
-	int send1(const uint8_t* data, int len)
-	{
-		if (!sock) return -1;
-		
-		int ret = tls_write(ssl, (uint8_t*)data, len);
-		process(true);
 		return ret;
 	}
 	
@@ -200,6 +194,8 @@ public:
 	
 	void q()
 	{
+		return;
+		
 		uint8_t data[4096];
 		int len = tls_export_context(ssl, NULL, 0, false);
 		int len2 = tls_export_context(ssl, data, len, false);

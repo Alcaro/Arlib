@@ -1,5 +1,4 @@
 #include "../global.h"
-#include "../bytearray.h"
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
@@ -33,16 +32,14 @@ public:
 	//send0() can send zero, but is fully nonblocking.
 	//For UDP sockets, partial reads or writes aren't possible; you always get one or zero packets.
 	//recv() corresponds to send1(); recvnb() is send0(). There is no counterpart to send(); use socketbuffer if you need that.
-	virtual int recvnb(uint8_t* data, int len) = 0;
-	virtual int recv(uint8_t* data, int len) = 0;
-	virtual int send0(const uint8_t* data, int len) = 0;
-	virtual int send1(const uint8_t* data, int len) = 0;
-	int send(const uint8_t* data, int len)
+	virtual int recv(uint8_t* data, unsigned int len, bool block = false) = 0;
+	virtual int sendp(const uint8_t* data, unsigned int len, bool block = true) = 0;
+	int send(const uint8_t* data, unsigned int len)
 	{
-		int sent = 0;
+		unsigned int sent = 0;
 		while (sent < len)
 		{
-			int here = send1(data+sent, len-sent);
+			int here = sendp(data+sent, len-sent);
 			if (here<0) return here;
 			sent += here;
 		}
@@ -50,22 +47,26 @@ public:
 	}
 	
 	//Convenience functions for handling textual data.
-	int recvnb(char* data, int len) { int ret = recvnb((uint8_t*)data, len-1); if (ret>=0) data[ret]='\0'; else data[0]='\0'; return ret; }
-	int recv  (char* data, int len) { int ret = recv  ((uint8_t*)data, len-1); if (ret>=0) data[ret]='\0'; else data[0]='\0'; return ret; }
-	int send0(const char * data) { return send0((uint8_t*)data, strlen(data)); }
-	int send1(const char * data) { return send1((uint8_t*)data, strlen(data)); }
-	int send (const char * data) { return send ((uint8_t*)data, strlen(data)); }
+	int recv(char* data, unsigned int len, bool block = false)
+	{
+		int ret = recv((uint8_t*)data, len-1, block);
+		if (ret >= 0) data[ret]='\0';
+		else data[0]='\0';
+		return ret;
+	}
+	int sendp(const char * data, bool block = true) { return sendp((uint8_t*)data, strlen(data), block); }
+	int send (const char * data) { return send((uint8_t*)data, strlen(data)); }
 	
 	//Returns an index to the sockets array, or negative if timeout expires.
 	//Negative timeouts mean wait forever.
 	//It's possible that an active socket returns zero bytes.
 	//However, this is guaranteed to happen rarely enough that repeatedly select()ing will leave the CPU mostly idle.
-	static int select(socket* * socks, int nsocks, int timeout_ms = -1);
+	//(It may be caused by packets with wrong checksum, SSL renegotiation, or whatever.)
+	static int select(socket* * socks, unsigned int nsocks, int timeout_ms = -1);
 	
 	virtual ~socket() {}
 	
-	//Can be used to keep a socket alive across exec().
-	//Remember to serialize the SSL socket if this is used.
+	//Can be used to keep a socket alive across exec(). Don't use for an SSL socket.
 	static socket* create_from_fd(int fd);
 	int get_fd() { return fd; }
 };
@@ -74,12 +75,13 @@ class socketssl : public socket {
 protected:
 	socketssl(){}
 public:
-	//If 'permissive' is true, the server certificate won't be verified.
+	//If 'permissive' is true, expired and self-signed server certificates will be accepted.
+	//Other invalid certs, such as ones for a different domain, may or may not be accepted.
 	static socketssl* create(const char * domain, int port, bool permissive=false)
 	{
 		return socketssl::create(socket::create(domain, port), domain, permissive);
 	}
-	//On entry, this takes ownership of the connection. Even if connection fails, the socket may not be used anymore.
+	//On entry, this takes ownership of the socket. Even if connection fails, the socket may not be used anymore.
 	//The socket must be a normal TCP socket. UDP and nested SSL is not supported.
 	static socketssl* create(socket* parent, const char * domain, bool permissive=false);
 	

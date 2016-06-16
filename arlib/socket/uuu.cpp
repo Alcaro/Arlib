@@ -1,3 +1,4 @@
+#if 0
 // This example is designed as more of a guide than a library to be plugged into an application
 // That module required a couple of major re-writes and is available upon request
 // The Basic example has some clues to the direction you should take
@@ -1551,3 +1552,4 @@ printf("----- All Done ----- \n");
 
 return 0;
 }
+#endif

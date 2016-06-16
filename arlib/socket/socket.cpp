@@ -65,13 +65,13 @@ static int connect(const char * domain, int port)
 		close(fd);
 		return -1;
 	}
-	//let read0 block on windows
-//#ifdef _WIN32
-//	u_long yes = 1;
-//	ioctlsocket(fd, FIONBIO, &yes);
+	//let read1 not block on windows
+#ifdef _WIN32
+	u_long yes = 1;
+	ioctlsocket(fd, FIONBIO, &yes);
 //#else
 //	fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0)|O_NONBLOCK);
-//#endif
+#endif
 	
 	freeaddrinfo(addr);
 	return fd;
@@ -84,6 +84,7 @@ public:
 	
 	/*private*/ int fixret(int ret)
 	{
+//printf("r=%i e=%i wb=%i\n", ret, WSAGetLastError(), WSAEWOULDBLOCK);
 		if (ret > 0) return ret;
 		if (ret == 0) return e_closed;
 #ifdef __unix__
@@ -95,26 +96,15 @@ public:
 		return e_broken;
 	}
 	
-	int recvnb(uint8_t* data, int len)
+	int recv(uint8_t* data, unsigned int len, bool block = false)
 	{
-		return fixret(::recv(fd, (char*)data, len, MSG_NOSIGNAL|MSG_DONTWAIT));
+		return fixret(::recv(fd, (char*)data, len, MSG_NOSIGNAL | (block ? 0 : MSG_DONTWAIT)));
 	}
 	
-	int recv(uint8_t* data, int len)
+	int sendp(const uint8_t* data, unsigned int len, bool block = true)
 	{
-		return fixret(::recv(fd, (char*)data, len, MSG_NOSIGNAL));
-	}
-	
-	int send0(const uint8_t* data, int len)
-	{
-printf("snd=%i\n",len);
-		return fixret(::send(fd, (char*)data, len, MSG_NOSIGNAL|MSG_DONTWAIT));
-	}
-	
-	int send1(const uint8_t* data, int len)
-	{
-printf("snd=%i\n",len);
-		return fixret(::send(fd, (char*)data, len, MSG_NOSIGNAL));
+//printf("snd=%i\n",len);
+		return fixret(::send(fd, (char*)data, len, MSG_NOSIGNAL | (block ? 0 : MSG_DONTWAIT)));
 	}
 	
 	~socket_impl()

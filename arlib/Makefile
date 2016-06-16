@@ -18,6 +18,7 @@ ARTHREAD ?= 0
 ARSANDBOX ?= 0
 ARWUTF ?= 0
 ARSOCKET ?= 0
+ARSOCKET_SSL ?= openssl
 
 DEBUG ?= 1
 
