@@ -44,31 +44,31 @@ static void initialize()
 
 class socketssl_impl : public socketssl {
 public:
-	socket* this_sock;
-	CtxtHandle this_ssl;
-	SecPkgContext_StreamSizes this_bufsizes;
+	socket* sock;
+	CtxtHandle ssl;
+	SecPkgContext_StreamSizes bufsizes;
 	
-	BYTE* this_recv_buf;
-	size_t this_recv_buf_len;
-	BYTE* this_ret_buf;
-	size_t this_ret_buf_len;
+	BYTE* recv_buf;
+	size_t recv_buf_len;
+	BYTE* ret_buf;
+	size_t ret_buf_len;
 	
 	bool in_handshake;
 	
 	void fetch(bool block)
 	{
-		int bytes = this_sock->recv(this_recv_buf+this_recv_buf_len, 1024, block);
+		int bytes = sock->recv(recv_buf+recv_buf_len, 1024, block);
 		if (bytes < 0)
 		{
-			delete this_sock;
-			this_sock = NULL;
+			delete sock;
+			sock = NULL;
 		}
 		if (bytes > 0)
 		{
-			this_recv_buf_len += bytes;
-			if (this_recv_buf_len > 1024)
+			recv_buf_len += bytes;
+			if (recv_buf_len > 1024)
 			{
-				this_recv_buf = realloc(this_recv_buf, this_recv_buf_len + 1024);
+				recv_buf = realloc(recv_buf, recv_buf_len + 1024);
 			}
 		}
 	}
@@ -81,10 +81,10 @@ public:
 	{
 		if (bytes > 0)
 		{
-			this_ret_buf_len += bytes;
-			if (this_ret_buf_len > 1024)
+			ret_buf_len += bytes;
+			if (ret_buf_len > 1024)
 			{
-				this_ret_buf = realloc(this_ret_buf, this_ret_buf_len + 1024);
+				ret_buf = realloc(ret_buf, ret_buf_len + 1024);
 			}
 		}
 	}
@@ -92,29 +92,30 @@ public:
 	
 	BYTE* tmpptr()
 	{
-		return this_recv_buf + this_recv_buf_len;
+		return recv_buf + recv_buf_len;
 	}
 	
 	
 	void error()
 	{
-		SSPI->DeleteSecurityContext(&this_ssl);
-		delete this_sock;
-		this_sock = NULL;
+		SSPI->DeleteSecurityContext(&ssl);
+		delete sock;
+		sock = NULL;
 	}
 	
 	void handshake()
 	{
 		if (!in_handshake) return;
 		
-		SecBuffer       InBuffers[2] = { { this_recv_buf_len, SECBUFFER_TOKEN, this_recv_buf }, { 0, SECBUFFER_EMPTY, NULL } };
-		SecBuffer       OutBuffer = { 0, SECBUFFER_TOKEN, NULL };
-		SecBufferDesc   InBufferDesc = { SECBUFFER_VERSION, 2, InBuffers };
-		SecBufferDesc   OutBufferDesc = { SECBUFFER_VERSION, 1, &OutBuffer };
+		SecBuffer InBuffers[2] = { { recv_buf_len, SECBUFFER_TOKEN, recv_buf }, { 0, SECBUFFER_EMPTY, NULL } };
+		SecBufferDesc InBufferDesc = { SECBUFFER_VERSION, 2, InBuffers };
+		
+		SecBuffer OutBuffer = { 0, SECBUFFER_TOKEN, NULL };
+		SecBufferDesc OutBufferDesc = { SECBUFFER_VERSION, 1, &OutBuffer };
 		
 		DWORD ignore;
 		SECURITY_STATUS scRet;
-		scRet = SSPI->InitializeSecurityContextA(&cred, &this_ssl, NULL, SSPIFlags, 0, SECURITY_NATIVE_DREP,
+		scRet = SSPI->InitializeSecurityContextA(&cred, &ssl, NULL, SSPIFlags, 0, SECURITY_NATIVE_DREP,
 		                                         &InBufferDesc, 0, NULL, &OutBufferDesc, &ignore, NULL);
 		
 		// according to the original program, extended errors are success
@@ -124,7 +125,7 @@ public:
 		{
 			if (OutBuffer.cbBuffer != 0 && OutBuffer.pvBuffer != NULL)
 			{
-				if (this_sock->send((BYTE*)OutBuffer.pvBuffer, OutBuffer.cbBuffer) < 0)
+				if (sock->send((BYTE*)OutBuffer.pvBuffer, OutBuffer.cbBuffer) < 0)
 				{
 					SSPI->FreeContextBuffer(OutBuffer.pvBuffer);
 					error();
@@ -152,10 +153,10 @@ public:
 		
 		if (InBuffers[1].BufferType == SECBUFFER_EXTRA)
 		{
-			memmove(this_recv_buf, this_recv_buf + (this_recv_buf_len - InBuffers[1].cbBuffer), InBuffers[1].cbBuffer);
-			this_recv_buf_len = InBuffers[1].cbBuffer;
+			memmove(recv_buf, recv_buf + (recv_buf_len - InBuffers[1].cbBuffer), InBuffers[1].cbBuffer);
+			recv_buf_len = InBuffers[1].cbBuffer;
 		}
-		else this_recv_buf_len = 0;
+		else recv_buf_len = 0;
 	}
 	
 	bool handshake_first(const char * domain)
@@ -165,15 +166,15 @@ public:
 		
 		DWORD ignore;
 		if (SSPI->InitializeSecurityContextA(&cred, NULL, (char*)domain, SSPIFlags, 0, SECURITY_NATIVE_DREP,
-		                                     NULL, 0, &this_ssl, &OutBufferDesc, &ignore, NULL)
+		                                     NULL, 0, &ssl, &OutBufferDesc, &ignore, NULL)
 		    != SEC_I_CONTINUE_NEEDED)
 		{
 			return false;
 		}
 		
-		if (OutBuffer.cbBuffer!=0)
+		if (OutBuffer.cbBuffer != 0)
 		{
-			if (this_sock->send((BYTE*)OutBuffer.pvBuffer, OutBuffer.cbBuffer) < 0)
+			if (sock->send((BYTE*)OutBuffer.pvBuffer, OutBuffer.cbBuffer) < 0)
 			{
 				SSPI->FreeContextBuffer(OutBuffer.pvBuffer);
 				error();
@@ -191,17 +192,17 @@ public:
 	{
 		if (!parent) return false;
 		
-		this_sock = parent;
+		sock = parent;
 		fd = parent->get_fd();
-		this_recv_buf = malloc(2048);
-		this_recv_buf_len = 0;
-		this_ret_buf = malloc(2048);
-		this_ret_buf_len = 0;
+		recv_buf = malloc(2048);
+		recv_buf_len = 0;
+		ret_buf = malloc(2048);
+		ret_buf_len = 0;
 		
 		if (!handshake_first(domain)) return false;
-		SSPI->QueryContextAttributes(&this_ssl, SECPKG_ATTR_STREAM_SIZES, &this_bufsizes);
+		SSPI->QueryContextAttributes(&ssl, SECPKG_ATTR_STREAM_SIZES, &bufsizes);
 		
-		return (this_sock);
+		return (sock);
 	}
 	
 	void process()
@@ -214,15 +215,15 @@ public:
 		{
 			again = false;
 			
-			SecBuffer       Buffers[4] = {
-				{ this_recv_buf_len, SECBUFFER_DATA, this_recv_buf },
-				{ 0, SECBUFFER_EMPTY, NULL },
-				{ 0, SECBUFFER_EMPTY, NULL },
-				{ 0, SECBUFFER_EMPTY, NULL },
+			SecBuffer Buffers[4] = {
+				{ recv_buf_len, SECBUFFER_DATA,  recv_buf },
+				{ 0,            SECBUFFER_EMPTY, NULL },
+				{ 0,            SECBUFFER_EMPTY, NULL },
+				{ 0,            SECBUFFER_EMPTY, NULL },
 			};
-			SecBufferDesc   Message = { SECBUFFER_VERSION, 4, Buffers };
+			SecBufferDesc Message = { SECBUFFER_VERSION, 4, Buffers };
 			
-			SECURITY_STATUS scRet = SSPI->DecryptMessage(&this_ssl, &Message, 0, NULL);
+			SECURITY_STATUS scRet = SSPI->DecryptMessage(&ssl, &Message, 0, NULL);
 			if (scRet == SEC_E_INCOMPLETE_MESSAGE) return;
 			else if (scRet == SEC_I_RENEGOTIATE)
 			{
@@ -234,21 +235,21 @@ public:
 				return;
 			}
 			
-			this_recv_buf_len = 0;
+			recv_buf_len = 0;
 			
 			// Locate data and (optional) extra buffers.
 			for (int i=0;i<4;i++)
 			{
 				if (Buffers[i].BufferType == SECBUFFER_DATA)
 				{
-					memcpy(this_ret_buf+this_ret_buf_len, Buffers[i].pvBuffer, Buffers[i].cbBuffer);
+					memcpy(ret_buf+ret_buf_len, Buffers[i].pvBuffer, Buffers[i].cbBuffer);
 					ret_realloc(Buffers[i].cbBuffer);
 					again = true;
 				}
 				if (Buffers[i].BufferType == SECBUFFER_EXTRA)
 				{
-					memmove(this_recv_buf, Buffers[i].pvBuffer, Buffers[i].cbBuffer);
-					this_recv_buf_len = Buffers[i].cbBuffer;
+					memmove(recv_buf, Buffers[i].pvBuffer, Buffers[i].cbBuffer);
+					recv_buf_len = Buffers[i].cbBuffer;
 				}
 			}
 		}
@@ -256,43 +257,43 @@ public:
 	
 	int recv(uint8_t* data, unsigned int len, bool block = false)
 	{
-		if (!this_sock) return -1;
+		if (!sock) return -1;
 		fetch(block);
 		process();
 		
-		if (!this_ret_buf_len) return 0;
+		if (!ret_buf_len) return 0;
 		
 		unsigned ulen = len;
-		int ret = (ulen < this_ret_buf_len ? ulen : this_ret_buf_len);
-		memcpy(data, this_ret_buf, ret);
-		memmove(this_ret_buf, this_ret_buf+ret, this_ret_buf_len-ret);
-		this_ret_buf_len -= ret;
+		int ret = (ulen < ret_buf_len ? ulen : ret_buf_len);
+		memcpy(data, ret_buf, ret);
+		memmove(ret_buf, ret_buf+ret, ret_buf_len-ret);
+		ret_buf_len -= ret;
 		return ret;
 	}
 	
 	int sendp(const uint8_t* data, unsigned int len, bool block = true)
 	{
-		if (!this_sock) return -1;
+		if (!sock) return -1;
 		
 		fetchnb();
 		process();
 		
 		BYTE* sendbuf = tmpptr(); // let's reuse this
 		
-		unsigned int maxmsglen = 0x1000 - this_bufsizes.cbHeader - this_bufsizes.cbTrailer;
+		unsigned int maxmsglen = 0x1000 - bufsizes.cbHeader - bufsizes.cbTrailer;
 		if (len > maxmsglen) len = maxmsglen;
 		
-		memcpy(sendbuf+this_bufsizes.cbHeader, data, len);
-		SecBuffer                Buffers[4] = {
-			{ this_bufsizes.cbHeader,  SECBUFFER_STREAM_HEADER,  sendbuf },
-			{ len,                     SECBUFFER_DATA,           sendbuf+this_bufsizes.cbHeader },
-			{ this_bufsizes.cbTrailer, SECBUFFER_STREAM_TRAILER, sendbuf+this_bufsizes.cbHeader+len },
-			{ 0,                       SECBUFFER_EMPTY,          NULL },
+		memcpy(sendbuf+bufsizes.cbHeader, data, len);
+		SecBuffer Buffers[4] = {
+			{ bufsizes.cbHeader,  SECBUFFER_STREAM_HEADER,  sendbuf },
+			{ len,                SECBUFFER_DATA,           sendbuf+bufsizes.cbHeader },
+			{ bufsizes.cbTrailer, SECBUFFER_STREAM_TRAILER, sendbuf+bufsizes.cbHeader+len },
+			{ 0,                  SECBUFFER_EMPTY,          NULL },
 		};
-		SecBufferDesc        Message = { SECBUFFER_VERSION, 4, Buffers };
-		if (FAILED(SSPI->EncryptMessage(&this_ssl, 0, &Message, 0))) { error(); return -1; }
+		SecBufferDesc Message = { SECBUFFER_VERSION, 4, Buffers };
+		if (FAILED(SSPI->EncryptMessage(&ssl, 0, &Message, 0))) { error(); return -1; }
 		
-		if (this_sock->send(sendbuf, Buffers[0].cbBuffer + Buffers[1].cbBuffer + Buffers[2].cbBuffer) < 0) error();
+		if (sock->send(sendbuf, Buffers[0].cbBuffer + Buffers[1].cbBuffer + Buffers[2].cbBuffer) < 0) error();
 		
 		return len;
 	}
@@ -300,8 +301,8 @@ public:
 	~socketssl_impl()
 	{
 		error();
-		free(this_recv_buf);
-		free(this_ret_buf);
+		free(recv_buf);
+		free(ret_buf);
 	}
 };
 

@@ -194,8 +194,6 @@ public:
 	
 	void q()
 	{
-		return;
-		
 		uint8_t data[4096];
 		int len = tls_export_context(ssl, NULL, 0, false);
 		int len2 = tls_export_context(ssl, data, len, false);
