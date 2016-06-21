@@ -72,18 +72,16 @@ static void teststr(const char * g)
 
 socket* roundtrip(socket* sock_)
 {
-	socketssl* sock = (socketssl*)sock_;
-	sock->q();
+	//socketssl* sock = (socketssl*)sock_;
+	//sock->q();
 	//uint8_t data[4096];
 	//int datalen = sock->serialize_size();
 	//int fd = sock->serialize(data, datalen);
 	//
 //printf("serialize: %i u8[%i]\n", fd, datalen);
 	//return socketssl::unserialize(fd, data, datalen);
-	return sock;
+	return sock_;
 }
-
-int main2( int argc, char *argv[] );
 
 int main(int argc, char * argv[])
 {
@@ -92,24 +90,29 @@ int main(int argc, char * argv[])
 	//teststr("hi");
 	//teststr("1234567890123456789012345678901234567890");
 	
-	//main2(argc,argv);
-	
 //#define DOMAIN "www.microsoft.com"
-#define DOMAIN "muncher.se"
-//#define DOMAIN "www.howsmyssl.com"
 //#define DOC    "/"
-#define DOC    "/404.html"
-//#define DOC    "/a/check"
+
+//#define DOMAIN "muncher.se"
+//#define DOC    "/404.html"
+
+#define DOMAIN "www.howsmyssl.com"
+#define DOC    "/a/check"
+
 	socket* sock = socketssl::create(DOMAIN, 443);
 	printf("s=%i\n", sock->send("GET " DOC " HTTP/1.1\n"));
 	//sock = roundtrip(sock);
 	roundtrip(sock);
 	printf("s=%i\n", sock->send("Host: " DOMAIN "\nConnection: close\n\n"));
 	//for (int i=0;i<5;i++)
+	//
+	//socket* sock = socket::create("floating.muncher.se", 1686);
+	//printf("s=%i\n", sock->send("12345678123456781234567812345678"));
+	
 	while (true)
 	{
 		char ret[8192];
-		int b = sock->recv(ret, sizeof(ret));
+		int b = sock->recv(ret, sizeof(ret), true);
 		if (b==0) continue;
 		printf("r=%i\n", b);
 		if (b<0) break;

@@ -12,11 +12,11 @@ static void initialize()
 	static bool initialized = false;
 	if (initialized) return;
 	initialized = true;
-	SSL_load_error_strings(); // TODO
+	//SSL_load_error_strings(); // TODO
 	SSL_library_init();
-	OpenSSL_add_all_algorithms();
 	ctx = SSL_CTX_new(SSLv23_client_method());
 	SSL_CTX_set_default_verify_paths(ctx);
+	SSL_CTX_set_cipher_list(ctx, "HIGH:!DSS:!aNULL@STRENGTH");
 }
 
 static bool validate_hostname(const char *hostname, const X509 *server_cert);
@@ -119,7 +119,7 @@ socketssl* socketssl::create(socket* parent, const char * domain, bool permissiv
 static bool Curl_cert_hostcheck(const char * wildcard, const char * domain)
 {
 	if (!strcmp(wildcard, domain)) return true;
-	//FIXME
+	//FIXME: wildcards
 	return false;
 }
 

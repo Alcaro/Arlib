@@ -20,19 +20,21 @@ public:
 	static socket* create_udp(const char * domain, int port);
 	
 	enum {
-		e_closed = -1, // Remote host set the TCP EOF flag.
-		e_broken = -2, // Connection was forcibly torn down.
-		e_udp_too_big = -3, // Attempted to process an unacceptably large UDP packet.
-		e_ssl_failure = -4, // Certificate validation failed, no algorithms in common, or other SSL error.
+		e_lazy_dev = -1, // Whoever implemented this socket layer was lazy and just returned -1. Treat it as e_broken or an unknown error.
+		e_closed = -2, // Remote host chose to gracefully close the connection.
+		e_broken = -3, // Connection was forcibly torn down.
+		e_udp_too_big = -4, // Attempted to process an unacceptably large UDP packet.
+		e_ssl_failure = -5, // Certificate validation failed, no algorithms in common, or other SSL error.
 	};
 	
 	//Negative means error, see above.
-	//Positive is number of bytes handled. Zero means try again, and can be treated as byte count.
-	//send() sends all bytes before returning. send1() waits until it can send at least one byte.
-	//send0() can send zero, but is fully nonblocking.
+	//Positive is number of bytes handled.
+	//WARNING: Unlike most socket layers, zero does not mean graceful close!
+	// It means success, zero bytes processed, and is a valid byte count. Socket closed is in the error list above.
+	//The first two functions will process at least one byte, or if block is false, at least zero. send() sends all bytes before returning.
+	//block is ignored on Windows (always false), due to lack of MSG_NOWAIT and I don't want to do another syscall every time.
 	//For UDP sockets, partial reads or writes aren't possible; you always get one or zero packets.
-	//recv() corresponds to send1(); recvnb() is send0(). There is no counterpart to send(); use socketbuffer if you need that.
-	virtual int recv(uint8_t* data, unsigned int len, bool block = false) = 0;
+	virtual int recv(uint8_t* data, unsigned int len, bool block = true) = 0;
 	virtual int sendp(const uint8_t* data, unsigned int len, bool block = true) = 0;
 	int send(const uint8_t* data, unsigned int len)
 	{

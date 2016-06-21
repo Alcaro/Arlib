@@ -18,6 +18,13 @@
 	#include <errno.h>
 	#include <unistd.h>
 	#include <fcntl.h>
+	
+	#include <netinet/tcp.h>
+
+static int setsockopt(int socket, int level, int option_name, int option_value)
+{
+	return setsockopt(socket, level, option_name, &option_value, sizeof(option_value));
+}
 #endif
 
 namespace {
@@ -65,12 +72,26 @@ static int connect(const char * domain, int port)
 		close(fd);
 		return -1;
 	}
-	//let read1 not block on windows
-#ifdef _WIN32
+#ifndef _WIN32
+	setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, 1); // enable
+	setsockopt(fd, SOL_TCP, TCP_KEEPCNT, 3); // ping count before the kernel gives up
+	setsockopt(fd, SOL_TCP, TCP_KEEPIDLE, 30); // seconds idle until it starts pinging
+	setsockopt(fd, SOL_TCP, TCP_KEEPINTVL, 10); // seconds per ping once the pings start
+#else
 	u_long yes = 1;
 	ioctlsocket(fd, FIONBIO, &yes);
-//#else
-//	fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0)|O_NONBLOCK);
+	
+	//setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &yes, sizeof(yes));
+	struct tcp_keepalive keepalive = {
+		1, // SO_KEEPALIVE
+		30*1000, // TCP_KEEPIDLE in milliseconds
+		10*1000, // TCP_KEEPINTVL
+		//On Windows Vista and later, the number of keep-alive probes (data retransmissions) is set to 10 and cannot be changed.
+		//https://msdn.microsoft.com/en-us/library/windows/desktop/dd877220(v=vs.85).aspx
+		//so no TCP_KEEPCNT (a polite server will RST anyways)
+	};
+	WSAIoctl(fd, SIO_KEEPALIVE_VALS, &keepalive, sizeof(keepalive), NULL, 0, NULL, NULL, NULL);
+#error test
 #endif
 	
 	freeaddrinfo(addr);
@@ -93,6 +114,7 @@ public:
 #ifdef _WIN32
 		if (ret < 0 && WSAGetLastError() == WSAEWOULDBLOCK) return 0;
 #endif
+printf("e=%i\n",errno);
 		return e_broken;
 	}
 	

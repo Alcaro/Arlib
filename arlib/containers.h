@@ -3,7 +3,7 @@
 //#include <string.h> // strdup
 //#include <new>
 
-//#include "array.h"
+#include "array.h"
 //#include "fifo.h"
 //#include "hashmap.h"
 //#include "multiint.h"

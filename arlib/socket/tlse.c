@@ -3,7 +3,7 @@
 
 #ifdef TLSE_IMPL
 #define _XOPEN_SOURCE 600
-#define DEBUG
+//#define DEBUG
 
 /********************************************************************************
  Copyright (c) 2016, Eduard Suica

@@ -4,7 +4,7 @@
 template<typename T>
 class intarray {
 public:
-	//Could be optimized a lot harder, but don't care, it's not used much.
+	//Could be optimized a lot harder, but I don't care, it's not used much.
 	
 	T* ptr;
 	size_t len;

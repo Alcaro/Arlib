@@ -71,11 +71,12 @@ template<typename T, size_t N> char(&ARRAY_SIZE_CORE(T(&x)[N]))[N];
 //- static_assert(2+2 < 5); works in all of the above when templates are involved
 //- works on all compilers
 //optional:
-//- (FAILED) works if compiled as C (can fix with an ifdef, but I'm lazy)
-//- (FAILED) can name assertions, if desired
+//- (PASS) works in a template, even if the template isn't instantiated, if the condition isn't dependent on the types
+//- (FAIL) works if compiled as C (can fix with an ifdef, but I'm lazy)
+//- (FAIL) can name assertions, if desired
 #ifdef __GNUC__
 #define MAYBE_UNUSED __attribute__((__unused__)) // shut up, stupid warnings
-#define TYPENAME_IF_GCC typename
+#define TYPENAME_IF_GCC typename // gcc requires this. msvc rejects this.
 #else
 #define MAYBE_UNUSED
 #define TYPENAME_IF_GCC
@@ -91,6 +92,10 @@ template<> struct static_assert_t<false> {};
 		JOIN(static_assertion_, __COUNTER__) = \
 		sizeof(TYPENAME_IF_GCC static_assert_t<(bool)(expr)>::STATIC_ASSERTION_FAILED) \
 	} MAYBE_UNUSED
+
+//almost C version (fails inside structs):
+//#define static_assert(expr) \
+//	typedef char JOIN(static_assertion_, __COUNTER__)[(expr)?1:-1]
 
 
 
