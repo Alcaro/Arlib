@@ -114,7 +114,6 @@ public:
 #ifdef _WIN32
 		if (ret < 0 && WSAGetLastError() == WSAEWOULDBLOCK) return 0;
 #endif
-printf("e=%i\n",errno);
 		return e_broken;
 	}
 	

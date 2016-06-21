@@ -115,12 +115,49 @@ socketssl* socketssl::create(socket* parent, const char * domain, bool permissiv
 
 
 #if OPENSSL_VERSION_NUMBER < 0x10002000
-//actually not from curl
-static bool Curl_cert_hostcheck(const char * wildcard, const char * domain)
-{
-	if (!strcmp(wildcard, domain)) return true;
-	//FIXME: wildcards
-	return false;
+//stolen from TLSe https://github.com/eduardsui/tlse/blob/cec414b/tlse.c#L2509
+//(okay, actually from my fork, https://github.com/Alcaro/tlse/blob/6dbfc16/tlse.c#L2510 )
+#define bad_certificate -1
+static int tls_certificate_subject_match(const char *certsubject, const char *subject) {
+    // no subjects ...
+    if (((!certsubject) || (!certsubject[0])) && ((!subject) || (!subject[0])))
+        return 0;
+    
+    if ((!subject) || (!subject[0]))
+        return bad_certificate;
+    
+    if ((!certsubject) || (!certsubject[0]))
+        return bad_certificate;
+    
+    // exact match
+    if (!strcmp((const char *)certsubject, subject))
+        return 0;
+    
+    const char *wildcard = strchr((const char *)certsubject, '*');
+    if (wildcard) {
+        if (!wildcard[0]) {
+            // subject is [*]
+            if ((void *)wildcard == (void *)certsubject)
+                return 0;
+            // subhect is [something*] .. invalid
+            return bad_certificate;
+        }
+        wildcard++;
+        const char *match = strstr(subject, wildcard);
+        if ((!match) && (wildcard[0] == '.')) {
+            // check *.domain.com agains domain.com
+            wildcard++;
+            if (!strcasecmp(subject, wildcard))
+                return 0;
+        }
+        if (match) {
+            // check if is exact match
+            if (!strcasecmp(match, wildcard))
+                return 0;
+        }
+    }
+    
+    return bad_certificate;
 }
 
 //copypasted from https://wiki.openssl.org/index.php/Hostname_validation
@@ -211,7 +248,7 @@ static HostnameValidationResult matches_common_name(const char *hostname, const 
         }
 
         // Compare expected hostname with the CN
-        if (Curl_cert_hostcheck(common_name_str, hostname)) {
+        if (tls_certificate_subject_match(common_name_str, hostname)==0) {
                 return MatchFound;
         }
         else {
@@ -255,7 +292,7 @@ static HostnameValidationResult matches_subject_alternative_name(const char *hos
                                 break;
                         }
                         else { // Compare expected hostname with the DNS name
-                                if (Curl_cert_hostcheck(dns_name, hostname)) {
+                                if (tls_certificate_subject_match(dns_name, hostname)==0) {
                                         result = MatchFound;
                                         break;
                                 }
