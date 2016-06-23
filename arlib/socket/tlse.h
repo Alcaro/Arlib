@@ -1,6 +1,4 @@
 // from https://github.com/eduardsui/tlse
-// slightly modified
-
 #ifndef TLSE_H
 #define TLSE_H
 
@@ -8,7 +6,7 @@
 
 // define TLS_LEGACY_SUPPORT to support TLS 1.1/1.0 (legacy)
 // legacy support it will use an additional 272 bytes / context
-//#define TLS_LEGACY_SUPPORT
+#define TLS_LEGACY_SUPPORT
 // SSL_* style blocking APIs
 #define SSL_COMPATIBLE_INTERFACE
 // support forward secrecy (Diffie-Hellman ephemeral)
@@ -24,6 +22,8 @@
 #define TLS_V10                 0x0301
 #define TLS_V11                 0x0302
 #define TLS_V12                 0x0303
+#define DTLS_V10                0xFEFF
+#define DTLS_V12                0xFEFD
 
 #define TLS_NEED_MORE_DATA       0
 #define TLS_GENERIC_ERROR       -1
@@ -42,6 +42,7 @@
 #define TLS_BAD_CERTIFICATE     -14
 #define TLS_UNSUPPORTED_CERTIFICATE -15
 #define TLS_NO_RENEGOTIATION    -16
+#define TLS_FEATURE_NOT_SUPPORTED   -17
 
 #define TLS_RSA_WITH_AES_128_CBC_SHA          0x002F
 #define TLS_RSA_WITH_AES_256_CBC_SHA          0x0035
@@ -144,6 +145,7 @@ typedef int (*tls_validation_function)(struct TLSContext *context, struct TLSCer
 unsigned char *tls_pem_decode(const unsigned char *data_in, unsigned int input_length, int cert_index, unsigned int *output_len);
 struct TLSCertificate *tls_create_certificate();
 int tls_certificate_valid_subject(struct TLSCertificate *cert, const char *subject);
+int tls_certificate_valid_subject_name(const unsigned char *cert_subject, const char *subject);
 int tls_certificate_is_valid(struct TLSCertificate *cert);
 void tls_certificate_set_copy(unsigned char **member, const unsigned char *val, int len);
 void tls_certificate_set_copy_date(unsigned char **member, const unsigned char *val, int len);
@@ -185,7 +187,7 @@ struct TLSPacket *tls_build_server_key_exchange(struct TLSContext *context, int 
 struct TLSPacket *tls_build_hello(struct TLSContext *context);
 struct TLSPacket *tls_certificate_request(struct TLSContext *context);
 struct TLSPacket *tls_build_verify_request(struct TLSContext *context);
-int tls_parse_hello(struct TLSContext *context, const unsigned char *buf, int buf_len, unsigned int *write_packets);
+int tls_parse_hello(struct TLSContext *context, const unsigned char *buf, int buf_len, unsigned int *write_packets, unsigned int *dtls_verified);
 int tls_parse_certificate(struct TLSContext *context, const unsigned char *buf, int buf_len, int is_client);
 int tls_parse_server_key_exchange(struct TLSContext *context, const unsigned char *buf, int buf_len);
 int tls_parse_client_key_exchange(struct TLSContext *context, const unsigned char *buf, int buf_len);
