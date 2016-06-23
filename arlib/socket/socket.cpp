@@ -81,17 +81,16 @@ static int connect(const char * domain, int port)
 	u_long yes = 1;
 	ioctlsocket(fd, FIONBIO, &yes);
 	
-	//setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &yes, sizeof(yes));
 	struct tcp_keepalive keepalive = {
-		1, // SO_KEEPALIVE
+		1,       // SO_KEEPALIVE
 		30*1000, // TCP_KEEPIDLE in milliseconds
-		10*1000, // TCP_KEEPINTVL
+		3*1000,  // TCP_KEEPINTVL
 		//On Windows Vista and later, the number of keep-alive probes (data retransmissions) is set to 10 and cannot be changed.
 		//https://msdn.microsoft.com/en-us/library/windows/desktop/dd877220(v=vs.85).aspx
-		//so no TCP_KEEPCNT (a polite server will RST anyways)
+		//so no TCP_KEEPCNT; I'll reduce INTVL instead. And a polite server will RST anyways.
 	};
-	WSAIoctl(fd, SIO_KEEPALIVE_VALS, &keepalive, sizeof(keepalive), NULL, 0, NULL, NULL, NULL);
-#error test
+	u_long ignore;
+	WSAIoctl(fd, SIO_KEEPALIVE_VALS, &keepalive, sizeof(keepalive), NULL, 0, &ignore, NULL, NULL);
 #endif
 	
 	freeaddrinfo(addr);

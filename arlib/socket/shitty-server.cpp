@@ -2,6 +2,7 @@
 //Shitty Server: a buggy echo server
 //after the first 32 bytes, it drops your connection on the floor, without FIN or anything
 //probably somewhat useful to test resilience against network failure
+//it would be more useful to make it ignore the pings too, but I can't do that without fiddling with the firewall, and I'd rather not
 
 //linux and root only because TCP_REPAIR requires that
 //http://oroboro.com/dealing-with-network-port-abuse-in-sockets-in-c
@@ -38,12 +39,15 @@ int main()
     serv_addr.sin_port = htons(168);
 
     bind(listenfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)); 
+    perror("bind");
 
     listen(listenfd, 10); 
+    perror("listen");
 
     while(1)
     {
         connfd = accept(listenfd, (struct sockaddr*)NULL, NULL); 
+        perror("accept");
 
         memset(sendBuff, 0, 32);
         read(connfd, sendBuff, 32);
@@ -51,10 +55,8 @@ int main()
         sleep(1); // otherwise the ACK gives a RST
 
         int yes = 1;
-        if (setsockopt(connfd, SOL_TCP, TCP_REPAIR, &yes, sizeof(yes)) < 0)
-        {
-            perror("TCP_REPAIR");
-        }
+        setsockopt(connfd, SOL_TCP, TCP_REPAIR, &yes, sizeof(yes));
+        perror("TCP_REPAIR");
 
         close(connfd);
      }
