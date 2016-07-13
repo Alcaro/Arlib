@@ -77,6 +77,7 @@ ifeq ($(OPT),1)
   CFLAGS += $(OPTFLAGS)
   LFLAGS += -Wl,--gc-sections -s
   DEBUG = 0
+  OBJSUFFIX += -opt
 endif
 ifeq ($(DEBUG),1)
   CFLAGS += -g -DDEBUG
@@ -162,8 +163,6 @@ ifeq ($(ARSOCKET),1)
   else ifeq ($(OS),windows)
     CONF_CFLAGS += -DARLIB_SSL_SCHANNEL
     CONF_LFLAGS += -lcrypt32 -lsecur32
-    #not sure if these are needed, looks like mingw bug workarounds that were probably relevant four years ago
-    #CONF_LFLAGS += lib/crypt32.exp -l:lib/crypt32.lib -Wl,--enable-stdcall-fixup
   else ifeq ($(ARSOCKET_SSL),wolfssl)
     WOLFSSL_DIR = arlib/socket/wolfssl-3.9.0
     CONF_CFLAGS += -DARLIB_SSL_WOLFSSL -I$(WOLFSSL_DIR)

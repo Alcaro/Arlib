@@ -161,7 +161,12 @@ namespace {
 		
 		file* clone() { return new file_fs(this->filename, dup(this->fd), this->len); }
 		
-		void read(size_t start, void* target, size_t len) { ignore(pread(fd, target, len, start)); }
+		size_t read(void* target, size_t start, size_t len)
+		{
+			ssize_t ret = pread(fd, target, len, start);
+			if (ret < 0) return 0;
+			else return ret;
+		}
 		
 		void* mmap(size_t start, size_t len)
 		{
