@@ -159,15 +159,16 @@ namespace {
 			return new file_fs(this->filename, newhandle, this->len);
 		}
 		
-		void read(size_t start, void* target, size_t len)
+		size_t read(void* target, size_t start, size_t len)
 		{
 			char* target_c=(char*)target;
 			//TODO: use OVERLAPPED to nuke the race condition
 			LARGE_INTEGER pos;
 			pos.QuadPart=start;
 			SetFilePointerEx(this->handle, pos, NULL, FILE_BEGIN);
-			DWORD ignore;
-			ReadFile(this->handle, target_c, len, &ignore, NULL);
+			DWORD actual;
+			ReadFile(this->handle, target_c, len, &actual, NULL);
+			return actual;
 			//>4GB lengths die if entered into this, but you shouldn't read() that at all. Use mmap().
 		}
 		

@@ -31,7 +31,7 @@ LFLAGS =
 OBJSUFFIX =
 
 EXESUFFIX =
-EXTRAOBJ =
+EXTRAOBJ ?=
 CONF_CXXFLAGS += $(CONF_CFLAGS)
 
 ifeq ($(OS),linux)
@@ -213,6 +213,9 @@ obj/_arlib_sp_wolfssl$(OBJSUFFIX).o: arlib/socket/wolfssl-lib.c | obj
 
 obj/_arlib_sp_tlse$(OBJSUFFIX).o: arlib/socket/tlse.c | obj
 	$(CC) -DTLSE_IMPL -DTLS_AMALGAMATION -D_XOPEN_SOURCE=600 $(TRUE_CFLAGS)  -w -c $< -o $@
+
+obj/%-c$(OBJSUFFIX).o: %.c | obj
+	$(CC) $(TRUE_CFLAGS) -c $< -o $@
 
 obj/%$(OBJSUFFIX).o: %.cpp | obj
 	$(CXX) $(TRUE_CXXFLAGS) -c $< -o $@

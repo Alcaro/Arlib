@@ -98,7 +98,7 @@ MultiByteToWideChar_Utf(UINT CodePage, DWORD dwFlags,
                         LPCSTR lpMultiByteStr, int cbMultiByte,
                         LPWSTR lpWideCharStr, int cchWideChar)
 {
-	int ret = WuTF_utf8_to_utf16((dwFlags&MB_ERR_INVALID_CHARS) ? WUTF_E_ABORT : WUTF_E_DROP,
+	int ret = WuTF_utf8_to_utf16((dwFlags&MB_ERR_INVALID_CHARS) ? WUTF_INVALID_ABORT : WUTF_INVALID_DROP,
 	                             lpMultiByteStr, cbMultiByte,
 	                             (uint16_t*)lpWideCharStr, cchWideChar);
 	
@@ -117,7 +117,7 @@ WideCharToMultiByte_Utf(UINT CodePage, DWORD dwFlags,
                         LPSTR lpMultiByteStr, int cbMultiByte,
                         LPCSTR lpDefaultChar, LPBOOL lpUsedDefaultChar)
 {
-	int ret = WuTF_utf16_to_utf8((dwFlags&MB_ERR_INVALID_CHARS) ? WUTF_E_ABORT : WUTF_E_DROP,
+	int ret = WuTF_utf16_to_utf8((dwFlags&MB_ERR_INVALID_CHARS) ? WUTF_INVALID_ABORT : WUTF_INVALID_DROP,
 	                             (uint16_t*)lpWideCharStr, cchWideChar,
 	                             lpMultiByteStr, cbMultiByte);
 	

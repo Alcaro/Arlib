@@ -37,6 +37,7 @@ public:
 		ret->ssl = SSL_new(ctx);
 		//ret->nonblock = false;
 		SSL_set_fd(ret->ssl, ret->fd);
+		//TODO: set fd to nonblock
 		
 		if (!permissive)
 		{

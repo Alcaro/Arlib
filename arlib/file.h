@@ -47,8 +47,8 @@ public:
 	//The returned object is guaranteed equivalent to the given one, assuming the file is not changed or removed in the meanwhile.
 	virtual file* clone() { return file::create(this->filename); }
 	
-	virtual void read(size_t start, void* target, size_t len) = 0;
-	void read(void* target, size_t len) { this->read(0, target, len); }
+	virtual size_t read(void* target, size_t start, size_t len) = 0;
+	size_t read(void* target, size_t len) { return this->read(target, 0, len); }
 	virtual void* mmap(size_t start, size_t len) = 0;
 	void* mmap() { return this->mmap(0, this->len); }
 	virtual void unmap(const void* data, size_t len) = 0;
@@ -68,7 +68,7 @@ public:
 		return new file::mem(this->filename, newdat, this->len);
 	}
 	
-	void read(size_t start, void* target, size_t len) { memcpy(target, (char*)data+start, len); }
+	size_t read(void* target, size_t start, size_t len) { memcpy(target, (char*)data+start, len); return len; }
 	void* mmap(size_t start, size_t len) { return (char*)data+start; }
 	void unmap(const void* data, size_t len) {}
 	~mem() { free(data); }

@@ -29,14 +29,35 @@ static CredHandle cred;
 	(ISC_REQ_SEQUENCE_DETECT | ISC_REQ_REPLAY_DETECT | ISC_REQ_CONFIDENTIALITY | \
 	 ISC_RET_EXTENDED_ERROR | ISC_REQ_ALLOCATE_MEMORY | ISC_REQ_STREAM)
 
+//my mingw headers are outdated
+#ifndef SCH_USE_STRONG_CRYPTO
+#define SCH_USE_STRONG_CRYPTO 0x00400000
+#endif
+#ifndef SP_PROT_TLS1_2_CLIENT
+#define SP_PROT_TLS1_2_CLIENT 0x00000800
+#endif
+#ifndef SEC_Entry
+#define SEC_Entry WINAPI
+#endif
+
 static void initialize()
 {
 	if (SSPI) return;
+	
+	//linking a DLL is easy, but when there's only one exported function, spending the extra effort is worth it
+	HMODULE secur32 = LoadLibraryA("secur32.dll");
+	typedef PSecurityFunctionTableA SEC_Entry (*InitSecurityInterfaceA_t)(void);
+	InitSecurityInterfaceA_t InitSecurityInterfaceA = (InitSecurityInterfaceA_t)GetProcAddress(secur32, SECURITY_ENTRYPOINT_ANSIA);
 	SSPI = InitSecurityInterfaceA();
 	
 	SCHANNEL_CRED SchannelCred = {};
 	SchannelCred.dwVersion = SCHANNEL_CRED_VERSION;
-	SchannelCred.dwFlags = SCH_CRED_NO_DEFAULT_CREDS;
+	SchannelCred.dwFlags = SCH_CRED_NO_DEFAULT_CREDS | SCH_USE_STRONG_CRYPTO;
+	// fun fact: IE11 doesn't use SCH_USE_STRONG_CRYPTO. I guess it favors accepting outdated servers over rejecting evil ones.
+	SchannelCred.grbitEnabledProtocols = SP_PROT_TLS1_2_CLIENT; // Microsoft recommends setting this to zero, but that makes it use TLS 1.0, which sucks.
+	//howsmyssl expects session ticket support for the Good rating, but that's only supported on windows 8, according to
+	// https://connect.microsoft.com/IE/feedback/details/997136/internet-explorer-11-on-windows-7-does-not-support-tls-session-tickets
+	//and I can't find which flag enables that, anyways
 	
 	SSPI->AcquireCredentialsHandleA(NULL, (char*)UNISP_NAME_A, SECPKG_CRED_OUTBOUND,
 	                                NULL, &SchannelCred, NULL, NULL, &cred, NULL);

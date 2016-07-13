@@ -98,7 +98,7 @@ printf("recv:%i:%i\n",newfd2,errno);
 
 static int tmp_create()
 {
-	const char * paths[] = { "/run/", "/tmp/", "/home/", "/", NULL };
+	const char * paths[] = { "/run/", "/dev/shm/", "/tmp/", "/home/", "/", NULL };
 	for (int i=0;paths[i];i++)
 	{
 		int fd = open(paths[i], O_TMPFILE|O_EXCL|0666);
