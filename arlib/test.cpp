@@ -18,7 +18,7 @@ _testdecl::_testdecl(bool(*func)(), const char * name)
 	g_testlist = next;
 }
 
-#undef main
+#undef main // the real main is #define'd to something stupid on test runs
 int main(int argc, char* argv[])
 {
 	int count[2]={0,0};

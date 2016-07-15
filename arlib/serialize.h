@@ -1,10 +1,41 @@
 #pragma once
 #include "global.h"
 
-//na = no argument, a = has argument
-//for both, arguments are type then name
-#define SER_OPTS(na, a) \
+//public API:
+//for serializable classes:
+
+//must be last
+#define SER(member) +_s.execute_base(#member, member)
+
+//these are optional and go in front of SER, in any order
+//it would be better to do this via reflection and attributes, but it doesn't seem like C++17 will have that, and Arlib is C++11 anyways.
+#define SER_HEX SER_OPT(hex)
+
+#define onserialize() \
+	template<typename _T> \
+	void serialize(_T& _s)
+
+//example:
+//onserialize() { SER_HEX SER(x); }
+
+
+//for serializers:
+//inherit from serializer_base<your class>
+//implement template<typename T> void serialize(const char * name, T& member, const serialize_opts& opts)
+//both public
+
+
+//serializer options:
+#define SER_OPTS(na, a) /* na = no argument to SER_name, a = has argument*/ \
 	na(bool, hex) \
+
+//then poke opts.hex
+
+//for an example of everything, see serialize.cpp
+
+
+
+//implementation follows (serialize.cpp is just a test). warning: ugly as fuck
 
 struct serialize_opts {
 #define X(t, n) t n;
@@ -63,15 +94,4 @@ struct serializer_base {
 	}
 };
 
-#define onserialize() \
-	template<typename _T> \
-	void serialize(_T& _s)
-
 #define SER_OPT(name, ...) +serialize_opts::opt_##name(__VA_ARGS__)
-
-//must be last
-#define SER(member) +_s.execute_base(#member, member)
-
-//these are optional and go in front of SER, in any order
-//it would be better to do this via reflection and attributes, but it doesn't seem like C++17 will have that, and Arlib is C++11 anyways.
-#define SER_HEX SER_OPT(hex)
