@@ -47,6 +47,7 @@ ifeq ($(OS),linux)
     CONF_LFLAGS += -pthread
   endif
   OBJSUFFIX = -linux
+  TESTRUNNER = valgrind
 endif
 
 ifeq ($(OS),windows)
@@ -231,5 +232,5 @@ obj/arlibtest$(EXESUFFIX): $(OBJS)
 	$(LD) $+ $(TRUE_LFLAGS) -o $@ -lm
 
 test: obj/arlibtest$(EXESUFFIX)
-	obj/arlibtest$(EXESUFFIX)
+	$(TESTRUNNER) obj/arlibtest$(EXESUFFIX)
 endif

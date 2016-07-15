@@ -28,7 +28,6 @@ int main(int argc, char* argv[])
 		testlist* next = test->next;
 		printf("Testing %s...", test->name);
 		bool pass = test->func();
-		printf("%i", pass);
 		count[pass]++;
 		puts(pass ? " pass" : " fail");
 		free(test);
