@@ -1,4 +1,4 @@
-PROGRAM = test
+PROGRAM = arlibtest
 ARGUI = 0
 ARTHREAD = 0
 ARWUTF = 0

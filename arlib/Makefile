@@ -7,11 +7,15 @@ else
   UNAME_S := $(shell uname -s)
   ifeq ($(UNAME_S),Linux)
     OS = linux
-  endif
-  ifeq ($(UNAME_S),Darwin)
+  else ifeq ($(UNAME_S),Darwin)
     OS = osx
+  else
+    $(error what weird OS is this?)
   endif
 endif
+
+SPACE :=
+SPACE +=
 
 ARGUI ?= 0
 ARTHREAD ?= 0
@@ -21,6 +25,7 @@ ARSOCKET ?= 0
 ARSOCKET_SSL ?= openssl
 
 DEBUG ?= 1
+OPT ?= 0
 
 CC = gcc
 CFLAGS =
@@ -29,6 +34,7 @@ CXXFLAGS = $(CFLAGS)
 LD = g++
 LFLAGS =
 OBJSUFFIX =
+CCXXFLAGS = -fvisibility=hidden -fno-exceptions -Wall -Wno-comment
 
 EXESUFFIX =
 EXTRAOBJ ?=
@@ -43,21 +49,6 @@ ifeq ($(OS),linux)
   OBJSUFFIX = -linux
 endif
 
-## function rwildcard(directory, pattern)
-## mostly stolen from bsnes, but slightly improved (can use . as a directory)
-#rwildcard = \
-#  $(strip \
-#    $(warning 1 1 $1 : 2 $2 : c $(if $(strip $1),$1,.)) \
-#    $(filter $(if $2,$2,%), \
-#      $(foreach f, \
-#        $(wildcard $(if $(strip $1),$1,.)/*), \
-#        $(eval t = $(call rwildcard,$f)) \
-#        $(warning 2 t $t : f $f : 1 $1 : 2 $2) \
-#        $(if $t,$t,$f) \
-#      ) \
-#    ) \
-#  )
-
 ifeq ($(OS),windows)
   EXESUFFIX = .exe
 #  EXTRAOBJ = obj/resource$(OBJSUFFIX).o
@@ -66,6 +57,10 @@ ifeq ($(OS),windows)
 #obj/resource$(OBJSUFFIX).o: ico/*
 #	$(RC) $(RCFLAGS) ico/minir.rc obj/resource$(OBJSUFFIX).o
   OBJSUFFIX = -windows
+endif
+
+ifneq (,$(findstring test,$(MAKECMDGOALS)))
+  SELFTEST = 1
 endif
 
 OPTFLAGS := -Os -fomit-frame-pointer -fmerge-all-constants -fvisibility=hidden
@@ -93,6 +88,11 @@ endif
 
 OUTNAME = $(PROGRAM)$(EXESUFFIX)
 
+ifneq ($(SELFTEST),)
+  CONF_CFLAGS += -DARLIB_TEST -Dmain=not_quite_main
+  OBJSUFFIX += -test
+endif
+
 #stolen from http://stackoverflow.com/questions/22586084/makefile-with-multiple-rules-sharing-same-recipe-with-patternrules
 define ADDDIR_CORE
 $(eval OBJPREFIX := obj/_arlib_$(subst /,_,$(1))_)
@@ -104,6 +104,7 @@ define ADDDIR
   $(eval $(call ADDDIR_CORE,$(1)))
 endef
 
+OBJSUFFIX := $(subst $(SPACE),,$(OBJSUFFIX))
 OBJS := $(patsubst %.cpp,obj/%$(OBJSUFFIX).o,$(wildcard *.cpp)) $(EXTRAOBJ)
 # obj/miniz$(OBJSUFFIX).o
 
@@ -179,7 +180,6 @@ ifeq ($(ARSOCKET),1)
   endif
 endif
 
-CCXXFLAGS = -fvisibility=hidden -fno-exceptions -Wall -Wno-comment
 TRUE_CFLAGS = -std=c99 $(CCXXFLAGS) $(CFLAGS) $(CONF_CFLAGS)
 TRUE_CXXFLAGS =-std=c++11 -fno-rtti $(CCXXFLAGS) $(CXXFLAGS) $(CONF_CXXFLAGS)
 TRUE_LFLAGS = $(LFLAGS) -fvisibility=hidden $(CONF_LFLAGS)
@@ -223,3 +223,13 @@ $(OUTNAME): $(OBJS)
 	$(LD) $+ $(TRUE_LFLAGS) -o $@ -lm
 
 $(PROGRAM)_dummy: $(OUTNAME)
+
+
+
+ifneq ($(SELFTEST),)
+obj/arlibtest$(EXESUFFIX): $(OBJS)
+	$(LD) $+ $(TRUE_LFLAGS) -o $@ -lm
+
+test: obj/arlibtest$(EXESUFFIX)
+	obj/arlibtest$(EXESUFFIX)
+endif
