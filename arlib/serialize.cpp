@@ -9,7 +9,7 @@ int b;
 
 onserialize() {
 	SER(a);
-	SER_HEX SER(b);
+	SER(b) SER_HEX;
 }
 };
 

@@ -118,4 +118,5 @@ int main(int argc, char * argv[])
 		if (b<0) break;
 		puts(ret);
 	}
+	return 0;
 }

@@ -5,7 +5,7 @@
 //for serializable classes:
 
 //must be last
-#define SER(member) +_s.execute_base(#member, member)
+#define SER(member) _s.execute_base(#member, member)+=serialize_opts()
 
 //these are optional and go in front of SER, in any order
 //it would be better to do this via reflection and attributes, but it doesn't seem like C++17 will have that, and Arlib is C++11 anyways.
@@ -16,7 +16,7 @@
 	void serialize(_T& _s)
 
 //example:
-//onserialize() { SER_HEX SER(x); }
+//onserialize() { SER(width) SER_HEX; }
 
 
 //for serializers:
@@ -54,7 +54,6 @@ struct serialize_opts {
 #undef Xn
 #undef Xa
 	
-	serialize_opts operator+() { return *this; }
 	serialize_opts operator+(const serialize_opts& right)
 	{
 #define X(t, n) n |= right.n;
@@ -73,14 +72,7 @@ struct serialize_execute {
 };
 
 template<typename Tser, typename Tmem>
-void operator+(const serialize_execute<Tser,Tmem>& exec)
-{
-	serialize_opts opts;
-	exec.parent->serialize(exec.name, exec.member, opts);
-}
-
-template<typename Tser, typename Tmem>
-void operator+(const serialize_opts& opts, const serialize_execute<Tser,Tmem>& exec)
+void operator+=(const serialize_execute<Tser,Tmem>& exec, const serialize_opts& opts)
 {
 	exec.parent->serialize(exec.name, exec.member, opts);
 }
