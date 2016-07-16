@@ -3,15 +3,9 @@
 #include <string.h>
 
 #ifdef ARLIB_TEST
-struct sertest {
+struct serializable_test {
 int a;
 int b;
-
-sertest()
-{
-	a=16;
-	b=32;
-}
 
 onserialize() {
 	SER(a);
@@ -36,11 +30,13 @@ public:
 
 test()
 {
-	serializer_test test;
-	test.phase=0;
-	sertest item;
-	item.serialize(test);
+	serializer_test s;
+	s.phase = 0;
+	serializable_test item;
+	item.a = 16;
+	item.b = 32;
+	item.serialize(s);
 	
-	return test.phase==2 && item.a==17 && item.b==33;
+	return s.phase==2 && item.a==17 && item.b==33;
 }
 #endif
