@@ -25,6 +25,8 @@ test()
 		assert_eq(a, "hi!");
 		a.replace(1,2, "ey");
 		assert_eq(a, "hey");
+		
+		assert_eq(a.substr(2,2), "");
 	}
 	
 	{
@@ -37,6 +39,8 @@ test()
 		assert_eq(a.substr(1,3), "23");
 		assert_eq(a.substr(1,21), "23456789012345678123");
 		assert_eq(a.substr(1,~1), "2345678901234567812345678901234567");
+		assert_eq(a.substr(2,2), "");
+		assert_eq(a.substr(22,22), "");
 		a.replace(1,5, "-");
 		assert_eq(a, "1-789012345678123456789012345678");
 		a.replace(4,20, "-");

@@ -1,5 +1,6 @@
 #pragma once
 #include "global.h"
+#include "stringconv.h"
 
 #ifdef ARLIB_TEST
 class _testdecl {
@@ -16,7 +17,8 @@ public:
 #define assert_eq(x,y) do { \
 		if ((x) != (y)) \
 		{ \
-			printf("\nFailed assertion " #x " == " #y " (line " STR(__LINE__) "): expected %s, got %s\n", (const char*)(y), (const char*)(x)); \
+			printf("\nFailed assertion " #x " == " #y " (line " STR(__LINE__) "): " \
+			       "expected %s, got %s\n", (const char*)tostring(y), (const char*)tostring(x)); \
 			return false; \
 		} \
 	} while(0)

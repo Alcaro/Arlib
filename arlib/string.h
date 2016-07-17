@@ -65,6 +65,7 @@ private:
 	void wcache(bool newval) const {}
 	
 public:
+	//NUL terminated
 	const char * data() const { return ptr; }
 	uint32_t length() const { return strlen(ptr); }
 	
@@ -427,6 +428,7 @@ public:
 	string& operator=(const char * str) { release(); init_from(str); return *this; }
 	~string() { release(); }
 	
+	operator bool() const { return length(); }
 	operator const char * () const { return data(); }
 	
 private:

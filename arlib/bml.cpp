@@ -2,192 +2,299 @@
 #include "test.h"
 #include <ctype.h>
 
-struct bmlparser_st {
-	bmlparser* target;
-	cstring indent;
-	cstring data;
-	bool* ok;
-};
+/*
 
-static cstring cut(cstring& input, int cut)
-{
-	cstring ret = input.csubstr(0, cut);
-	input = input.csubstr(cut, ~0);
-	return ret;
-}
+[bml]
+a
+b
+ c
+d e f
+g
+ :h
+ :i
+j
+ k
+  l
+  m
 
-static cstring cut(cstring& input, int skipstart, int cut, int skipafter)
-{
-	cstring ret = input.csubstr(skipstart, cut);
-	input = input.csubstr(cut+skipafter, ~0);
-	return ret;
-}
+read "a"
+{a}
+set m_indent_step[0]
+return enter a
 
-//takes a single line, returns the first node in it
-static bool bml_parse_inline_node(cstring& data, cstring& node, bool& hasvalue, cstring& value)
-{
-	int nodestart = 0;
-	while (data[nodestart]==' ' || data[nodestart]=='\t') nodestart++;
+read "b"
+m_indent_step.size(){1} > m_indent.length(){0}, so:
+ {b}
+ clear last true element of m_indent_step
+ clear trailing false elements of m_indent_step
+ restore "b" to read buffer
+ return exit
+
+read "b", goto {a}
+
+read " c"
+{c}
+set m_indent to " "
+m_indent_step.size(){1} <= m_indent.length(){1}
+set m_indent_step[1]
+return enter c
+
+read "d e"
+set m_indent to ""
+m_indent_step.size(){2} > m_indent.length(){0}, so goto {b}
+
+read "d e"
+m_indent_step.size(){1} > m_indent.length(){0}, so goto {b}
+
+read "d e"
+m_indent_step.size(){0} <= m_indent.length(){0}
+set m_inlines = " e f" (or "e f", not sure and doesn't matter)
+goto {a}
+
+m_inlines is not empty, so:
+{e}
+read "e f"
+set m_exit
+set m_inlines to "f"
+return enter e
+
+m_exit is set, so:
+{ex}
+clear m_exit
+return exit
+
+m_inlines is not empty, so goto {e} [m_inlines = ""]
+m_exit is set, so goto {ex}
+
+
+[bml]
+g
+ :h
+ :i
+j
+ k
+  l
+  m
+
+read "g"
+read " :h"
+if it doesn't start with colon, restore to read buffer
+but it does, so:
+  set m_indent = " "
+  read " :i"
+  it too starts with colon, so ensure that indentation is identical
+  read "j"
+  it does not start with colon, so restore to read buffer
+  set m_indent_step[0]
+  return enter g="h i"
+
+read "j", goto {a}
+read " k", goto {c}
+
+read "  l"
+set m_indent to "  "
+m_indent_step.size(){2} <= m_indent.length(){2}
+set m_indent_step[2]
+return enter l
+
+read "  m"
+m_indent_step.size(){3} > m_indent.length(){2}, so goto {b}
+
+read "  m"
+m_indent_step.size(){2} <= m_indent.length(){2}
+set m_indent_step[2]
+return enter m
+
+read ""
+set m_indent to ""
+m_indent_step.size(){2} > m_indent.length(){0}, so goto {b}
+
+read ""
+m_indent_step.size(){1} > m_indent.length(){0}, so goto {b}
+
+read ""
+nothing else to do, so return finish
+
+*/
+
+
+namespace {
+class bmlparser_impl : public bmlparser {
+public:
+	bool m_exit;
+	cstring m_inlines;
+	cstring m_indent;
+	array<bool> m_indent_step;
+	cstring m_nextline;
+	cstring m_data;
 	
-	int nodelen = nodestart;
-	while (isalnum(data[nodelen]) || data[nodelen]=='-' || data[nodelen]=='.') nodelen++;
-	node = cut(data, nodestart, nodelen, 0);
-	switch (data[0])
+	static cstring cut(cstring& input, int skipstart, int cut, int skipafter)
 	{
-		case '\0':
-		case ' ':
-		case '\t':
-		case '\n':
+		cstring ret = input.csubstr(skipstart, cut);
+		input = input.csubstr(cut+skipafter, ~0);
+		return ret;
+	}
+	
+	static cstring cutline(cstring& input)
+	{
+		int nlpos = 0;
+		while (input[nlpos]!='\r' && input[nlpos]!='\n' && input[nlpos]!='\0') nlpos++;
+		return cut(input, 0, nlpos, (input[nlpos]=='\r') ? 2 : (input[nlpos]=='\n') ? 1 : 0);
+	}
+	
+	//takes a single line, returns the first node in it
+	//hasvalue is to differentiate 'foo' from 'foo='; only the former allows a multi-line value
+	static bool bml_parse_inline_node(cstring& data, cstring& node, bool& hasvalue, cstring& value)
+	{
+		int nodestart = 0;
+		while (data[nodestart]==' ' || data[nodestart]=='\t') nodestart++;
+		
+		int nodelen = nodestart;
+		while (isalnum(data[nodelen]) || data[nodelen]=='-' || data[nodelen]=='.') nodelen++;
+		node = cut(data, nodestart, nodelen, 0);
+		switch (data[0])
 		{
-			hasvalue=false;
-			return true;
-		}
-		case ':':
-		{
-			hasvalue=true;
-			int valstart = 1;
-			while (data[valstart]==' ' || data[valstart]=='\t') valstart++;
-			int valend = valstart;
-			while (data[valend]!='\0') valend++;
-			value = cut(data, valstart, valend, 0);
-			return true;
-		}
-		case '=':
-		{
-			if (data[1]=='"')
+			case '\0':
+			case ' ':
+			case '\t':
 			{
-				hasvalue = true;
-				int valend = 2;
-				while (data[valend]!='"' && data[valend]!='\0') valend++;
-				if (data[valend]!='"')
+				hasvalue=false;
+				return true;
+			}
+			case ':':
+			{
+				hasvalue=true;
+				int valstart = 1;
+				while (data[valstart]==' ' || data[valstart]=='\t') valstart++;
+				int valend = valstart;
+				while (data[valend]!='\0') valend++;
+				value = cut(data, valstart, valend, 0);
+				return true;
+			}
+			case '=':
+			{
+				if (data[1]=='"')
 				{
-					while (data[valend]!='\0') valend++;
-					data = data.csubstr(valend, ~0);
-					return false;
+					hasvalue = true;
+					int valend = 2;
+					while (data[valend]!='"' && data[valend]!='\0') valend++;
+					if (data[valend]!='"')
+					{
+						while (data[valend]!='\0') valend++;
+						data = data.csubstr(valend, ~0);
+						return false;
+					}
+					value = cut(data, 2, valend, 1);
+					return true;
 				}
-				value = cut(data, 2, valend, 1);
-				return true;
+				else
+				{
+					hasvalue = true;
+					int valend = 0;
+					while (data[valend]!=' ' && data[valend]!='\0') valend++;
+					value = cut(data, 1, valend, 0);
+					return true;
+				}
 			}
-			else
-			{
-				hasvalue = true;
-				int valend = 0;
-				while (data[valend]!=' ' && data[valend]!='\0') valend++;
-				value = cut(data, 1, valend, 0);
-				return true;
-			}
+			default:
+				return false;
 		}
-		default:
-			return false;
 	}
-}
-
-static void bml_parse(bmlparser_st& state)
-{
-	while (state.data.length())
+	
+	event next()
 	{
-		//TODO: nuke comments
-		//TODO: validate whitespace
-		
-		int nlpos;
-		for (nlpos=0;state.data[nlpos]!='\n' && state.data[nlpos]!='\0';nlpos++) {}
-		
-		cstring line = cut(state.data, 0, nlpos, (state.data[nlpos]=='\n') ? 1 : 0);
-		
-		cstring node;
-		bool hasvalue=false;
-		cstring value;
-//puts(line);
-		if (!bml_parse_inline_node(line, node, hasvalue, value))
+		if (m_exit)
 		{
-			state.ok[0]=false;
-			break;
+			m_exit = false;
+			return (event){ exit };
 		}
 		
-		state.target->enter(node, value);
-		//TODO: parse multiline
-		while (line.length())
+		if (m_inlines)
 		{
-			if (!bml_parse_inline_node(line, node, hasvalue, value))
+			event ev = { enter };
+			bool dummy;
+			if (!bml_parse_inline_node(m_inlines, ev.name, dummy, ev.value))
 			{
-				state.ok[0]=false;
-				break;
+				return (event){ error };
 			}
-			state.target->enter(node, value);
-			state.target->exit();
+			
+			m_exit = true;
+			return ev;
 		}
-		//TODO: parse children on upcoming lines
-		state.target->exit();
-printf("((%s))((%s))\n",line.data(),state.data.data());
-//break;
+		
+		if (m_nextline)
+		{
+		handleline:
+			event ev = { enter };
+			bool banmultiline;
+			if (!bml_parse_inline_node(m_nextline, ev.name, banmultiline, ev.value))
+			{
+				return (event){ error };
+			}
+			m_inlines = m_nextline;
+			
+			m_nextline = 
+			
+			m_exit = true;
+			return ev;
+		}
+		
+		if (m_data)
+		{
+		nextline:
+			m_nextline = cutline(m_data);
+			int indentlen = 0;
+			while (m_nextline[indentlen] == ' ' || m_nextline[indentlen] == '\t') indentlen++;
+			cstring newindent = cut(m_nextline, 0, indentlen, 0);
+			
+			if (m_nextline[0] == '#' || m_nextline[0] == '\0') goto nextline;
+			
+			if (memcmp(m_indent.nt(), newindent.nt(), min(m_indent.length(), newindent.length())) != 0)
+			{
+				return (event){ error };
+			}
+			goto handleline;
+		}
+		
+		return (event){ finish };
 	}
+	
+	bmlparser_impl(cstring bml)
+	{
+		m_exit = false;
+		m_data = bml;
+	}
+};
 }
 
-bool bml_parse(cstring bml, bmlparser* ret)
+bmlparser* bmlparser::create(cstring bml)
 {
-	bmlparser_st parser;
-	parser.target = ret;
-	parser.indent = "";
-	parser.data = bml;
-	bool ok;
-	parser.ok = &ok;
-	bml_parse(parser);
-	return ok;
+	return new bmlparser_impl(bml);
 }
 
 
 
 #ifdef ARLIB_TEST
-enum { e_enter, e_exit, e_error, e_finish };
-struct expect {
-	int action;
-	const char * name;
-	const char * val;
-};
-
-class bmltest : public bmlparser {
-public:
-	expect* expected;
-	
-	void action(int what, cstring name, cstring val)
-	{
-		if (!expected) return;
-		if (expected->name==NULL) expected->name="";
-		if (expected->val==NULL) expected->val="";
-printf("e=%i [%s] [%s]\n", expected->action, expected->name, expected->val);
-printf("a=%i [%s] [%s]\n\n", what, (const char*)name, (const char*)val);
-		
-		//if (expected->action != what) puts("fail1");
-		//if (expected->name != name) puts("fail2");
-		//if (expected->val != val) puts("fail3");
-		if (expected->action != what || expected->name != name || expected->val != val) expected=NULL;
-		else expected++;
-	}
-	
-	void enter(cstring name, cstring val)
-	{
-		action(e_enter, name, val);
-	}
-	
-	void exit()
-	{
-		action(e_exit, "", "");
-	}
-	
-	void error(cstring what)
-	{
-		action(e_error, "", "");
-	}
-};
+#define e_enter bmlparser::enter
+#define e_exit bmlparser::exit
+#define e_error bmlparser::error
+#define e_finish bmlparser::finish
 
 const char * test1 =
 "node\n"
 "node=foo\n"
 "node=\"foo bar\"\n"
 "node: foo bar\n"
+"node\n"
+" child\n"
 "node child=foo\n"
-"#bar";
-expect test1e[]={
+"node=\n"
+"node=\"\"\n"
+"node:\n"
+"node\tchild\n"
+"#bar\n"
+"node";
+bmlparser::event test1e[]={
 	{ e_enter, "node" },
 	{ e_exit },
 	{ e_enter, "node", "foo" },
@@ -197,8 +304,24 @@ expect test1e[]={
 	{ e_enter, "node", "foo bar" },
 	{ e_exit },
 	{ e_enter, "node" },
-	{ e_enter, "child", "foo" },
+		{ e_enter, "child" },
+		{ e_exit },
 	{ e_exit },
+	{ e_enter, "node" },
+		{ e_enter, "child", "foo" },
+		{ e_exit },
+	{ e_exit },
+	{ e_enter, "node" },
+	{ e_exit },
+	{ e_enter, "node" },
+	{ e_exit },
+	{ e_enter, "node" },
+	{ e_exit },
+	{ e_enter, "node" },
+		{ e_enter, "child" },
+		{ e_exit },
+	{ e_exit },
+	{ e_enter, "node" },
 	{ e_exit },
 	{ e_finish }
 };
@@ -207,7 +330,7 @@ const char * test2 =
 "parent\n"
 " node=123 child1=456 child2: 789 123\n"
 "  child3\n";
-expect test2e[]={
+bmlparser::event test2e[]={
 	{ e_enter, "parent" },
 		{ e_enter, "node", "123" },
 			{ e_enter, "child1", "456" },
@@ -227,7 +350,7 @@ const char * test3 =
 " g h=6\n"
 "  :7\n"
 "i";
-expect test3e[]={
+bmlparser::event test3e[]={
 	{ e_enter, "a" },
 		{ e_enter, "b", "1" },
 		{ e_exit },
@@ -260,7 +383,7 @@ const char * test4 =
 "      foo=bar\n"
 "\n"
 "Parent-1.0";
-expect test4e[]={
+bmlparser::event test4e[]={
 	{ e_enter, "Parent-1.0", "A-value" },
 		{ e_enter, "child" },
 		{ e_exit },
@@ -288,12 +411,34 @@ expect test4e[]={
 	{ e_finish }
 };
 
-static bool testbml(const char * bml, expect* expected)
+static bool testbml(const char * bml, bmlparser::event* expected)
 {
-	bmltest foo;
-	foo.expected = test1e;
-	bml_parse(test1, &foo);
-	return (foo.expected && foo.expected->action == e_finish);
+	autoptr<bmlparser> parser = bmlparser::create(bml);
+	while (true)
+	{
+		bmlparser::event actual = parser->next();
+		
+printf("e=%i [%s] [%s]\n", expected->action, expected->name.data(), expected->value.data());
+printf("a=%i [%s] [%s]\n\n", actual.action, actual.name.data(), actual.value.data());
+		assert_eq(expected->action, actual.action);
+		assert_eq(expected->name, actual.name);
+		assert_eq(expected->value, actual.value);
+		
+		if (expected->action == e_finish || actual.action == e_finish) return true;
+		
+		expected++;
+	}
+}
+
+static bool testbml_error(const char * bml)
+{
+	autoptr<bmlparser> parser = bmlparser::create(bml);
+	for (int i=0;i<100;i++)
+	{
+		bmlparser::event ev = parser->next();
+		if (ev.action == e_error) return true;
+	}
+	assert(!"expected error");
 }
 
 test()
@@ -303,6 +448,10 @@ puts("");
 	assert(testbml(test2, test2e));
 	assert(testbml(test3, test3e));
 	assert(testbml(test4, test4e));
+	assert(testbml_error("-"));
+	assert(testbml_error("a\n  b\n c"));
+	assert(testbml_error("a\n b\n\tc"));
+	assert(testbml_error("a=b\n :c"));
 	return true;
 }
 #endif
