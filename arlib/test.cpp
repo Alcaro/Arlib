@@ -29,7 +29,7 @@ int main(int argc, char* argv[])
 		printf("Testing %s...", test->name);
 		bool pass = test->func();
 		count[pass]++;
-		puts(pass ? " pass" : " fail");
+		if (pass) puts(" pass");
 		free(test);
 		test = next;
 	}

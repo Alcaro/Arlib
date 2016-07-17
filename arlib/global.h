@@ -41,6 +41,9 @@ typedef void(*funcptr)();
 #define JOIN_(x, y) x ## y
 #define JOIN(x, y) JOIN_(x, y)
 
+#define STR_(x) #x
+#define STR(x) STR_(x)
+
 //some magic stolen from http://blogs.msdn.com/b/the1/archive/2004/05/07/128242.aspx
 //C++ can be so messy sometimes...
 template<typename T, size_t N> char(&ARRAY_SIZE_CORE(T(&x)[N]))[N];
@@ -72,7 +75,7 @@ template<typename T, size_t N> char(&ARRAY_SIZE_CORE(T(&x)[N]))[N];
 //- works on all compilers
 //optional:
 //- (PASS) works in a template, even if the template isn't instantiated, if the condition isn't dependent on the types
-//- (FAIL) works if compiled as C (can fix with an ifdef, but I'm lazy)
+//- (FAIL) works if compiled as C (tried to design an alternate implementation and ifdef it, but nothing works inside structs)
 //- (FAIL) can name assertions, if desired
 #ifdef __GNUC__
 #define MAYBE_UNUSED __attribute__((__unused__)) // shut up, stupid warnings

@@ -1,6 +1,170 @@
-#pragma once
+#ifndef ARLIB_STRING_H
+#define ARLIB_STRING_H
 #include "global.h"
+#include <string.h>
 
+//A string owns its storage. cstring doesn't, but is a bit faster.
+//It is recommended to use cstring for arguments and string for return values.
+
+#if 1
+//Reference string implementation - slow but simple
+//All of these functions, including private functions but not including the members, must be present in a complaint string class
+
+class cstring;
+class string {
+private:
+	char* ptr;
+	size_t len;
+	
+	//cstring uses the nocopy and null constructors
+	friend class cstring;
+	
+	void init_from(const char * str)
+	{
+		ptr = strdup(str);
+		len = strlen(str);
+	}
+	void init_from(const char * str, uint32_t len)
+	{
+		this->len = len;
+		ptr = malloc(len+1);
+		memcpy(ptr, str, len);
+		ptr[len]='\0';
+	}
+	void init_from(const string& other) { init_from(other.ptr); }
+	void init_from_nocopy(const char * str) { init_from(str); }
+	void init_from_nocopy(const char * str, uint32_t len) { init_from(str, len); }
+	void init_from_nocopy(const string& other) { init_from(other); }
+	void init_from_nocopy(const cstring& other) { init_from((const string&)other); }
+	void release() { free(ptr); }
+	
+	//constant for all string implementations, but used by the implementation, so let's keep it here
+	int32_t realpos(int32_t pos) const
+	{
+		if (pos >= 0) return pos;
+		else return length()-~pos;
+	}
+	
+	char getchar(int32_t index) const { return ptr[realpos(index)]; }
+	void setchar(int32_t index_, char val)
+	{
+		uint32_t index = realpos(index_);
+		if (index==len)
+		{
+			len++;
+			ptr = realloc(ptr, len+1);
+			ptr[len] = 0;
+		}
+		ptr[index] = val;
+		if (val == '\0') len = index;
+	}
+	
+	//wstring uses these two plus the public API
+	friend class wstring;
+	bool wcache() const { return false; }
+	void wcache(bool newval) const {}
+	
+public:
+	const char * data() const { return ptr; }
+	uint32_t length() const { return strlen(ptr); }
+	
+	//Non-terminated
+	const char * nt() const { return ptr; }
+	
+	void replace(int32_t pos, int32_t len, string newdat)
+	{
+		pos = realpos(pos);
+		len = realpos(len);
+		
+		const char * part1 = ptr;
+		size_t len1 = pos;
+		
+		const char * part2 = newdat.ptr;
+		size_t len2 = newdat.len;
+		
+		const char * part3 = ptr+pos+len;
+		size_t len3 = strlen(part3);
+		
+		char* newptr = malloc(len1+len2+len3+1);
+		memcpy(newptr, part1, len1);
+		memcpy(newptr+len1, part2, len2);
+		memcpy(newptr+len1+len2, part3, len3);
+		newptr[len1+len2+len3]='\0';
+		
+		free(ptr);
+		ptr = newptr;
+		len = len1+len2+len3;
+	}
+	
+	string& operator+=(const char * right)
+	{
+		char* ret = malloc(len+strlen(right)+1);
+		memcpy(ret, ptr, len);
+		strcpy(ret+len, right);
+		len += strlen(right);
+		free(ptr);
+		ptr = ret;
+		return *this;
+	}
+	
+	string& operator+=(const string& right)
+	{
+		char* ret = malloc(len+right.len+1);
+		memcpy(ret, ptr, len);
+		strcpy(ret+len, right);
+		free(ptr);
+		ptr = ret;
+		len += right.len;
+		return *this;
+	}
+	
+#define ARLIB_STRING_FUNCS
+#include "string.h"
+};
+
+#define ARLIB_STRING_GLOBALS
+#include "string.h"
+#endif
+
+#if 0
+//Optimized implementation - fast but unreadable
+class string {
+	static const int obj_size = 16; // maximum 127, or the inline length overflows (yes, it's rounded to 128, still can't use that byte)
+	
+	union {
+		struct {
+			char m_inline[obj_size];
+			//the last byte is how many bytes are unused by the raw string data
+			//if 15 bytes are used, there are zero unused bytes - which is also the NUL
+			//if not inlined, last byte is -1
+		};
+		struct {
+			char* m_data; // if owning, there's also a int32 refcount before this pointer; if not owning, no such thing
+			uint32_t m_len;
+			bool m_owning;
+			bool m_nul; // whether the string is properly terminated (always true if owning)
+			bool m_wcache; // could use bitfields here, but no point, there's nothing else I need those extra bytes for
+			char reserved; // matches the last byte of the inline data; never ever access this
+		};
+	};
+	friend class cstring;
+	friend class wstring;
+	
+	static size_t bytes_for(uint32_t len)
+	{
+		static_assert(sizeof(string)==obj_size);
+		return bitround(sizeof(int)+len+1);
+	}
+	
+	//TODO: fill in functions
+};
+class cstring : public string {};
+
+#define ARLIB_STRING_GLOBALS
+#include "string.h"
+#endif
+
+#if 0
 //A cstring does not own its memory; it only borrows it from someone else. A string does own its memory.
 
 //Public members shall be named after their counterpart in std::string, if one exists; if not, look in .NET System.String.
@@ -9,7 +173,7 @@
 //Due to COW optimizations, strings are not thread safe. If you need to share strings across threads,
 // call .unshare() after storing it.
 
-//Strings are always NUL terminated. It is safe to overwrite the NUL on a string; that will extend the string.
+//Strings are always NUL terminated. It is safe to overwrite the NUL on a string, that will extend the string.
 
 class string {
 private:
@@ -242,24 +406,88 @@ public:
 	}
 };
 
+#define ARLIB_STRING_GLOBALS
+#include "string.h"
+#endif
+#endif
+
+#ifdef ARLIB_STRING_FUNCS
+#undef ARLIB_STRING_FUNCS
+//Shared between all string implementations.
+private:
+	class noinit {};
+	string(noinit) {}
+	
+public:
+	string() { init_from(""); }
+	string(const string& other) { init_from(other); }
+	string(const char * str) { init_from(str); }
+	string(const char * str, uint32_t len) { init_from(str, len); }
+	string& operator=(const string& other) { release(); init_from(other); return *this; }
+	string& operator=(const char * str) { release(); init_from(str); return *this; }
+	~string() { release(); }
+	
+	operator const char * () const { return data(); }
+	
+private:
+	class charref {
+		string* parent;
+		uint32_t index;
+		
+	public:
+		charref& operator=(char ch) { parent->setchar(index, ch); return *this; }
+		operator char() { return parent->getchar(index); }
+		
+		charref(string* parent, uint32_t index) : parent(parent), index(index) {}
+	};
+	friend class charref;
+	
+public:
+	//Reading the NUL terminator is fine. Writing extends the string. Poking outside the string is undefined.
+	charref operator[](uint32_t index) { return charref(this, index); }
+	charref operator[](int index) { return charref(this, index); }
+	char operator[](uint32_t index) const { return ptr[index]; }
+	char operator[](int index) const { return ptr[index]; }
+	
+	static string create(const char * data, uint32_t len) { string ret=noinit(); ret.init_from(data, len); return ret; }
+	
+	string substr(int32_t start, int32_t end) const
+	{
+		start = realpos(start);
+		end = realpos(end);
+		return string(data()+start, end-start);
+	}
+	inline cstring csubstr(int32_t start, int32_t end) const;
+#endif
+
+#ifdef ARLIB_STRING_GLOBALS
+#undef ARLIB_STRING_GLOBALS
+inline bool operator==(const string& left, const char * right ) { return !strcmp(left.data(), right); }
+inline bool operator==(const string& left, const string& right) { return !strcmp(left.data(), right.data()); }
+inline bool operator==(const char * left,  const string& right) { return !strcmp(left, right.data()); }
+inline bool operator!=(const string& left, const char * right ) { return  strcmp(left.data(), right); }
+inline bool operator!=(const string& left, const string& right) { return  strcmp(left.data(), right.data()); }
+inline bool operator!=(const char * left,  const string& right) { return  strcmp(left, right.data()); }
+
+inline string operator+(string&& left, const char * right) { left+=right; return left; }
+inline string operator+(const string& left, const char * right) { string ret=left; ret+=right; return ret; }
+inline string operator+(string&& left, const string& right) { left+=right; return left; }
+inline string operator+(const string& left, const string& right) { string ret=left; ret+=right; return ret; }
+
 class cstring : public string {
 public:
 	cstring() : string() {}
-	cstring(const string& other) : string(other) {}
-	cstring(const cstring& other) : string(noinit())
-	{
-		memcpy(this, &other, sizeof(cstring));
-		owning = 0;
-	}
-	cstring(const char * str)
-	{
-		inlined32 = 0;
-		owning32 = 0;
-		wcache32 = 0;
-		len_outline = strlen(str);
-		data_outline = (char*)str;
-	}
+	cstring(const string& other) : string(noinit()) { init_from_nocopy(other); }
+	cstring(const cstring& other) : string(noinit()) { init_from_nocopy(other); }
+	cstring(const char * str) : string(noinit()) { init_from_nocopy(str); }
 };
+
+inline cstring string::csubstr(int32_t start, int32_t end) const
+{
+	start = realpos(start);
+	end = realpos(end);
+	return string(data()+start, end-start);
+}
 
 //TODO
 class wstring : public string {
@@ -274,12 +502,12 @@ class wstring : public string {
 		pos_bytes = 0;
 		pos_chars = 0;
 		wsize = WSIZE_UNKNOWN;
-		wcache = 1;
+		wcache(true);
 	}
 	
 	void checkcache() const
 	{
-		if (!wcache) clearcache();
+		if (!wcache()) clearcache();
 	}
 	
 	uint32_t findcp(uint32_t index) const
@@ -347,3 +575,4 @@ public:
 		return wsize;
 	}
 };
+#endif
