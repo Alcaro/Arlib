@@ -2,15 +2,16 @@
 #define ARLIB_STRING_H
 #include "global.h"
 #include <string.h>
+#include <valgrind/memcheck.h>
 
 //A string owns its storage. cstring doesn't, but is a bit faster.
 //It is recommended to use cstring for arguments and string for return values.
 
-#if 1
+class cstring;
+#if 0
 //Reference string implementation - slow but simple
 //All of these functions, including private functions but not including the members, must be present in a complaint string class
 
-class cstring;
 class string {
 private:
 	char* ptr;
@@ -35,7 +36,6 @@ private:
 	void init_from_nocopy(const char * str) { init_from(str); }
 	void init_from_nocopy(const char * str, uint32_t len) { init_from(str, len); }
 	void init_from_nocopy(const string& other) { init_from(other); }
-	void init_from_nocopy(const cstring& other) { init_from((const string&)other); }
 	void release() { free(ptr); }
 	
 	//constant for all string implementations, but used by the implementation, so let's keep it here
@@ -72,7 +72,7 @@ public:
 	//Non-terminated
 	const char * nt() const { return ptr; }
 	
-	void replace(int32_t pos, int32_t len, string newdat)
+	void replace(int32_t pos, int32_t len, cstring newdat)
 	{
 		pos = realpos(pos);
 		len = realpos(len);
@@ -110,12 +110,7 @@ public:
 	
 	string& operator+=(const string& right)
 	{
-		char* ret = malloc(len+right.len+1);
-		memcpy(ret, ptr, len);
-		strcpy(ret+len, right);
-		free(ptr);
-		ptr = ret;
-		len += right.len;
+		this->operator+=(right.data());
 		return *this;
 	}
 	
@@ -125,286 +120,303 @@ public:
 
 #define ARLIB_STRING_GLOBALS
 #include "string.h"
-#endif
 
-#if 0
+#else
+
 //Optimized implementation - fast but unreadable
 class string {
-	static const int obj_size = 16; // maximum 127, or the inline length overflows (yes, it's rounded to 128, still can't use that byte)
+	static const int obj_size = 16; // maximum 120, or the inline length overflows
+	                                // (127 would fit, but that requires an extra alignment byte, which throws the sizeof assert)
+	static const int max_inline = obj_size-1;
 	
 	union {
 		struct {
-			char m_inline[obj_size];
-			//the last byte is how many bytes are unused by the raw string data
-			//if 15 bytes are used, there are zero unused bytes - which is also the NUL
+			char m_inline[max_inline];
+			
+			//this is how many bytes are unused by the raw string data
+			//if all bytes are used, there are zero unused bytes - which also serves as the NUL
 			//if not inlined, last byte is -1
+			char m_inline_len;
 		};
 		struct {
 			char* m_data; // if owning, there's also a int32 refcount before this pointer; if not owning, no such thing
 			uint32_t m_len;
 			bool m_owning;
 			bool m_nul; // whether the string is properly terminated (always true if owning)
-			bool m_wcache; // could use bitfields here, but no point, there's nothing else I need those extra bytes for
+			mutable bool m_wcache; // could use bitfields here, but no point, there's nothing else I need those extra bytes for
 			char reserved; // matches the last byte of the inline data; never ever access this
 		};
 	};
-	friend class cstring;
-	friend class wstring;
 	
-	static size_t bytes_for(uint32_t len)
+	bool inlined() const
 	{
 		static_assert(sizeof(string)==obj_size);
-		return bitround(sizeof(int)+len+1);
+		
+		return m_inline_len != (char)-1;
 	}
 	
-	//TODO: fill in functions
-};
-class cstring : public string {};
-
-#define ARLIB_STRING_GLOBALS
-#include "string.h"
-#endif
-
-#if 0
-//A cstring does not own its memory; it only borrows it from someone else. A string does own its memory.
-
-//Public members shall be named after their counterpart in std::string, if one exists; if not, look in .NET System.String.
-//If neither have a good counterpart, any name is acceptable.
-
-//Due to COW optimizations, strings are not thread safe. If you need to share strings across threads,
-// call .unshare() after storing it.
-
-//Strings are always NUL terminated. It is safe to overwrite the NUL on a string, that will extend the string.
-
-class string {
-private:
-	static const int obj_size = 24; // maximum 32, or len_inline overflows
-	static const int max_inline = obj_size-1-1; // -1 for length, -1 for NUL
+	const char * ptr() const
+	{
+		if (inlined()) return m_inline;
+		else return m_data;
+	}
 	
-	friend class cstring;
-	friend class wstring;
-	
-	union {
-		struct { // .inlined = 1 (checking .inlined is always allowed)
-			//ensure .inlined is in the first byte; don't care if it's top or bottom bit
-			//GCC orders bitfields according to <http://stackoverflow.com/a/1490135>
-			// With GCC, big endian machines lay out the bits big end first and little endian machines lay out the bits little end first.
-			//while MSVC follows <https://msdn.microsoft.com/en-us/library/ewwyfdbe.aspx>
-			// Microsoft Specific: The ordering of data declared as bit fields is from low to high bit
-			//so I need the low bit first on little endian, MSVC or both; and high bit first on bigend GCC.
-			//Luckily, Windows doesn't operate on bigend, per <https://support.microsoft.com/en-us/kb/102025>
-			// Windows NT was designed around Little Endian architecture and was not designed to be compatible with Big Endian
-			//so I can ignore that combination, and swapping based on endian gives what I want.
-			BIGEND_SWAP2(
-			uint8_t inlined : 1;
-			uint8_t owning : 1;
-			mutable uint8_t wcache : 1;
-			,
-			uint8_t len_inline : 5;
-			)
-			//it would be possible to use the last byte of the inlined data as both length indicator and NUL terminator
-			//(0x00 = length 23, other = outlined or shorter)
-			//but the extra effort required makes it not worth it. 22 is a perfectly fine SSO length, I don't need 23.
-			char data_inline[max_inline+1];
-		};
-		struct { // .inlined = 0
-			BIGEND_SWAP2(
-			uint32_t inlined32 : 1;
-			uint32_t owning32 : 1;
-			mutable uint32_t wcache32 : 1;
-			,
-			uint32_t len_outline : 29;
-			)
-			//char pad[4];
-			char* data_outline; // if owning, there's also a int32 refcount before this pointer; if not owning, no such thing
-			//char pad2[8];
-		};
-	};
+	char* ptr()
+	{
+		if (inlined()) return m_inline;
+		else return m_data;
+	}
 	
 	static size_t bytes_for(uint32_t len)
 	{
 		return bitround(sizeof(int)+len+1);
 	}
 	
-	static char * clone_sized(const char * in, uint32_t len, uint32_t alloclen)
+	
+	void unshare() const
 	{
-		int* refcount = malloc(bytes_for(alloclen));
-		*refcount = 1;
-		char* ret = (char*)(refcount+1);
-		memcpy(ret, in, len);
-		ret[len] = '\0';
-		return ret;
-	}
-	static char * clone(const char * in, uint32_t len)
-	{
-		return clone_sized(in, len, len);
-	}
-	static char * clone(const char * in)
-	{
-		return clone(in, strlen(in));
+		wcache(false);
+		//TODO
+		//if (inlined()) return;
+		//if (m_owning && *refcount()==1) return;
+		//release();
 	}
 	
-	int* refcount() // yields garbage if not inlined or not owning
+	//does not initialize the new data
+	void resize(uint32_t newlen)
 	{
-		return (int*)(data_outline-sizeof(int));
+		unshare();
+		
+		switch (!inlined()<<1 | (newlen>max_inline))
+		{
+		case 0: // small->small
+			{
+				m_inline[newlen] = '\0';
+				m_inline_len = max_inline-newlen;
+			}
+			break;
+		case 1: // small->big
+			{
+				char* newptr = malloc(newlen+1);
+				memcpy(newptr, m_inline, max_inline);
+				newptr[newlen] = '\0';
+				m_data = newptr;
+				m_len = newlen;
+				m_owning = true;
+				m_nul = true;
+				m_wcache = false;
+				
+				m_inline_len = -1;
+			}
+			break;
+		case 2: // big->small
+			{
+				char* oldptr = m_data;
+				memcpy(m_inline, oldptr, newlen);
+				free(oldptr);
+				m_inline[newlen] = '\0';
+				m_inline_len = max_inline-newlen;
+			}
+			break;
+		case 3: // big->big
+			{
+				m_data = realloc(m_data, newlen+1);
+				m_data[newlen] = '\0';
+				m_len = newlen;
+			}
+			break;
+		}
 	}
-	void addref()
+	
+public:
+	//NUL terminated
+	const char * data() const
 	{
-		if (inlined) return;
-		if (!owning) return;
-		++*refcount();
+		if (!inlined() && !m_nul)
+		{
+			unshare();
+		}
+		return ptr();
+	}
+	uint32_t length() const
+	{
+		if (inlined()) return max_inline-m_inline_len;
+		else return m_len;
+	}
+	
+	//Non-terminated
+	const char * nt() const
+	{
+		return ptr();
+	}
+	
+private:
+	//cstring uses the nocopy constructors
+	friend class cstring;
+	
+	void init_from(const char * str)
+	{
+		//TODO
+		init_from(str, strlen(str));
+	}
+	void init_from(const char * str, uint32_t len)
+	{
+		if (len <= max_inline)
+		{
+			memcpy(m_inline, str, len);
+			m_inline[len] = '\0';
+			m_inline_len = max_inline-len;
+		}
+		else
+		{
+			m_inline_len = -1;
+			
+			m_data = malloc(len+1);
+			memcpy(m_data, str, len);
+			m_data[len]='\0';
+			
+			m_len = len;
+			m_owning = true;
+			m_nul = true;
+			m_wcache = false;
+		}
+	}
+	void init_from(const string& other)
+	{
+		//TODO
+		init_from(other.data());
+	}
+	void init_from_nocopy(const char * str)
+	{
+		init_from_nocopy(str, strlen(str));
+		if (!inlined()) m_nul = true;
+	}
+	void init_from_nocopy(const char * str, uint32_t len)
+	{
+		if (len <= max_inline)
+		{
+			memcpy(m_inline, str, len);
+			m_inline[len] = '\0';
+			m_inline_len = max_inline-len;
+		}
+		else
+		{
+			m_inline_len = -1;
+			
+			m_data = (char*)str;
+			m_len = len;
+			m_owning = false;
+			m_nul = false;
+			m_wcache = false;
+		}
+	}
+	void init_from_nocopy(const string& other)
+	{
+		memcpy(this, &other, sizeof(*this));
+		if (!inlined()) m_owning=false;
 	}
 	void release()
 	{
-		if (inlined) return;
-		if (!owning) return;
-		if (--*refcount() == 0) free(data_outline - sizeof(int));
-	}
-public:
-	//Detaches a string object from anything it's COWed with. Normally not needed, but if you need to
-	// share a string across threads, it can be useful.
-	void unshare()
-	{
-		wcache = 0;
-		if (inlined) return;
-		if (owning && *refcount() == 1) return;
-		//use the string after releasing our reference - ugly, but we lose the old refcount if we change data_outline, and we're not thread safe anyways
-		release();
-		owning = 1;
-		data_outline = clone(data_outline, len_outline);
+		if (!inlined() && m_owning)
+		{
+			free(m_data);
+		}
 	}
 	
-private:
-	void init_from(const char * str)
+	//constant for all string implementations, but used by the implementation, so let's keep it here
+	int32_t realpos(int32_t pos) const
 	{
-		uint32_t len = strlen(str);
-		if (len <= max_inline)
+		if (pos >= 0) return pos;
+		else return length()-~pos;
+	}
+	
+	char getchar(int32_t index_) const
+	{
+		uint32_t index = realpos(index_);
+		if (index == length()) return '\0';
+		else return ptr()[index];
+	}
+	void setchar(int32_t index_, char val)
+	{
+		unshare();
+		uint32_t index = realpos(index_);
+		if (index == length())
 		{
-			inlined = 1;
-			owning = 1;
-			wcache = 0;
-			len_inline = len;
-			memcpy(data_inline, str, len+1);
+			resize(index+1);
+		}
+		ptr()[index] = val;
+	}
+	
+	//wstring uses these two plus the public API
+	friend class wstring;
+	bool wcache() const
+	{
+		if (inlined()) return false;
+		else return m_wcache;
+	}
+	void wcache(bool newval) const
+	{
+		if (!inlined()) m_wcache = newval;
+	}
+	
+	void append(const char * newdat, uint32_t newlength)
+	{
+		if (newdat >= ptr() && newdat < ptr()+length())
+		{
+			uint32_t offset = newdat-ptr();
+			uint32_t oldlength = length();
+			resize(oldlength+newlength);
+			memcpy(ptr()+oldlength, ptr()+offset, newlength);
 		}
 		else
 		{
-			inlined32 = 0;
-			owning32 = 1;
-			wcache32 = 0;
-			len_outline = len;
-			data_outline = clone(str, len_outline);
+			uint32_t oldlength = length();
+			resize(oldlength+newlength);
+			memcpy(ptr()+oldlength, newdat, newlength);
 		}
 	}
-	
-	void init_from(const string& other)
-	{
-		memcpy(this, &other, sizeof(string));
-		if (!inlined)
-		{
-			if (owning) addref();
-			else data_outline = clone(data_outline, len_outline);
-		}
-	}
-	
-	void resize(uint32_t newsize)
-	{
-		uint32_t oldsize = size();
-		if (oldsize == newsize) return;
-		unshare();
-		
-		if (newsize > max_inline)
-		{
-			if (inlined)
-			{
-				data_outline = clone_sized(data_inline, oldsize, newsize);
-			}
-			else if (bytes_for(oldsize) != bytes_for(newsize))
-			{
-				data_outline = realloc(data_outline-sizeof(int), bytes_for(newsize));
-			}
-			inlined32 = 0;
-			owning32 = 1; // set this unconditionally, it allows the compiler to merge the writed
-			wcache32 = 0;
-			len_outline = newsize;
-			data_outline[newsize] = '\0';
-		}
-		else
-		{
-			if (!inlined) memcpy(data_inline, data(), oldsize);
-			data_inline[newsize] = '\0';
-			inlined = 1;
-			owning = 1;
-			wcache = 0;
-			len_inline = newsize;
-		}
-	}
-	
-	//Ignored if the new size is smaller.
-	void resize_grow(uint32_t newsize)
-	{
-		uint32_t oldsize = size();
-		if (oldsize >= newsize) return;
-		resize(newsize);
-	}
-	
-	//Ignored if the new size is larger.
-	void resize_shrink(uint32_t newsize)
-	{
-		uint32_t oldsize = size();
-		if (oldsize <= newsize) return;
-		resize(newsize);
-	}
-	
-	char getchar(uint32_t index) const { return data()[index]; }
-	void setchar(uint32_t index, char val) { unshare(); resize_grow(index+1); data()[index] = val; }
-	
-	char * data() { return inlined ? data_inline : data_outline; }
-	
-	class noinit {};
-	string(noinit) {}
 	
 public:
-	string() { inlined=1; owning=1; wcache=0; len_inline=0; data_inline[0] = '\0'; }
-	string(const string& other) { init_from(other); }
-	string(const char * str) { init_from(str); }
-	string& operator=(const string& other) { release(); init_from(other); return *this; }
-	string& operator=(const char * str) { release(); init_from(str); return *this; }
-	~string() { release(); }
-	
-	const char * data() const { return inlined ? data_inline : data_outline; }
-	uint32_t size() const { return inlined ? len_inline : len_outline; }
-	operator const char * () const { return data(); }
-	
-private:
-	class charref {
-		string* parent;
-		uint32_t index;
-		
-	public:
-		charref& operator=(char ch) { parent->setchar(index, ch); return *this; }
-		operator char() { return parent->getchar(index); }
-		
-		charref(string* parent, uint32_t index) : parent(parent), index(index) {}
-	};
-	friend class charref;
-	
-public:
-	charref operator[](uint32_t index) { return charref(this, index); }
-	charref operator[](int index) { return charref(this, index); }
-	char operator[](uint32_t index) const { return getchar(index); }
-	char operator[](int index) const { return getchar(index); }
-	
-	void replace(uint32_t pos, uint32_t len, string newdat)
+	void replace(int32_t pos, int32_t len, const string& newdat)
 	{
-		unshare();
-		uint32_t newlen = newdat.size();
-		if (newlen > len) resize(size()-len+newlen);
-		uint32_t mylen = size();
-		char* dat = data();
-		if (newlen != len) memmove(dat+pos+newlen, dat+pos+len, mylen-len-pos);
-		memcpy(dat+pos, newdat.data(), newlen);
-		if (newlen < len) resize(mylen-len+newlen);
+		//TODO: what if newdat is (a subset of) 'this'?
+		//if 'this' is a proper subset of newdat, then !m_owning, so freeing it doesn't affect newdat; we can ignore that
+		
+		uint32_t prevlength = length();
+		uint32_t newlength = newdat.length();
+		
+		if (newlength < prevlength)
+		{
+			unshare();
+			memmove(ptr()+pos+newlength, ptr()+pos+len, prevlength-len-pos);
+			resize(prevlength - len + newlength);
+		}
+		if (newlength == prevlength)
+		{
+			unshare();
+		}
+		if (newlength > prevlength)
+		{
+			resize(prevlength - len + newlength);
+			memmove(ptr()+pos+newlength, ptr()+pos+len, prevlength-len-pos);
+		}
+		
+		memcpy(ptr()+pos, newdat.ptr(), newlength);
 	}
+	
+	string& operator+=(const char * right)
+	{
+		append(right, strlen(right));
+		return *this;
+	}
+	
+	string& operator+=(const string& right)
+	{
+		append(right.ptr(), right.length());
+		return *this;
+	}
+#define ARLIB_STRING_FUNCS
+#include "string.h"
 };
 
 #define ARLIB_STRING_GLOBALS
@@ -448,8 +460,8 @@ public:
 	//Reading the NUL terminator is fine. Writing extends the string. Poking outside the string is undefined.
 	charref operator[](uint32_t index) { return charref(this, index); }
 	charref operator[](int index) { return charref(this, index); }
-	char operator[](uint32_t index) const { return ptr[index]; }
-	char operator[](int index) const { return ptr[index]; }
+	char operator[](uint32_t index) const { return getchar(index); }
+	char operator[](int index) const { return getchar(index); }
 	
 	static string create(const char * data, uint32_t len) { string ret=noinit(); ret.init_from(data, len); return ret; }
 	
@@ -481,7 +493,6 @@ class cstring : public string {
 public:
 	cstring() : string() {}
 	cstring(const string& other) : string(noinit()) { init_from_nocopy(other); }
-	cstring(const cstring& other) : string(noinit()) { init_from_nocopy(other); }
 	cstring(const char * str) : string(noinit()) { init_from_nocopy(str); }
 };
 
