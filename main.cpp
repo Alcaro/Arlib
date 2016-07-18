@@ -37,4 +37,6 @@ int main(int argc, char * argv[])
 	
 	if (score != 2001) puts("ERROR ERROR ERROR");
 	printf("%i\n", score);
+	
+	return 0;
 }

@@ -1,6 +1,7 @@
 #include "bml.h"
 #include "test.h"
 #include <ctype.h>
+#include <valgrind/memcheck.h>
 
 /*
 
@@ -157,6 +158,11 @@ inline bool bmlparser::bml_parse_inline_node(cstring& data, cstring& node, bool&
 	
 	int nodelen = nodestart;
 	while (isalnum(data[nodelen]) || data[nodelen]=='-' || data[nodelen]=='.') nodelen++;
+	if (nodestart == nodelen)
+	{
+		value = "Invalid node name";
+		return false;
+	}
 	node = cut(data, nodestart, nodelen, 0);
 	switch (data[0])
 	{
@@ -192,6 +198,7 @@ inline bool bmlparser::bml_parse_inline_node(cstring& data, cstring& node, bool&
 				{
 					while (data[valend]!='\0') valend++;
 					data = data.csubstr(valend, ~0);
+					value = "Broken quoted value";
 					return false;
 				}
 				value = cut(data, 2, valend, 1);
@@ -207,6 +214,7 @@ inline bool bmlparser::bml_parse_inline_node(cstring& data, cstring& node, bool&
 			}
 		}
 		default:
+			value = "Invalid node suffix";
 			return false;
 	}
 }
@@ -215,16 +223,16 @@ inline cstring bmlparser::cutline(cstring& input)
 {
 	//pointers are generally bad ideas, but this is such a hotspot it's worth it
 	const char * inputraw = input.nt();
-	int nlpos = 0;
+	size_t nlpos = 0;
 	//that 32 is also a perf hack
 	if (input.ntterm())
 	{
-		while (inputraw[nlpos]>32 || (inputraw[nlpos]!='\r' && inputraw[nlpos]!='\n')) nlpos++;
+		while (inputraw[nlpos]>32 || (inputraw[nlpos]!='\r' && inputraw[nlpos]!='\n' && inputraw[nlpos]!='\0')) nlpos++;
 	}
 	else
 	{
 		size_t inputlen = input.length();
-		while (nlpos<inputlen && inputraw[nlpos]>32 || (inputraw[nlpos]!='\r' && inputraw[nlpos]!='\n')) nlpos++;
+		while (nlpos<inputlen && (inputraw[nlpos]>32 || (inputraw[nlpos]!='\r' && inputraw[nlpos]!='\n' && inputraw[nlpos]!='\0'))) nlpos++;
 	}
 	
 	return cut(input, 0, nlpos, (input[nlpos]=='\r') ? 2 : (input[nlpos]=='\n') ? 1 : 0);
@@ -273,7 +281,9 @@ bmlparser::event bmlparser::next()
 		bool dummy;
 		if (!bml_parse_inline_node(m_inlines, ev.name, dummy, ev.value))
 		{
-			return (event){ error };
+			ev.action = error;
+			ev.name = "";
+			return ev;
 		}
 		
 		m_exit = true;
@@ -282,13 +292,13 @@ bmlparser::event bmlparser::next()
 	
 	if (!m_thisline && m_data)
 	{
-		if (!getline()) return (event){ error };
+		if (!getline()) return (event){ error, "", "Mixed tabs and spaces" };
 	}
 	
 	if (m_indent_step.size() > m_indent.length())
 	{
 	handle_indent:
-		if (!m_indent_step[m_indent.length()]) return (event){ error };
+		if (!m_indent_step[m_indent.length()]) return (event){ error, "", "Invalid indentation depth" };
 		
 		int lasttrue = m_indent_step.size()-2;
 		while (lasttrue>=0 && m_indent_step[lasttrue]==false) lasttrue--;
@@ -311,32 +321,39 @@ bmlparser::event bmlparser::next()
 	cstring value;
 	if (!bml_parse_inline_node(m_inlines, node, hasvalue, value))
 	{
-		return (event){ error };
+		return (event){ error, "", value };
 	}
 	
 	int indentlen = m_indent.length(); // changed by getline
 	//multilines
 	if (!hasvalue)
 	{
-		if (!getline()) return (event){ error };
+		if (!getline()) return (event){ error, "", "Mixed tabs and spaces" };
 		if (m_thisline[0] == ':')
 		{
-			size_t expect_indent = m_indent.length();
+			size_t inner_indent = m_indent.length();
 			value = m_thisline.csubstr(1, ~0);
-			if (!getline()) return (event){ error };
+			if (!getline()) return (event){ error, "", "Mixed tabs and spaces" };
 			while (m_thisline[0] == ':')
 			{
-				if (expect_indent != m_indent.length()) return (event){ error };
+				if (inner_indent != m_indent.length()) return (event){ error, "", "Multi-line values must have constant indentation" };
 				value += "\n" + m_thisline.csubstr(1, ~0);
-				if (!getline()) return (event){ error };
+				if (!getline()) return (event){ error, "", "Mixed tabs and spaces" };
 			}
-			if (m_indent.length() > expect_indent) return (event){ error };
-			if (!m_indent_step[m_indent.length()]) return (event){ error };
+			
+//printf("%i %i %i ",indentlen,m_indent.length(),expect_indent);
+//for(int i=0;i<m_indent_step.size();i++)printf("%i",(bool)m_indent_step[i]);
+//puts("");
+			if (m_indent.length() != inner_indent)
+			{
+				if (m_indent.length() > inner_indent) return (event){ error, "", "Can't change indentation after a multi-line value" };
+				if (!m_indent_step[m_indent.length()]) return (event){ error, "", "Invalid indentation depth" };
+			}
 		}
 	}
 	
 	m_indent_step[indentlen] = true;
-	return (event){ enter, node, value };
+	return (event){ enter, node, std::move(value) }; // most of those are substrings of m_data, but the value could be allocated
 }
 
 
@@ -480,13 +497,13 @@ bmlparser::event test4e[]={
 
 static bool testbml(const char * bml, bmlparser::event* expected)
 {
-	autoptr<bmlparser> parser = bmlparser::create(bml);
+	bmlparser parser(bml);
 	while (true)
 	{
-		bmlparser::event actual = parser->next();
+		bmlparser::event actual = parser.next();
 		
-//printf("e=%i [%s] [%s]\n", expected->action, expected->name.data(), expected->value.data());
-//printf("a=%i [%s] [%s]\n\n", actual.action, actual.name.data(), actual.value.data());
+printf("e=%i [%s] [%s]\n", expected->action, expected->name.data(), expected->value.data());
+printf("a=%i [%s] [%s]\n\n", actual.action, actual.name.data(), actual.value.data());
 		assert_eq(actual.action, expected->action);
 		assert_eq(actual.name, expected->name);
 		assert_eq(actual.value, expected->value);
@@ -499,10 +516,10 @@ static bool testbml(const char * bml, bmlparser::event* expected)
 
 static bool testbml_error(const char * bml)
 {
-	autoptr<bmlparser> parser = bmlparser::create(bml);
+	bmlparser parser(bml);
 	for (int i=0;i<100;i++)
 	{
-		bmlparser::event ev = parser->next();
+		bmlparser::event ev = parser.next();
 		if (ev.action == e_error) return true;
 	}
 	assert(!"expected error");
@@ -510,12 +527,12 @@ static bool testbml_error(const char * bml)
 
 test()
 {
-	//assert(testbml(test1, test1e));
-	//assert(testbml(test2, test2e));
-	//assert(testbml(test3, test3e));
-	//assert(testbml(test4, test4e));
+	assert(testbml(test1, test1e));
+	assert(testbml(test2, test2e));
+	assert(testbml(test3, test3e));
+	assert(testbml(test4, test4e));
 	
-	//assert(testbml_error("*"));          // invalid node name
+	assert(testbml_error("*"));          // invalid node name
 	assert(testbml_error("a=\""));       // unclosed quote
 	assert(testbml_error("a=\"b\"c"));   // no space after closing quote
 	assert(testbml_error("a=\"b\"c\"")); // no space after closing quote

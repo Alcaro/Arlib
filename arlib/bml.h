@@ -29,12 +29,12 @@ public:
 	event next();
 	
 private:
-	bool m_exit;
-	cstring m_inlines;
-	cstring m_indent;
-	array<bool> m_indent_step;
-	cstring m_thisline;
 	cstring m_data;
+	cstring m_thisline;
+	array<bool> m_indent_step;
+	cstring m_indent;
+	cstring m_inlines;
+	bool m_exit;
 	
 	inline static cstring cut(cstring& input, int skipstart, int cut, int skipafter);
 	inline static bool bml_parse_inline_node(cstring& data, cstring& node, bool& hasvalue, cstring& value);

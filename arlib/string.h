@@ -385,7 +385,7 @@ private:
 		if (index >= 0)
 		{
 			if (inlined()) return m_inline[index];
-			else if (index < m_len) return m_data[index];
+			else if ((uint32_t)index < m_len) return m_data[index];
 			else return '\0';
 		}
 		
@@ -493,7 +493,7 @@ private:
 public:
 	string() { init_from(""); }
 	string(const string& other) { init_from(other); }
-	string(string&& other) { init_from(other); }
+	string(string&& other) { init_from(std::move(other)); }
 	string(const char * str) { init_from(str); }
 	string(const char * str, uint32_t len) { init_from(str, len); }
 	string& operator=(const string& other) { release(); init_from(other); return *this; }
@@ -518,9 +518,9 @@ private:
 	
 public:
 	//Reading the NUL terminator is fine. Writing extends the string. Poking outside the string is undefined.
-	charref operator[](uint32_t index) { return charref(this, index); }
+	//charref operator[](uint32_t index) { return charref(this, index); }
 	charref operator[](int index) { return charref(this, index); }
-	char operator[](uint32_t index) const { return getchar(index); }
+	//char operator[](uint32_t index) const { return getchar(index); }
 	char operator[](int index) const { return getchar(index); }
 	
 	static string create(const char * data, uint32_t len) { string ret=noinit(); ret.init_from(data, len); return ret; }
@@ -553,7 +553,8 @@ public:
 	cstring() : string() {}
 	cstring(const string& other) : string(noinit()) { init_from_nocopy(other); }
 	cstring(const cstring& other) : string(noinit()) { init_from_nocopy(other); }
-	cstring(string&& other) : string(noinit()) { init_from_nocopy(other); }
+	cstring(string&& other) : string(noinit()) { init_from_nocopy(std::move(other)); }
+	cstring(cstring&& other) : string(noinit()) { init_from_nocopy(std::move(other)); }
 	cstring(const char * str) : string(noinit()) { init_from_nocopy(str); }
 	cstring(const char * str, uint32_t len) : string(noinit()) { init_from_nocopy(str, len); }
 private:
@@ -568,7 +569,7 @@ inline cstring string::csubstr(int32_t start, int32_t end) const
 	start = realpos(start);
 	end = realpos(end);
 	if (inlined()) return cstring(nt()+start, end-start);
-	else return cstring(nt()+start, end-start, (m_nul && end == m_len));
+	else return cstring(nt()+start, end-start, (m_nul && (uint32_t)end == m_len));
 }
 
 //TODO
@@ -592,11 +593,11 @@ class wstring : public string {
 		if (!wcache()) clearcache();
 	}
 	
-	uint32_t findcp(uint32_t index) const
+	uint32_t findcp(int32_t index) const
 	{
 		checkcache();
 		
-		if (pos_chars > index)
+		if (pos_chars > (uint32_t)index)
 		{
 			pos_bytes=0;
 			pos_chars=0;
@@ -604,7 +605,7 @@ class wstring : public string {
 		
 		uint8_t* scan = (uint8_t*)data() + pos_bytes;
 		uint32_t chars = pos_chars;
-		while (chars != index)
+		while (chars != (uint32_t)index)
 		{
 			if ((*scan&0xC0) != 0x80) chars++;
 			scan++;
@@ -615,18 +616,18 @@ class wstring : public string {
 		return pos_bytes;
 	}
 	
-	uint32_t getcp(uint32_t index) const { return 42; }
-	void setcp(uint32_t index, uint32_t val) { }
+	uint32_t getcp(int32_t index) const { return 42; }
+	void setcp(int32_t index, uint32_t val) { }
 	
 	class charref {
 		wstring* parent;
-		uint32_t index;
+		int32_t index;
 		
 	public:
 		charref& operator=(char ch) { parent->setcp(index, ch); return *this; }
 		operator uint32_t() { return parent->getcp(index); }
 		
-		charref(wstring* parent, uint32_t index) : parent(parent), index(index) {}
+		charref(wstring* parent, int32_t index) : parent(parent), index(index) {}
 	};
 	friend class charref;
 	
@@ -635,10 +636,8 @@ public:
 	wstring(const string& other) : string(other) { clearcache(); }
 	wstring(const char * str) : string(str) { clearcache(); }
 	
-	charref operator[](uint32_t index) { return charref(this, index); }
-	charref operator[](int index) { return charref(this, index); }
-	uint32_t operator[](uint32_t index) const { return getcp(index); }
-	uint32_t operator[](int index) const { return getcp(index); }
+	charref operator[](int32_t index) { return charref(this, index); }
+	uint32_t operator[](int32_t index) const { return getcp(index); }
 	
 	uint32_t size() const
 	{

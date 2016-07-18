@@ -29,6 +29,7 @@
 #include <stdio.h>
 #include <inttypes.h>
 #include "function.h"
+#include <utility>
 
 typedef void(*funcptr)();
 
@@ -84,6 +85,8 @@ template<typename T, size_t N> char(&ARRAY_SIZE_CORE(T(&x)[N]))[N];
 #define MAYBE_UNUSED
 #define TYPENAME_IF_GCC
 #endif
+
+#if __cplusplus < 201103
 template<bool x> struct static_assert_t;
 template<> struct static_assert_t<true> { struct STATIC_ASSERTION_FAILED {}; };
 template<> struct static_assert_t<false> {};
@@ -95,6 +98,9 @@ template<> struct static_assert_t<false> {};
 		JOIN(static_assertion_, __COUNTER__) = \
 		sizeof(TYPENAME_IF_GCC static_assert_t<(bool)(expr)>::STATIC_ASSERTION_FAILED) \
 	} MAYBE_UNUSED
+#else
+#define static_assert(expr) static_assert(expr, #expr)
+#endif
 
 //almost C version (fails inside structs):
 //#define static_assert(expr) \
