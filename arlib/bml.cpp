@@ -142,7 +142,7 @@ if there is no line, return finish
 
 */
 
-inline cstring bmlparser::cut(cstring& input, int skipstart, int cut, int skipafter)
+static cstring cut(cstring& input, int skipstart, int cut, int skipafter)
 {
 	cstring ret = input.csubstr(skipstart, cut);
 	input = input.csubstr(cut+skipafter, ~0);
@@ -151,7 +151,7 @@ inline cstring bmlparser::cut(cstring& input, int skipstart, int cut, int skipaf
 
 //takes a single line, returns the first node in it
 //hasvalue is to differentiate 'foo' from 'foo='; only the former allows a multi-line value
-inline bool bmlparser::bml_parse_inline_node(cstring& data, cstring& node, bool& hasvalue, cstring& value)
+static bool bml_parse_inline_node(cstring& data, cstring& node, bool& hasvalue, cstring& value)
 {
 	int nodestart = 0;
 	while (data[nodestart]==' ' || data[nodestart]=='\t') nodestart++;
@@ -170,22 +170,17 @@ inline bool bmlparser::bml_parse_inline_node(cstring& data, cstring& node, bool&
 		case '\t':
 		case ' ':
 		{
-			hasvalue=false;
+			hasvalue = false;
 			return true;
 		}
 		case ':':
 		{
-			hasvalue=true;
+			hasvalue = true;
 			int valstart = 1;
 			while (data[valstart]==' ' || data[valstart]=='\t') valstart++;
 			value = data.csubstr(valstart, ~0);
 			data = "";
 			return true;
-			
-			//int valend = valstart;
-			//while (data[valend]!='\0') valend++;
-			//value = cut(data, valstart, valend, 0);
-			//return true;
 		}
 		case '=':
 		{
@@ -219,7 +214,13 @@ inline bool bmlparser::bml_parse_inline_node(cstring& data, cstring& node, bool&
 	}
 }
 
-inline cstring bmlparser::cutline(cstring& input)
+static bool isendl(char ch)
+{
+	if (ch>=32) return false;
+	return (ch=='\r' || ch=='\n' || ch=='\0');
+}
+
+static cstring cutline(cstring& input)
 {
 	//pointers are generally bad ideas, but this is such a hotspot it's worth it
 	const char * inputraw = input.nt();
@@ -227,12 +228,12 @@ inline cstring bmlparser::cutline(cstring& input)
 	//that 32 is also a perf hack
 	if (input.ntterm())
 	{
-		while (inputraw[nlpos]>32 || (inputraw[nlpos]!='\r' && inputraw[nlpos]!='\n' && inputraw[nlpos]!='\0')) nlpos++;
+		while (!isendl(inputraw[nlpos])) nlpos++;
 	}
 	else
 	{
 		size_t inputlen = input.length();
-		while (nlpos<inputlen && (inputraw[nlpos]>32 || (inputraw[nlpos]!='\r' && inputraw[nlpos]!='\n' && inputraw[nlpos]!='\0'))) nlpos++;
+		while (nlpos < inputlen && !isendl(inputraw[nlpos])) nlpos++;
 	}
 	
 	return cut(input, 0, nlpos, (input[nlpos]=='\r') ? 2 : (input[nlpos]=='\n') ? 1 : 0);
@@ -341,9 +342,6 @@ bmlparser::event bmlparser::next()
 				if (!getline()) return (event){ error, "", "Mixed tabs and spaces" };
 			}
 			
-//printf("%i %i %i ",indentlen,m_indent.length(),expect_indent);
-//for(int i=0;i<m_indent_step.size();i++)printf("%i",(bool)m_indent_step[i]);
-//puts("");
 			if (m_indent.length() != inner_indent)
 			{
 				if (m_indent.length() > inner_indent) return (event){ error, "", "Can't change indentation after a multi-line value" };
@@ -353,7 +351,8 @@ bmlparser::event bmlparser::next()
 	}
 	
 	m_indent_step[indentlen] = true;
-	return (event){ enter, node, std::move(value) }; // most of those are substrings of m_data, but the value could be allocated
+	//most of those are substrings of m_data, but if the value is multiline, it's allocated; ensure it uses the move constructor
+	return (event){ enter, node, std::move(value) };
 }
 
 
@@ -502,8 +501,8 @@ static bool testbml(const char * bml, bmlparser::event* expected)
 	{
 		bmlparser::event actual = parser.next();
 		
-printf("e=%i [%s] [%s]\n", expected->action, expected->name.data(), expected->value.data());
-printf("a=%i [%s] [%s]\n\n", actual.action, actual.name.data(), actual.value.data());
+//printf("e=%i [%s] [%s]\n", expected->action, expected->name.data(), expected->value.data());
+//printf("a=%i [%s] [%s]\n\n", actual.action, actual.name.data(), actual.value.data());
 		assert_eq(actual.action, expected->action);
 		assert_eq(actual.name, expected->name);
 		assert_eq(actual.value, expected->value);

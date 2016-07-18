@@ -36,9 +36,6 @@ private:
 	cstring m_inlines;
 	bool m_exit;
 	
-	inline static cstring cut(cstring& input, int skipstart, int cut, int skipafter);
-	inline static bool bml_parse_inline_node(cstring& data, cstring& node, bool& hasvalue, cstring& value);
-	inline static cstring cutline(cstring& input);
 	inline void getlineraw();
 	inline bool getline();
 };
