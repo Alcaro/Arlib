@@ -12,7 +12,7 @@ parent2
 */
 //would yield { enter, parent, "" }, { enter, child, 1 }, { exit } { exit } { enter, "parent2", "" } { exit }.
 //The parser keeps trying after an { error }, giving you a partial view of the damaged document; however,
-// there are no guarantees on how much you can see, and it is likely for one error to cause many more.
+// there are no guarantees on how much you can see, and it is likely for one error to cause many more, or misplaced nodes.
 //enter/exit is always paired, even in the presense of errors.
 //After the document ends, { finish } will be returned forever until the object is deleted.
 class bmlparser {

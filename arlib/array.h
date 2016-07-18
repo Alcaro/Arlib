@@ -23,9 +23,9 @@ public:
 	const T& operator[](size_t n) const { return items[n]; }
 	
 	const T* ptr() const { return items; }
-	size_t len() const { return count; }
+	size_t size() const { return count; }
 	
-	operator bool() { return items; }
+	operator bool() { return count; }
 	
 	arrayview()
 	{
@@ -255,7 +255,7 @@ public:
 	bool operator[](size_t n) const { return get(n); }
 	entry operator[](size_t n) { return entry(*this, n); }
 	
-	size_t len() const { return nbits; }
+	size_t size() const { return nbits; }
 	void reset()
 	{
 		if (nbits >= n_inline) free(this->bits_outline);
@@ -299,7 +299,7 @@ public:
 			break;
 		}
 		
-		this->nbits = len+1;
+		this->nbits = len;
 	}
 	
 	void append(bool item) { set(this->nbits, item); }
@@ -325,6 +325,7 @@ public:
 	array()
 	{
 		this->nbits = 0;
+		memset(this->bits_inline, 0, sizeof(this->bits_inline));
 	}
 	
 	~array()

@@ -475,6 +475,7 @@ inline string operator+(string&& left, const char * right) { left+=right; return
 inline string operator+(const string& left, const char * right) { string ret=left; ret+=right; return ret; }
 inline string operator+(string&& left, const string& right) { left+=right; return left; }
 inline string operator+(const string& left, const string& right) { string ret=left; ret+=right; return ret; }
+inline string operator+(const char * left, const string& right) { string ret=left; ret+=right; return ret; }
 
 class cstring : public string {
 public:
