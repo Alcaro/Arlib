@@ -141,203 +141,203 @@ if there is no line, return finish
 
 */
 
-	inline cstring bmlparser::cut(cstring& input, int skipstart, int cut, int skipafter)
-	{
-		cstring ret = input.csubstr(skipstart, cut);
-		input = input.csubstr(cut+skipafter, ~0);
-		return ret;
-	}
+inline cstring bmlparser::cut(cstring& input, int skipstart, int cut, int skipafter)
+{
+	cstring ret = input.csubstr(skipstart, cut);
+	input = input.csubstr(cut+skipafter, ~0);
+	return ret;
+}
+
+//takes a single line, returns the first node in it
+//hasvalue is to differentiate 'foo' from 'foo='; only the former allows a multi-line value
+inline bool bmlparser::bml_parse_inline_node(cstring& data, cstring& node, bool& hasvalue, cstring& value)
+{
+	int nodestart = 0;
+	while (data[nodestart]==' ' || data[nodestart]=='\t') nodestart++;
 	
-	//takes a single line, returns the first node in it
-	//hasvalue is to differentiate 'foo' from 'foo='; only the former allows a multi-line value
-	inline bool bmlparser::bml_parse_inline_node(cstring& data, cstring& node, bool& hasvalue, cstring& value)
+	int nodelen = nodestart;
+	while (isalnum(data[nodelen]) || data[nodelen]=='-' || data[nodelen]=='.') nodelen++;
+	node = cut(data, nodestart, nodelen, 0);
+	switch (data[0])
 	{
-		int nodestart = 0;
-		while (data[nodestart]==' ' || data[nodestart]=='\t') nodestart++;
-		
-		int nodelen = nodestart;
-		while (isalnum(data[nodelen]) || data[nodelen]=='-' || data[nodelen]=='.') nodelen++;
-		node = cut(data, nodestart, nodelen, 0);
-		switch (data[0])
+		case '\0':
+		case '\t':
+		case ' ':
 		{
-			case '\0':
-			case '\t':
-			case ' ':
+			hasvalue=false;
+			return true;
+		}
+		case ':':
+		{
+			hasvalue=true;
+			int valstart = 1;
+			while (data[valstart]==' ' || data[valstart]=='\t') valstart++;
+			value = data.csubstr(valstart, ~0);
+			data = "";
+			return true;
+			
+			//int valend = valstart;
+			//while (data[valend]!='\0') valend++;
+			//value = cut(data, valstart, valend, 0);
+			//return true;
+		}
+		case '=':
+		{
+			if (data[1]=='"')
 			{
-				hasvalue=false;
+				hasvalue = true;
+				int valend = 2;
+				while (data[valend]!='"' && data[valend]!='\0') valend++;
+				if (data[valend]!='"' || !strchr(" \t", data[valend+1]))
+				{
+					while (data[valend]!='\0') valend++;
+					data = data.csubstr(valend, ~0);
+					return false;
+				}
+				value = cut(data, 2, valend, 1);
 				return true;
 			}
-			case ':':
+			else
 			{
-				hasvalue=true;
-				int valstart = 1;
-				while (data[valstart]==' ' || data[valstart]=='\t') valstart++;
-				value = data.csubstr(valstart, ~0);
-				data = "";
+				hasvalue = true;
+				int valend = 0;
+				while (data[valend]!=' ' && data[valend]!='\0') valend++;
+				value = cut(data, 1, valend, 0);
 				return true;
-				
-				//int valend = valstart;
-				//while (data[valend]!='\0') valend++;
-				//value = cut(data, valstart, valend, 0);
-				//return true;
 			}
-			case '=':
-			{
-				if (data[1]=='"')
-				{
-					hasvalue = true;
-					int valend = 2;
-					while (data[valend]!='"' && data[valend]!='\0') valend++;
-					if (data[valend]!='"' || !strchr(" \t", data[valend+1]))
-					{
-						while (data[valend]!='\0') valend++;
-						data = data.csubstr(valend, ~0);
-						return false;
-					}
-					value = cut(data, 2, valend, 1);
-					return true;
-				}
-				else
-				{
-					hasvalue = true;
-					int valend = 0;
-					while (data[valend]!=' ' && data[valend]!='\0') valend++;
-					value = cut(data, 1, valend, 0);
-					return true;
-				}
-			}
-			default:
-				return false;
 		}
+		default:
+			return false;
+	}
+}
+
+inline cstring bmlparser::cutline(cstring& input)
+{
+	//pointers are generally bad ideas, but this is such a hotspot it's worth it
+	const char * inputraw = input.nt();
+	int nlpos = 0;
+	//that 32 is also a perf hack
+	if (input.ntterm())
+	{
+		while (inputraw[nlpos]>32 || (inputraw[nlpos]!='\r' && inputraw[nlpos]!='\n')) nlpos++;
+	}
+	else
+	{
+		size_t inputlen = input.length();
+		while (nlpos<inputlen && inputraw[nlpos]>32 || (inputraw[nlpos]!='\r' && inputraw[nlpos]!='\n')) nlpos++;
 	}
 	
-	inline cstring bmlparser::cutline(cstring& input)
+	return cut(input, 0, nlpos, (input[nlpos]=='\r') ? 2 : (input[nlpos]=='\n') ? 1 : 0);
+}
+
+inline void bmlparser::getlineraw()
+{
+nextline:
+	if (!m_data)
 	{
-		//pointers are generally bad ideas, but this is such a hotspot it's worth it
-		const char * inputraw = input.nt();
-		int nlpos = 0;
-		//that 32 is also a perf hack
-		if (input.ntterm())
-		{
-			while (inputraw[nlpos]>32 || (inputraw[nlpos]!='\r' && inputraw[nlpos]!='\n')) nlpos++;
-		}
-		else
-		{
-			size_t inputlen = input.length();
-			while (nlpos<inputlen && inputraw[nlpos]>32 || (inputraw[nlpos]!='\r' && inputraw[nlpos]!='\n')) nlpos++;
-		}
-		
-		return cut(input, 0, nlpos, (input[nlpos]=='\r') ? 2 : (input[nlpos]=='\n') ? 1 : 0);
+		m_thisline="";
+		return;
+	}
+	m_thisline = cutline(m_data);
+	int indentlen = 0;
+	while (m_thisline[indentlen] == ' ' || m_thisline[indentlen] == '\t') indentlen++;
+	if (m_thisline[indentlen] == '#' || m_thisline[indentlen]=='\0') goto nextline;
+}
+
+inline bool bmlparser::getline()
+{
+	getlineraw();
+	
+	int indentlen = 0;
+	while (m_thisline[indentlen] == ' ' || m_thisline[indentlen] == '\t') indentlen++;
+	
+	int sharedindent = min(indentlen, m_indent.length());
+	bool badwhite = (memcmp(m_thisline.nt(), m_indent.nt(), sharedindent)!=0);
+	
+	m_indent = cut(m_thisline, 0, indentlen, 0);
+	
+	return !badwhite;
+}
+
+bmlparser::event bmlparser::next()
+{
+	if (m_exit)
+	{
+		m_exit = false;
+		return (event){ exit };
 	}
 	
-	inline void bmlparser::getlineraw()
+	if (m_inlines)
 	{
-	nextline:
-		if (!m_data)
-		{
-			m_thisline="";
-			return;
-		}
-		m_thisline = cutline(m_data);
-		int indentlen = 0;
-		while (m_thisline[indentlen] == ' ' || m_thisline[indentlen] == '\t') indentlen++;
-		if (m_thisline[indentlen] == '#' || m_thisline[indentlen]=='\0') goto nextline;
-	}
-	
-	inline bool bmlparser::getline()
-	{
-		getlineraw();
-		
-		int indentlen = 0;
-		while (m_thisline[indentlen] == ' ' || m_thisline[indentlen] == '\t') indentlen++;
-		
-		int sharedindent = min(indentlen, m_indent.length());
-		bool badwhite = (memcmp(m_thisline.nt(), m_indent.nt(), sharedindent)!=0);
-		
-		m_indent = cut(m_thisline, 0, indentlen, 0);
-		
-		return !badwhite;
-	}
-	
-	bmlparser::event bmlparser::next()
-	{
-		if (m_exit)
-		{
-			m_exit = false;
-			return (event){ exit };
-		}
-		
-		if (m_inlines)
-		{
-			event ev = { enter };
-			bool dummy;
-			if (!bml_parse_inline_node(m_inlines, ev.name, dummy, ev.value))
-			{
-				return (event){ error };
-			}
-			
-			m_exit = true;
-			return ev;
-		}
-		
-		if (!m_thisline && m_data)
-		{
-			if (!getline()) return (event){ error };
-		}
-		
-		if (m_indent_step.size() > m_indent.length())
-		{
-		handle_indent:
-			if (!m_indent_step[m_indent.length()]) return (event){ error };
-			
-			int lasttrue = m_indent_step.size()-2;
-			while (lasttrue>=0 && m_indent_step[lasttrue]==false) lasttrue--;
-			
-			m_indent_step.resize(lasttrue+1);
-			return (event){ exit };
-		}
-		
-		if (!m_thisline)
-		{
-			if (m_indent_step.size()) goto handle_indent;
-			return (event){ finish };
-		}
-		
-		m_inlines = m_thisline;
-		m_thisline = "";
-		
-		cstring node;
-		bool hasvalue;
-		cstring value;
-		if (!bml_parse_inline_node(m_inlines, node, hasvalue, value))
+		event ev = { enter };
+		bool dummy;
+		if (!bml_parse_inline_node(m_inlines, ev.name, dummy, ev.value))
 		{
 			return (event){ error };
 		}
 		
-		int indentlen = m_indent.length(); // changed by getline
-		//multilines
-		if (!hasvalue)
-		{
-			if (!getline()) return (event){ error };
-			if (m_thisline[0] == ':')
-			{
-				size_t expect_indent = m_indent.length();
-				value = m_thisline.csubstr(1, ~0);
-				if (!getline()) return (event){ error };
-				while (m_thisline[0] == ':')
-				{
-					if (expect_indent != m_indent.length()) return (event){ error };
-					value += "\n" + m_thisline.csubstr(1, ~0);
-					if (!getline()) return (event){ error };
-				}
-				if (m_indent.length() > expect_indent) return (event){ error };
-				if (!m_indent_step[m_indent.length()]) return (event){ error };
-			}
-		}
-		
-		m_indent_step[indentlen] = true;
-		return (event){ enter, node, value };
+		m_exit = true;
+		return ev;
 	}
+	
+	if (!m_thisline && m_data)
+	{
+		if (!getline()) return (event){ error };
+	}
+	
+	if (m_indent_step.size() > m_indent.length())
+	{
+	handle_indent:
+		if (!m_indent_step[m_indent.length()]) return (event){ error };
+		
+		int lasttrue = m_indent_step.size()-2;
+		while (lasttrue>=0 && m_indent_step[lasttrue]==false) lasttrue--;
+		
+		m_indent_step.resize(lasttrue+1);
+		return (event){ exit };
+	}
+	
+	if (!m_thisline)
+	{
+		if (m_indent_step.size()) goto handle_indent;
+		return (event){ finish };
+	}
+	
+	m_inlines = m_thisline;
+	m_thisline = "";
+	
+	cstring node;
+	bool hasvalue;
+	cstring value;
+	if (!bml_parse_inline_node(m_inlines, node, hasvalue, value))
+	{
+		return (event){ error };
+	}
+	
+	int indentlen = m_indent.length(); // changed by getline
+	//multilines
+	if (!hasvalue)
+	{
+		if (!getline()) return (event){ error };
+		if (m_thisline[0] == ':')
+		{
+			size_t expect_indent = m_indent.length();
+			value = m_thisline.csubstr(1, ~0);
+			if (!getline()) return (event){ error };
+			while (m_thisline[0] == ':')
+			{
+				if (expect_indent != m_indent.length()) return (event){ error };
+				value += "\n" + m_thisline.csubstr(1, ~0);
+				if (!getline()) return (event){ error };
+			}
+			if (m_indent.length() > expect_indent) return (event){ error };
+			if (!m_indent_step[m_indent.length()]) return (event){ error };
+		}
+	}
+	
+	m_indent_step[indentlen] = true;
+	return (event){ enter, node, value };
+}
 
 
 #ifdef ARLIB_TEST
