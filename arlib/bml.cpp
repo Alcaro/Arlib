@@ -183,10 +183,14 @@ public:
 				hasvalue=true;
 				int valstart = 1;
 				while (data[valstart]==' ' || data[valstart]=='\t') valstart++;
-				int valend = valstart;
-				while (data[valend]!='\0') valend++;
-				value = cut(data, valstart, valend, 0);
+				value = data.csubstr(valstart, ~0);
+				data = "";
 				return true;
+				
+				//int valend = valstart;
+				//while (data[valend]!='\0') valend++;
+				//value = cut(data, valstart, valend, 0);
+				//return true;
 			}
 			case '=':
 			{
@@ -220,8 +224,20 @@ public:
 	
 	static cstring cutline(cstring& input)
 	{
+		//pointers are generally bad ideas, but this is such a hotspot it's worth it
+		const char * inputraw = input.nt();
 		int nlpos = 0;
-		while (input[nlpos]!='\r' && input[nlpos]!='\n' && input[nlpos]!='\0') nlpos++;
+		//that 32 is also a perf hack
+		if (input.ntterm())
+		{
+			while (inputraw[nlpos]>32 || (inputraw[nlpos]!='\r' && inputraw[nlpos]!='\n')) nlpos++;
+		}
+		else
+		{
+			size_t inputlen = input.length();
+			while (nlpos<inputlen && inputraw[nlpos]>32 || (inputraw[nlpos]!='\r' && inputraw[nlpos]!='\n')) nlpos++;
+		}
+		
 		return cut(input, 0, nlpos, (input[nlpos]=='\r') ? 2 : (input[nlpos]=='\n') ? 1 : 0);
 	}
 	

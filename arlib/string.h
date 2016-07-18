@@ -1,7 +1,6 @@
 #pragma once
 #include "global.h"
 #include <string.h>
-#include <valgrind/memcheck.h>
 
 //A string owns its storage. cstring doesn't, but is a bit faster.
 //It is recommended to use cstring for arguments and string for return values.
@@ -276,10 +275,14 @@ public:
 		else return m_len;
 	}
 	
-	//Non-terminated
+	//Non-terminated (can be terminated in some cases)
 	const char * nt() const
 	{
 		return ptr();
+	}
+	bool ntterm() const
+	{
+		return (inlined() || m_nul);
 	}
 	
 private:
@@ -376,11 +379,17 @@ private:
 		else return length()-~pos;
 	}
 	
-	char getchar(int32_t index_) const
+	char getchar(int32_t index) const
 	{
-		uint32_t index = realpos(index_);
-		if (index == length()) return '\0';
-		else return ptr()[index];
+		//this function is REALLY hot, use the strongest possible optimizations
+		if (index >= 0)
+		{
+			if (inlined()) return m_inline[index];
+			else if (index < m_len) return m_data[index];
+			else return '\0';
+		}
+		
+		return getchar(realpos(index));
 	}
 	void setchar(int32_t index_, char val)
 	{
@@ -539,18 +548,27 @@ inline string operator+(const string& left, const string& right) { string ret=le
 inline string operator+(const char * left, const string& right) { string ret=left; ret+=right; return ret; }
 
 class cstring : public string {
+	friend class string;
 public:
 	cstring() : string() {}
 	cstring(const string& other) : string(noinit()) { init_from_nocopy(other); }
+	cstring(const cstring& other) : string(noinit()) { init_from_nocopy(other); }
 	cstring(string&& other) : string(noinit()) { init_from_nocopy(other); }
 	cstring(const char * str) : string(noinit()) { init_from_nocopy(str); }
+	cstring(const char * str, uint32_t len) : string(noinit()) { init_from_nocopy(str, len); }
+private:
+	cstring(const char * str, uint32_t len, bool nul) : string(noinit()) { init_from_nocopy(str, len); if (!inlined()) m_nul=nul; }
+public:
+	
+	cstring& operator=(const cstring& other) { release(); init_from_nocopy(other); return *this; }
 };
 
 inline cstring string::csubstr(int32_t start, int32_t end) const
 {
 	start = realpos(start);
 	end = realpos(end);
-	return string(data()+start, end-start);
+	if (inlined()) return cstring(nt()+start, end-start);
+	else return cstring(nt()+start, end-start, (m_nul && end == m_len));
 }
 
 //TODO
