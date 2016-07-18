@@ -15,7 +15,7 @@ parent2
 // there are no guarantees on how much you can see, and it is likely for one error to cause many more, or misplaced nodes.
 //enter/exit is always paired, even in the presense of errors.
 //After the document ends, { finish } will be returned forever until the object is deleted.
-class bmlparser {
+class bmlparser : nocopy {
 public:
 	enum { enter, exit, error, finish };
 	struct event {
@@ -24,11 +24,23 @@ public:
 		cstring value; // or error message
 	};
 	
-	virtual event next() = 0;
-	virtual ~bmlparser() {}
-	
 	//Since this takes a cstring, the string must be kept alive until the object is disposed.
-	static bmlparser* create(cstring bml);
+	bmlparser(cstring bml) : m_data(bml), m_exit(false) {}
+	event next();
+	
+private:
+	bool m_exit;
+	cstring m_inlines;
+	cstring m_indent;
+	array<bool> m_indent_step;
+	cstring m_thisline;
+	cstring m_data;
+	
+	inline static cstring cut(cstring& input, int skipstart, int cut, int skipafter);
+	inline static bool bml_parse_inline_node(cstring& data, cstring& node, bool& hasvalue, cstring& value);
+	inline static cstring cutline(cstring& input);
+	inline void getlineraw();
+	inline bool getline();
 };
 
 //This is also streaming. It may disobey the mode if the value is not supported; for example, val!="" on bml_anon won't help you.

@@ -141,18 +141,7 @@ if there is no line, return finish
 
 */
 
-
-namespace {
-class bmlparser_impl : public bmlparser {
-public:
-	bool m_exit;
-	cstring m_inlines;
-	cstring m_indent;
-	array<bool> m_indent_step;
-	cstring m_thisline;
-	cstring m_data;
-	
-	static cstring cut(cstring& input, int skipstart, int cut, int skipafter)
+	inline cstring bmlparser::cut(cstring& input, int skipstart, int cut, int skipafter)
 	{
 		cstring ret = input.csubstr(skipstart, cut);
 		input = input.csubstr(cut+skipafter, ~0);
@@ -161,7 +150,7 @@ public:
 	
 	//takes a single line, returns the first node in it
 	//hasvalue is to differentiate 'foo' from 'foo='; only the former allows a multi-line value
-	static bool bml_parse_inline_node(cstring& data, cstring& node, bool& hasvalue, cstring& value)
+	inline bool bmlparser::bml_parse_inline_node(cstring& data, cstring& node, bool& hasvalue, cstring& value)
 	{
 		int nodestart = 0;
 		while (data[nodestart]==' ' || data[nodestart]=='\t') nodestart++;
@@ -222,7 +211,7 @@ public:
 		}
 	}
 	
-	static cstring cutline(cstring& input)
+	inline cstring bmlparser::cutline(cstring& input)
 	{
 		//pointers are generally bad ideas, but this is such a hotspot it's worth it
 		const char * inputraw = input.nt();
@@ -241,7 +230,7 @@ public:
 		return cut(input, 0, nlpos, (input[nlpos]=='\r') ? 2 : (input[nlpos]=='\n') ? 1 : 0);
 	}
 	
-	void getlineraw()
+	inline void bmlparser::getlineraw()
 	{
 	nextline:
 		if (!m_data)
@@ -255,7 +244,7 @@ public:
 		if (m_thisline[indentlen] == '#' || m_thisline[indentlen]=='\0') goto nextline;
 	}
 	
-	bool getline()
+	inline bool bmlparser::getline()
 	{
 		getlineraw();
 		
@@ -270,7 +259,7 @@ public:
 		return !badwhite;
 	}
 	
-	event next()
+	bmlparser::event bmlparser::next()
 	{
 		if (m_exit)
 		{
@@ -349,20 +338,6 @@ public:
 		m_indent_step[indentlen] = true;
 		return (event){ enter, node, value };
 	}
-	
-	bmlparser_impl(cstring bml)
-	{
-		m_exit = false;
-		m_data = bml;
-	}
-};
-}
-
-bmlparser* bmlparser::create(cstring bml)
-{
-	return new bmlparser_impl(bml);
-}
-
 
 
 #ifdef ARLIB_TEST
