@@ -35,8 +35,10 @@ test()
 		a += "678";
 		assert_eq(a, "123456789012345678");
 		a += (const char*)a;
+		string b = a;
 		assert_eq(a, "123456789012345678123456789012345678");
 		assert_eq(a.substr(1,3), "23");
+		assert_eq(b, "123456789012345678123456789012345678");
 		assert_eq(a.substr(1,21), "23456789012345678123");
 		assert_eq(a.substr(1,~1), "2345678901234567812345678901234567");
 		assert_eq(a.substr(2,2), "");

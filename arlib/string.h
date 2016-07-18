@@ -1,5 +1,4 @@
-#ifndef ARLIB_STRING_H
-#define ARLIB_STRING_H
+#pragma once
 #include "global.h"
 #include <string.h>
 #include <valgrind/memcheck.h>
@@ -8,11 +7,11 @@
 //It is recommended to use cstring for arguments and string for return values.
 
 class cstring;
-#if 0
-//Reference string implementation - slow but simple
-//All of these functions, including private functions but not including the members, must be present in a complaint string class
 
 class string {
+//Reference string implementation - slow but simple
+//All of these functions, including private functions but not including the members, must be present in a complaint string class
+#if 0
 private:
 	char* ptr;
 	size_t len;
@@ -33,9 +32,11 @@ private:
 		ptr[len]='\0';
 	}
 	void init_from(const string& other) { init_from(other.ptr); }
+	void init_from(string&& other) { init_from(other.ptr); }
 	void init_from_nocopy(const char * str) { init_from(str); }
 	void init_from_nocopy(const char * str, uint32_t len) { init_from(str, len); }
 	void init_from_nocopy(const string& other) { init_from(other); }
+	void init_from_nocopy(string&& other) { init_from(other.ptr); }
 	void release() { free(ptr); }
 	
 	//constant for all string implementations, but used by the implementation, so let's keep it here
@@ -72,7 +73,7 @@ public:
 	//Non-terminated
 	const char * nt() const { return ptr; }
 	
-	void replace(int32_t pos, int32_t len, cstring newdat)
+	void replace(int32_t pos, int32_t len, const string& newdat)
 	{
 		pos = realpos(pos);
 		len = realpos(len);
@@ -114,17 +115,8 @@ public:
 		return *this;
 	}
 	
-#define ARLIB_STRING_FUNCS
-#include "string.h"
-};
-
-#define ARLIB_STRING_GLOBALS
-#include "string.h"
-
 #else
-
 //Optimized implementation - fast but unreadable
-class string {
 	static const int obj_size = 16; // maximum 120, or the inline length overflows
 	                                // (127 would fit, but that requires an extra alignment byte, which throws the sizeof assert)
 	static const int max_inline = obj_size-1;
@@ -135,14 +127,14 @@ class string {
 			
 			//this is how many bytes are unused by the raw string data
 			//if all bytes are used, there are zero unused bytes - which also serves as the NUL
-			//if not inlined, last byte is -1
+			//if not inlined, it's -1
 			char m_inline_len;
 		};
 		struct {
-			char* m_data; // if owning, there's also a int32 refcount before this pointer; if not owning, no such thing
+			mutable char* m_data; // if owning, there's also a int32 refcount before this pointer; if not owning, no such thing
 			uint32_t m_len;
-			bool m_owning;
-			bool m_nul; // whether the string is properly terminated (always true if owning)
+			mutable bool m_owning;
+			mutable bool m_nul; // whether the string is properly terminated (always true if owning)
 			mutable bool m_wcache; // could use bitfields here, but no point, there's nothing else I need those extra bytes for
 			char reserved; // matches the last byte of the inline data; never ever access this
 		};
@@ -167,19 +159,58 @@ class string {
 		else return m_data;
 	}
 	
+	
 	static size_t bytes_for(uint32_t len)
 	{
 		return bitround(sizeof(int)+len+1);
+	}
+	
+	//the sizes can be 0 if you want to
+	//sizes are how many characters fit in the string, including the NUL
+	static char* alloc(char* prev, uint32_t prevsize, uint32_t newsize)
+	{
+		if (prevsize==0)
+		{
+			char* ptr = malloc(bytes_for(newsize));
+			*(int*)ptr = 1;
+			return ptr+sizeof(int);
+		}
+		
+		if (newsize==0)
+		{
+			int* refcount = (int*)(prev-sizeof(int));
+			if (--*refcount == 0) free(refcount);
+			return NULL;
+		}
+		
+		prevsize = bytes_for(prevsize);
+		newsize = bytes_for(newsize);
+		if (prevsize==newsize) return prev;
+		
+		int* refcount = (int*)(prev-sizeof(int));
+		if (*refcount == 1)
+		{
+			return (char*)realloc(refcount, newsize)+sizeof(int);
+		}
+		--*refcount;
+		
+		char* ptr = malloc(bytes_for(newsize));
+		memcpy(ptr, prev, min(prevsize, newsize));
+		*(int*)ptr = 1;
+		return ptr+sizeof(int);
 	}
 	
 	
 	void unshare() const
 	{
 		wcache(false);
-		//TODO
-		//if (inlined()) return;
-		//if (m_owning && *refcount()==1) return;
-		//release();
+		if (inlined()) return;
+		if (m_owning && *(int*)(m_data-sizeof(int))==1) return;
+		
+		m_owning = true;
+		m_data = alloc(m_data,m_len, m_len);
+		m_data[m_len] = '\0';
+		m_nul = true;
 	}
 	
 	//does not initialize the new data
@@ -197,7 +228,7 @@ class string {
 			break;
 		case 1: // small->big
 			{
-				char* newptr = malloc(newlen+1);
+				char* newptr = alloc(NULL,0, newlen+1);
 				memcpy(newptr, m_inline, max_inline);
 				newptr[newlen] = '\0';
 				m_data = newptr;
@@ -212,15 +243,16 @@ class string {
 		case 2: // big->small
 			{
 				char* oldptr = m_data;
+				uint32_t oldlen = m_len;
 				memcpy(m_inline, oldptr, newlen);
-				free(oldptr);
+				alloc(oldptr,oldlen, 0);
 				m_inline[newlen] = '\0';
 				m_inline_len = max_inline-newlen;
 			}
 			break;
 		case 3: // big->big
 			{
-				m_data = realloc(m_data, newlen+1);
+				m_data = alloc(m_data,m_len, newlen+1);
 				m_data[newlen] = '\0';
 				m_len = newlen;
 			}
@@ -256,7 +288,6 @@ private:
 	
 	void init_from(const char * str)
 	{
-		//TODO
 		init_from(str, strlen(str));
 	}
 	void init_from(const char * str, uint32_t len)
@@ -271,7 +302,7 @@ private:
 		{
 			m_inline_len = -1;
 			
-			m_data = malloc(len+1);
+			m_data = alloc(NULL,0, len+1);
 			memcpy(m_data, str, len);
 			m_data[len]='\0';
 			
@@ -283,8 +314,18 @@ private:
 	}
 	void init_from(const string& other)
 	{
-		//TODO
-		init_from(other.data());
+		memcpy(this, &other, sizeof(*this));
+		if (!inlined())
+		{
+			if (m_owning) ++*(int*)(m_data-sizeof(int));
+			else unshare();
+		}
+	}
+	void init_from(string&& other)
+	{
+		memcpy(this, &other, sizeof(*this));
+		other.m_inline_len = 0;
+		if (!inlined() && !m_owning) unshare();
 	}
 	void init_from_nocopy(const char * str)
 	{
@@ -315,11 +356,16 @@ private:
 		memcpy(this, &other, sizeof(*this));
 		if (!inlined()) m_owning=false;
 	}
+	void init_from_nocopy(string&& other)
+	{
+		memcpy(this, &other, sizeof(*this));
+		other.m_inline_len = 0;
+	}
 	void release()
 	{
 		if (!inlined() && m_owning)
 		{
-			free(m_data);
+			alloc(m_data,m_len, 0);
 		}
 	}
 	
@@ -377,10 +423,23 @@ private:
 	}
 	
 public:
+	//Resizes the string to a suitable size, then allows the caller to fill it in with whatever. Contents are undefined.
+	char* construct(uint32_t len)
+	{
+		resize(len);
+		return ptr();
+	}
+	
 	void replace(int32_t pos, int32_t len, const string& newdat)
 	{
-		//TODO: what if newdat is (a subset of) 'this'?
-		//if 'this' is a proper subset of newdat, then !m_owning, so freeing it doesn't affect newdat; we can ignore that
+		//if newdat is a cstring backed by this, then modifying this invalidates that string, so it's illegal
+		//if newdat equals this, then the memmoves will mess things up
+		if (this == &newdat)
+		{
+			string copy = newdat;
+			replace(pos, len, copy);
+			return;
+		}
 		
 		uint32_t prevlength = length();
 		uint32_t newlength = newdat.length();
@@ -415,17 +474,8 @@ public:
 		append(right.ptr(), right.length());
 		return *this;
 	}
-#define ARLIB_STRING_FUNCS
-#include "string.h"
-};
-
-#define ARLIB_STRING_GLOBALS
-#include "string.h"
 #endif
-#endif
-
-#ifdef ARLIB_STRING_FUNCS
-#undef ARLIB_STRING_FUNCS
+	
 //Shared between all string implementations.
 private:
 	class noinit {};
@@ -434,6 +484,7 @@ private:
 public:
 	string() { init_from(""); }
 	string(const string& other) { init_from(other); }
+	string(string&& other) { init_from(other); }
 	string(const char * str) { init_from(str); }
 	string(const char * str, uint32_t len) { init_from(str, len); }
 	string& operator=(const string& other) { release(); init_from(other); return *this; }
@@ -472,10 +523,8 @@ public:
 		return string(data()+start, end-start);
 	}
 	inline cstring csubstr(int32_t start, int32_t end) const;
-#endif
+};
 
-#ifdef ARLIB_STRING_GLOBALS
-#undef ARLIB_STRING_GLOBALS
 inline bool operator==(const string& left, const char * right ) { return !strcmp(left.data(), right); }
 inline bool operator==(const string& left, const string& right) { return !strcmp(left.data(), right.data()); }
 inline bool operator==(const char * left,  const string& right) { return !strcmp(left, right.data()); }
@@ -493,6 +542,7 @@ class cstring : public string {
 public:
 	cstring() : string() {}
 	cstring(const string& other) : string(noinit()) { init_from_nocopy(other); }
+	cstring(string&& other) : string(noinit()) { init_from_nocopy(other); }
 	cstring(const char * str) : string(noinit()) { init_from_nocopy(str); }
 };
 
@@ -589,4 +639,3 @@ public:
 		return wsize;
 	}
 };
-#endif
