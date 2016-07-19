@@ -35,6 +35,12 @@ int main(int argc, char * argv[])
 	//auto doc = nall::BML::unserialize(cheatsbml);
 	//score = doc.size();
 	
+	//foo bar="value: 1234" result: 4567
+	//auto doc = nall::BML::unserialize("foo bar=\"value: 1234\" result: 4567");
+	//puts(nall::BML::serialize(doc));
+	
+	//score = sizeof(nall::string);
+	
 	if (score != 2001) puts("ERROR ERROR ERROR");
 	printf("%i\n", score);
 	

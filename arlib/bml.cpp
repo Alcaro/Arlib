@@ -1,7 +1,7 @@
 #include "bml.h"
 #include "test.h"
 #include <ctype.h>
-#include <valgrind/memcheck.h>
+//#include <valgrind/memcheck.h>
 
 /*
 
@@ -244,7 +244,7 @@ inline void bmlparser::getlineraw()
 nextline:
 	if (!m_data)
 	{
-		m_thisline="";
+		m_thisline = "";
 		return;
 	}
 	m_thisline = cutline(m_data);
@@ -351,8 +351,7 @@ bmlparser::event bmlparser::next()
 	}
 	
 	m_indent_step[indentlen] = true;
-	//most of those are substrings of m_data, but if the value is multiline, it's allocated; ensure it uses the move constructor
-	return (event){ enter, node, std::move(value) };
+	return (event){ enter, node, value };
 }
 
 
@@ -519,6 +518,7 @@ static bool testbml_error(const char * bml)
 	for (int i=0;i<100;i++)
 	{
 		bmlparser::event ev = parser.next();
+//printf("a=%i [%s] [%s]\n\n", ev.action, ev.name.data(), ev.value.data());
 		if (ev.action == e_error) return true;
 	}
 	assert(!"expected error");
@@ -546,6 +546,7 @@ test()
 	assert(testbml_error("a\n  :b\n c"));
 	assert(testbml_error("a\n :b\n\t:c"));
 	assert(testbml_error("a\n :b\n\tc"));
+	
 	return true;
 }
 #endif

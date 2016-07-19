@@ -49,5 +49,14 @@ test()
 		assert_eq(a, "1-78-12345678");
 	}
 	
+	{
+		string a = "12345678";
+		a += a;
+		a += a;
+		cstring b = a; // ensure this takes a proper reference, rather than piggybacking the original string
+		a = "";
+		assert_eq(b, "12345678123456781234567812345678");
+	}
+	
 	return true;
 }

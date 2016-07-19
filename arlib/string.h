@@ -2,14 +2,19 @@
 #include "global.h"
 #include <string.h>
 
-//A string owns its storage. cstring doesn't, but is a bit faster.
-//It is recommended to use cstring for arguments and string for return values.
+//Most strings own their storage; all string do.
+//If a cstring is constructed from a string, it too owns a reference.
+//However, if it's created from a char* or .csubstr, it lives and dies by the source array/string.
+//A cstring created from another cstring mirrors the source.
+//A string created from a 'soulbound' cstring copies the source. It doesn't care if the other cstring is destroyed.
+
+//Rule of thumb: cstring for arguments, string for storage and return value.
 
 class cstring;
 
 class string {
 //Reference string implementation - slow but simple
-//All of these functions, including private functions but not including the members, must be present in a complaint string class
+//all of these functions, including private functions but not including the members, must be present in a complaint string class
 #if 0
 private:
 	char* ptr;
@@ -118,6 +123,7 @@ public:
 //Optimized implementation - fast but unreadable
 	static const int obj_size = 16; // maximum 120, or the inline length overflows
 	                                // (127 would fit, but that requires an extra alignment byte, which throws the sizeof assert)
+	                                // minimum 16 (pointer + various members + alignment)
 	static const int max_inline = obj_size-1;
 	
 	union {
@@ -357,7 +363,10 @@ private:
 	void init_from_nocopy(const string& other)
 	{
 		memcpy(this, &other, sizeof(*this));
-		if (!inlined()) m_owning=false;
+		if (!inlined() && m_owning)
+		{
+			++*(int*)(m_data-sizeof(int));
+		}
 	}
 	void init_from_nocopy(string&& other)
 	{
@@ -534,12 +543,17 @@ public:
 	inline cstring csubstr(int32_t start, int32_t end) const;
 };
 
-inline bool operator==(const string& left, const char * right ) { return !strcmp(left.data(), right); }
-inline bool operator==(const string& left, const string& right) { return !strcmp(left.data(), right.data()); }
-inline bool operator==(const char * left,  const string& right) { return !strcmp(left, right.data()); }
-inline bool operator!=(const string& left, const char * right ) { return  strcmp(left.data(), right); }
-inline bool operator!=(const string& left, const string& right) { return  strcmp(left.data(), right.data()); }
-inline bool operator!=(const char * left,  const string& right) { return  strcmp(left, right.data()); }
+static inline bool string_eq(const char * left, uint32_t leftlen, const char * right, uint32_t rightlen)
+{
+	return (leftlen==rightlen && !memcmp(left, right, leftlen));
+}
+
+inline bool operator==(const string& left, const char * right ) { return string_eq(left.nt(),left.length(), right,strlen(right)); }
+inline bool operator==(const string& left, const string& right) { return string_eq(left.nt(),left.length(), right.nt(),right.length()); }
+inline bool operator==(const char * left,  const string& right) { return operator==(right, left); }
+inline bool operator!=(const string& left, const char * right ) { return !operator==(left, right); }
+inline bool operator!=(const string& left, const string& right) { return !operator==(left, right); }
+inline bool operator!=(const char * left,  const string& right) { return !operator==(left, right); }
 
 inline string operator+(string&& left, const char * right) { left+=right; return left; }
 inline string operator+(const string& left, const char * right) { string ret=left; ret+=right; return ret; }
