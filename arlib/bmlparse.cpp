@@ -226,7 +226,7 @@ static cstring cutline(cstring& input)
 	const char * inputraw = input.nt();
 	size_t nlpos = 0;
 	//that 32 is also a perf hack
-	if (input.ntterm())
+	if (input.hasnt())
 	{
 		while (!isendl(inputraw[nlpos])) nlpos++;
 	}

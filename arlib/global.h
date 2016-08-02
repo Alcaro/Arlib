@@ -38,6 +38,7 @@ typedef void(*funcptr)();
 //No attempt is made to keep any kind of backwards or forwards compatibility.
 
 #define using(obj) for(bool FIRST=true;FIRST;FIRST=false)for(obj;FIRST;FIRST=false)
+//in C++17, this becomes if(obj;true)
 
 #define JOIN_(x, y) x ## y
 #define JOIN(x, y) JOIN_(x, y)
@@ -102,7 +103,7 @@ template<> struct static_assert_t<false> {};
 #define static_assert(expr) static_assert(expr, #expr)
 #endif
 
-//almost C version (fails inside structs):
+//almost C version (fails inside structs)
 //#define static_assert(expr) \
 //	typedef char JOIN(static_assertion_, __COUNTER__)[(expr)?1:-1]
 
@@ -206,6 +207,16 @@ protected:
 	nocopy& operator=(nocopy&&) = default;
 };
 
+class nomove : empty {
+protected:
+	nomove() {}
+	~nomove() {}
+	nomove(const nomove&) = delete;
+	const nomove& operator=(const nomove&) = delete;
+	nomove(nomove&&) = delete;
+	nomove& operator=(nomove&&) = delete;
+};
+
 template<typename T>
 class autoptr : nocopy {
 	T* ptr;
@@ -228,6 +239,7 @@ public:
 #else
 void asprintf(char * * ptr, const char * fmt, ...);
 #endif
+//TODO: memmem
 
 
 //msvc:

@@ -18,6 +18,18 @@ _testdecl::_testdecl(bool(*func)(), const char * name)
 	g_testlist = next;
 }
 
+void _testeqfail(cstring name, cstring expected, cstring actual)
+{
+	if (expected.contains("\n") || actual.contains("\n"))
+	{
+		puts("\nFailed assertion "+name+"\nexpected:\n"+expected+"\nactual:\n"+actual);
+	}
+	else
+	{
+		puts("\nFailed assertion "+name+": expected "+expected+", got "+actual);
+	}
+}
+
 #undef main // the real main is #define'd to something stupid on test runs
 int main(int argc, char* argv[])
 {

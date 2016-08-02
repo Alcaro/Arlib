@@ -11,7 +11,7 @@
 parent child=1
 parent2
 */
-//would yield { enter, parent, "" }, { enter, child, 1 }, { exit } { exit } { enter, "parent2", "" } { exit }.
+//would yield { enter, parent, "" }, { enter, child, 1 }, { exit } { exit } { enter, parent2, "" } { exit }.
 //The parser keeps trying after an { error }, giving you a partial view of the damaged document; however,
 // there are no guarantees on how much you can see, and it is likely for one error to cause many more, or misplaced nodes.
 //enter/exit is always paired, even in the presense of errors.
@@ -26,10 +26,11 @@ public:
 	};
 	
 	//Since this takes a cstring, the string must be kept alive until the object is disposed.
-	bmlparser(cstring bml) : m_data(bml), m_exit(false) {}
+	bmlparser(cstring bml) : m_orig_data(bml), m_data(bml), m_exit(false) {}
 	event next();
 	
 private:
+	cstring m_orig_data; // keep a reference if we're passed in the only copy of a string object
 	cstring m_data;
 	cstring m_thisline;
 	array<bool> m_indent_step;
@@ -41,30 +42,50 @@ private:
 	inline bool getline();
 };
 
-//This is also streaming. It may disobey the mode if the value is not supported; for example, val!="" on bml_anon won't help you.
-//It also disobeys mode <= bml_inl_col on enter(), you need node().
+//This is also streaming. It may disobey the mode if the value is not supported; for example, val!="" on mode=anon won't work.
+//It also disobeys mode <= inl_col on enter(), you need node() for that.
 //Calling exit() without a matching enter(), or finish() without closing every enter(), is undefined behavior.
 class bmlwriter {
+	string m_data;
+	int m_indent = 0;
+	bool m_caninline = false;
+	
+	string indent()
+	{
+		string ret;
+		char* ptr = ret.construct(m_indent*2);
+		memset(ptr, ' ', m_indent*2);
+		return ret;
+	}
+	
 public:
 	enum mode {
-		anon,     // parent node
-		inl_eq,   // parent node=value
-		inl_col,  // parent node: value
-		eq,       // node=value
-		col,      // node: value
+		ianon,   // parent node
+		ieq,     // parent node=value
+		iquote,  // parent node="value"
+		icol,    // parent node: value
+		
+		anon,    // node
+		eq,      // node=value
+		quote,   // node="value"
+		col,     // node: value
+		
 		multiline // node\n  :value
 	};
 	
-	virtual void enter(cstring name, cstring val, mode m) = 0;
-	virtual void exit() = 0;
-	virtual void linebreak() = 0;
-	virtual void comment(cstring text) = 0;
-	virtual void node(cstring name, cstring val, mode m) = 0;
+	void enter(cstring name, cstring val, mode m = anon); // Since this implies the tag has children, it can't use the inline modes.
+	void exit();
+	void linebreak();
+	void comment(cstring text);
+	void node(cstring name, cstring val, mode m = ianon);
 	
-	//This deletes the object and returns the resulting string.
-	virtual string finish() = 0;
-	
-	static bmlwriter* create();
+	//Tells what mode will actually be used if node() is called with these parameters and in this context.
+	mode typeof(cstring val, mode m) const;
 private:
-	virtual ~bmlwriter() {}
+	
+	void node(cstring name, cstring val, mode m, bool enter);
+	static mode typeof_core(cstring val);
+public:
+	
+	string finish() { return m_data; }
 };
