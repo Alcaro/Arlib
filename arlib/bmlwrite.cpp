@@ -1,6 +1,14 @@
 #include "bml.h"
 #include "test.h"
 
+inline string bmlwriter::indent()
+{
+	string ret;
+	char* ptr = ret.construct(m_indent*2);
+	memset(ptr, ' ', m_indent*2);
+	return ret;
+}
+
 void bmlwriter::node(cstring name, cstring val, mode m, bool enter)
 {
 	m = typeof(val, m);
