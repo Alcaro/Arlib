@@ -239,7 +239,9 @@ public:
 #else
 void asprintf(char * * ptr, const char * fmt, ...);
 #endif
-//TODO: memmem
+#ifdef _WIN32
+void* memmem(const void * haystack, size_t haystacklen, const void * needle, size_t needlelen);
+#endif
 
 
 //msvc:

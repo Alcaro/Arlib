@@ -77,9 +77,13 @@ public:
 	void exit();
 	void linebreak();
 	void comment(cstring text);
-	void node(cstring name, cstring val, mode m = ianon);
+	void node(cstring name, cstring val, mode m = ianon); // Equivalent to enter()+exit(), except supports inline nodes.
+	
+	//TODO: inline nodes on multilines? byuu doesn't like them, but there are a few cases where they're useful.
+	//I'll decide what to do once I actually need a multiline with children. Maybe add mode multiline_i or something.
 	
 	//Tells what mode will actually be used if node() is called with these parameters and in this context.
+	//To ask what enter() would do, set mode to something without inline.
 	mode typeof(cstring val, mode m) const;
 private:
 	
