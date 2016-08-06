@@ -20,7 +20,11 @@ void bmlwriter::node(cstring name, cstring val, mode m, bool enter)
 	}
 	
 	m_indent++;
-	m_caninline = true;
+	
+	if ((m==anon || m==eq || m==quote) && enter) m_caninline = true;
+	if (m==icol || m==col || m==multiline) m_caninline = false;
+	//for other modes, inlinability isn't affected
+	
 	switch (m)
 	{
 		case ianon:
@@ -38,10 +42,8 @@ void bmlwriter::node(cstring name, cstring val, mode m, bool enter)
 		case icol:
 		case col:
 			m_data += name+": "+val;
-			m_caninline = false;
 			break;
 		case multiline:
-			m_caninline = false;
 			string prefix = "\n"+indent()+":";
 			m_data += name + prefix + val.replace("\n", prefix);
 			break;
@@ -143,6 +145,23 @@ test()
 		w.exit();
 		
 		assert_eq(w.finish(), "a\nb");
+	}
+	
+	{
+		bmlwriter w;
+		w.node("a", "1");
+		w.node("b", "2");
+		
+		assert_eq(w.finish(), "a=1\nb=2"); // these must not be children of each other
+	}
+	
+	{
+		bmlwriter w;
+		w.enter("a", "");
+		w.node("b", "c\nd");
+		w.exit();
+		
+		assert_eq(w.finish(), "a\n  b\n    :c\n    :d"); // ensure this is properly non-inlined
 	}
 	
 	return true;
