@@ -2,14 +2,15 @@
 #include "test.h"
 
 struct testlist {
-	bool(*func)();
+	void(*func)();
 	const char * name;
 	testlist* next;
 };
 
 static testlist* g_testlist;
+static testlist* g_testlist_tail;
 
-_testdecl::_testdecl(bool(*func)(), const char * name)
+_testdecl::_testdecl(void(*func)(), const char * name)
 {
 	testlist* next = malloc(sizeof(testlist));
 	next->func = func;
@@ -18,15 +19,23 @@ _testdecl::_testdecl(bool(*func)(), const char * name)
 	g_testlist = next;
 }
 
+static bool thisfail;
+
+void _testfail(cstring why)
+{
+	if (!thisfail) puts(why); // discard multiple failures from same test, they're probably caused by same thing
+	thisfail = true;
+}
+
 void _testeqfail(cstring name, cstring expected, cstring actual)
 {
 	if (expected.contains("\n") || actual.contains("\n"))
 	{
-		puts("\nFailed assertion "+name+"\nexpected:\n"+expected+"\nactual:\n"+actual);
+		_testfail("\nFailed assertion "+name+"\nexpected:\n"+expected+"\nactual:\n"+actual);
 	}
 	else
 	{
-		puts("\nFailed assertion "+name+": expected "+expected+", got "+actual);
+		_testfail("\nFailed assertion "+name+": expected "+expected+", got "+actual);
 	}
 }
 
@@ -39,18 +48,17 @@ int main(int argc, char* argv[])
 	{
 		testlist* next = test->next;
 		printf("Testing %s...", test->name);
-		bool pass = test->func();
-		count[pass]++;
-		if (pass) puts(" pass");
+		thisfail = false;
+		test->func();
+		count[thisfail]++;
+		if (!thisfail) puts(" pass");
 		free(test);
 		test = next;
 	}
-	printf("Passed %i, failed %i\n", count[1], count[0]);
+	printf("Passed %i, failed %i\n", count[0], count[1]);
 	return 0;
 }
 
-test()
-{
-	return true;
-}
+test() {}
+test() {}
 #endif

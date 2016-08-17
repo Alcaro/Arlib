@@ -493,7 +493,7 @@ bmlparser::event test4e[]={
 	{ e_finish }
 };
 
-static bool testbml(const char * bml, bmlparser::event* expected)
+static void testbml(const char * bml, bmlparser::event* expected)
 {
 	bmlparser parser(bml);
 	while (true)
@@ -506,47 +506,45 @@ static bool testbml(const char * bml, bmlparser::event* expected)
 		assert_eq(actual.name, expected->name);
 		assert_eq(actual.value, expected->value);
 		
-		if (expected->action == e_finish || actual.action == e_finish) return true;
+		if (expected->action == e_finish || actual.action == e_finish) return;
 		
 		expected++;
 	}
 }
 
-static bool testbml_error(const char * bml)
+static void testbml_error(const char * bml)
 {
 	bmlparser parser(bml);
 	for (int i=0;i<100;i++)
 	{
 		bmlparser::event ev = parser.next();
 //printf("a=%i [%s] [%s]\n\n", ev.action, ev.name.data(), ev.value.data());
-		if (ev.action == e_error) return true;
+		if (ev.action == e_error) return;
 	}
 	assert(!"expected error");
 }
 
 test()
 {
-	assert(testbml(test1, test1e));
-	assert(testbml(test2, test2e));
-	assert(testbml(test3, test3e));
-	assert(testbml(test4, test4e));
+	testbml(test1, test1e);
+	testbml(test2, test2e);
+	testbml(test3, test3e);
+	testbml(test4, test4e);
 	
-	assert(testbml_error("*"));          // invalid node name
-	assert(testbml_error("a=\""));       // unclosed quote
-	assert(testbml_error("a=\"b\"c"));   // no space after closing quote
-	assert(testbml_error("a=\"b\"c\"")); // no space after closing quote
-	assert(testbml_error("a\n  b\n c")); // derpy indentation
-	assert(testbml_error("a\n b\n\tc")); // mixed tabs and spaces
-	assert(testbml_error("a=b\n :c"));   // two values
+	testbml_error("*");          // invalid node name
+	testbml_error("a=\"");       // unclosed quote
+	testbml_error("a=\"b\"c");   // no space after closing quote
+	testbml_error("a=\"b\"c\""); // no space after closing quote
+	testbml_error("a\n  b\n c"); // derpy indentation
+	testbml_error("a\n b\n\tc"); // mixed tabs and spaces
+	testbml_error("a=b\n :c");   // two values
 	
 	//derpy indentation with multilines
-	assert(testbml_error("a\n :b\n  :c"));
-	assert(testbml_error("a\n  :b\n :c"));
-	assert(testbml_error("a\n :b\n  c"));
-	assert(testbml_error("a\n  :b\n c"));
-	assert(testbml_error("a\n :b\n\t:c"));
-	assert(testbml_error("a\n :b\n\tc"));
-	
-	return true;
+	testbml_error("a\n :b\n  :c");
+	testbml_error("a\n  :b\n :c");
+	testbml_error("a\n :b\n  c");
+	testbml_error("a\n  :b\n c");
+	testbml_error("a\n :b\n\t:c");
+	testbml_error("a\n :b\n\tc");
 }
 #endif

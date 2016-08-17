@@ -16,8 +16,8 @@ d=3
 
 */
 
-#define SERIALIZER template<typename T> void serialize(T& serializer)
-#define SERIALIZE(x) serializer(STR(x), x)
+#define SERIALIZE_CORE(member) s(STR(member), member);
+#define SERIALIZE(...) template<typename T> void serialize(t& s) { PPFOREACH(SERIALIZE_CORE, __VA_ARGS__); }
 
 class bmlserializer {
 	bmlwriter w;
@@ -60,14 +60,14 @@ struct ser1 {
 	int a;
 	int b;
 	
-	SERIALIZER { SERIALIZE(a); SERIALIZE(b); }
+	SERIALIZE(a, b);
 };
 
 struct ser2 {
 	ser1 c;
 	ser1 d;
 	
-	SERIALIZER { SERIALIZE(c); SERIALIZE(d); }
+	SERIALIZE(c, d);
 };
 
 test()
@@ -88,7 +88,5 @@ test()
 		item.d.b = 4;
 		assert_eq(bmlserialize(item), "c a=1 b=2\nd a=3 b=4");
 	}
-	
-	return true;
 }
 #endif

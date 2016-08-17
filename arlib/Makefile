@@ -240,3 +240,5 @@ test: obj/arlibtest$(EXESUFFIX)
 	$(TESTRUNNER) obj/arlibtest$(EXESUFFIX)
 check: test
 endif
+
+#todo: replace with ./test shell script (make test/check should still exist)

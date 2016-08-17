@@ -10,3 +10,8 @@ ARSOCKET_SSL = tlse
 ARSANDBOX = 1
 
 include arlib/Makefile
+
+#TODO:
+#./test (bash? python?)
+#./configure (bash); possibly only verifies dependencies and lets makefile do the real job
+#   or maybe makefile calls configure?

@@ -92,6 +92,4 @@ test()
 		a += "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 		assert_eq(a, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ");
 	}
-	
-	return true;
 }

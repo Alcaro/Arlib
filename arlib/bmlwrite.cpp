@@ -163,8 +163,6 @@ test()
 		
 		assert_eq(w.finish(), "a\n  b\n    :c\n    :d"); // ensure this is properly non-inlined
 	}
-	
-	return true;
 }
 
 #endif
