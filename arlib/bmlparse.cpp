@@ -537,25 +537,25 @@ static void testbml_error(const char * bml)
 
 test()
 {
-	testbml(test1, test1e);
-	testbml(test2, test2e);
-	testbml(test3, test3e);
-	testbml(test4, test4e);
+	testcall(testbml(test1, test1e));
+	testcall(testbml(test2, test2e));
+	testcall(testbml(test3, test3e));
+	testcall(testbml(test4, test4e));
 	
-	testbml_error("*");          // invalid node name
-	testbml_error("a=\"");       // unclosed quote
-	testbml_error("a=\"b\"c");   // no space after closing quote
-	testbml_error("a=\"b\"c\""); // no space after closing quote
-	testbml_error("a\n  b\n c"); // derpy indentation
-	testbml_error("a\n b\n\tc"); // mixed tabs and spaces
-	testbml_error("a=b\n :c");   // two values
+	testcall(testbml_error("*"));          // invalid node name
+	testcall(testbml_error("a=\""));       // unclosed quote
+	testcall(testbml_error("a=\"b\"c"));   // no space after closing quote
+	testcall(testbml_error("a=\"b\"c\"")); // quote in quoted element
+	testcall(testbml_error("a\n  b\n c")); // derpy indentation
+	testcall(testbml_error("a\n b\n\tc")); // mixed tabs and spaces
+	testcall(testbml_error("a=b\n :c"));   // two values
 	
 	//derpy indentation with multilines
-	testbml_error("a\n :b\n  :c");
-	testbml_error("a\n  :b\n :c");
-	testbml_error("a\n :b\n  c");
-	testbml_error("a\n  :b\n c");
-	testbml_error("a\n :b\n\t:c");
-	testbml_error("a\n :b\n\tc");
+	testcall(testbml_error("a\n :b\n  :c"));
+	testcall(testbml_error("a\n  :b\n :c"));
+	testcall(testbml_error("a\n :b\n  c"));
+	testcall(testbml_error("a\n  :b\n c"));
+	testcall(testbml_error("a\n :b\n\t:c"));
+	testcall(testbml_error("a\n :b\n\tc"));
 }
 #endif

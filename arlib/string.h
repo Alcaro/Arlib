@@ -213,9 +213,14 @@ public:
 		if (inlined()) return;
 		if (m_owning && *(int*)(m_data-sizeof(int))==1) return;
 		
-		m_owning = true;
-		m_data = alloc(m_data,m_len, m_len);
+		char* prevdat = m_data;
+		m_data = alloc(NULL,0, m_len);
+		memcpy(m_data, prevdat, m_len);
 		m_data[m_len] = '\0';
+		
+		if (m_owning) alloc(prevdat,m_len, 0);
+		
+		m_owning = true;
 		m_nul = true;
 	}
 	
