@@ -19,7 +19,7 @@ void _testeqfail(cstring name, cstring expected, cstring actual);
 	static void TESTFUNCNAME(); \
 	static _testdecl JOIN(_testdecl, __LINE__)(TESTFUNCNAME, __FILE__ ":" STR(__LINE__)); \
 	static void TESTFUNCNAME()
-#define assert(x) do { if (!(x)) { _testfail("\nFailed assertion " #x); return; } } while(0)
+#define assert(x) do { if (!(x)) { _testfail("\nFailed assertion " #x " (line " STR(__LINE__) ")"); return; } } while(0)
 #define assert_eq(x,y) do { \
 		if ((x) != (y)) \
 		{ \

@@ -55,42 +55,68 @@ template<typename T> string bmlserialize(T& item)
 
 class bmlunserialize_impl {
 	bmlparser p;
+	int pdepth = 0;
 	
+	int thisdepth = 0;
 	cstring thisnode;
 	cstring thisval;
+	bool matchagain;
 	
-	void exit()
+	bmlparser::event event()
 	{
-		int depth = 1;
-		while (depth > 0)
-		{
-			switch (p.next().action)
-			{
-				case bmlparser::enter: depth++; break;
-				case bmlparser::exit: depth--; break;
-				case bmlparser::finish: return;
-			}
-		}
+		bmlparser::event ret = p.next();
+		if (ret.action == bmlparser::enter) pdepth++;
+		if (ret.action == bmlparser::exit) pdepth--;
+		if (ret.action == bmlparser::finish) pdepth=-2;
+		return ret;
+	}
+	
+	void skipchildren()
+	{
+		while (pdepth > thisdepth) event();
 	}
 	
 	bmlunserialize_impl(cstring bml) : p(bml) {}
 	template<typename T> friend T bmlunserialize(cstring bml);
 	
-	void next() {}
-	
 	template<typename T> void item(T& out)
 	{
-		while (true)
+		while (pdepth >= thisdepth)
 		{
-			bmlparser::event ev = p.next();
+			bmlparser::event ev = event();
 			if (ev.action == bmlparser::enter)
 			{
+				thisdepth++;
 				thisnode = ev.name;
 				thisval = ev.value;
-				out.serialize(*this);
-				exit();
+				do {
+					matchagain = false;
+					out.serialize(*this);
+				} while (matchagain);
+				thisdepth--;
+				skipchildren();
 			}
-			if (ev.action == bmlparser::exit || ev.action == bmlparser::finish) break;
+		}
+	}
+	
+	void next()
+	{
+		matchagain = false;
+		
+		if (pdepth >= thisdepth)
+		{
+			thisdepth--;
+			skipchildren();
+			
+			bmlparser::event ev = event();
+			if (ev.action == bmlparser::enter)
+			{
+				matchagain = true;
+				thisnode = ev.name;
+				thisval = ev.value;
+			}
+			
+			thisdepth++;
 		}
 	}
 	
@@ -109,10 +135,10 @@ public:
 	
 	template<typename T> void operator()(cstring name, T& out)
 	{
-		puts(thisnode+"=="+name);
-		if (thisnode==name)
+		while (thisnode == name) // this should be a loop, in case of documents like 'foo bar=1 bar=2 bar=3'
 		{
 			item(out);
+			thisnode = "";
 			next();
 		}
 	}
@@ -148,8 +174,12 @@ struct ser3 {
 	int b;
 	int c;
 	int d;
+	int e;
+	int f;
+	int g;
+	int h;
 	
-	SERIALIZE(a, b, c, d);
+	SERIALIZE(a, b, c, d, e, f, g, h);
 };
 
 struct ser4 {
@@ -194,6 +224,7 @@ test()
 		assert_eq(item.d.b, 4);
 	}
 	
+	//the system should not be order-sensitive
 	{
 		ser2 item = bmlunserialize<ser2>("d b=4 a=3\nc a=1 b=2");
 		assert_eq(item.c.a, 1);
@@ -202,15 +233,19 @@ test()
 		assert_eq(item.d.b, 4);
 	}
 	
+	//in case of dupes, last one should win; extraneous nodes should be cleanly ignored
 	{
-		ser1 item = bmlunserialize<ser1>("a=1\nb=2\na=3\na=4");
+		ser1 item = bmlunserialize<ser1>("a=1\nb=2\nq=0\na=3\na=4");
 		assert_eq(item.a, 4);
 		assert_eq(item.b, 2);
 	}
 	
+	//the system is allowed to loop, but only if there's bogus or extraneous nodes
+	//we want O(n) runtime for a clean document, so ensure no looping
+	//this includes missing and duplicate elements, both of which are possible for serialized arrays
 	{
-		ser4 item = bmlunserialize<ser4>("a=1\nb=2\nc=3\nd=4");
-		assert_eq(item.count, 1); // must call serialize() only once
+		ser4 item = bmlunserialize<ser4>("a=1\nb=2\nd=4\ne=5\ne=5\nf=6");
+		assert_eq(item.count, 1);
 	}
 }
 #endif

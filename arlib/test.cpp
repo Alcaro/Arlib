@@ -8,7 +8,6 @@ struct testlist {
 };
 
 static testlist* g_testlist;
-static testlist* g_testlist_tail;
 
 _testdecl::_testdecl(void(*func)(), const char * name)
 {
@@ -43,7 +42,20 @@ void _testeqfail(cstring name, cstring expected, cstring actual)
 int main(int argc, char* argv[])
 {
 	int count[2]={0,0};
+	
+	//flip list backwards
+	//order of static initializers is implementation defined, but this makes output better under gcc
 	testlist* test = g_testlist;
+	g_testlist = NULL;
+	while (test)
+	{
+		testlist* next = test->next;
+		test->next = g_testlist;
+		g_testlist = test;
+		test = next;
+	}
+	
+	test = g_testlist;
 	while (test)
 	{
 		testlist* next = test->next;

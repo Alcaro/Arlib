@@ -529,7 +529,7 @@ static void testbml_error(const char * bml)
 		assert(depth >= 0);
 		
 		events++;
-		assert(events < 1000); // ensure no infinite loop
+		assert(events < 1000); // fail on infinite error loops
 	}
 	assert_eq(error, true);
 	assert_eq(depth, 0);
