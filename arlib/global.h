@@ -63,9 +63,10 @@ typedef void(*funcptr)();
 template<typename T, size_t N> char(&ARRAY_SIZE_CORE(T(&x)[N]))[N];
 #define ARRAY_SIZE(x) (sizeof(ARRAY_SIZE_CORE(x)))
 
-
-//yep, C++ is definitely a mess. copied from https://github.com/swansontec/map-macro/blob/master/map.h
-//with changed names and https://github.com/swansontec/map-macro/pull/3/files merged
+//yep, C++ is definitely a mess. based on https://github.com/swansontec/map-macro with some changes:
+//- namespaced all child macros, renamed main one
+//- merged https://github.com/swansontec/map-macro/pull/3
+//- merged http://stackoverflow.com/questions/6707148/foreach-macro-on-macros-arguments#comment62878935_13459454, plus ifdef
 #define PPFE_EVAL0(...) __VA_ARGS__
 #define PPFE_EVAL1(...) PPFE_EVAL0 (PPFE_EVAL0 (PPFE_EVAL0 (__VA_ARGS__)))
 #define PPFE_EVAL2(...) PPFE_EVAL1 (PPFE_EVAL1 (PPFE_EVAL1 (__VA_ARGS__)))
@@ -78,7 +79,13 @@ template<typename T, size_t N> char(&ARRAY_SIZE_CORE(T(&x)[N]))[N];
 #define PPFE_MAP_GET_END1(...) PPFE_MAP_GET_END2
 #define PPFE_MAP_GET_END(...) PPFE_MAP_GET_END1
 #define PPFE_MAP_NEXT0(test, next, ...) next PPFE_MAP_OUT
+#ifdef _MSC_VER
+//this version doesn't work on GCC, it makes PPFE_MAP0 not get expanded the second time and quite effectively stops everything.
+//but completely unknown guy says it's required on MSVC, so I'll trust that and ifdef it.
+#define PPFE_MAP_NEXT1(test, next) PPFE_EVAL0(PPFE_MAP_NEXT0 (test, next, 0))
+#else
 #define PPFE_MAP_NEXT1(test, next) PPFE_MAP_NEXT0 (test, next, 0)
+#endif
 #define PPFE_MAP_NEXT(test, next)  PPFE_MAP_NEXT1 (PPFE_MAP_GET_END test, next)
 #define PPFE_MAP0(f, x, peek, ...) f(x) PPFE_MAP_NEXT (peek, PPFE_MAP1) (f, peek, __VA_ARGS__)
 #define PPFE_MAP1(f, x, peek, ...) f(x) PPFE_MAP_NEXT (peek, PPFE_MAP0) (f, peek, __VA_ARGS__)

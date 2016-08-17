@@ -515,13 +515,24 @@ static void testbml(const char * bml, bmlparser::event* expected)
 static void testbml_error(const char * bml)
 {
 	bmlparser parser(bml);
-	for (int i=0;i<100;i++)
+	int depth = 0;
+	bool error = false;
+	int events = 0;
+	while (true)
 	{
 		bmlparser::event ev = parser.next();
 //printf("a=%i [%s] [%s]\n\n", ev.action, ev.name.data(), ev.value.data());
-		if (ev.action == e_error) return;
+		if (ev.action == e_error) error = true; // any error is fine, really
+		if (ev.action == e_enter) depth++;
+		if (ev.action == e_exit) depth--;
+		if (ev.action == e_finish) break;
+		assert(depth >= 0);
+		
+		events++;
+		assert(events < 1000); // ensure no infinite loop
 	}
-	assert(!"expected error");
+	assert_eq(error, true);
+	assert_eq(depth, 0);
 }
 
 test()
