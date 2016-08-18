@@ -28,9 +28,9 @@ static string stack(int top)
 {
 	string ret = " (line "+tostring(top);
 	
-	for (int i=0;i<callstack.size();i++)
+	for (int i=callstack.size();i>=0;i--)
 	{
-		ret += ", "+tostring(callstack[i]);
+		ret += " from "+tostring(callstack[i]);
 	}
 	
 	return ret+")";
