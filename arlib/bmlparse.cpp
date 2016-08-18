@@ -161,6 +161,8 @@ static bool bml_parse_inline_node(cstring& data, cstring& node, bool& hasvalue, 
 	if (nodestart == nodelen)
 	{
 		value = "Invalid node name";
+		while (data[nodelen]!='\n' && data[nodelen]!='\0') nodelen++;
+		data = data.csubstr(nodelen, ~0);
 		return false;
 	}
 	node = cut(data, nodestart, nodelen, 0);
@@ -216,6 +218,7 @@ static bool bml_parse_inline_node(cstring& data, cstring& node, bool& hasvalue, 
 
 static bool isendl(char ch)
 {
+	//this 32 is also a perf hack
 	if (ch>=32) return false;
 	return (ch=='\r' || ch=='\n' || ch=='\0');
 }
@@ -225,7 +228,6 @@ static cstring cutline(cstring& input)
 	//pointers are generally bad ideas, but this is such a hotspot it's worth it
 	const char * inputraw = input.nt();
 	size_t nlpos = 0;
-	//that 32 is also a perf hack
 	if (input.hasnt())
 	{
 		while (!isendl(inputraw[nlpos])) nlpos++;
@@ -299,9 +301,16 @@ bmlparser::event bmlparser::next()
 	if (m_indent_step.size() > m_indent.length())
 	{
 	handle_indent:
-		if (!m_indent_step[m_indent.length()]) return (event){ error, "", "Invalid indentation depth" };
+		if (!m_indent_step[m_indent.length()])
+		{
+			//this may throw random mix-tab-space errors that weren't present in the original,
+			// but only if the document contains mix-tab-space already.
+			if (m_indent_step.size() > m_indent.length()) m_indent += m_indent[0];
+			else m_indent = m_indent.csubstr(0, ~1);
+			return (event){ error, "", "Invalid indentation depth" };
+		}
 		
-		int lasttrue = m_indent_step.size()-2;
+		int lasttrue = m_indent_step.size()-2; // -1 for [size()] being OOB, -1 to skip the true at [size()-1] and discard it
 		while (lasttrue>=0 && m_indent_step[lasttrue]==false) lasttrue--;
 		
 		m_indent_step.resize(lasttrue+1);
@@ -521,7 +530,8 @@ static void testbml_error(const char * bml)
 	while (true)
 	{
 		bmlparser::event ev = parser.next();
-//printf("a=%i [%s] [%s]\n\n", ev.action, ev.name.data(), ev.value.data());
+if (events==999)
+printf("a=%i [%s] [%s]\n\n", ev.action, ev.name.data(), ev.value.data());
 		if (ev.action == e_error) error = true; // any error is fine, really
 		if (ev.action == e_enter) depth++;
 		if (ev.action == e_exit) depth--;

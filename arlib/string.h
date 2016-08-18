@@ -539,6 +539,12 @@ public:
 		append(right.ptr(), right.length());
 		return *this;
 	}
+	
+	string& operator+=(char right)
+	{
+		append(&right, 1);
+		return *this;
+	}
 #endif
 	
 //Shared between all string implementations.
@@ -608,6 +614,10 @@ inline string operator+(const string& left, const char * right) { string ret=lef
 inline string operator+(string&& left, const string& right) { left+=right; return left; }
 inline string operator+(const string& left, const string& right) { string ret=left; ret+=right; return ret; }
 inline string operator+(const char * left, const string& right) { string ret=left; ret+=right; return ret; }
+
+inline string operator+(string&& left, char right) { left+=right; return left; }
+inline string operator+(const string& left, char right) { string ret=left; ret+=right; return ret; }
+inline string operator+(char left, const string& right) { string ret; ret[0]=left; ret+=right; return ret; }
 
 class cstring : public string {
 	friend class string;

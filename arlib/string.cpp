@@ -86,7 +86,7 @@ test()
 	}
 	
 	{
-		// this has thrown valgrind errors due to derpy allocations; forgot exactly what
+		//this has thrown valgrind errors due to derpy allocations
 		string a = "abcdefghijklmnopqrstuvwxyz";
 		string b = a; // needs an extra reference
 		a += "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -95,8 +95,8 @@ test()
 	
 	{
 		//this has also crashed, due to unshare() not respecting m_owning=false
-		cstring a = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+		cstring a = "aaaaaaaaaaaaaaaa";
 		a[0] = 'b';
-		assert_eq(a, "baaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+		assert_eq(a, "baaaaaaaaaaaaaaa");
 	}
 }
