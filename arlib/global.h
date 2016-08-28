@@ -81,7 +81,7 @@ template<typename T, size_t N> char(&ARRAY_SIZE_CORE(T(&x)[N]))[N];
 #define PPFE_MAP_NEXT0(test, next, ...) next PPFE_MAP_OUT
 #ifdef _MSC_VER
 //this version doesn't work on GCC, it makes PPFE_MAP0 not get expanded the second time and quite effectively stops everything.
-//but completely unknown guy says it's required on MSVC, so I'll trust that and ifdef it.
+//but completely unknown guy says it's required on MSVC, so I'll trust that and ifdef it
 #define PPFE_MAP_NEXT1(test, next) PPFE_EVAL0(PPFE_MAP_NEXT0 (test, next, 0))
 #else
 #define PPFE_MAP_NEXT1(test, next) PPFE_MAP_NEXT0 (test, next, 0)

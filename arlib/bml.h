@@ -2,7 +2,6 @@
 #include "global.h"
 #include "array.h"
 #include "string.h"
-#include "serialize.h"
 
 //This is a streaming parser. For each node, { enter } then { exit } is returned; more enter/exit pairs may be present between them.
 //For example, the document
