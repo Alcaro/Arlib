@@ -54,7 +54,7 @@ static void initialize()
 	SchannelCred.dwVersion = SCHANNEL_CRED_VERSION;
 	SchannelCred.dwFlags = SCH_CRED_NO_DEFAULT_CREDS | SCH_USE_STRONG_CRYPTO;
 	// fun fact: IE11 doesn't use SCH_USE_STRONG_CRYPTO. I guess it favors accepting outdated servers over rejecting evil ones.
-	SchannelCred.grbitEnabledProtocols = SP_PROT_TLS1_2_CLIENT; // Microsoft recommends setting this to zero, but that makes it use TLS 1.0, which sucks.
+	SchannelCred.grbitEnabledProtocols = SP_PROT_TLS1_2_CLIENT; // Microsoft recommends setting this to zero, but that makes it use TLS 1.0.
 	//howsmyssl expects session ticket support for the Good rating, but that's only supported on windows 8, according to
 	// https://connect.microsoft.com/IE/feedback/details/997136/internet-explorer-11-on-windows-7-does-not-support-tls-session-tickets
 	//and I can't find which flag enables that, anyways

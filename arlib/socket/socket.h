@@ -1,5 +1,4 @@
 #include "../global.h"
-#include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -17,6 +16,7 @@ public:
 	static socket* create(const char * domain, int port);
 	//Always succeeds. If the server can't be contacted, returns failure on first write or read.
 	static socket* create_async(const char * domain, int port);
+	//Always succeeds. If the server can't be contacted, may return e_broken at some point, or may just swallow everything.
 	static socket* create_udp(const char * domain, int port);
 	
 	enum {

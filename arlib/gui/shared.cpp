@@ -370,28 +370,6 @@ widget_layout* widget_create_radio_group(bool vertical, widget_radio* * leader, 
 	return ret;
 }
 
-widget_listbox_virtual::widget_listbox_virtual(const char * firstcol, ...)
-{
-	unsigned int numcols=1;
-	
-	va_list args;
-	va_start(args, firstcol);
-	while (va_arg(args, const char*)) numcols++;
-	va_end(args);
-	
-	const char * * columns=malloc(sizeof(const char*)*numcols);
-	columns[0]=firstcol;
-	va_start(args, firstcol);
-	for (unsigned int i=1;i<numcols;i++)
-	{
-		columns[i]=va_arg(args, const char*);
-	}
-	va_end(args);
-	
-	construct(numcols, columns);
-	free(columns);
-}
-
 widget_layout::widget_layout(bool vertical, bool uniform, widget_base* firstchild, ...)
 {
 	unsigned int numchildren=1;
