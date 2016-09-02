@@ -84,7 +84,7 @@ public:
 		return socketssl::create(socket::create(domain, port), domain, permissive);
 	}
 	//On entry, this takes ownership of the socket. Even if connection fails, the socket may not be used anymore.
-	//The socket must be a normal TCP socket. UDP and nested SSL is not supported.
+	//The socket must be a normal TCP socket (create_async is fine). UDP and nested SSL is not supported.
 	static socketssl* create(socket* parent, const char * domain, bool permissive=false);
 	
 	

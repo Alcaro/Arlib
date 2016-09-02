@@ -1,7 +1,7 @@
 #object filename structure:
 #obj/RULE___OBJNAME___PATH.o
 #RULE is the set of build flags for this file, nearly always DEFAULT
-#OBJNAME is the OBJNAME= gmake parameter, or a default value
+#OBJNAME is the OBJNAME= make parameter, or a default value
 #PATH is the source filename, including extension, relative to project root, with slashes replaced with double underscore
 #example: obj/DEFAULT___linux___arlib__file-posix.cpp.o
 
@@ -133,11 +133,6 @@ obj/%.c.o: $$(call SOURCENAME,$$@) | obj
 obj/%.cpp.o: $$(call SOURCENAME,$$@) | obj
 	$(CXX) $(TRUE_CXXFLAGS) $(CFLAGS_$(call DOMAINNAME,$@)) -c $< -o $@
 
-#obj/nowarn___%.c.o: $$(call SOURCENAME,$$@) | obj
-	#$(CC) $(TRUE_CFLAGS) -w -c $< -o $@
-#obj/nowarn___%.cpp.o: $$(call SOURCENAME,$$@) | obj
-	#$(CXX) $(TRUE_CXXFLAGS) -w -c $< -o $@
-
 SOURCES += *.cpp arlib/*.cpp
 
 ifeq ($(ARGUI),1)
@@ -225,18 +220,6 @@ DOMAINS += DEFAULT NOWARN
 OBJNAME := $(subst $(SPACE),,$(OBJNAME))
 SOURCES_DEFAULT := $(SOURCES)
 OBJS += $(foreach domain,$(sort $(DOMAINS)),$(call OBJMANGLE,$(domain),$(wildcard $(SOURCES_$(domain)))))
-
-#obj/miniz$(OBJNAME).o: miniz.c | obj
-#	$(CC) $(TRUE_CFLAGS) -c $< -o $@
-#
-#obj/_arlib_sp_tlse$(OBJNAME).o: arlib/socket/tlse.c | obj
-#	$(CC) -DTLSE_IMPL -DTLS_AMALGAMATION -D_XOPEN_SOURCE=600 $(TRUE_CFLAGS)  -w -c $< -o $@
-#
-#obj/%-c$(OBJNAME).o: %.c | obj
-#	$(CC) $(TRUE_CFLAGS) -c $< -o $@
-#
-#obj/%$(OBJNAME).o: %.cpp | obj
-#	$(CXX) $(TRUE_CXXFLAGS) -c $< -o $@
 
 .DEFAULT_GOAL := all
 all: $(OUTNAME)

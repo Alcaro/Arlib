@@ -10,17 +10,28 @@ ARSOCKET_SSL = tlse
 ARSANDBOX = 1
 
 #honored variables, in addition to the ones listed here:
-#OBJNAME
-#  added to object file names, to allow building for multiple platforms without a make clean
-#  better set on command line than in the makefile
+#OPT, DEBUG, PROFILE
+#  OPT=1 enables heavy optimizations; DEBUG=0 removes debug flags; PROFILE=gen/opt are for PGO
+#CFLAGS, LFLAGS, CC, CXX, LD (CLI)
+#  override compiler choice and flags
+#CONF_CFLAGS, CONF_LFLAGS
+#  additional compiler/linker flags needed by this program
+#EXCEPTIONS
+#  set to 1 if needed
 #SOURCES
 #  extra files to compile, in addition to *.cpp
+#  supports .c and .cpp
 #SOURCES_NOWARN
-#  like SOURCES, but compiled with -w
-#SOURCES_foo, CFLAGS_foo, DOMAINS
-#  SOURCES_foo is compiled with CFLAGS_foo, in addition to the global ones
-#  requires 'DOMAINS += foo'
+#  like SOURCES, but compiled with warnings disabled
+#  should only be used for third-party code that can't be fixed
+#SOURCES_FOO, CFLAGS_FOO, DOMAINS
+#  SOURCES_FOO is compiled with CFLAGS_FOO, in addition to the global ones
+#  requires 'DOMAINS += FOO'
 #  (SOURCES and SOURCES_NOWARN are implemented as domains)
+#OBJNAME (CLI)
+#  added to object file names, to allow building for multiple platforms without a make clean
+#  don't set it in the makefile, let command line set it
+#the ones listed (CLI) should not be set by the program, but should instead be reserved for command-line arguments
 
 include arlib/Makefile
 
