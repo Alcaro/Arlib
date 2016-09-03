@@ -287,12 +287,11 @@ public:
 		else return m_len;
 	}
 	
-	//Non-terminated (can be terminated in some cases)
-	const char * nt() const
+	const char * rawdata() const // not necessarily NUL terminated, use only very carefully
 	{
 		return ptr();
 	}
-	bool hasnt() const // has nul terminator, no missing apostrophe here
+	bool hasterm() const // has nul terminator
 	{
 		return (inlined() || m_nul);
 	}
@@ -602,8 +601,8 @@ static inline bool string_eq(const char * left, uint32_t leftlen, const char * r
 	return (leftlen==rightlen && !memcmp(left, right, leftlen));
 }
 
-inline bool operator==(const string& left, const char * right ) { return string_eq(left.nt(),left.length(), right,strlen(right)); }
-inline bool operator==(const string& left, const string& right) { return string_eq(left.nt(),left.length(), right.nt(),right.length()); }
+inline bool operator==(const string& left, const char * right ) { return string_eq(left.rawdata(),left.length(), right,strlen(right)); }
+inline bool operator==(const string& left, const string& right) { return string_eq(left.rawdata(),left.length(), right.rawdata(),right.length()); }
 inline bool operator==(const char * left,  const string& right) { return operator==(right, left); }
 inline bool operator!=(const string& left, const char * right ) { return !operator==(left, right); }
 inline bool operator!=(const string& left, const string& right) { return !operator==(left, right); }
@@ -640,8 +639,8 @@ inline cstring string::csubstr(int32_t start, int32_t end) const
 {
 	start = realpos(start);
 	end = realpos(end);
-	if (inlined()) return cstring(nt()+start, end-start);
-	else return cstring(nt()+start, end-start, (m_nul && (uint32_t)end == m_len));
+	if (inlined()) return cstring(ptr()+start, end-start);
+	else return cstring(ptr()+start, end-start, (m_nul && (uint32_t)end == m_len));
 }
 
 inline bool string::contains(cstring other) const
