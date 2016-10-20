@@ -37,7 +37,6 @@ for (int i=0;i<argc;i++)printf("%i:%s\n",i,argv[i]);
 	box->wait(0);
 	puts(g);
 }
-#endif
 
 socket* roundtrip(socket* sock_)
 {
@@ -86,3 +85,4 @@ int g(int argc, char * argv[])
 	}
 	return 0;
 }
+#endif

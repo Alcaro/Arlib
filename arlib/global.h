@@ -31,6 +31,8 @@
 #include "function.h"
 #include <utility>
 
+#define byte uint8_t
+
 typedef void(*funcptr)();
 
 //Note to anyone interested in reusing these objects:
@@ -163,7 +165,7 @@ typedef void* anyptr;
 #endif
 
 
-#include <stdlib.h> // needed because otherwise I get errors from malloc_check being redeclared.
+#include <stdlib.h> // needed because otherwise I get errors from malloc_check being redeclared
 anyptr malloc_check(size_t size);
 anyptr try_malloc(size_t size);
 #define malloc malloc_check
@@ -176,7 +178,7 @@ anyptr try_calloc(size_t size, size_t count);
 void malloc_assert(bool cond); // if the condition is false, the malloc failure handler is called
 
 
-//if I cast it to void, that means I do not care, so shut the hell up about warn_unused_result.
+//if I cast it to void, that means I do not care, so shut the hell up about warn_unused_result
 template<typename T> static inline void ignore(T t) {}
 
 template<typename T> static T min(const T& a) { return a; }
@@ -255,12 +257,18 @@ public:
 	autoptr() : ptr(NULL) {}
 	autoptr(T* ptr) : ptr(ptr) {}
 	autoptr(autoptr<T>&& other) { ptr=other.ptr; other.ptr=NULL; }
-	autoptr<T>& operator=(T* ptr) { delete this->ptr; this->ptr=ptr; }
-	autoptr<T>& operator=(autoptr<T>&& other) { delete this->ptr; ptr=other.ptr; other.ptr=NULL; }
+	autoptr<T>& operator=(T* ptr) { delete this->ptr; this->ptr=ptr; return *this; }
+	autoptr<T>& operator=(autoptr<T>&& other) { delete this->ptr; ptr=other.ptr; other.ptr=NULL; return *this; }
+	T* release() { T* ret = ptr; ptr = NULL; return ret; }
 	T* operator->() { return ptr; }
 	T& operator*() { return *ptr; }
+	operator T*() { return ptr; }
+	explicit operator bool() { return ptr; }
 	~autoptr() { delete ptr; }
 };
+
+class null_t_impl {};
+#define null_t null_t_impl* // random pointer type nobody will ever use
 
 
 

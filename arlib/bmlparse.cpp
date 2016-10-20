@@ -226,9 +226,9 @@ static bool isendl(char ch)
 static cstring cutline(cstring& input)
 {
 	//pointers are generally bad ideas, but this is such a hotspot it's worth it
-	const char * inputraw = input.rawdata();
+	const uint8_t * inputraw = input.bytes();
 	size_t nlpos = 0;
-	if (input.hasterm())
+	if (input.bytes_term())
 	{
 		while (!isendl(inputraw[nlpos])) nlpos++;
 	}
@@ -263,7 +263,7 @@ inline bool bmlparser::getline()
 	while (m_thisline[indentlen] == ' ' || m_thisline[indentlen] == '\t') indentlen++;
 	
 	int sharedindent = min(indentlen, m_indent.length());
-	bool badwhite = (memcmp(m_thisline.rawdata(), m_indent.rawdata(), sharedindent)!=0);
+	bool badwhite = (memcmp(m_thisline.bytes(), m_indent.bytes(), sharedindent)!=0);
 	
 	m_indent = cut(m_thisline, 0, indentlen, 0);
 	

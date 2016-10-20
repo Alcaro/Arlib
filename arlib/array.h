@@ -9,8 +9,6 @@
 //this object does not own its storage, it's just a pointer wrapper
 template<typename T> class arrayview {
 protected:
-	class null_only;
-	
 	T * items;
 	size_t count;
 	
@@ -22,7 +20,7 @@ protected:
 public:
 	const T& operator[](size_t n) const { return items[n]; }
 	
-	const T* ptr() const { return items; }
+	const T* data() const { return items; }
 	size_t size() const { return count; }
 	
 	operator bool() { return count; }
@@ -33,7 +31,7 @@ public:
 		this->count=0;
 	}
 	
-	arrayview(const null_only*)
+	arrayview(null_t)
 	{
 		this->items=NULL;
 		this->count=0;
@@ -50,6 +48,8 @@ public:
 		this->items = (T*)ptr;
 		this->count = N;
 	}
+	
+	arrayview<T> slice(size_t first, size_t count) const { return arrayview<T>(this->items+first, this->count); }
 	
 	//arrayview(const arrayview<T>& other)
 	//{
@@ -69,11 +69,11 @@ template<typename T> class array : public arrayview<T> {
 	//T * items;
 	//size_t count;
 	
-	void clone(const array<T>& other)
+	void clone(const arrayview<T>& other)
 	{
-		this->count=other.count;
-		this->items=malloc(sizeof(T)*bitround(this->count));
-		for (size_t i=0;i<this->count;i++) new(&this->items[i]) T(other.items[i]);
+		this->count = other.size(); // I can somehow not access non-this instances of my base class, so let's just use the public interface.
+		this->items = malloc(sizeof(T)*bitround(this->count));
+		for (size_t i=0;i<this->count;i++) new(&this->items[i]) T(other.data()[i]);
 	}
 	
 	void swap(array<T>& other)
@@ -86,17 +86,23 @@ template<typename T> class array : public arrayview<T> {
 		this->count = newcount;
 	}
 	
-	void resize_grow(size_t count)
+	void resize_grow_noinit(size_t count)
 	{
 		if (this->count >= count) return;
-		size_t bufsize_pre=bitround(this->count);
-		size_t bufsize_post=bitround(count);
+		size_t bufsize_pre = bitround(this->count);
+		size_t bufsize_post = bitround(count);
 		if (bufsize_pre != bufsize_post) this->items=realloc(this->items, sizeof(T)*bufsize_post);
-		for (size_t i=this->count;i<count;i++)
+		this->count=count;
+	}
+	
+	void resize_grow(size_t count)
+	{
+		size_t prevcount = this->count;
+		resize_grow_noinit(count);
+		for (size_t i=prevcount;i<count;i++)
 		{
 			new(&this->items[i]) T();
 		}
-		this->count=count;
 	}
 	
 	void resize_shrink(size_t count)
@@ -122,7 +128,8 @@ public:
 	T& operator[](size_t n) { resize_grow(n+1); return this->items[n]; }
 	const T& operator[](size_t n) const { return this->items[n]; }
 	
-	T* ptr() { return this->items; }
+	T* data() { return this->items; }
+	const T* data() const { return this->items; }
 	void resize(size_t len) { resize_to(len); }
 	
 	T join() const
@@ -135,21 +142,10 @@ public:
 		return out;
 	}
 	
-	T join(T between) const
+	template<typename T2> decltype(T() + T2()) join(T2 between) const
 	{
-		T out = this->items[0];
+		decltype(T() + T2()) out = this->items[0];
 		for (size_t n=1;n < this->count;n++)
-		{
-			out += between;
-			out += this->items[n];
-		}
-		return out;
-	}
-	
-	T join(char between) const
-	{
-		T out = this->items[0];
-		for (size_t n=1;n<this->count;n++)
 		{
 			out += between;
 			out += this->items[n];
@@ -160,15 +156,29 @@ public:
 	void append(const T& item) { size_t pos = this->count; resize_grow(pos+1); this->items[pos] = item; }
 	void reset() { resize_shrink(0); }
 	
-	arrayview<T> slice(size_t first, size_t count) { return arrayview<T>(this->items+first, this->count); }
-	
 	array()
 	{
 		this->items=NULL;
 		this->count=0;
 	}
 	
+	array(null_t)
+	{
+		this->items=NULL;
+		this->count=0;
+	}
+	
+	array(const T * ptr, size_t count)
+	{
+		clone(arrayview<T>(ptr, count));
+	}
+	
 	array(const array<T>& other)
+	{
+		clone(other);
+	}
+	
+	array(const arrayview<T>& other)
 	{
 		clone(other);
 	}
@@ -186,6 +196,13 @@ public:
 		return *this;
 	}
 	
+	~array()
+	{
+		for (size_t i=0;i<this->count;i++) this->items[i].~T();
+		free(this->items);
+	}
+	
+	//takes ownership of the given data
 	static array<T> create_from(T* ptr, size_t count)
 	{
 		array<T> ret;
@@ -194,10 +211,19 @@ public:
 		return ret;
 	}
 	
-	~array()
+	array<T>& operator+=(arrayview<T> other)
 	{
-		for (size_t i=0;i<this->count;i++) this->items[i].~T();
-		free(this->items);
+		size_t prevcount = this->count;
+		size_t othercount = other.size(); // in case this==other
+		
+		resize_grow_noinit(prevcount + othercount);
+		
+		for (size_t i=0;i<othercount;i++)
+		{
+			new(&this->items[prevcount + i]) T(other[i]);
+		}
+		
+		return *this;
 	}
 };
 

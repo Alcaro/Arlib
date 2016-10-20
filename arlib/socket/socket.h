@@ -1,4 +1,7 @@
 #include "../global.h"
+#include "../containers.h"
+#include "../function.h"
+#include "../string.h"
 #include <stdint.h>
 #include <string.h>
 
@@ -13,11 +16,11 @@ protected:
 	
 public:
 	//Returns NULL on connection failure.
-	static socket* create(const char * domain, int port);
+	static socket* create(string domain, int port);
 	//Always succeeds. If the server can't be contacted, returns failure on first write or read.
-	static socket* create_async(const char * domain, int port);
-	//Always succeeds. If the server can't be contacted, may return e_broken at some point, or may just swallow everything.
-	static socket* create_udp(const char * domain, int port);
+	static socket* create_async(string domain, int port);
+	//Always succeeds. If the server can't be contacted, may return e_broken at some point, or may just discard everything.
+	static socket* create_udp(string domain, int port);
 	
 	enum {
 		e_lazy_dev = -1, // Whoever implemented this socket layer was lazy and just returned -1. Treat it as e_broken or an unknown error.
@@ -25,23 +28,23 @@ public:
 		e_broken = -3, // Connection was forcibly torn down.
 		e_udp_too_big = -4, // Attempted to process an unacceptably large UDP packet.
 		e_ssl_failure = -5, // Certificate validation failed, no algorithms in common, or other SSL error.
+		e_not_supported = -6, // Attempted to read or write a listening socket, or other unsupported operation.
 	};
 	
-	//Negative means error, see above.
-	//Positive is number of bytes handled.
-	//WARNING: Unlike most socket layers, zero does not mean graceful close!
-	// It means success, zero bytes processed, and is a valid byte count. Socket closed is in the error list above.
+	//WARNING: Most socket APIs treat read/write of zero bytes as EOF. Not this one! It means try again later, like EWOULDBLOCK. EOF is an error.
 	//The first two functions will process at least one byte, or if block is false, at least zero. send() sends all bytes before returning.
-	//block is ignored on Windows (always false), due to lack of MSG_NOWAIT and I don't want to do another syscall every time.
 	//For UDP sockets, partial reads or writes aren't possible; you always get one or zero packets.
-	virtual int recv(uint8_t* data, unsigned int len, bool block = true) = 0;
-	virtual int sendp(const uint8_t* data, unsigned int len, bool block = true) = 0;
-	int send(const uint8_t* data, unsigned int len)
+	virtual maybe<array<byte>> recv(bool block = false) = 0;
+	virtual int sendp(arrayview<byte> data, bool block = true) = 0;
+	
+	int send(arrayview<byte> bytes)
 	{
+		const byte * data = bytes.data();
+		unsigned int len = bytes.size();
 		unsigned int sent = 0;
 		while (sent < len)
 		{
-			int here = sendp(data+sent, len-sent);
+			int here = this->sendp(arrayview<byte>(data+sent, len-sent));
 			if (here<0) return here;
 			sent += here;
 		}
@@ -49,22 +52,19 @@ public:
 	}
 	
 	//Convenience functions for handling textual data.
-	int recv(char* data, unsigned int len, bool block = false)
+	maybe<string> recvstr(bool block = false)
 	{
-		int ret = recv((uint8_t*)data, len-1, block);
-		if (ret >= 0) data[ret]='\0';
-		else data[0]='\0';
-		return ret;
+		maybe<array<byte>> ret = this->recv(block);
+		if (!ret) return maybe<string>(NULL, ret.error);
+		return maybe<string>((string)ret.value);
 	}
-	int sendp(const char * data, bool block = true) { return sendp((uint8_t*)data, strlen(data), block); }
-	int send (const char * data) { return send((uint8_t*)data, strlen(data)); }
+	int sendp(string data, bool block = true) { return this->sendp(arrayview<byte>(data.bytes(), data.length()), block); }
+	int send(string data) { return this->send(arrayview<byte>(data.bytes(), data.length())); }
 	
-	//Returns an index to the sockets array, or negative if timeout expires.
-	//Negative timeouts mean wait forever.
-	//It's possible that an active socket returns zero bytes.
-	//However, this is guaranteed to happen rarely enough that repeatedly select()ing will leave the CPU mostly idle.
+	//Returns an index to the sockets array, or negative if timeout expires. Negative timeout mean wait forever.
+	//It's possible that an active socket returns zero bytes. However, this is rare; repeatedly select()ing and processing the data will eventually sleep.
 	//(It may be caused by packets with wrong checksum, SSL renegotiation, or whatever.)
-	static int select(socket* * socks, unsigned int nsocks, int timeout_ms = -1);
+	//static int select(socket* * socks, unsigned int nsocks, int timeout_ms = -1);
 	
 	virtual ~socket() {}
 	
@@ -73,27 +73,43 @@ public:
 	int get_fd() { return fd; }
 };
 
+#ifdef ARLIB_SSL
 class socketssl : public socket {
 protected:
 	socketssl(){}
 public:
-	//If 'permissive' is true, expired and self-signed server certificates will be accepted.
-	//Other invalid certs, such as ones for a different domain, may or may not be accepted.
-	static socketssl* create(const char * domain, int port, bool permissive=false)
+	//If 'permissive' is true, the server certficate will be ignored. Expired, self-signed, untrusted root, wrong domain, everything's fine.
+	static socketssl* create(string domain, int port, bool permissive=false)
 	{
 		return socketssl::create(socket::create(domain, port), domain, permissive);
 	}
 	//On entry, this takes ownership of the socket. Even if connection fails, the socket may not be used anymore.
 	//The socket must be a normal TCP socket (create_async is fine). UDP and nested SSL is not supported.
-	static socketssl* create(socket* parent, const char * domain, bool permissive=false);
+	static socketssl* create(socket* parent, string domain, bool permissive=false);
 	
-	
-	virtual void q(){}
+	//set_cert or set_cert_cb must be called before read or write.
+	static socketssl* create_server(socket* parent);
+	//Only usable on server sockets.
+	void set_cert(array<byte> data); // Must be called exactly once.
+	void set_cert_cb(function<void(socketssl* sock, string hostname)> cb); // Used for SNI. The callback must call set_cert.
 	
 	//Can be used to keep a socket alive across exec().
 	//If successful, serialize() returns the the file descriptor needed to unserialize, and the socket is deleted.
-	//If failure, negative return and nothing happens.
+	//On failure, negative return and nothing happens.
 	virtual size_t serialize_size() { return 0; }
-	virtual int serialize(uint8_t* data, size_t len) { return -1; }
-	static socketssl* unserialize(int fd, const uint8_t* data, size_t len);
+	virtual tuple<int, array<byte>> serialize() { return tuple<int, array<byte>>(-1, NULL); }
+	static socketssl* unserialize(tuple<int, array<byte>> data);
+};
+#endif
+
+//socket::select() works on these, but recv/send will fail
+class socketlisten : public socket {
+	socketlisten(int fd) { this->fd = fd; }
+public:
+	static socketlisten* create(int port);
+	socket* accept();
+	~socketlisten();
+	
+	maybe<array<byte>> recv(bool block = false) { return maybe<array<byte>>(NULL, e_not_supported); }
+	int sendp(arrayview<byte> data, bool block = true) { return e_not_supported; }
 };

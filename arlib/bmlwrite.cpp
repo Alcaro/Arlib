@@ -4,7 +4,7 @@
 inline string bmlwriter::indent()
 {
 	string ret;
-	char* ptr = ret.construct(m_indent*2);
+	uint8_t* ptr = ret.construct(m_indent*2);
 	memset(ptr, ' ', m_indent*2);
 	return ret;
 }

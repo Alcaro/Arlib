@@ -98,7 +98,8 @@ ifeq ($(OPT),1)
   OBJNAME += -opt
 endif
 ifeq ($(DEBUG),1)
-  CFLAGS += -g -DDEBUG
+  CFLAGS += -g
+  # -DDEBUG
 endif
 
 ifeq ($(PROFILE),gen)
@@ -187,13 +188,13 @@ ifeq ($(ARSOCKET),1)
     #no SSL
     #socketssl will still be available at compile time, but fails linking
   else ifeq ($(OS),windows)
-    CONF_CFLAGS += -DARLIB_SSL_SCHANNEL
+    CONF_CFLAGS += -DARLIB_SSL=schannel
     CONF_LFLAGS += -lcrypt32 -lsecur32
   else ifeq ($(ARSOCKET_SSL),openssl)
-    CONF_CFLAGS += -DARLIB_SSL_OPENSSL
+    CONF_CFLAGS += -DARLIB_SSL=openssl
     CONF_LFLAGS += -lssl -lcrypto
   else ifeq ($(ARSOCKET_SSL),tlse)
-    CONF_CFLAGS += -DARLIB_SSL_TLSE
+    CONF_CFLAGS += -DARLIB_SSL=tlse
     SOURCES_NOWARN += arlib/socket/tlse.c
   else
     $(error unknown SSL library)

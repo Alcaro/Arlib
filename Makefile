@@ -3,9 +3,10 @@ ARGUI = 0
 ARTHREAD = 0
 ARWUTF = 0
 ARSOCKET = 1
-#valid values: openssl, wolfssl, tlse, no
+#valid values: openssl, tlse, no
 #ignored on windows (other than 'no', which is obeyed), always uses schannel
 #default openssl
+#ARSOCKET_SSL = openssl
 ARSOCKET_SSL = tlse
 ARSANDBOX = 1
 
@@ -30,7 +31,6 @@ ARSANDBOX = 1
 #  (SOURCES and SOURCES_NOWARN are implemented as domains)
 #OBJNAME (CLI)
 #  added to object file names, to allow building for multiple platforms without a make clean
-#  don't set it in the makefile, let command line set it
 #the ones listed (CLI) should not be set by the program, but should instead be reserved for command-line arguments
 
 include arlib/Makefile

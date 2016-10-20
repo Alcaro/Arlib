@@ -3,8 +3,5 @@ goto q
 pause
 :q
 cls
-del test.exe
-if exist test.exe goto h
-mingw32-make -j1
-test.exe
+mingw32-make -j1 test
 goto h

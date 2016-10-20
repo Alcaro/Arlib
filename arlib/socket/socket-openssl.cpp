@@ -1,6 +1,7 @@
 #include "socket.h"
 
-#ifdef ARLIB_SSL_OPENSSL
+#define openssl 12345
+#if defined(ARLIB_SSL) && ARLIB_SSL==openssl
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/x509v3.h>
@@ -62,7 +63,7 @@ public:
 		bool ok = (SSL_connect(ret->ssl)==1);
 		
 #if OPENSSL_VERSION_NUMBER < 0x10002000 // < 1.0.2
-		if (ok && !validate_hostname(domain, SSL_get_peer_certificate(ret->ssl)))
+		if (ok && !permissive && !validate_hostname(domain, SSL_get_peer_certificate(ret->ssl)))
 		{
 			ok=false;
 		}
@@ -88,15 +89,29 @@ public:
 	}
 	
 	//only supports nonblocking
-	int recv(uint8_t* data, unsigned int len, bool block = false)
+	maybe<array<byte>> recv(bool block = false)
 	{
-		return fixret(SSL_read(ssl, data, len));
+		byte tmp[0x1000];
+		int ret = fixret(SSL_read(ssl, tmp, sizeof(tmp)));
+		if (ret >= 0) return array<byte>(tmp, ret);
+		else return maybe<array<byte>>(NULL, ret);
 	}
 	
-	int sendp(const uint8_t* data, unsigned int len, bool block = true)
+	int sendp(arrayview<byte> data, bool block = true)
 	{
-		return fixret(SSL_write(ssl, data, len));
+		return fixret(SSL_write(ssl, data.data(), data.size()));
 	}
+	
+	////only supports nonblocking
+	//int recv(uint8_t* data, unsigned int len, bool block = false)
+	//{
+	//	return fixret(SSL_read(ssl, data, len));
+	//}
+	//
+	//int sendp(const uint8_t* data, unsigned int len, bool block = true)
+	//{
+	//	return fixret(SSL_write(ssl, data, len));
+	//}
 	
 	~socketssl_impl()
 	{
@@ -106,7 +121,7 @@ public:
 	}
 };
 
-socketssl* socketssl::create(socket* parent, const char * domain, bool permissive)
+socketssl* socketssl::create(socket* parent, string domain, bool permissive)
 {
 	initialize();
 	if (!ctx) return NULL;
