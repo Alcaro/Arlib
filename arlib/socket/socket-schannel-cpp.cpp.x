@@ -69,45 +69,26 @@ public:
 	CtxtHandle ssl;
 	SecPkgContext_StreamSizes bufsizes;
 	
-	BYTE* recv_buf;
-	size_t recv_buf_len;
-	BYTE* ret_buf;
-	size_t ret_buf_len;
+	array<byte> recv_buf;
+	array<byte> ret_buf;
 	
 	bool in_handshake;
 	bool permissive;
 	
 	void fetch(bool block)
 	{
-		maybe<array<byte>> ret = sock->recv(block);
-		if (!ret) return error();
+		maybe<array<byte>> newdat = sock->recv(block);
+		if (!newdat)
+		{
+			error();
+			return;
+		}
 		
-		recv_buf = realloc(recv_buf, recv_buf_len + ret.value.size() + 1024);
-		memcpy(recv_buf+recv_buf_len, ret.value.data(), ret.value.size());
-		recv_buf_len += ret.value.size();
+		recv_buf += newdat.value;
 	}
 	
 	void fetch() { fetch(true); }
 	void fetchnb() { fetch(false); }
-	
-	
-	void ret_realloc(int bytes)
-	{
-		if (bytes > 0)
-		{
-			ret_buf_len += bytes;
-			if (ret_buf_len > 1024)
-			{
-				ret_buf = realloc(ret_buf, ret_buf_len + 1024);
-			}
-		}
-	}
-	
-	
-	BYTE* tmpptr()
-	{
-		return recv_buf + recv_buf_len;
-	}
 	
 	
 	void error()
@@ -122,7 +103,7 @@ public:
 	{
 		if (!in_handshake) return;
 		
-		SecBuffer InBuffers[2] = { { recv_buf_len, SECBUFFER_TOKEN, recv_buf }, { 0, SECBUFFER_EMPTY, NULL } };
+		SecBuffer InBuffers[2] = { { recv_buf.size(), SECBUFFER_TOKEN, recv_buf.data() }, { 0, SECBUFFER_EMPTY, NULL } };
 		SecBufferDesc InBufferDesc = { SECBUFFER_VERSION, 2, InBuffers };
 		
 		SecBuffer OutBuffer = { 0, SECBUFFER_TOKEN, NULL };
@@ -170,10 +151,9 @@ public:
 		
 		if (InBuffers[1].BufferType == SECBUFFER_EXTRA)
 		{
-			memmove(recv_buf, recv_buf + (recv_buf_len - InBuffers[1].cbBuffer), InBuffers[1].cbBuffer);
-			recv_buf_len = InBuffers[1].cbBuffer;
+			recv_buf = recv_buf.slice(recv_buf.size() - InBuffers[1].cbBuffer, InBuffers[1].cbBuffer);
 		}
-		else recv_buf_len = 0;
+		else recv_buf = NULL;
 	}
 	
 	bool handshake_first(const char * domain)
@@ -211,10 +191,6 @@ public:
 		
 		this->sock = parent;
 		this->fd = parent->get_fd();
-		this->recv_buf = malloc(2048);
-		this->recv_buf_len = 0;
-		this->ret_buf = malloc(2048);
-		this->ret_buf_len = 0;
 		
 		this->permissive = permissive;
 		
@@ -235,10 +211,10 @@ public:
 			again = false;
 			
 			SecBuffer Buffers[4] = {
-				{ recv_buf_len, SECBUFFER_DATA,  recv_buf },
-				{ 0,            SECBUFFER_EMPTY, NULL },
-				{ 0,            SECBUFFER_EMPTY, NULL },
-				{ 0,            SECBUFFER_EMPTY, NULL },
+				{ recv_buf.size(), SECBUFFER_DATA,  recv_buf.data() },
+				{ 0,               SECBUFFER_EMPTY, NULL },
+				{ 0,               SECBUFFER_EMPTY, NULL },
+				{ 0,               SECBUFFER_EMPTY, NULL },
 			};
 			SecBufferDesc Message = { SECBUFFER_VERSION, 4, Buffers };
 			
@@ -254,23 +230,21 @@ public:
 				return;
 			}
 			
-			recv_buf_len = 0;
-			
+			array<byte> new_recv;
 			// Locate data and (optional) extra buffers.
 			for (int i=0;i<4;i++)
 			{
 				if (Buffers[i].BufferType == SECBUFFER_DATA)
 				{
-					memcpy(ret_buf+ret_buf_len, Buffers[i].pvBuffer, Buffers[i].cbBuffer);
-					ret_realloc(Buffers[i].cbBuffer);
+					ret_buf += arrayview<byte>((BYTE*)Buffers[i].pvBuffer, Buffers[i].cbBuffer);
 					again = true;
 				}
 				if (Buffers[i].BufferType == SECBUFFER_EXTRA)
 				{
-					memmove(recv_buf, Buffers[i].pvBuffer, Buffers[i].cbBuffer);
-					recv_buf_len = Buffers[i].cbBuffer;
+					new_recv += arrayview<byte>((BYTE*)Buffers[i].pvBuffer, Buffers[i].cbBuffer);
 				}
 			}
+			recv_buf += new_recv;
 		}
 	}
 	
@@ -280,27 +254,25 @@ public:
 		fetch(block);
 		process();
 		
-		size_t tmp = ret_buf_len;
-		ret_buf_len = 0;
-		return array<byte>(arrayview<byte>(ret_buf, tmp));
+		array<byte> tmp = std::move(ret_buf);
+		ret_buf = NULL;
+		return std::move(tmp);
 	}
 	
-	int sendp(arrayview<byte> bytes, bool block = true)
+	int sendp(arrayview<byte> data, bool block = true)
 	{
 		if (!sock) return -1;
-		
-		const byte* data = bytes.data();
-		unsigned int len = bytes.size();
 		
 		fetchnb();
 		process();
 		
-		BYTE* sendbuf = tmpptr(); // let's reuse this
+		unsigned int len = data.size();
+		BYTE sendbuf[0x1000];
 		
 		unsigned int maxmsglen = 0x1000 - bufsizes.cbHeader - bufsizes.cbTrailer;
 		if (len > maxmsglen) len = maxmsglen;
 		
-		memcpy(sendbuf+bufsizes.cbHeader, data, len);
+		memcpy(sendbuf+bufsizes.cbHeader, data.data(), len);
 		SecBuffer Buffers[4] = {
 			{ bufsizes.cbHeader,  SECBUFFER_STREAM_HEADER,  sendbuf },
 			{ len,                SECBUFFER_DATA,           sendbuf+bufsizes.cbHeader },
@@ -318,8 +290,6 @@ public:
 	~socketssl_impl()
 	{
 		error();
-		free(recv_buf);
-		free(ret_buf);
 	}
 };
 

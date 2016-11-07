@@ -23,6 +23,7 @@ else
 endif
 
 ARGUI ?= 0
+AROPENGL ?= 0
 ARTHREAD ?= 0
 ARSANDBOX ?= 0
 ARWUTF ?= 0
@@ -98,8 +99,7 @@ ifeq ($(OPT),1)
   OBJNAME += -opt
 endif
 ifeq ($(DEBUG),1)
-  CFLAGS += -g
-  # -DDEBUG
+  CFLAGS += -g -DDEBUG
 endif
 
 ifeq ($(PROFILE),gen)
@@ -140,14 +140,25 @@ ifeq ($(ARGUI),1)
   SOURCES += arlib/gui/*.cpp
   ifeq ($(OS),windows)
     CONF_CFLAGS += -DARGUI_WINDOWS
-    CONF_LFLAGS += -lgdi32 -lcomctl32 -lcomdlg32 -ldinput8 -ldxguid -lopengl32
+    CONF_LFLAGS += -lgdi32 -lcomctl32 -lcomdlg32
   endif
   ifeq ($(OS),linux)
     CONF_CFLAGS += $(shell pkg-config --cflags gtk+-3.0) -DARGUI_GTK3 -DARGUIPROT_X11
-    CONF_LFLAGS += -ldl -lX11 -lGL -lXi -lXext $(shell pkg-config --libs gtk+-3.0)
+    CONF_LFLAGS += -ldl -lX11 $(shell pkg-config --libs gtk+-3.0)
   endif
 else
   CONF_CFLAGS += -DARGUI_NONE
+endif
+
+ifeq ($(AROPENGL),1)
+  ifeq ($(ARGUI),0)
+    $(error can't use OpenGL without the GUI)
+  endif
+  SOURCES += arlib/opengl/*.cpp
+  CONF_CFLAGS += -DARLIB_OPENGL
+  ifeq ($(OS),linux)
+    CONF_LFLAGS += -ldl -lGL
+  endif
 endif
 
 ifeq ($(ARTHREAD),1)
@@ -188,13 +199,13 @@ ifeq ($(ARSOCKET),1)
     #no SSL
     #socketssl will still be available at compile time, but fails linking
   else ifeq ($(OS),windows)
-    CONF_CFLAGS += -DARLIB_SSL=schannel
+    CONF_CFLAGS += -DARLIB_SSL_SCHANNEL
     CONF_LFLAGS += -lcrypt32 -lsecur32
   else ifeq ($(ARSOCKET_SSL),openssl)
-    CONF_CFLAGS += -DARLIB_SSL=openssl
+    CONF_CFLAGS += -DARLIB_SSL_OPENSSL
     CONF_LFLAGS += -lssl -lcrypto
   else ifeq ($(ARSOCKET_SSL),tlse)
-    CONF_CFLAGS += -DARLIB_SSL=tlse
+    CONF_CFLAGS += -DARLIB_SSL_TLSE
     SOURCES_NOWARN += arlib/socket/tlse.c
   else
     $(error unknown SSL library)

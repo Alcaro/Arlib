@@ -33,6 +33,8 @@ public:
 };
 
 //If the program is run under a debugger, this triggers a breakpoint. If not, ignored.
-void debug_break();
-//If the program is run under a debugger, this triggers a breakpoint. The program is then terminated.
-void debug_abort();
+void debug_or_ignore();
+//If the program is run under a debugger, this triggers a breakpoint. If not, the program silently exits.
+void debug_or_exit();
+//If the program is run under a debugger, this triggers a breakpoint. If not, the program crashes.
+void debug_or_abort();

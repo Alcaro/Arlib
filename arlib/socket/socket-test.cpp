@@ -28,7 +28,7 @@ static void clienttest(socket* rs)
 	
 	autoptr<socket> s = rs;
 	assert(s);
-	assert_eq(s->send(http_get), (int)strlen(http_get));
+	assert(s->send(http_get) == (int)strlen(http_get));
 	
 	//no need for sophisticated tests, just 'can it connect to google' is good enough
 	array<byte> ret = recvall(s, 4);
@@ -37,8 +37,6 @@ static void clienttest(socket* rs)
 }
 
 test("plain connection") { clienttest(socket::create("google.com", 80)); }
-
-#ifdef ARLIB_SSL
 test("SSL client") { clienttest(socketssl::create("google.com", 443)); }
 test("SSL permissiveness")
 {
@@ -48,13 +46,12 @@ test("SSL permissiveness")
 	assert(!(s=socketssl::create("badfish.filippo.io", 443))); // invalid cert root
 	assert( (s=socketssl::create("badfish.filippo.io", 443, true)));
 }
-#endif
 
-void listentest(const char * localhost, int port)
+void listentest(const char * localhost)
 {
-	autoptr<socketlisten> l = socketlisten::create(port); // variable port because linux holds the port open a while
+	autoptr<socketlisten> l = socketlisten::create(7777);
 	assert(l);
-	autoptr<socket> c1 = socket::create(localhost, port);
+	autoptr<socket> c1 = socket::create(localhost, 7777);
 	assert(c1);
 	//socket* lr = l; // can't select &l because autoptr<socketlisten>* isn't socket**
 	//assert(socket::select(&lr, 1, 100) == 0); // apparently the connection takes a while to make it through the kernel, at least on Windows
@@ -79,7 +76,7 @@ void listentest(const char * localhost, int port)
 	assert(!memcmp(ret.data(), "foo", 3));
 }
 
-test("listen on localhost") { listentest("localhost", 7777); }
-test("listen on 127.0.0.1") { listentest("127.0.0.1", 7778); }
-test("listen on ::1")       { listentest("::1", 7779); }
+test("listen on localhost") { listentest("localhost"); }
+test("listen on 127.0.0.1") { listentest("127.0.0.1"); }
+test("listen on ::1")       { listentest("::1"); }
 #endif

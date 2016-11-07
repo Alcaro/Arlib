@@ -1,12 +1,12 @@
 PROGRAM = arlibtest
-ARGUI = 0
+ARGUI = 1
+AROPENGL = 1
 ARTHREAD = 0
 ARWUTF = 0
 ARSOCKET = 1
-#valid values: openssl, tlse, no
+#valid values: openssl, wolfssl, tlse, no
 #ignored on windows (other than 'no', which is obeyed), always uses schannel
 #default openssl
-#ARSOCKET_SSL = openssl
 ARSOCKET_SSL = tlse
 ARSANDBOX = 1
 

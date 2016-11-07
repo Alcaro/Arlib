@@ -111,7 +111,7 @@ template<typename T, size_t N> char(&ARRAY_SIZE_CORE(T(&x)[N]))[N];
 //optional:
 //- (PASS) works in a template, even if the template isn't instantiated, if the condition isn't dependent on the types
 //- (FAIL) works if compiled as C (tried to design an alternate implementation and ifdef it, but nothing works inside structs)
-//- (FAIL) can name assertions, if desired
+//- (PASS) can name assertions, if desired (only under C++11)
 #ifdef __GNUC__
 #define MAYBE_UNUSED __attribute__((__unused__)) // shut up, stupid warnings
 #define TYPENAME_IF_GCC typename // gcc requires this. msvc rejects this.
@@ -120,6 +120,7 @@ template<typename T, size_t N> char(&ARRAY_SIZE_CORE(T(&x)[N]))[N];
 #define TYPENAME_IF_GCC
 #endif
 
+#if __cplusplus < 201999 // TODO: replace with real C++17
 #if __cplusplus < 201103
 template<bool x> struct static_assert_t;
 template<> struct static_assert_t<true> { struct STATIC_ASSERTION_FAILED {}; };
@@ -127,14 +128,19 @@ template<> struct static_assert_t<false> {};
 //#define static_assert(expr)
 //	typedef TYPENAME_IF_NEEDED static_assert_t<(bool)(expr)>::STATIC_ASSERTION_FAILED
 //	JOIN(static_assertion_, __COUNTER__) MAYBE_UNUSED;
-#define static_assert(expr) \
+#define static_assert_c(expr, name, ...) \
 	enum { \
 		JOIN(static_assertion_, __COUNTER__) = \
 		sizeof(TYPENAME_IF_GCC static_assert_t<(bool)(expr)>::STATIC_ASSERTION_FAILED) \
 	} MAYBE_UNUSED
 #else
-#define static_assert(expr) static_assert(expr, #expr)
+#define static_assert_c(expr, name, ...) static_assert(expr, name)
 #endif
+
+#define static_assert_name(x, ...) #x
+#define static_assert(...) static_assert_c(__VA_ARGS__, static_assert_name(__VA_ARGS__))
+#endif
+
 
 //almost C version (fails inside structs)
 //#define static_assert(expr) \

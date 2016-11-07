@@ -1,7 +1,6 @@
 #include "socket.h"
 
-#define tlse 12345
-#if defined(ARLIB_SSL) && ARLIB_SSL==tlse
+#ifdef ARLIB_SSL_TLSE
 extern "C" {
 #include "tlse.h"
 }
@@ -33,9 +32,7 @@ static void initialize()
 	rootcerts = tls_create_context(false, TLS_V12);
 	
 #ifdef __unix__
-	const char * certdir = "/etc/ssl/certs"; // does OpenSSL load every single file in here, or only some?
-	
-	DIR* dir = opendir(certdir);
+	DIR* dir = opendir("/etc/ssl/certs/");
 	uint8_t* cert = NULL;
 	off_t cert_buf_len = 0;
 	
@@ -46,7 +43,9 @@ static void initialize()
 			struct dirent* entry = readdir(dir);
 			if (!entry) break;
 			char name[256];
-			snprintf(name, sizeof(name), "%s%s", "certdir", entry->d_name);
+			snprintf(name, sizeof(name), "%s%s", "/etc/ssl/certs/", entry->d_name);
+			
+			if (!strstr(name, "DST_Root")) continue;
 			
 			struct stat s;
 			if (stat(name, &s) == 0 && (s.st_mode & S_IFREG))
@@ -78,7 +77,6 @@ class socketssl_impl : public socketssl {
 public:
 	socket* sock;
 	TLSContext* ssl;
-	bool permissive;
 	
 	//same as tls_default_verify, except tls_certificate_chain_is_valid_root is given another context
 	static int verify(TLSContext* context, TLSCertificate* * certificate_chain, int len) {
@@ -117,10 +115,6 @@ public:
 		return no_error;
 	}
 	
-	static int verify_permissive(TLSContext* context, TLSCertificate* * certificate_chain, int len) {
-		return no_error;
-	}
-	
 	void process(bool block)
 	{
 		if (!sock) return;
@@ -129,16 +123,14 @@ public:
 		const uint8_t * out = tls_get_write_buffer(ssl, &outlen);
 		if (out && outlen)
 		{
-			if (sock->send(arrayview<byte>(out, outlen)) < 0) { error(); return; }
+			if (sock->send(out, outlen) < 0) { error(); return; }
 			tls_buffer_clear(ssl);
 		}
 		
-		maybe<array<byte>> in = sock->recv(block);
-		if (!in) { error(); return; }
-		if (in.value.size() > 0)
-		{
-			tls_consume_stream(ssl, in.value.data(), in.value.size(), permissive ? verify_permissive : verify);
-		}
+		uint8_t in[0x2000];
+		int inlen = sock->recv(in, sizeof(in), block);
+		if (inlen<0) { error(); return; }
+		if (inlen>0) tls_consume_stream(ssl, in, inlen, verify);
 	}
 	
 	void error()
@@ -154,7 +146,6 @@ public:
 		socketssl_impl* ret = new socketssl_impl();
 		ret->sock = parent;
 		ret->fd = parent->get_fd();
-		ret->permissive = permissive;
 		
 		ret->ssl = tls_create_context(false, TLS_V12);
 		
@@ -171,45 +162,24 @@ public:
 		return ret;
 	}
 	
-	maybe<array<byte>> recv(bool block = false)
+	int recv(uint8_t* data, unsigned int len, bool block = false)
 	{
 		process(block);
 		
-		byte tmp[0x1000];
-		int ret = tls_read(ssl, tmp, sizeof(tmp));
-		if (ret==0 && !sock) return maybe<array<byte>>(NULL, e_broken);
-		return array<byte>(tmp, ret);
-	}
-	
-	int sendp(arrayview<byte> data, bool block = true)
-	{
-		if (!sock) return e_broken;
+		int ret = tls_read(ssl, data, len);
+		if (ret==0 && !sock) return e_broken;
 		
-		int ret = tls_write(ssl, (byte*)data.data(), data.size());
-printf("e=%i\n",ret);
-		if (ret < 0) { error(); return e_ssl_failure; }
-		process(false);
 		return ret;
 	}
 	
-	//int recv(uint8_t* data, unsigned int len, bool block = false)
-	//{
-	//	process(block);
-	//	
-	//	int ret = tls_read(ssl, data, len);
-	//	if (ret==0 && !sock) return e_broken;
-	//	
-	//	return ret;
-	//}
-	//
-	//int sendp(const uint8_t* data, unsigned int len, bool block = true)
-	//{
-	//	if (!sock) return -1;
-	//	
-	//	int ret = tls_write(ssl, (uint8_t*)data, len);
-	//	process(false);
-	//	return ret;
-	//}
+	int sendp(const uint8_t* data, unsigned int len, bool block = true)
+	{
+		if (!sock) return -1;
+		
+		int ret = tls_write(ssl, (uint8_t*)data, len);
+		process(false);
+		return ret;
+	}
 	
 	~socketssl_impl()
 	{
@@ -222,69 +192,69 @@ printf("e=%i\n",ret);
 		if (sock) delete sock;
 	}
 	
-	//void q()
-	//{
-	//	uint8_t data[4096];
-	//	int len = tls_export_context(ssl, NULL, 0, false);
-	//	int len2 = tls_export_context(ssl, data, len, false);
-	//	printf("len=%i len2=%i\n", len, len2);
-	//	//tls_destroy_context(ssl);
-	//	
-	//	TLSContext* ssl2 = tls_import_context(data, len);
-	//	
-	//	uint8_t* p1 = (uint8_t*)ssl;
-	//	uint8_t* p2 = (uint8_t*)ssl2;
-	//	for (int i=0;i<140304;i++)
-	//	{
-	//		//if (p1[i] != p2[i]) printf("%i: g=%.2X b=%.2X\n", i, p1[i], p2[i]);
-	//	}
-	//	
-	//	//ssl = ssl2;
-	//}
+	void q()
+	{
+		uint8_t data[4096];
+		int len = tls_export_context(ssl, NULL, 0, false);
+		int len2 = tls_export_context(ssl, data, len, false);
+		printf("len=%i len2=%i\n", len, len2);
+		//tls_destroy_context(ssl);
+		
+		TLSContext* ssl2 = tls_import_context(data, len);
+		
+		uint8_t* p1 = (uint8_t*)ssl;
+		uint8_t* p2 = (uint8_t*)ssl2;
+		for (int i=0;i<140304;i++)
+		{
+			//if (p1[i] != p2[i]) printf("%i: g=%.2X b=%.2X\n", i, p1[i], p2[i]);
+		}
+		
+		//ssl = ssl2;
+	}
 	
 	
-	//size_t serialize_size()
-	//{
-	//	return tls_export_context(ssl, NULL, 0, false);
-	//}
-	//
-	//int serialize(uint8_t* data, size_t len)
-	//{
-	//	process(true);
-	//	
-	//	tls_export_context(ssl, data, len, false);
-	//	
-	//	tls_destroy_context(this->ssl);
-	//	this->ssl = NULL;
-	//	
-	//	int ret = decompose(this->sock);
-	//	this->sock = NULL;
-	//	
-	//	delete this;
-	//	
-	//	return ret;
-	//}
-	//
-	//static socketssl_impl* unserialize(int fd, const uint8_t* data, size_t len)
-	//{
-	//	socketssl_impl* ret = new socketssl_impl();
-	//	ret->sock = socket::create_from_fd(fd);
-	//	ret->fd = fd;
-	//	ret->ssl = tls_import_context((uint8_t*)data, len);
-	//	if (!ret->ssl) { delete ret; return NULL; }
-	//	return ret;
-	//}
+	size_t serialize_size()
+	{
+		return tls_export_context(ssl, NULL, 0, false);
+	}
+	
+	int serialize(uint8_t* data, size_t len)
+	{
+		process(true);
+		
+		tls_export_context(ssl, data, len, false);
+		
+		tls_destroy_context(this->ssl);
+		this->ssl = NULL;
+		
+		int ret = decompose(this->sock);
+		this->sock = NULL;
+		
+		delete this;
+		
+		return ret;
+	}
+	
+	static socketssl_impl* unserialize(int fd, const uint8_t* data, size_t len)
+	{
+		socketssl_impl* ret = new socketssl_impl();
+		ret->sock = socket::create_from_fd(fd);
+		ret->fd = fd;
+		ret->ssl = tls_import_context((uint8_t*)data, len);
+		if (!ret->ssl) { delete ret; return NULL; }
+		return ret;
+	}
 };
 
-socketssl* socketssl::create(socket* parent, string domain, bool permissive)
+socketssl* socketssl::create(socket* parent, const char * domain, bool permissive)
 {
 	initialize();
 	return socketssl_impl::create(parent, domain, permissive);
 }
 
-//socketssl* socketssl::unserialize(int fd, const uint8_t* data, size_t len)
-//{
-//	initialize();
-//	return socketssl_impl::unserialize(fd, data, len);
-//}
+socketssl* socketssl::unserialize(int fd, const uint8_t* data, size_t len)
+{
+	initialize();
+	return socketssl_impl::unserialize(fd, data, len);
+}
 #endif

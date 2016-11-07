@@ -168,11 +168,6 @@ public:
 		this->count=0;
 	}
 	
-	array(const T * ptr, size_t count)
-	{
-		clone(arrayview<T>(ptr, count));
-	}
-	
 	array(const array<T>& other)
 	{
 		clone(other);

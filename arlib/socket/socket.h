@@ -73,7 +73,6 @@ public:
 	int get_fd() { return fd; }
 };
 
-#ifdef ARLIB_SSL
 class socketssl : public socket {
 protected:
 	socketssl(){}
@@ -100,7 +99,6 @@ public:
 	virtual tuple<int, array<byte>> serialize() { return tuple<int, array<byte>>(-1, NULL); }
 	static socketssl* unserialize(tuple<int, array<byte>> data);
 };
-#endif
 
 //socket::select() works on these, but recv/send will fail
 class socketlisten : public socket {

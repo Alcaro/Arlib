@@ -40,14 +40,9 @@ static void initialize()
 #endif
 }
 
-static int setsockopt(int socket, int level, int option_name, const void * option_value, socklen_t option_len)
-{
-	return ::setsockopt(socket, level, option_name, (char*)/*lol windows*/option_value, option_len);
-}
-
 static int setsockopt(int socket, int level, int option_name, int option_value)
 {
-	return setsockopt(socket, level, option_name, &option_value, sizeof(option_value));
+	return ::setsockopt(socket, level, option_name, (char*)/*lol windows*/&option_value, sizeof(option_value));
 }
 
 static int connect(const char * domain, int port)
@@ -115,7 +110,7 @@ void setblock(int fd, bool newblock)
 #else
 	int flags = fcntl(fd, F_GETFL, 0);
 	flags &= ~O_NONBLOCK;
-	if (!newblock) flags |= O_NONBLOCK;
+	if (nonblock) flags |= O_NONBLOCK
 	fcntl(fd, F_SETFL, flags);
 #endif
 }
@@ -215,7 +210,7 @@ static MAYBE_UNUSED int socketlisten_create_ip4(int port)
 	return fd;
 	
 fail:
-	close(fd);
+	closesocket(fd);
 	return -1;
 }
 
@@ -236,7 +231,7 @@ static int socketlisten_create_ip6(int port)
 	return fd;
 	
 fail:
-	close(fd);
+	closesocket(fd);
 	return -1;
 }
 
