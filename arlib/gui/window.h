@@ -126,7 +126,7 @@ public:
 	// unless the widget wants the events. (For example, a button will want mouse events, but not file drop events.)
 	//The window handles passed around are implementation defined.
 	//The return value from init() is the number of child windows involved, from the window manager's point of view.
-	virtual unsigned int init(struct window * parent, uintptr_t parenthandle) = 0;
+	virtual unsigned int init(window * parent, uintptr_t parenthandle) = 0;
 	virtual void measure() = 0;
 	unsigned int width;
 	unsigned int height;
@@ -134,7 +134,7 @@ public:
 	
 	//this one acts roughly like Q_OBJECT
 #define WIDGET_BASE \
-		unsigned int init(struct window * parent, uintptr_t parenthandle); \
+		unsigned int init(window * parent, uintptr_t parenthandle); \
 		void measure(); \
 		void place(void* resizeinf, unsigned int x, unsigned int y, unsigned int width, unsigned int height);
 #else
@@ -715,7 +715,7 @@ bool window_message_box(const char * text, const char * title, enum mbox_sev sev
 // include the dot; if it's not there, it's implied.
 //Return value is full paths, zero or more. Duplicates are allowed in both input and output.
 //The return value is valid until the next call to window_file_picker() or window_run_*(), whichever comes first.
-const char * const * window_file_picker(struct window * parent,
+const char * const * window_file_picker(window * parent,
                                         const char * title,
                                         const char * const * extensions,
                                         const char * extdescription,

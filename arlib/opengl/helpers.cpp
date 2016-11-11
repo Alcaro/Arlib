@@ -113,25 +113,23 @@ static void APIENTRY debug_cb(GLenum source, GLenum type, GLuint id, GLenum seve
 		case GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR:  type_s="Undefined behavior"; break;
 		case GL_DEBUG_TYPE_PORTABILITY:         type_s="Portability"; break;
 		case GL_DEBUG_TYPE_PERFORMANCE:         type_s="Performance"; break;
-		//case GL_DEBUG_TYPE_MARKER:              type_s="Marker"; break;
-		//case GL_DEBUG_TYPE_PUSH_GROUP:          type_s="Push group"; break;
-		//case GL_DEBUG_TYPE_POP_GROUP:           type_s="Pop group"; break;
+		case GL_DEBUG_TYPE_MARKER:              type_s="Marker"; break;
+		case GL_DEBUG_TYPE_PUSH_GROUP:          type_s="Push group"; break;
+		case GL_DEBUG_TYPE_POP_GROUP:           type_s="Pop group"; break;
 		case GL_DEBUG_TYPE_OTHER:               type_s="Other"; break;
 		default:                                type_s="Unknown"; break;
 	}
 	
 	switch (severity)
 	{
-		case GL_DEBUG_SEVERITY_HIGH:         severity_s="Error"; severity_l=sev_err; break;
-		case GL_DEBUG_SEVERITY_MEDIUM:       severity_s="Warning"; severity_l=sev_warn; break;
-		case GL_DEBUG_SEVERITY_LOW:          severity_s="Notice"; severity_l=sev_not; break;
-		//case GL_DEBUG_SEVERITY_NOTIFICATION: severity_s="Grouping"; severity_l=sev_not; break;
+		case GL_DEBUG_SEVERITY_HIGH:         severity_s="High"; severity_l=sev_err; break;
+		case GL_DEBUG_SEVERITY_MEDIUM:       severity_s="Medium"; severity_l=sev_warn; break;
+		case GL_DEBUG_SEVERITY_LOW:          severity_s="Low"; severity_l=sev_not; break;
+		case GL_DEBUG_SEVERITY_NOTIFICATION: severity_s="Notice"; severity_l=sev_not; break;
 		default:                             severity_s="Unknown"; severity_l=sev_unk; break;
 	}
 	
-	//this could be sent to a better location, but the video driver isn't supposed to
-	// generate messages in the first place, so there's nothing good to do.
-	fprintf((FILE*)userParam, "[GL debug: %s from %s about %s: %s]\n", severity_s, source_s, type_s, message);
+	fprintf((FILE*)userParam, "[GL debug: sev %s, source %s, topic %s: %s]\n", severity_s, source_s, type_s, message);
 	
 	if (severity_l >= sev_warn) debug_or_exit();
 }

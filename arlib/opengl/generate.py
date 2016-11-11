@@ -58,11 +58,14 @@ header += readfile("glext.h")
 functions = compile(header)
 
 
+def isupperonly(str):
+	return str.isalpha() and str.isupper()
+
 if filter_core:
-	functions = [f for f in functions if not f["name"][-2:].isupper()]
+	functions = [f for f in functions if not isupperonly(f["name"][-2:])]
 
 if filter_std:
-	functions = [f for f in functions if not f["name"][-2:].isupper() or
+	functions = [f for f in functions if not isupperonly(f["name"][-2:]) or
 		f["name"].endswith("EXT") or f["name"].endswith("ARB") or f["name"].endswith("OES")]
 
 if filter_used:

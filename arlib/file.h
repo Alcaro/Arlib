@@ -119,6 +119,22 @@ inline bool file_read_to_rel(const char * basepath, bool allow_up, const char * 
 	return ret;
 }
 
+
+inline bool file_read_cwd(const char * filename, void* * data, size_t * len)
+{
+	return file_read_rel(window_get_cwd(), false, filename, data, len);
+}
+
+inline bool file_write_cwd(const char * filename, const anyptr data, size_t len)
+{
+	return file_write_rel(window_get_cwd(), false, filename, data, len);
+}
+
+inline bool file_read_to_cwd(const char * filename, anyptr data, size_t len)
+{
+	return file_read_to_rel(window_get_cwd(), false, filename, data, len);
+}
+
 //These will list the contents of a directory. The returned paths from window_find_next should be
 // sent to free(). The . and .. components will not be included; however, symlinks and other loops
 // are not guarded against. It is implementation defined whether hidden files are included. The

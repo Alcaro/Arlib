@@ -13,6 +13,13 @@
 //the namespace pollution this causes is massive, but without it, there's a bunch of functions that
 // just tail call kernel32.dll. With it, they can be inlined.
 #  define WIN32_LEAN_AND_MEAN
+#  define NOMINMAX
+#  define strcasecmp stricmp
+#  define strncasecmp strnicmp
+#  ifdef _MSC_VER
+#    define _CRT_NONSTDC_NO_DEPRECATE
+#    define _CRT_SECURE_NO_WARNINGS
+#  endif
 #  include <windows.h>
 #  undef interface // screw that, I'm not interested in COM shittery
 #endif
@@ -233,7 +240,9 @@ template<typename T, typename... Args> static T max(const T& a, Args... args)
 
 
 class empty {
-	int x[];
+#ifndef _MSC_VER // error C2503: base classes cannot contain zero-sized arrays
+	int x[];       // this base is used only by nocopy/nomove anyways, and they're only used by nonzero objects which will optimize the empty base class anyways
+#endif
 };
 
 class nocopy : empty {
@@ -242,8 +251,11 @@ protected:
 	~nocopy() {}
 	nocopy(const nocopy&) = delete;
 	const nocopy& operator=(const nocopy&) = delete;
+#if !defined(_MSC_VER) || _MSC_VER >= 1900 // error C2610: is not a special member function which can be defaulted
+                                           // defaulting the copies deletes the moves on gcc, but does nothing on msvc2013; known bug
 	nocopy(nocopy&&) = default;
 	nocopy& operator=(nocopy&&) = default;
+#endif
 };
 
 class nomove : empty {

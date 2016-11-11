@@ -438,7 +438,7 @@ public:
 	string& operator=(const char * str) { release(); init_from(str); return *this; }
 	~string() { release(); }
 	
-	operator bool() const { return length(); }
+	operator bool() const { return length() != 0; }
 	operator const char * () const { return data(); }
 	
 private:
@@ -524,7 +524,7 @@ inline cstring string::csubstr(int32_t start, int32_t end) const
 
 inline bool string::contains(cstring other) const
 {
-	return memmem(this->ptr(), this->length(), other.bytes(), other.length());
+	return memmem(this->ptr(), this->length(), other.bytes(), other.length()) != NULL;
 }
 
 //TODO

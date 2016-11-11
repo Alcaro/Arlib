@@ -1,4 +1,4 @@
-#ifdef _WIN32
+#ifdef _WIN32ggg
 #include "aropengl.h"
 
 #undef bind
@@ -30,7 +30,7 @@ namespace {
 	WGL_SYM(HGLRC, GetCurrentContext, ()) \
 	WGL_SYM(PROC, GetProcAddress, (LPCSTR lpszProc)) \
 	WGL_SYM(BOOL, MakeCurrent, (HDC hdc, HGLRC hglrc)) \
-	/*WGL_SYM(BOOL, SwapBuffers, (HDC hdc)) - it's in gdi32.dll, which can safely be hardlinked */ \
+	/*WGL_SYM(BOOL, SwapBuffers, (HDC hdc)) - it's in gdi32.dll, which is linked already */ \
 	
 //WINGDIAPI BOOL  WINAPI wglCopyContext(HGLRC, HGLRC, UINT);
 //WINGDIAPI HGLRC WINAPI wglCreateContext(HDC);
@@ -97,26 +97,35 @@ public:
 	HDC hdc;
 	HGLRC hglrc;
 	
-	/*private*/ bool init(HWND window, uint32_t version)
+	/*private*/ bool init(HWND window, uint32_t flags)
 	{
 		this->hwnd = window;
 		this->hdc = GetDC(this->hwnd);
 		this->hglrc = NULL;
 		
 		if (!InitGlobalGLFunctions()) return false;
-		if (!CreateContext(version)) return false;
+		if (!CreateContext(flags)) return false;
 		
 		return true;
 	}
 	
-	/*private*/ bool CreateContext(uint32_t version)
+	/*private*/ bool CreateContext(uint32_t flags)
 	{
 		if (wgl.GetCurrentContext()) return false;
 		
-		bool debug = (version & aropengl::t_debug_context);
-		bool depthbuf = (version & aropengl::t_depth_buffer);
-		bool stenbuf = (version & aropengl::t_stencil_buffer);
-		version &= 0xFFF;
+		bool debug = (flags & aropengl::t_debug_context);
+		bool depthbuf = (flags & aropengl::t_depth_buffer);
+		bool stenbuf = (flags & aropengl::t_stencil_buffer);
+		bool d3dsync = (flags & aropengl::t_direct3d_sync);
+		if (d3dsync)
+		{
+#ifdef AROPENGL_D3DSYNC
+			
+#else
+			return false;
+#endif
+		}
+		uint32_t version = (flags & 0xFFF);
 		
 		PIXELFORMATDESCRIPTOR pfd;
 		memset(&pfd, 0, sizeof(PIXELFORMATDESCRIPTOR));
@@ -147,12 +156,12 @@ public:
 				WGL_CONTEXT_MINOR_VERSION_ARB, (int)version/10%10,
 				//WGL_CONTEXT_FLAGS_ARB, WGL_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB,
 				//https://www.opengl.org/wiki/Core_And_Compatibility_in_Contexts says do not use
-			0 };
+				0 };
 			const int attribs_debug[] = {
 				WGL_CONTEXT_MAJOR_VERSION_ARB, (int)version/100,
 				WGL_CONTEXT_MINOR_VERSION_ARB, (int)version/10%10,
 				WGL_CONTEXT_FLAGS_ARB, WGL_CONTEXT_DEBUG_BIT_ARB,
-			0 };
+				0 };
 			this->hglrc = wglCreateContextAttribs(this->hdc, /*share*/NULL, debug ? attribs_debug : attribs);
 			wgl.DeleteContext(hglrc_old);
 			
@@ -190,7 +199,7 @@ public:
 	
 	void swapBuffers()
 	{
-		::SwapBuffers(this->hdc); // this is actually in gdi32.dll, which I don't mind linking to
+		::SwapBuffers(this->hdc);
 	}
 	
 	~aropengl_windows()
@@ -204,10 +213,10 @@ public:
 
 }
 
-aropengl::context* aropengl::context::create(uintptr_t window, uint32_t version)
+aropengl::context* aropengl::context::create(uintptr_t window, uint32_t flags)
 {
 	aropengl_windows* ret = new aropengl_windows();
-	if (ret->init((HWND)window, version)) return ret;
+	if (ret->init((HWND)window, flags)) return ret;
 	
 	delete ret;
 	return NULL;

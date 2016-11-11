@@ -159,6 +159,7 @@ void WuTF_redirect_function(WuTF_funcptr victim, WuTF_funcptr replacement)
 	DWORD prot;
 	//it's usually considered bad to have W+X on the same page, but the alternative is risking
 	// removing X from VirtualProtect or NtProtectVirtualMemory, and then I can't fix it.
+	//alternatively, it could make C do W; e.
 	//it doesn't matter, anyways; we (should be) called so early no hostile input has been processed
 	// yet, and even if hostile code is running, it can just wait until I put back X.
 	VirtualProtect((void*)victim, 64, PAGE_EXECUTE_READWRITE, &prot);

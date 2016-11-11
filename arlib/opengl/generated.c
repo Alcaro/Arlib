@@ -115,6 +115,14 @@ void (GLAPIENTRY * ColorTable)(GLenum target, GLenum internalformat, GLsizei wid
 void (GLAPIENTRY * ColorTableParameterfv)(GLenum target, GLenum pname, const GLfloat *params);
 void (GLAPIENTRY * ColorTableParameteriv)(GLenum target, GLenum pname, const GLint *params);
 void (GLAPIENTRY * CompileShader)(GLuint shader);
+void (GLAPIENTRY * CompressedTexImage1D)(GLenum target, GLint level, GLenum internalformat, GLsizei width, GLint border, GLsizei imageSize, const GLvoid *data);
+void (GLAPIENTRY * CompressedTexImage2D)(GLenum target, GLint level, GLenum internalformat, GLsizei width, GLsizei height, GLint border, GLsizei imageSize, const GLvoid *data);
+void (GLAPIENTRY * CompressedTexImage3D)(GLenum target, GLint level, GLenum internalformat, GLsizei width, GLsizei height, GLsizei depth, GLint border, GLsizei imageSize, const GLvoid *data);
+void (GLAPIENTRY * CompressedTexSubImage1D)(GLenum target, GLint level, GLint xoffset, GLsizei width, GLenum format, GLsizei imageSize, const GLvoid *data);
+void (GLAPIENTRY * CompressedTexSubImage2D)(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLsizei width, GLsizei height, GLenum format, GLsizei imageSize, const GLvoid *data);
+void (GLAPIENTRY * CompressedTexSubImage3D)(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLsizei imageSize, const GLvoid *data);
+void (GLAPIENTRY * ConvolutionFilter1D)(GLenum target, GLenum internalformat, GLsizei width, GLenum format, GLenum type, const GLvoid *image);
+void (GLAPIENTRY * ConvolutionFilter2D)(GLenum target, GLenum internalformat, GLsizei width, GLsizei height, GLenum format, GLenum type, const GLvoid *image);
 void (GLAPIENTRY * ConvolutionParameterf)(GLenum target, GLenum pname, GLfloat params);
 void (GLAPIENTRY * ConvolutionParameterfv)(GLenum target, GLenum pname, const GLfloat *params);
 void (GLAPIENTRY * ConvolutionParameteri)(GLenum target, GLenum pname, GLint params);
@@ -122,8 +130,15 @@ void (GLAPIENTRY * ConvolutionParameteriv)(GLenum target, GLenum pname, const GL
 void (GLAPIENTRY * CopyBufferSubData)(GLenum readTarget, GLenum writeTarget, GLintptr readOffset, GLintptr writeOffset, GLsizeiptr size);
 void (GLAPIENTRY * CopyColorSubTable)(GLenum target, GLsizei start, GLint x, GLint y, GLsizei width);
 void (GLAPIENTRY * CopyColorTable)(GLenum target, GLenum internalformat, GLint x, GLint y, GLsizei width);
+void (GLAPIENTRY * CopyConvolutionFilter1D)(GLenum target, GLenum internalformat, GLint x, GLint y, GLsizei width);
+void (GLAPIENTRY * CopyConvolutionFilter2D)(GLenum target, GLenum internalformat, GLint x, GLint y, GLsizei width, GLsizei height);
 void (GLAPIENTRY * CopyImageSubData)(GLuint srcName, GLenum srcTarget, GLint srcLevel, GLint srcX, GLint srcY, GLint srcZ, GLuint dstName, GLenum dstTarget, GLint dstLevel, GLint dstX, GLint dstY, GLint dstZ, GLsizei srcWidth, GLsizei srcHeight, GLsizei srcDepth);
 void (GLAPIENTRY * CopyPixels)(GLint x,GLint y,GLsizei width,GLsizei height,GLenum type);
+void (GLAPIENTRY * CopyTexImage1D)(GLenum target,GLint level,GLenum internalFormat,GLint x,GLint y,GLsizei width,GLint border);
+void (GLAPIENTRY * CopyTexImage2D)(GLenum target,GLint level,GLenum internalFormat,GLint x,GLint y,GLsizei width,GLsizei height,GLint border);
+void (GLAPIENTRY * CopyTexSubImage1D)(GLenum target,GLint level,GLint xoffset,GLint x,GLint y,GLsizei width);
+void (GLAPIENTRY * CopyTexSubImage2D)(GLenum target,GLint level,GLint xoffset,GLint yoffset,GLint x,GLint y,GLsizei width,GLsizei height);
+void (GLAPIENTRY * CopyTexSubImage3D)(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLint x, GLint y, GLsizei width, GLsizei height);
 GLuint (GLAPIENTRY * CreateProgram)(void);
 GLuint (GLAPIENTRY * CreateShader)(GLenum type);
 GLuint (GLAPIENTRY * CreateShaderProgramv)(GLenum type, GLsizei count, const GLchar *const*strings);
@@ -219,6 +234,9 @@ void (GLAPIENTRY * Fogiv)(GLenum pname,const GLint *params);
 void (GLAPIENTRY * FramebufferParameteri)(GLenum target, GLenum pname, GLint param);
 void (GLAPIENTRY * FramebufferRenderbuffer)(GLenum target, GLenum attachment, GLenum renderbuffertarget, GLuint renderbuffer);
 void (GLAPIENTRY * FramebufferTexture)(GLenum target, GLenum attachment, GLuint texture, GLint level);
+void (GLAPIENTRY * FramebufferTexture1D)(GLenum target, GLenum attachment, GLenum textarget, GLuint texture, GLint level);
+void (GLAPIENTRY * FramebufferTexture2D)(GLenum target, GLenum attachment, GLenum textarget, GLuint texture, GLint level);
+void (GLAPIENTRY * FramebufferTexture3D)(GLenum target, GLenum attachment, GLenum textarget, GLuint texture, GLint level, GLint zoffset);
 void (GLAPIENTRY * FramebufferTextureLayer)(GLenum target, GLenum attachment, GLuint texture, GLint level, GLint layer);
 void (GLAPIENTRY * FrontFace)(GLenum mode);
 void (GLAPIENTRY * Frustum)(GLdouble left,GLdouble right,GLdouble bottom,GLdouble top,GLdouble zNear,GLdouble zFar);
@@ -663,6 +681,7 @@ void (GLAPIENTRY * SecondaryColorP3ui)(GLenum type, GLuint color);
 void (GLAPIENTRY * SecondaryColorP3uiv)(GLenum type, const GLuint *color);
 void (GLAPIENTRY * SecondaryColorPointer)(GLint size, GLenum type, GLsizei stride, const GLvoid *pointer);
 void (GLAPIENTRY * SelectBuffer)(GLsizei size,GLuint *buffer);
+void (GLAPIENTRY * SeparableFilter2D)(GLenum target, GLenum internalformat, GLsizei width, GLsizei height, GLenum format, GLenum type, const GLvoid *row, const GLvoid *column);
 void (GLAPIENTRY * ShadeModel)(GLenum mode);
 void (GLAPIENTRY * ShaderBinary)(GLsizei count, const GLuint *shaders, GLenum binaryformat, const GLvoid *binary, GLsizei length);
 void (GLAPIENTRY * ShaderSource)(GLuint shader, GLsizei count, const GLchar *const*string, const GLint *length);
@@ -726,7 +745,10 @@ void (GLAPIENTRY * TexGenf)(GLenum coord,GLenum pname,GLfloat param);
 void (GLAPIENTRY * TexGenfv)(GLenum coord,GLenum pname,const GLfloat *params);
 void (GLAPIENTRY * TexGeni)(GLenum coord,GLenum pname,GLint param);
 void (GLAPIENTRY * TexGeniv)(GLenum coord,GLenum pname,const GLint *params);
+void (GLAPIENTRY * TexImage1D)(GLenum target,GLint level,GLint internalformat,GLsizei width,GLint border,GLenum format,GLenum type,const GLvoid *pixels);
+void (GLAPIENTRY * TexImage2D)(GLenum target,GLint level,GLint internalformat,GLsizei width,GLsizei height,GLint border,GLenum format,GLenum type,const GLvoid *pixels);
 void (GLAPIENTRY * TexImage2DMultisample)(GLenum target, GLsizei samples, GLint internalformat, GLsizei width, GLsizei height, GLboolean fixedsamplelocations);
+void (GLAPIENTRY * TexImage3D)(GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height, GLsizei depth, GLint border, GLenum format, GLenum type, const GLvoid *pixels);
 void (GLAPIENTRY * TexImage3DMultisample)(GLenum target, GLsizei samples, GLint internalformat, GLsizei width, GLsizei height, GLsizei depth, GLboolean fixedsamplelocations);
 void (GLAPIENTRY * TexParameterIiv)(GLenum target, GLenum pname, const GLint *params);
 void (GLAPIENTRY * TexParameterIuiv)(GLenum target, GLenum pname, const GLuint *params);
@@ -734,8 +756,14 @@ void (GLAPIENTRY * TexParameterf)(GLenum target,GLenum pname,GLfloat param);
 void (GLAPIENTRY * TexParameterfv)(GLenum target,GLenum pname,const GLfloat *params);
 void (GLAPIENTRY * TexParameteri)(GLenum target,GLenum pname,GLint param);
 void (GLAPIENTRY * TexParameteriv)(GLenum target,GLenum pname,const GLint *params);
+void (GLAPIENTRY * TexStorage1D)(GLenum target, GLsizei levels, GLenum internalformat, GLsizei width);
+void (GLAPIENTRY * TexStorage2D)(GLenum target, GLsizei levels, GLenum internalformat, GLsizei width, GLsizei height);
 void (GLAPIENTRY * TexStorage2DMultisample)(GLenum target, GLsizei samples, GLenum internalformat, GLsizei width, GLsizei height, GLboolean fixedsamplelocations);
+void (GLAPIENTRY * TexStorage3D)(GLenum target, GLsizei levels, GLenum internalformat, GLsizei width, GLsizei height, GLsizei depth);
 void (GLAPIENTRY * TexStorage3DMultisample)(GLenum target, GLsizei samples, GLenum internalformat, GLsizei width, GLsizei height, GLsizei depth, GLboolean fixedsamplelocations);
+void (GLAPIENTRY * TexSubImage1D)(GLenum target,GLint level,GLint xoffset,GLsizei width,GLenum format,GLenum type,const GLvoid *pixels);
+void (GLAPIENTRY * TexSubImage2D)(GLenum target,GLint level,GLint xoffset,GLint yoffset,GLsizei width,GLsizei height,GLenum format,GLenum type,const GLvoid *pixels);
+void (GLAPIENTRY * TexSubImage3D)(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type, const GLvoid *pixels);
 void (GLAPIENTRY * TextureView)(GLuint texture, GLenum target, GLuint origtexture, GLenum internalformat, GLuint minlevel, GLuint numlevels, GLuint minlayer, GLuint numlayers);
 void (GLAPIENTRY * TransformFeedbackVaryings)(GLuint program, GLsizei count, const GLchar *const*varyings, GLenum bufferMode);
 void (GLAPIENTRY * Translated)(GLdouble x,GLdouble y,GLdouble z);
@@ -1047,6 +1075,14 @@ void (GLAPIENTRY * WindowPos3sv)(const GLshort *v);
 "glColorTableParameterfv\0"
 "glColorTableParameteriv\0"
 "glCompileShader\0"
+"glCompressedTexImage1D\0"
+"glCompressedTexImage2D\0"
+"glCompressedTexImage3D\0"
+"glCompressedTexSubImage1D\0"
+"glCompressedTexSubImage2D\0"
+"glCompressedTexSubImage3D\0"
+"glConvolutionFilter1D\0"
+"glConvolutionFilter2D\0"
 "glConvolutionParameterf\0"
 "glConvolutionParameterfv\0"
 "glConvolutionParameteri\0"
@@ -1054,8 +1090,15 @@ void (GLAPIENTRY * WindowPos3sv)(const GLshort *v);
 "glCopyBufferSubData\0"
 "glCopyColorSubTable\0"
 "glCopyColorTable\0"
+"glCopyConvolutionFilter1D\0"
+"glCopyConvolutionFilter2D\0"
 "glCopyImageSubData\0"
 "glCopyPixels\0"
+"glCopyTexImage1D\0"
+"glCopyTexImage2D\0"
+"glCopyTexSubImage1D\0"
+"glCopyTexSubImage2D\0"
+"glCopyTexSubImage3D\0"
 "glCreateProgram\0"
 "glCreateShader\0"
 "glCreateShaderProgramv\0"
@@ -1151,6 +1194,9 @@ void (GLAPIENTRY * WindowPos3sv)(const GLshort *v);
 "glFramebufferParameteri\0"
 "glFramebufferRenderbuffer\0"
 "glFramebufferTexture\0"
+"glFramebufferTexture1D\0"
+"glFramebufferTexture2D\0"
+"glFramebufferTexture3D\0"
 "glFramebufferTextureLayer\0"
 "glFrontFace\0"
 "glFrustum\0"
@@ -1595,6 +1641,7 @@ void (GLAPIENTRY * WindowPos3sv)(const GLshort *v);
 "glSecondaryColorP3uiv\0"
 "glSecondaryColorPointer\0"
 "glSelectBuffer\0"
+"glSeparableFilter2D\0"
 "glShadeModel\0"
 "glShaderBinary\0"
 "glShaderSource\0"
@@ -1658,7 +1705,10 @@ void (GLAPIENTRY * WindowPos3sv)(const GLshort *v);
 "glTexGenfv\0"
 "glTexGeni\0"
 "glTexGeniv\0"
+"glTexImage1D\0"
+"glTexImage2D\0"
 "glTexImage2DMultisample\0"
+"glTexImage3D\0"
 "glTexImage3DMultisample\0"
 "glTexParameterIiv\0"
 "glTexParameterIuiv\0"
@@ -1666,8 +1716,14 @@ void (GLAPIENTRY * WindowPos3sv)(const GLshort *v);
 "glTexParameterfv\0"
 "glTexParameteri\0"
 "glTexParameteriv\0"
+"glTexStorage1D\0"
+"glTexStorage2D\0"
 "glTexStorage2DMultisample\0"
+"glTexStorage3D\0"
 "glTexStorage3DMultisample\0"
+"glTexSubImage1D\0"
+"glTexSubImage2D\0"
+"glTexSubImage3D\0"
 "glTextureView\0"
 "glTransformFeedbackVaryings\0"
 "glTranslated\0"

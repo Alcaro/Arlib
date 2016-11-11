@@ -24,6 +24,8 @@ endif
 
 ARGUI ?= 0
 AROPENGL ?= 0
+AROPENGL_D3DSYNC ?= 1
+ARIMAGE ?= 0
 ARTHREAD ?= 0
 ARSANDBOX ?= 0
 ARWUTF ?= 0
@@ -159,6 +161,14 @@ ifeq ($(AROPENGL),1)
   ifeq ($(OS),linux)
     CONF_LFLAGS += -ldl -lGL
   endif
+  ifeq ($(AROPENGL_D3DSYNC),1)
+    CONF_CFLAGS += -DAROPENGL_D3DSYNC
+  endif
+endif
+
+ifeq ($(ARIMAGE),1)
+  SOURCES += arlib/image/*.cpp
+  SOURCES += arlib/image/*.c
 endif
 
 ifeq ($(ARTHREAD),1)

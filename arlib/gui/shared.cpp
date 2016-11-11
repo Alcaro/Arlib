@@ -14,7 +14,7 @@ widget_padding::widget_padding(bool vertical)
 	this->heightprio=(vertical ? 2 : 0);
 }
 
-unsigned int widget_padding::init(struct window * parent, uintptr_t parenthandle) { return 0; }
+unsigned int widget_padding::init(window * parent, uintptr_t parenthandle) { return 0; }
 void widget_padding::measure() {}
 void widget_padding::place(void* resizeinf, unsigned int x, unsigned int y, unsigned int width, unsigned int height) {}
 
@@ -46,8 +46,8 @@ void widget_layout::construct(unsigned int numchildren, widget_base* * children,
 	m->totsize[0]=totwidth;
 	m->totsize[1]=totheight;
 	
-	m->children=malloc(sizeof(struct widget_base*)*numchildren);
-	memcpy(m->children, children, sizeof(struct widget_base*)*numchildren);
+	m->children=malloc(sizeof(widget_base*)*numchildren);
+	memcpy(m->children, children, sizeof(widget_base*)*numchildren);
 	
 	for (unsigned int dir=0;dir<2;dir++)
 	{
@@ -96,7 +96,7 @@ widget_layout::~widget_layout()
 	delete m;
 }
 
-unsigned int widget_layout::init(struct window * parent, uintptr_t parenthandle)
+unsigned int widget_layout::init(window * parent, uintptr_t parenthandle)
 {
 	unsigned int ret=0;
 	for (unsigned int i=0;i<m->numchildren;i++)
