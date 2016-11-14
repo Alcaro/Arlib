@@ -25,7 +25,21 @@ public:
 		t_depth_buffer   = 0x004000, // These two only apply to the main buffer. You can always create additional FBOs with or without depth/stencil.
 		t_stencil_buffer = 0x008000,
 #ifdef AROPENGL_D3DSYNC
-		t_direct3d_sync  = 0x010000, // Use WGL_NV_DX_interop and D3DSWAPEFFECT_FLIPEX for vsync on Windows (ignored elsewhere). Improves stuttering and framerate.
+		//Direct3D vsync is an advanced feature that uses WGL_NV_DX_interop and D3DSWAPEFFECT_FLIPEX to ensure smooth framerate on Windows.
+		//Advantages:
+		//- Less stuttering, especially with DWM enabled
+		//Disadvantages:
+		//- Requires Windows 7 or newer
+		//- Some graphics cards and drivers are not compatible
+		//- Poorly tested driver path, may be slow or buggy
+		//- You may not render to the default framebuffer, 0; you must render to gl.defaultFramebuffer()
+		//    (if you don't use framebuffers, you can ignore this; defaultFrameBuffer is bound on creation)
+		//- You must call gl.notifyResize() whenever the window is resized (whether by the application or the user), in addition to gl.Viewport/etc
+		//- Swap intervals other than 0 and 1 are not supported. Not even -1.
+		//- May be slower; with vsync off, clearing a 640x480 screen each frame drops from 3500 on pure OpenGL to 2750 with Direct3D vsync
+		//The flag is ignored on non-Windows systems.
+		//It is safe to use gl.defaultFramebuffer and gl.notifyResize on non-d3dsync objects.
+		t_direct3d_vsync = 0x010000,
 #endif
 	};
 	
@@ -41,6 +55,15 @@ public:
 		virtual void swapInterval(int interval) = 0;
 		virtual void swapBuffers() = 0;
 		virtual funcptr getProcAddress(const char * proc) = 0;
+#ifdef AROPENGL_D3DSYNC
+		virtual
+#endif
+		void notifyResize(GLsizei width, GLsizei height) {}
+		
+#ifdef AROPENGL_D3DSYNC
+		virtual
+#endif
+		GLuint outputFramebuffer() { return 0; }
 		
 		virtual ~context() {}
 	};
@@ -63,11 +86,16 @@ public:
 	//Arlib usually uses underscores, but since OpenGL doesn't, this object follows suit.
 	//To ensure no collisions, Arlib-specific functions start with a lowercase (or are C++-only, like operator bool), standard GL functions are uppercase.
 	
-	//Named after provider-specific functions.
-	void makeCurrent(bool make) { core->makeCurrent(make); } // If false, releases the context. The context is current on creation.
+	//If false, releases the context. The context is current on creation.
+	void makeCurrent(bool make) { core->makeCurrent(make); }
 	void swapInterval(int interval) { core->swapInterval(interval); }
 	void swapBuffers() { core->swapBuffers(); }
 	funcptr getProcAddress(const char * proc) { return core->getProcAddress(proc); }
+	
+	//If the window is resized, use this function to report the new size.
+	void notifyResize(GLsizei width, GLsizei height) { core->notifyResize(width, height); }
+	//Used only for Direct3D sync. If you're not using that, just use 0.
+	GLuint outputFramebuffer() { return core->outputFramebuffer(); }
 	
 	//void (GLAPIENTRY * ClearColor)(GLclampf red, GLclampf green, GLclampf blue, GLclampf alpha);
 	//void (GLAPIENTRY * Clear)(GLbitfield mask);

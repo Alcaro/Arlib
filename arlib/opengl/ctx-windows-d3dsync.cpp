@@ -29,6 +29,13 @@
 
 #define bind bind_func
 
+#ifndef D3DPRESENT_FORCEIMMEDIATE
+#define D3DPRESENT_FORCEIMMEDIATE 0x00000100L
+#endif
+#ifndef D3DPRESENT_DONOTWAIT
+#define D3DPRESENT_DONOTWAIT 0x00000001L
+#endif
+
 namespace {
 
 //not autogenerating this since we know what this module wants
@@ -154,6 +161,19 @@ public:
 	HDC GL_hdc;
 	HGLRC GL_hglrc;
 	
+	IDirect3DDevice9Ex* D3D_device;
+	IDirect3DSurface9* D3D_backbuf;
+	IDirect3DSurface9* D3D_GLtarget;
+	
+	HANDLE D3D_sharehandle;
+	HANDLE D3D_sharetexture;
+	HANDLE GL_htexture;
+	
+	GLuint GL_fboname;
+	GLuint GL_texturename;
+	
+	bool vsync;
+	
 	/*private*/ bool init(HWND window, uint32_t version)
 	{
 		this->D3D_hwnd = window;
@@ -177,8 +197,8 @@ public:
 		wc.lpszClassName = "arlib_opengl_dummy";
 		RegisterClass(&wc);
 		
-		//return CreateWindow("arlib_opengl_dummy", NULL, WS_CHILD, -1, 0, 1, 1, parent, NULL, NULL, NULL);
-		return CreateWindow("arlib_opengl_dummy", "OPENGL", WS_VISIBLE, 0, 0, 100, 100, NULL, NULL, NULL, NULL);
+		return CreateWindow("arlib_opengl_dummy", NULL, WS_CHILD, -1, 0, 1, 1, parent, NULL, NULL, NULL);
+		//return CreateWindow("arlib_opengl_dummy", "OPENGL", WS_VISIBLE, 0, 0, 100, 100, NULL, NULL, NULL, NULL);
 	}
 	
 	/*private*/ bool CreateContext(uint32_t version)
@@ -262,26 +282,17 @@ public:
 		if (FAILED(lpDirect3DCreate9Ex(D3D_SDK_VERSION, &d3d))) return false;
 		
 		D3DPRESENT_PARAMETERS parameters = {};
-		
-		parameters.BackBufferWidth = 100;
-		parameters.BackBufferHeight = 100;
-		parameters.BackBufferFormat = D3DFMT_UNKNOWN;
-		//parameters.BackBufferCount = 2;//this value is confirmed by experiments; it is the lowest value that doesn't force vsync on.
-		parameters.BackBufferCount = 1;//TODO
-		parameters.MultiSampleType = D3DMULTISAMPLE_NONE;
-		parameters.MultiSampleQuality = 0;
+		parameters.BackBufferCount = 2; // D3DPRESENT_FORCEIMMEDIATE|D3DPRESENT_DONOTWAIT doesn't work without this
 		parameters.SwapEffect = D3DSWAPEFFECT_FLIPEX;
 		parameters.hDeviceWindow = this->D3D_hwnd;
 		parameters.Windowed = TRUE;
-		parameters.EnableAutoDepthStencil = FALSE;
-		//parameters.AutoDepthStencilFormat;//ignored
-		parameters.Flags = 0;
-		parameters.FullScreen_RefreshRateInHz = 0;
-		parameters.PresentationInterval = D3DPRESENT_INTERVAL_DEFAULT;//TODO: try _ONE
+		//https://msdn.microsoft.com/en-us/library/windows/desktop/bb172585(v=vs.85).aspx
+		//_ONE is _DEFAULT, but also calls timeBeginPeriod to improve precision
+		//anything opting in to Direct3D vsync is clearly a high-performance program, and thus wants the increased precision
+		parameters.PresentationInterval = D3DPRESENT_INTERVAL_ONE;
 		
 		if (FAILED(d3d->CreateDeviceEx(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, this->D3D_hwnd,
-		                               D3DCREATE_MIXED_VERTEXPROCESSING/* | D3DCREATE_PUREDEVICE*/,
-		                               //PUREDEVICE doesn't work for everyone, and is of questionable use anyways
+		                               D3DCREATE_MIXED_VERTEXPROCESSING,
 		                               &parameters, NULL, &this->D3D_device)))
 		{
 			return false;
@@ -292,58 +303,46 @@ public:
 		return true;
 	}
 	
-	IDirect3DDevice9Ex* D3D_device;
-	IDirect3DSurface9* D3D_backbuf;
-	HANDLE GL_sharehandle;
-	HANDLE GL_sharetexture;
-	
-	
-//        g_hDX9Device = wglDXOpenDeviceNV(g_pDevice);
-
-//        if (g_hDX9Device)
-//        {
-//            glGenTextures(1, &g_GLTexture);
-
-//#if SHARE_TEXTURE
-            // This registers a resource that was created as shared in DX with its shared handle
-//            bool success = wglDXSetResourceShareHandleNV(g_pSharedTexture, g_hSharedTexture);
-
-            // g_hGLSharedTexture is the shared texture data, now identified by the g_GLTexture name
-//            g_hGLSharedTexture = wglDXRegisterObjectNV(g_hDX9Device,
-//                                                       g_pSharedTexture,
-//                                                       g_GLTexture,
-//                                                       GL_TEXTURE_2D,
-//                                                       WGL_ACCESS_READ_ONLY_NV);
-//#else
-	
 	/*private*/ bool JoinGLD3D()
 	{
-		GLuint fbo;
-		gl.GenFramebuffers(1, &fbo);
-		gl.BindFramebuffer(GL_FRAMEBUFFER, fbo);
+		gl.GenFramebuffers(1, &GL_fboname);
+		gl.BindFramebuffer(GL_FRAMEBUFFER, GL_fboname);
 		
-		GLuint texture;
-		gl.GenTextures(1, &texture);
-		gl.BindTexture(GL_TEXTURE_2D, texture);
+		gl.GenTextures(1, &GL_texturename);
+		gl.BindTexture(GL_TEXTURE_2D, GL_texturename);
 		
-		GL_sharehandle = wgl.DXOpenDeviceNV(this->D3D_device);
+		gl.FramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_texturename, 0);
+		
+		D3D_sharehandle = wgl.DXOpenDeviceNV(this->D3D_device);
+		D3D_sharetexture = NULL;
 		
 		this->D3D_device->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &this->D3D_backbuf);
-		wgl.DXSetResourceShareHandleNV(this->D3D_backbuf, GL_sharehandle);
-		this->GL_sharetexture = wgl.DXRegisterObjectNV(this->D3D_device, this->D3D_backbuf, texture, GL_TEXTURE_2D, WGL_ACCESS_READ_WRITE_NV);
-		//TODO: WGL_ACCESS_WRITE_DISCARD_NV
 		
-wgl.DXLockObjectsNV(GL_sharehandle, 1, &this->GL_sharetexture);
-		
-gl.TexImage2D(GL_TEXTURE_2D, 0,GL_RGB, 1024, 768, 0,GL_RGB, GL_UNSIGNED_BYTE, 0);
-gl.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-gl.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-		
-		gl.FramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, texture, 0);
-		
-		gl.BindFramebuffer(GL_FRAMEBUFFER, fbo);
+		AllocRenderTarget();
 		
 		return true;
+	}
+	
+	/*private*/ void AllocRenderTarget()
+	{
+		RECT wndsize;
+		GetClientRect(this->D3D_hwnd, &wndsize);
+		this->D3D_device->CreateRenderTarget(wndsize.right, wndsize.bottom, D3DFMT_X8R8G8B8, D3DMULTISAMPLE_NONE, 0, false, &this->D3D_GLtarget, &D3D_sharetexture);
+		
+		wgl.DXSetResourceShareHandleNV(this->D3D_GLtarget, D3D_sharetexture);
+		this->GL_htexture = wgl.DXRegisterObjectNV(this->D3D_sharehandle, this->D3D_GLtarget, GL_texturename, GL_TEXTURE_2D, WGL_ACCESS_WRITE_DISCARD_NV);
+		
+		wgl.DXLockObjectsNV(D3D_sharehandle, 1, &this->GL_htexture);
+	}
+	
+	/*private*/ void DeallocRenderTarget()
+	{
+		wgl.DXUnlockObjectsNV(D3D_sharehandle, 1, &this->GL_htexture);
+		
+		wgl.DXUnregisterObjectNV(D3D_sharehandle, this->GL_htexture);
+		this->D3D_GLtarget->Release();
+		CloseHandle(D3D_sharetexture);
+		D3D_sharetexture = NULL;
 	}
 	
 	
@@ -363,28 +362,31 @@ gl.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	
 	void swapInterval(int interval)
 	{
-		//wgl.SwapInterval(interval);
-		//wgl.SwapInterval(0);
+		vsync = (interval==1);
 	}
 	
 	void swapBuffers()
 	{
-		::SwapBuffers(this->GL_hdc);
+		//::SwapBuffers(this->GL_hdc);
 		
-		static int e=0;
-		//this->D3D_device->Clear(0, NULL, D3DCLEAR_TARGET, D3DCOLOR_XRGB(e,0,e), 1.0f, 0);
-		e = 255-e;
-		
-wgl.DXUnlockObjectsNV(GL_sharehandle, 1, &this->GL_sharetexture);
-		this->D3D_device->PresentEx(NULL, NULL, NULL, NULL, 0);
-wgl.DXLockObjectsNV(GL_sharehandle, 1, &this->GL_sharetexture);
-		//TODO: last argument should be (sync ? 0 : D3DPRESENT_FORCEIMMEDIATE|D3DPRESENT_DONOTWAIT)
+		wgl.DXUnlockObjectsNV(D3D_sharehandle, 1, &this->GL_htexture);
+		this->D3D_device->StretchRect(this->D3D_GLtarget, NULL, this->D3D_backbuf, NULL, D3DTEXF_NONE);
+		this->D3D_device->PresentEx(NULL, NULL, NULL, NULL, (vsync ? 0 : D3DPRESENT_FORCEIMMEDIATE|D3DPRESENT_DONOTWAIT));
+		wgl.DXLockObjectsNV(D3D_sharehandle, 1, &this->GL_htexture);
+	}
+	
+	void notifyResize(GLsizei width, GLsizei height)
+	{
+		DeallocRenderTarget();
+		AllocRenderTarget();
 	}
 	
 	~aropengl_windows()
 	{
-TerminateProcess(GetCurrentProcess(), -1); // TODO: reenable once that global gl struct is no more
+		DeallocRenderTarget();
+TerminateProcess(GetCurrentProcess(), -1); // TODO: do this right - that global GL struct causes the destructor to run twice
 WaitForSingleObject(GetCurrentProcess(), INFINITE);
+
 		if (wgl.MakeCurrent) wgl.MakeCurrent(NULL, NULL);
 		if (this->GL_hglrc && wgl.DeleteContext) wgl.DeleteContext(this->GL_hglrc);
 		if (this->GL_hdc) ReleaseDC(this->GL_hwnd, this->GL_hdc);

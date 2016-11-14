@@ -1,4 +1,4 @@
-#ifdef _WIN32ggg
+#ifdef _WIN32g
 #include "aropengl.h"
 
 #undef bind
@@ -116,7 +116,7 @@ public:
 		bool debug = (flags & aropengl::t_debug_context);
 		bool depthbuf = (flags & aropengl::t_depth_buffer);
 		bool stenbuf = (flags & aropengl::t_stencil_buffer);
-		bool d3dsync = (flags & aropengl::t_direct3d_sync);
+		bool d3dsync = (flags & aropengl::t_direct3d_vsync);
 		if (d3dsync)
 		{
 #ifdef AROPENGL_D3DSYNC

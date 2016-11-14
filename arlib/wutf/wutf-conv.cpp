@@ -20,7 +20,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-//The above license applies only to this file, not the entire Arlib.
+//The above license applies only to the WuTF directory, not the entire Arlib.
 
 //See wutf.h for documentation.
 

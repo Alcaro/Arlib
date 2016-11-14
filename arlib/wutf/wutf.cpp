@@ -20,7 +20,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-//The above license applies only to this file, not the entire Arlib.
+//The above license applies only to the WuTF directory, not the entire Arlib.
 
 //See wutf.h for documentation.
 
@@ -236,9 +236,9 @@ void WuTF_args(int* argc_p, char** * argv_p)
 	
 	for (i=0;i<argc;i++)
 	{
-		int cb = WuTF_utf16_to_utf8(0, (uint16_t*)wargv[i], -1, NULL, 0);
+		int cb = WideCharToMultiByte(CP_UTF8, 0, (uint16_t*)wargv[i], -1, NULL, 0, NULL, NULL);
 		argv[i] = (char*)HeapAlloc(GetProcessHeap(), 0, cb);
-		WuTF_utf16_to_utf8(0, (uint16_t*)wargv[i], -1, argv[i], cb);
+		WideCharToMultiByte(CP_UTF8, 0, (uint16_t*)wargv[i], -1, argv[i], cb, NULL, NULL);
 	}
 	argv[argc]=0;
 	
