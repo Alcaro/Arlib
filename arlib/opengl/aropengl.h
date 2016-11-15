@@ -35,8 +35,8 @@ public:
 		//- You may not render to the default framebuffer, 0; you must render to gl.defaultFramebuffer()
 		//    (if you don't use framebuffers, you can ignore this; defaultFrameBuffer is bound on creation)
 		//- You must call gl.notifyResize() whenever the window is resized (whether by the application or the user), in addition to gl.Viewport/etc
-		//- Swap intervals other than 0 and 1 are not supported. Not even -1.
-		//- May be slower; with vsync off, clearing a 640x480 screen each frame drops from 3500 on pure OpenGL to 2750 with Direct3D vsync
+		//- Swap intervals other than 0 and 1 are not supported, not even -1.
+		//- May be slower, especially with vsync off
 		//The flag is ignored on non-Windows systems.
 		//It is safe to use gl.defaultFramebuffer and gl.notifyResize on non-d3dsync objects.
 		t_direct3d_vsync = 0x010000,

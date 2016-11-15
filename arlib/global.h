@@ -13,7 +13,9 @@
 //the namespace pollution this causes is massive, but without it, there's a bunch of functions that
 // just tail call kernel32.dll. With it, they can be inlined.
 #  define WIN32_LEAN_AND_MEAN
-#  define NOMINMAX
+#  ifndef NOMINMAX
+#   define NOMINMAX
+#  endif
 #  define strcasecmp stricmp
 #  define strncasecmp strnicmp
 #  ifdef _MSC_VER

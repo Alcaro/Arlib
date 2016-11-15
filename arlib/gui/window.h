@@ -58,7 +58,7 @@ public:
 	virtual void set_onclose(function<bool()> onclose) = 0;
 	
 	//Appends a menu bar to the top of the window. If the window has a menu already, it's replaced. NULL removes the menu.
-	//There's no real reason to replace it, though. Just change it.
+	//But there's no real reason to replace it. Just change it.
 	//Must be created by windowmenu_menu::create_top.
 	virtual void set_menu(windowmenu_menu* menu) = 0;
 	
@@ -97,10 +97,11 @@ public:
 	virtual ~window() = 0;
 	
 	
-	//Returns a native handle to the window. It is implementation defined what this native handle is, or if it's implemented at all.
+	//Only usable by the implementation, don't call them yourself. Not guaranteed to be implemented at all.
+	//Returns a native handle to the window.
 	virtual uintptr_t _get_handle() { return 0; }
-	//Repositions the window contents. May not necessarily be implemented, if reflow requests are detected in other ways.
-	//If false, the reflow will be done later and the old sizes are still present.
+	//Recomputes the window content layout.
+	//If return value is false, the reflow will be done later and the old sizes are still present.
 	virtual bool _reflow() { return false; };
 };
 inline window::~window(){}
@@ -368,23 +369,35 @@ public:
 
 
 //A viewport fills the same purpose as a canvas, but the tradeoffs go the opposite way.
+//There's no single way to render high-performance graphics (especially 3d), so a separate video driver is required.
+//Many video drivers (especially OpenGL-based ones) can't render to arbitrary windows, but must create their own windows;
+// therefore, this widget doesn't create its own window, but expects to be given one by the video driver.
+// The driver retains ownership and is expected to delete it.
+//If the widget is resized, it will also resize the driver's window, and tell the driver about it (onresize).
+// Unlike the rest of Arlib, this callback will be called by resize(), as the video driver isn't the same component as called resize().
+// onresize() will also be called during set_window_handle.
+//Upon destruction, the driver must call set_contents(0, NULL).
+// This may be done after the driver destroys the window, but must be done before the next window_run_*() or ->resize().
 class widget_viewport : public widget_base { WIDGET_BASE
 public:
 	widget_viewport(unsigned int width, unsigned int height);
 	~widget_viewport();
 	
-	//can't disable this
 	widget_viewport* resize(unsigned int width, unsigned int height);
+	
+	//TODO: remove
 	uintptr_t get_window_handle();
-	//The position is relative to the desktop.
-	void get_position(int * x, int * y, unsigned int * width, unsigned int * height);
+	
+	//TODO: implement
+	uintptr_t get_parent_handle();
+	void set_window_handle(uintptr_t windowhandle, function<void(size_t width, size_t height)> onresize);
 	
 	//See documentation of canvas for these.
 	widget_viewport* set_hide_cursor(bool hide);
 	widget_viewport* set_support_drop(function<void(const char * const * filenames)> on_file_drop);
 	
-	//Keycodes are from libretro; 0 if unknown. Scancodes are implementation defined, but if there is no libretro translation, then none is returned.
-	//widget_viewport* set_kb_callback)(function<void(unsigned int keycode, unsigned int scancode)> keyboard_cb);
+	//Keycodes are from libretro; 0 if unknown. Scancodes are implementation defined and always present.
+	//widget_viewport* set_kb_callback(function<void(unsigned int keycode, unsigned int scancode)> keyboard_cb);
 	
 public:
 	struct impl;
@@ -421,14 +434,14 @@ public:
 	
 	//On Windows, the limit is 100 million; if more than that, it puts in 0.
 	// Probably because it's a nice round number, and the listbox row height (19) times 100 million is fairly close to 2^31.
-	//On GTK+, it's 100000; it's slow on huge lists.
-	//TODO: figure out why.
+	//On GTK+, it's 100000; it's slow on huge lists, since it allocates memory for each row,
+	// even when using gtk_tree_view_set_fixed_height_mode and similar.
 	static size_t get_max_rows();
 	
 	//If more than get_max_rows(), it's capped to that.
 	widget_listbox_virtual* set_num_rows(size_t rows);
 	
-	//Call this after changing anything. It's fine to change multiple rows at once with only one call.
+	//Call this after changing anything. It's fine to change multiple rows before calling this.
 	widget_listbox_virtual* refresh();
 	
 	//If the active row changes, set_focus_change will fire. However, onactivate will likely not.
@@ -462,7 +475,7 @@ public:
 #define widget_create_listbox_virtual(...) (new widget_listbox_virtual(__VA_ARGS__))
 
 
-//If performance is bad, switch to the virtual listbox.
+//Easier to use than the virtual listbox, but slower. Should be preferred for most usecases.
 class widget_listbox : public widget_listbox_virtual
 {
 	size_t numcols;
@@ -691,10 +704,10 @@ public:
 //Tells the window manager to handle recent events and fire whatever callbacks are relevant.
 //Neither of them are allowed while inside any callback of any kind.
 //Some other functions may call these two.
-void window_run_iter();//Returns as soon as possible. Use if you're synchronizing on something else.
+void window_run_iter();//Returns as soon as possible. Use if, for example, you're displaying an animation.
 void window_run_wait();//Returns only after doing something. Use while idling. It will return if any
                        // state (other than the time) has changed or if any callback has fired.
-                       // It may also return due to uninteresting events, as often as it wants;
+                       //It may also return due to uninteresting events, as often as it wants;
                        // however, repeatedly calling it will leave the CPU mostly idle.
 
 //Shows a message box. You can do that by creating a label and some buttons, but it gives inferior results.
@@ -711,8 +724,7 @@ bool window_message_box(const char * text, const char * title, enum mbox_sev sev
 //If multiple is true, multiple files may be picked; if not, only one can be picked. Should
 // generally be true for dylibs and false for ROMs, but not guaranteed.
 //The parent window will be disabled while the dialog is active.
-//Both extensions and return value have the format { "smc", ".sfc", NULL }. Extensions may or may not
-// include the dot; if it's not there, it's implied.
+//Both extensions and return value have the format { "smc", ".sfc", NULL }. Extensions are optional.
 //Return value is full paths, zero or more. Duplicates are allowed in both input and output.
 //The return value is valid until the next call to window_file_picker() or window_run_*(), whichever comes first.
 const char * const * window_file_picker(window * parent,
@@ -727,13 +739,11 @@ const char * const * window_file_picker(window * parent,
 //It can be program launch, system boot, the Unix epoch, or whatever.
 uint64_t window_get_time();
 
-//The different components may want to initialize various parts each. All three may not necessarily exist.
+//Implementation details, don't touch.
 void _window_init_inner();
 void _window_init_misc();
 void _window_init_shell();
-//If the window shell is the one told about interaction with a widget, this sends it back to the inner area.
 uintptr_t _window_notify_inner(void* notification);
-//Because Windows is a douchebag.
 uintptr_t _window_get_widget_color(unsigned int type, void* handle, void* draw, void* parent);
 
 //This one can be used if the one calling widget_listbox_virtual->set_contents doesn't provide a search function.
@@ -755,3 +765,6 @@ extern struct window_x11_info window_x11;
 #endif
 
 //TODO: If porting to Qt, use https://woboq.com/blog/verdigris-qt-without-moc.html
+//Windows resources are bad enough, but at least they have a reason to exist -
+// they have to be available without executing the program. moc has no such excuse.
+//TODO: check if section attributes can replace the .rc
