@@ -16,8 +16,8 @@
 #  ifndef NOMINMAX
 #   define NOMINMAX
 #  endif
-#  define strcasecmp stricmp
-#  define strncasecmp strnicmp
+#  define strcasecmp _stricmp
+#  define strncasecmp _strnicmp
 #  ifdef _MSC_VER
 #    define _CRT_NONSTDC_NO_DEPRECATE
 #    define _CRT_SECURE_NO_WARNINGS

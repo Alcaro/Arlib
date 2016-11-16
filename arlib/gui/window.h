@@ -352,14 +352,15 @@ public:
 	uint32_t * (*draw_begin)();
 	void draw_end();
 	
-	//Whether to hide the cursor while it's on top of this widget.
-	//The mouse won't instantly hide; if it's moving, it will be visible. The exact details are up to the implementation,
-	// but it will be similar to "the mouse is visible if it has moved within the last 1000 milliseconds".
-	widget_canvas* set_hide_cursor(bool hide);
-	
-	//This must be called before the window is shown, and only exactly once.
-	//All given filenames are invalidated once the callback returns.
-	widget_canvas* set_support_drop(function<void(const char * const * filenames)> on_file_drop);
+	//TODO
+	////Whether to hide the cursor while it's on top of this widget.
+	////The mouse won't instantly hide; if it's moving, it will be visible. The exact details are up to the implementation,
+	//// but it will be similar to "the mouse is visible if it has moved within the last 1000 milliseconds".
+	//widget_canvas* set_hide_cursor(bool hide);
+	//
+	////This must be called before the window is shown, and only exactly once.
+	////All given filenames are invalidated once the callback returns.
+	//widget_canvas* set_support_drop(function<void(const char * const * filenames)> on_file_drop);
 	
 public:
 	struct impl;
@@ -369,15 +370,6 @@ public:
 
 
 //A viewport fills the same purpose as a canvas, but the tradeoffs go the opposite way.
-//There's no single way to render high-performance graphics (especially 3d), so a separate video driver is required.
-//Many video drivers (especially OpenGL-based ones) can't render to arbitrary windows, but must create their own windows;
-// therefore, this widget doesn't create its own window, but expects to be given one by the video driver.
-// The driver retains ownership and is expected to delete it.
-//If the widget is resized, it will also resize the driver's window, and tell the driver about it (onresize).
-// Unlike the rest of Arlib, this callback will be called by resize(), as the video driver isn't the same component as called resize().
-// onresize() will also be called during set_window_handle.
-//Upon destruction, the driver must call set_contents(0, NULL).
-// This may be done after the driver destroys the window, but must be done before the next window_run_*() or ->resize().
 class widget_viewport : public widget_base { WIDGET_BASE
 public:
 	widget_viewport(unsigned int width, unsigned int height);
@@ -385,18 +377,29 @@ public:
 	
 	widget_viewport* resize(unsigned int width, unsigned int height);
 	
-	//TODO: remove
-	uintptr_t get_window_handle();
+	//There's no single way to render high-performance graphics (especially 3d), so a separate video driver is required.
+	//Many video drivers (especially OpenGL-based ones) can't render to arbitrary windows, but must create their own windows;
+	// therefore, this widget doesn't create its own window, but expects to be given one by the video driver.
+	// The driver retains ownership and is expected to delete it.
+	//The driver's created window should be a child of this one:
+	uintptr_t get_parent();
 	
-	//TODO: implement
-	uintptr_t get_parent_handle();
-	void set_window_handle(uintptr_t windowhandle, function<void(size_t width, size_t height)> onresize);
+	//As this widget is resizable, it needs a way to report size changes.
+	//This is done via this function. Call it and the widget will move and resize the window to whereever this widget is located.
+	//If the widget changes size, this will be reported to onresize(). Guaranteed to only be called if actually changed.
+	//This callback will be called if the widget is altered by resize(). The rest of Arlib avoids calling callbacks for API-sourced calls,
+	// but the video driver isn't the one who called resize().
+	//If the driver wants to destroy its window, it must call set_contents(0, NULL, NULL) before the next window_run_*() or ->resize().
+	//ondestroy is called whenever the viewport is destroyed. Like onresize, this is triggered by the program's own actions, and exists for the same reason.
+	void set_child(uintptr_t windowhandle, function<void(size_t width, size_t height)> onresize, function<void()> ondestroy);
 	
-	//See documentation of canvas for these.
-	widget_viewport* set_hide_cursor(bool hide);
-	widget_viewport* set_support_drop(function<void(const char * const * filenames)> on_file_drop);
+	//TODO
+	////See documentation of canvas for these.
+	//widget_viewport* set_hide_cursor(bool hide);
+	//widget_viewport* set_support_drop(function<void(const char * const * filenames)> on_file_drop);
 	
-	//Keycodes are from libretro; 0 if unknown. Scancodes are implementation defined and always present.
+	//TODO
+	////Keycodes are from libretro; 0 if unknown. Scancodes are implementation defined and always present.
 	//widget_viewport* set_kb_callback(function<void(unsigned int keycode, unsigned int scancode)> keyboard_cb);
 	
 public:

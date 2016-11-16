@@ -1,5 +1,6 @@
 #pragma once
 #include "../global.h"
+#include "../gui/window.h"
 
 #include <GL/gl.h>
 #include <GL/glext.h>
@@ -47,9 +48,7 @@ public:
 	public:
 		//this is basically the common subset of WGL/GLX/etc
 		//you want the outer class, as it offers proper extension management
-		static context* create(uintptr_t window, uint32_t flags);
-		
-		static context* create_x11(void* display, uintptr_t window, uint32_t flags);
+		static context* create(uintptr_t parent, uintptr_t* window, uint32_t flags);
 		
 		virtual void makeCurrent(bool make) = 0; // If false, releases the context. The context is current on creation.
 		virtual void swapInterval(int interval) = 0;
@@ -58,30 +57,41 @@ public:
 #ifdef AROPENGL_D3DSYNC
 		virtual
 #endif
-		void notifyResize(GLsizei width, GLsizei height) {}
+		void notifyResize(unsigned int width, unsigned int height) {}
 		
 #ifdef AROPENGL_D3DSYNC
 		virtual
 #endif
 		GLuint outputFramebuffer() { return 0; }
 		
+		virtual void destroy() = 0;
+		//implementations must ensure the destructor is safe even after having its window destroyed
+		//the best method is putting everything into destroy() and having the destructor just call that
 		virtual ~context() {}
 	};
 	
 	bool create(context* core);
 	
-	bool create(uintptr_t window, uint32_t flags) { return create(context::create(window, flags)); }
-	//Allows specifying which X11 connection the window is for.
-	//You're probably happier with the default, this one exists only if you don't want a dependency on the rest of Arlib.
-	bool create_x11(void* display, uintptr_t window, uint32_t flags) { return create(context::create_x11(display, window, flags)); }
+	bool create(uintptr_t parent, uintptr_t* window, uint32_t flags)
+	{
+		return create(context::create(parent, window, flags));
+	}
+	
+	//Due to problems ensuring destructor ordering, the viewport is not automatically disconnected from the driver upon destruction.
+	//Either destroy the viewport too, disconnect it yourself, or ensure a new driver (whether OpenGL or not) is quickly created on the viewport.
+	bool create(widget_viewport* port, uint32_t flags)
+	{
+		uintptr_t newwindow;
+		if (!create(port->get_parent(), &newwindow, flags)) return false;
+		port->set_child(newwindow, bind_ptr(&aropengl::context::notifyResize, this->core), bind_ptr(&aropengl::context::destroy, this->core));
+	}
 	
 	aropengl() { core=NULL; }
 	aropengl(context* core) { create(core); }
-	aropengl(uintptr_t window, uint32_t flags) { create(window, flags); }
-	
+	aropengl(uintptr_t parent, uintptr_t* window, uint32_t flags) { create(parent, window, flags); }
+	aropengl(widget_viewport* port, uint32_t flags) { create(port, flags); }
 	explicit operator bool() { return core!=NULL; }
-	
-	~aropengl() { delete core; }
+	~aropengl() { delete core; core=NULL; }
 	
 	//Arlib usually uses underscores, but since OpenGL doesn't, this object follows suit.
 	//To ensure no collisions, Arlib-specific functions start with a lowercase (or are C++-only, like operator bool), standard GL functions are uppercase.
@@ -96,6 +106,10 @@ public:
 	void notifyResize(GLsizei width, GLsizei height) { core->notifyResize(width, height); }
 	//Used only for Direct3D sync. If you're not using that, just use 0.
 	GLuint outputFramebuffer() { return core->outputFramebuffer(); }
+	
+	//Releases all resources owned by the object; the object may not be used after this.
+	//Use if the destructor isn't guaranteed to run while the driver's window still exists.
+	void destroy() { core->destroy(); }
 	
 	//void (GLAPIENTRY * ClearColor)(GLclampf red, GLclampf green, GLclampf blue, GLclampf alpha);
 	//void (GLAPIENTRY * Clear)(GLbitfield mask);

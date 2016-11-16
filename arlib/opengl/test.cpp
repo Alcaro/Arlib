@@ -1,15 +1,17 @@
-#if 0
+/*
 g++ -std=c++11 -O3 -DARLIB_D3DTEST -DARLIB_OPENGL -DARGUI_WINDOWS -DAROPENGL_D3DSYNC *.cpp ..\debug.cpp ..\gui\*.cpp ..\malloc.cpp ..\file-win32.cpp -lgdi32 -lcomctl32 -lcomdlg32 -o test.exe && test.exe && del test.exe
 exit
-#endif
+*/
 
 #ifdef ARLIB_D3DTEST
+#define NTDDI_VERSION NTDDI_WS03
+#define _WIN32_IE 0x0600
+#include<windows.h> // must include this early, Arlib sets WIN32_LEAN_AND_MEAN which removes timeBeginPeriod
+
 #include <time.h>
 #include <algorithm>
 #include <math.h>
 #include "../arlib.h"
-
-#include<windows.h>
 
 void math(int* data, int ndata, float& avg, float& stddev)
 {
@@ -33,13 +35,14 @@ void process(bool d3d)
 {
 	widget_viewport* port = widget_create_viewport(300, 200);
 	window* wnd = window_create(port);
-	wnd->set_visible(true);
 	
 	uint32_t flags = aropengl::t_ver_3_3 | aropengl::t_debug_context;
 	if (d3d) flags |= aropengl::t_direct3d_vsync;
 	//flags |= aropengl::t_depth_buffer;
-	aropengl gl(port->get_window_handle(), flags);
+	aropengl gl(port, flags);
 	if (!gl) return;
+	
+	wnd->set_visible(true);
 	
 	gl.enableDefaultDebugger();
 	gl.swapInterval(1);
@@ -50,7 +53,7 @@ void process(bool d3d)
 	
 #define SKIP 20
 #define FRAMES 1800
-	int times[SKIP+FRAMES];
+	int times[SKIP+FRAMES]={};
 	
 LARGE_INTEGER StartingTime, EndingTime, ElapsedMicroseconds;
 LARGE_INTEGER Frequency;
@@ -69,7 +72,6 @@ QueryPerformanceCounter(&StartingTime);
 		gl.Clear(GL_COLOR_BUFFER_BIT);
 		
 		gl.swapBuffers();
-		window_run_iter();
 		
 		//width++;
 		//if(width>1000)width=500;
@@ -101,12 +103,19 @@ times[i] = ElapsedMicroseconds.QuadPart;
 int main(int argc, char * argv[])
 {
 	window_init(&argc, &argv);
-	for (int i=0;i<5;i++) // results are very jittery, even if averaging over half a minute and discarding warmup time
+	//timeBeginPeriod(1);
+	//this is supposed to measure how much D3D sync helps, but either
+	//- there's nonzero time between SwapBuffers/PresentEx return and the frame is presented
+	//- DWM and/or the driver has determined that I want high-quality vsync, and auto enables it
+	//- I'm measuring wrong thing
+	//- the mere act of mentioning d3d9.dll in the binary scares it into submission
+	//because I can't measure any meaningful difference whatsoever.
+	//When I first got this working, I had std.dev 4000us for pure GL and 250 for D3D sync, what happened?
+	
+	for (int i=0;i<5;i++)
 	{
 		process(false);
 		process(true);
 	}
-	//sample results (Windows 7, Intel HD Graphics 4400):
-	//TODO: regenerate on next reboot
 }
 #endif

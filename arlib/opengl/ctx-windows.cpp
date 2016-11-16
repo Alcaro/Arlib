@@ -182,33 +182,30 @@ public:
 	bool vsync;
 #endif
 	
-	/*private*/ bool init(HWND window, uint32_t flags)
+	/*private*/ bool init(HWND parent, HWND* window_, uint32_t flags)
 	{
 #ifdef AROPENGL_D3DSYNC
 		this->d3dsync = (flags & aropengl::t_direct3d_vsync);
-		
-		if (d3dsync)
-		{
-			this->D3D_hwnd = window;
-			this->GL_hwnd = CreateDummyWindow(window);
-			
-			D3D_sharehandle = NULL;
-			D3D_sharetexture = NULL;
-			GL_htexture = NULL;
-		}
-		else
 #endif
-		{
-			this->GL_hwnd = window;
-		}
+		
+		this->GL_hwnd = CreateWindow("arlib", NULL, WS_CHILD | (this->d3dsync ? 0 : WS_VISIBLE), 0, 0, 1, 1, parent, NULL, NULL, NULL);
+		
+		*window_ = this->GL_hwnd;
 		this->GL_hdc = GetDC(this->GL_hwnd);
 		this->GL_hglrc = NULL;
 		
 		if (!libLoadGL()) return false;
 		if (!CreateContext(flags)) return false;
+		
 #ifdef AROPENGL_D3DSYNC
 		if (this->d3dsync)
 		{
+			this->D3D_hwnd = CreateWindow("arlib", NULL, WS_CHILD | WS_VISIBLE, 0, 0, 1, 1, parent, NULL, NULL, NULL);
+			*window_ = this->D3D_hwnd;
+			D3D_sharehandle = NULL;
+			D3D_sharetexture = NULL;
+			GL_htexture = NULL;
+			
 			if (!libLoadD3D()) return false;
 			if (!CreateD3DContext()) return false;
 			if (!JoinGLD3D()) return false;
@@ -218,18 +215,16 @@ public:
 		return true;
 	}
 	
-#ifdef AROPENGL_D3DSYNC
-	/*private*/ HWND CreateDummyWindow(HWND parent)
-	{
-		WNDCLASS wc = {};
-		wc.lpfnWndProc = DefWindowProc;
-		wc.lpszClassName = "arlib_opengl_dummy";
-		RegisterClass(&wc);
-		
-		return CreateWindow("arlib_opengl_dummy", NULL, WS_CHILD, -1, 0, 1, 1, parent, NULL, NULL, NULL);
-		//return CreateWindow("arlib_opengl_dummy", "OPENGL", WS_VISIBLE, 0, 0, 100, 100, NULL, NULL, NULL, NULL);
-	}
-#endif
+	///*private*/ HWND CreateDummyWindow(HWND parent)
+	//{
+	//	WNDCLASS wc = {};
+	//	wc.lpfnWndProc = DefWindowProc;
+	//	wc.lpszClassName = "arlib_opengl_dummy";
+	//	RegisterClass(&wc);
+	//	
+	//	return CreateWindow("arlib", NULL, WS_CHILD, -1, 0, 1, 1, parent, NULL, NULL, NULL);
+	//	//return CreateWindow("arlib", "OPENGL", WS_VISIBLE, 0, 0, 100, 100, NULL, NULL, NULL, NULL);
+	//}
 	
 	/*private*/ bool CreateContext(uint32_t flags)
 	{
@@ -438,10 +433,20 @@ public:
 			AllocRenderTarget();
 		}
 	}
+	
+	GLuint outputFramebuffer()
+	{
+		if (d3dsync) return GL_fboname;
+		else return 0;
+	}
 #endif
 	
-	~aropengl_windows()
+	void destroy()
 	{
+		//early return to ensure the libUnload functions aren't called too much
+		//this is the first member set in init()
+		if (!this->GL_hwnd) return;
+		
 #ifdef AROPENGL_D3DSYNC
 		if (this->d3dsync)
 		{
@@ -452,25 +457,30 @@ public:
 			if (this->D3D_backbuf) this->D3D_backbuf->Release();
 			
 			//don't bother cleaning up the GL resources, wglDeleteContext does that already
+			if (this->D3D_hwnd) DestroyWindow(this->D3D_hwnd);
 			
 			libUnloadD3D();
 		}
 #endif
 		
-		if (wgl.MakeCurrent) wgl.MakeCurrent(NULL, NULL);
 		if (this->GL_hglrc && wgl.DeleteContext) wgl.DeleteContext(this->GL_hglrc);
 		if (this->GL_hdc) ReleaseDC(this->GL_hwnd, this->GL_hdc);
 		
+		DestroyWindow(this->GL_hwnd);
+		this->GL_hwnd = NULL;
+		
 		libUnloadGL();
 	}
+	
+	~aropengl_windows() { destroy(); }
 };
 
 }
 
-aropengl::context* aropengl::context::create(uintptr_t window, uint32_t flags)
+aropengl::context* aropengl::context::create(uintptr_t parent, uintptr_t* window, uint32_t flags)
 {
 	aropengl_windows* ret = new aropengl_windows();
-	if (ret->init((HWND)window, flags)) return ret;
+	if (ret->init((HWND)parent, (HWND*)window, flags)) return ret;
 	
 	delete ret;
 	return NULL;
