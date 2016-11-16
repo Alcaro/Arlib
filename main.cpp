@@ -42,7 +42,7 @@ void process(bool d3d)
 	//int width = 640;
 	
 #define SKIP 20
-#define FRAMES 1800
+#define FRAMES 180
 	int times[SKIP+FRAMES]={};
 	
 	uint64_t prev = perfcounter();
@@ -96,6 +96,8 @@ int main(int argc, char * argv[])
 	for (int i=0;i<5;i++)
 	{
 		process(false);
+#ifdef _WIN32
 		process(true);
+#endif
 	}
 }

@@ -43,9 +43,6 @@
 
 namespace {
 
-//not autogenerating this since we know what this module wants
-#define WGL_SYM(ret, name, args) WGL_SYM_N("wgl"#name, ret, name, args)
-#define WGL_SYM_ANON(ret, name, args) WGL_SYM_N(#name, ret, name, args)
 #define WGL_SYMS() \
 	WGL_SYM(HGLRC, CreateContext, (HDC hdc)) \
 	WGL_SYM(BOOL, DeleteContext, (HGLRC hglrc)) \
@@ -87,17 +84,17 @@ namespace {
 	) \
 
 struct {
-#define WGL_SYM_N(str, ret, name, args) ret (WINAPI * name) args;
+#define WGL_SYM(ret, name, args) ret (WINAPI * name) args;
 	WGL_SYMS()
-#undef WGL_SYM_N
+#undef WGL_SYM
 #define WGL_EXT(type, name) type name;
 	WGL_EXTS()
 #undef WGL_EXT
 	HMODULE lib;
 } static wgl;
-#define WGL_SYM_N(str, ret, name, args) str "\0"
+#define WGL_SYM(ret, name, args) "wgl" #name "\0"
 static const char wgl_proc_names[] = WGL_SYMS() ;
-#undef WGL_SYM_N
+#undef WGL_SYM
 #define WGL_EXT(type, name) "wgl" #name "\0"
 static const char wgl_ext_names[] = WGL_EXTS() ;
 #undef WGL_EXT
@@ -188,7 +185,11 @@ public:
 		this->d3dsync = (flags & aropengl::t_direct3d_vsync);
 #endif
 		
-		this->GL_hwnd = CreateWindow("arlib", NULL, WS_CHILD | (this->d3dsync ? 0 : WS_VISIBLE), 0, 0, 1, 1, parent, NULL, NULL, NULL);
+		this->GL_hwnd = CreateWindow("arlib", NULL, WS_CHILD | (
+#ifdef AROPENGL_D3DSYNC
+		                                                        this->d3dsync ? 0 :
+#endif
+		                                                        WS_VISIBLE), 0, 0, 1, 1, parent, NULL, NULL, NULL);
 		
 		*window_ = this->GL_hwnd;
 		this->GL_hdc = GetDC(this->GL_hwnd);
@@ -262,15 +263,11 @@ public:
 			const int attribs[] = {
 				WGL_CONTEXT_MAJOR_VERSION_ARB, (int)version/100,
 				WGL_CONTEXT_MINOR_VERSION_ARB, (int)version/10%10,
+				WGL_CONTEXT_FLAGS_ARB, debug ? WGL_CONTEXT_DEBUG_BIT_ARB : 0,
 				//WGL_CONTEXT_FLAGS_ARB, WGL_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB,
 				//https://www.opengl.org/wiki/Core_And_Compatibility_in_Contexts says do not use
 			0 };
-			const int attribs_debug[] = {
-				WGL_CONTEXT_MAJOR_VERSION_ARB, (int)version/100,
-				WGL_CONTEXT_MINOR_VERSION_ARB, (int)version/10%10,
-				WGL_CONTEXT_FLAGS_ARB, WGL_CONTEXT_DEBUG_BIT_ARB,
-			0 };
-			this->GL_hglrc = wglCreateContextAttribs(this->GL_hdc, /*share*/NULL, debug ? attribs_debug : attribs);
+			this->GL_hglrc = wglCreateContextAttribs(this->GL_hdc, /*share*/NULL, attribs);
 			wgl.DeleteContext(hglrc_old);
 			
 			if (!this->GL_hglrc)

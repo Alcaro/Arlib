@@ -159,7 +159,7 @@ ifeq ($(AROPENGL),1)
   SOURCES += arlib/opengl/*.cpp
   CONF_CFLAGS += -DARLIB_OPENGL
   ifeq ($(OS),linux)
-    CONF_LFLAGS += -ldl -lGL
+    CONF_LFLAGS += -ldl
   endif
   ifeq ($(AROPENGL_D3DSYNC),1)
     CONF_CFLAGS += -DAROPENGL_D3DSYNC

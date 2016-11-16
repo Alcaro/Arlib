@@ -86,7 +86,7 @@ public:
 		this->port = port;
 		port->set_child(newwindow,
 		                bind_ptr(&aropengl::context::notifyResize, this->core),
-		                bind_ptr(&aropengl::context::destroy, this->core));
+		                bind_ptr(&aropengl::destroy, this));
 		return true;
 	}
 	
@@ -95,10 +95,10 @@ public:
 	aropengl(uintptr_t parent, uintptr_t* window, uint32_t flags) { create(parent, window, flags); }
 	aropengl(widget_viewport* port, uint32_t flags) { create(port, flags); }
 	explicit operator bool() { return core!=NULL; }
+	
 	~aropengl()
 	{
-		if (port) port->set_child(0, NULL, NULL);
-		delete core;
+		destroy();
 	}
 	
 	//Arlib usually uses underscores, but since OpenGL doesn't, this object follows suit.
@@ -117,7 +117,17 @@ public:
 	
 	//Releases all resources owned by the object; the object may not be used after this.
 	//Use if the destructor isn't guaranteed to run while the driver's window still exists.
-	void destroy() { core->destroy(); }
+	//Not needed if the object is created from a viewport.
+	void destroy()
+	{
+		if (port)
+		{
+			port->set_child(0, NULL, NULL);
+			port = NULL;
+		}
+		delete core;
+		core = NULL;
+	}
 	
 	//void (GLAPIENTRY * ClearColor)(GLclampf red, GLclampf green, GLclampf blue, GLclampf alpha);
 	//void (GLAPIENTRY * Clear)(GLbitfield mask);

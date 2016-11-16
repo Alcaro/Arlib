@@ -504,7 +504,7 @@ widget_viewport::widget_viewport(unsigned int width, unsigned int height) : m(ne
 	gtk_widget_set_size_request(GTK_WIDGET(widget), width, height);
 	
 	m->child = 0;
-	m->lastpos.width = -1;
+	memset(&m->lastpos, -1, sizeof(m->lastpos));
 	g_signal_connect(widget, "size-allocate", G_CALLBACK(viewport_resize_handler), this);
 }
 
