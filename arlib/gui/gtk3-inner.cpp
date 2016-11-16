@@ -472,7 +472,7 @@ struct widget_viewport::impl {
 
 static void viewport_submit_resize(widget_viewport::impl* m)
 {
-	if (m->child)
+	if (m->child && m->lastpos.width>0)
 	{
 		XMoveResizeWindow(window_x11.display, m->child,
 		                  m->lastpos.x, m->lastpos.y,
@@ -504,6 +504,7 @@ widget_viewport::widget_viewport(unsigned int width, unsigned int height) : m(ne
 	gtk_widget_set_size_request(GTK_WIDGET(widget), width, height);
 	
 	m->child = 0;
+	m->lastpos.width = -1;
 	g_signal_connect(widget, "size-allocate", G_CALLBACK(viewport_resize_handler), this);
 }
 

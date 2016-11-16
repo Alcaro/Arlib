@@ -90,7 +90,7 @@ public:
 		return true;
 	}
 	
-	aropengl() { core=NULL; }
+	aropengl() { create(NULL); }
 	aropengl(context* core) { create(core); }
 	aropengl(uintptr_t parent, uintptr_t* window, uint32_t flags) { create(parent, window, flags); }
 	aropengl(widget_viewport* port, uint32_t flags) { create(port, flags); }
@@ -99,7 +99,6 @@ public:
 	{
 		if (port) port->set_child(0, NULL, NULL);
 		delete core;
-		core = NULL;
 	}
 	
 	//Arlib usually uses underscores, but since OpenGL doesn't, this object follows suit.

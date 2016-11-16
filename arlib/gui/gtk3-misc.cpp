@@ -259,11 +259,6 @@ char * window_get_native_path(const char * path)
 	return (char*)mem_from_g_alloc(ret, 0);
 }
 
-uint64_t window_get_time()
-{
-	return g_get_monotonic_time();
-}
-
 
 
 bool file_read(const char * filename, void* * data, size_t * len)

@@ -10,6 +10,7 @@ const char gl_proc_names[] =
 bool aropengl::create(context* core)
 {
 	this->core = core;
+	this->port = NULL;
 	if (!core) return false;
 	
 	const char * names = gl_proc_names;
