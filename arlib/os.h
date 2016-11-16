@@ -19,7 +19,7 @@
 //It's probably undefined, but the compiler won't be able to prove that, so it has to do what I want.
 //Perhaps it would be better to let the configure script declare what the size is so they can have a
 // member of type uint32_t data[12] and be constructed normally, but this is good enough for now.
-class dylib : private nocopy {
+class dylib : nocopy {
 	dylib(){}
 public:
 	static dylib* create(const char * filename, bool * owned=NULL);
@@ -38,3 +38,6 @@ void debug_or_ignore();
 void debug_or_exit();
 //If the program is run under a debugger, this triggers a breakpoint. If not, the program crashes.
 void debug_or_abort();
+
+//Returns time since an undefined point in time, in microseconds. The epoch may vary across machines or reboots.
+uint64_t perfcounter();

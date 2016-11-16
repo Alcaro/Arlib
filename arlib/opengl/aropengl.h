@@ -83,7 +83,11 @@ public:
 	{
 		uintptr_t newwindow;
 		if (!create(port->get_parent(), &newwindow, flags)) return false;
-		port->set_child(newwindow, bind_ptr(&aropengl::context::notifyResize, this->core), bind_ptr(&aropengl::context::destroy, this->core));
+		this->port = port;
+		port->set_child(newwindow,
+		                bind_ptr(&aropengl::context::notifyResize, this->core),
+		                bind_ptr(&aropengl::context::destroy, this->core));
+		return true;
 	}
 	
 	aropengl() { core=NULL; }
@@ -91,7 +95,12 @@ public:
 	aropengl(uintptr_t parent, uintptr_t* window, uint32_t flags) { create(parent, window, flags); }
 	aropengl(widget_viewport* port, uint32_t flags) { create(port, flags); }
 	explicit operator bool() { return core!=NULL; }
-	~aropengl() { delete core; core=NULL; }
+	~aropengl()
+	{
+		if (port) port->set_child(0, NULL, NULL);
+		delete core;
+		core = NULL;
+	}
 	
 	//Arlib usually uses underscores, but since OpenGL doesn't, this object follows suit.
 	//To ensure no collisions, Arlib-specific functions start with a lowercase (or are C++-only, like operator bool), standard GL functions are uppercase.
@@ -125,4 +134,5 @@ public:
 	
 private:
 	context* core;
+	widget_viewport* port;
 };

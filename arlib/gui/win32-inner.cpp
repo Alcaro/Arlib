@@ -71,7 +71,6 @@ static void measure_text(const char * text, unsigned int * width, unsigned int *
 	if (height) *height=rc.bottom;
 }
 
-static LRESULT CALLBACK viewport_WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 void _window_init_inner()
 {
 	//HDC hdc=GetDC(NULL);
@@ -103,20 +102,6 @@ void _window_init_inner()
 	
 	//SelectObject(hdc, prevfont);
 	//ReleaseDC(NULL, hdc);
-	
-	WNDCLASS wc;
-	wc.style=0;
-	//wc.lpfnWndProc=viewport_WindowProc;
-	wc.lpfnWndProc=DefWindowProc;
-	wc.cbClsExtra=0;
-	wc.cbWndExtra=0;
-	wc.hInstance=GetModuleHandle(NULL);
-	wc.hIcon=LoadIcon(GetModuleHandle(NULL), MAKEINTRESOURCE(1));
-	wc.hCursor=LoadCursor(NULL, IDC_ARROW);
-	wc.hbrBackground=GetSysColorBrush(COLOR_3DFACE);//(HBRUSH)(COLOR_WINDOW + 1);
-	wc.lpszMenuName=NULL;
-	wc.lpszClassName="arlib_viewport";
-	RegisterClass(&wc);
 	
 	measure_text("XXXXXXXXXXXX", &xwidth, NULL);
 	

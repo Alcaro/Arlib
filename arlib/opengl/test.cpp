@@ -4,9 +4,9 @@ exit
 */
 
 #ifdef ARLIB_D3DTEST
-#define NTDDI_VERSION NTDDI_WS03
-#define _WIN32_IE 0x0600
-#include<windows.h> // must include this early, Arlib sets WIN32_LEAN_AND_MEAN which removes timeBeginPeriod
+//#define NTDDI_VERSION NTDDI_WS03
+//#define _WIN32_IE 0x0600
+//#include<windows.h> // must include this early, Arlib sets WIN32_LEAN_AND_MEAN which removes timeBeginPeriod
 
 #include <time.h>
 #include <algorithm>
@@ -55,11 +55,7 @@ void process(bool d3d)
 #define FRAMES 1800
 	int times[SKIP+FRAMES]={};
 	
-LARGE_INTEGER StartingTime, EndingTime, ElapsedMicroseconds;
-LARGE_INTEGER Frequency;
-
-QueryPerformanceFrequency(&Frequency); 
-QueryPerformanceCounter(&StartingTime);
+	uint64_t prev = perfcounter();
 	
 	for (int i=0;i<SKIP+FRAMES;i++)
 	{
@@ -78,14 +74,9 @@ QueryPerformanceCounter(&StartingTime);
 		//port->resize(width, 480);
 		//gl.notifyResize(width, 480);
 		
-		
-QueryPerformanceCounter(&EndingTime);
-ElapsedMicroseconds.QuadPart = EndingTime.QuadPart - StartingTime.QuadPart;
-StartingTime = EndingTime;
-
-ElapsedMicroseconds.QuadPart *= 1000000;
-ElapsedMicroseconds.QuadPart /= Frequency.QuadPart;
-times[i] = ElapsedMicroseconds.QuadPart;
+		uint64_t now = perfcounter();
+		times[i] = now-prev;
+		prev = now;
 	}
 	
 	delete wnd;

@@ -44,10 +44,6 @@ void dylib::release()
 
 
 #ifdef _WIN32
-#undef bind
-#include <windows.h>
-#define bind bind_func
-
 static mutex dylib_lock;
 
 dylib* dylib::create(const char * filename, bool * owned)
@@ -95,5 +91,98 @@ funcptr dylib::sym_func(const char * name)
 void dylib::release()
 {
 	FreeLibrary((HMODULE)this);
+}
+#endif
+
+
+
+#ifdef _WIN32
+void debug_or_ignore()
+{
+	if (IsDebuggerPresent()) DebugBreak();
+}
+
+void debug_or_exit()
+{
+	if (IsDebuggerPresent()) DebugBreak();
+	ExitProcess(1);
+}
+
+void debug_or_abort()
+{
+	DebugBreak();
+	FatalExit(1);
+}
+#endif
+
+#ifdef __unix__
+#include <string.h>
+#include <signal.h>
+#include <unistd.h>
+#include <fcntl.h>
+
+//method from https://src.chromium.org/svn/trunk/src/base/debug/debugger_posix.cc
+static bool has_debugger()
+{
+	char buf[4096];
+	int fd = open("/proc/self/status", O_RDONLY);
+	if (!fd) return false;
+	
+	ssize_t bytes = read(fd, buf, sizeof(buf)-1);
+	close(fd);
+	
+	if (bytes < 0) return false;
+	buf[bytes] = '\0';
+	
+	const char * tracer = strstr(buf, "TracerPid:\t");
+	if (!tracer) return false;
+	tracer += strlen("TracerPid:\t");
+	
+	return (*tracer != '0');
+}
+
+void debug_or_ignore()
+{
+	if (has_debugger()) raise(SIGTRAP);
+}
+
+void debug_or_exit()
+{
+	if (has_debugger()) raise(SIGTRAP);
+	exit(1);
+}
+
+void debug_or_abort()
+{
+	raise(SIGTRAP);
+	abort();
+}
+#endif
+
+
+
+#ifdef _WIN32
+uint64_t perfcounter()
+{
+	////this one has an accuracy of 10ms by default
+	//ULARGE_INTEGER time;
+	//GetSystemTimeAsFileTime((LPFILETIME)&time);
+	//return time.QuadPart/10;//this one is in intervals of 100 nanoseconds, for some insane reason. We want microseconds.
+	
+	static LARGE_INTEGER timer_freq;
+	if (!timer_freq.QuadPart) QueryPerformanceFrequency(&timer_freq);
+	
+	LARGE_INTEGER timer_now;
+	QueryPerformanceCounter(&timer_now);
+	return 1000000*timer_now.QuadPart/timer_freq.QuadPart;
+}
+#else
+#include <time.h>
+
+uint64_t perfcounter()
+{
+	struct timespec tp;
+	clock_gettime(CLOCK_MONOTONIC, &tp);
+	return tp.tv_sec*1000000 + tp.tv_nsec/1000;
 }
 #endif

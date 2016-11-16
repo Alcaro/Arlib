@@ -390,8 +390,8 @@ public:
 	//This callback will be called if the widget is altered by resize(). The rest of Arlib avoids calling callbacks for API-sourced calls,
 	// but the video driver isn't the one who called resize().
 	//If the driver wants to destroy its window, it must call set_contents(0, NULL, NULL) before the next window_run_*() or ->resize().
-	//ondestroy is called whenever the viewport is destroyed. Like onresize, this is triggered by the program's own actions, and exists for the same reason.
-	void set_child(uintptr_t windowhandle, function<void(size_t width, size_t height)> onresize, function<void()> ondestroy);
+	//ondestroy is called whenever the viewport is destroyed, if the viewport isn't disconnected first.
+	void set_child(uintptr_t windowhandle, function<void(unsigned int width, unsigned int height)> onresize, function<void()> ondestroy);
 	
 	//TODO
 	////See documentation of canvas for these.
