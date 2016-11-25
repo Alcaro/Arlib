@@ -150,14 +150,10 @@ public:
 		return e_broken;
 	}
 	
-	maybe<array<byte>> recv(bool block = false)
+	int recv(byte* data, size_t datalen, bool block = false)
 	{
-		byte tmp[4096];
 		setblock(block);
-		int ret = fixret(::recv(this->fd, (char*)tmp, sizeof(tmp), MSG_NOSIGNAL | (block ? 0 : MSG_DONTWAIT)));
-		
-		if (ret<0) return maybe<array<byte>>(NULL, ret);
-		else return maybe<array<byte>>(arrayview<byte>(tmp, ret));
+		return fixret(::recv(this->fd, (char*)data, datalen, MSG_NOSIGNAL | (block ? 0 : MSG_DONTWAIT)));
 	}
 	
 	int sendp(arrayview<byte> data, bool block = true)
@@ -185,7 +181,7 @@ socket* socket::create_from_fd(int fd)
 	return socket_wrap(fd);
 }
 
-socket* socket::create(string domain, int port)
+socket* socket::create(cstring domain, int port)
 {
 	return socket_wrap(connect(domain, port));
 }

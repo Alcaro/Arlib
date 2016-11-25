@@ -3,21 +3,20 @@
 
 //TODO:
 //- fetch howsmyssl, ensure the only failure is the session cache
-//- ensure Subject Name is verified: fetch https://172.217.18.142/ (IP of google.com)
-//- ensure bad roots are rejected: fetch https://badfish.filippo.io/
-//- ensure bad certs are accepted with verification off
 
 #ifdef ARLIB_TEST
 //not in socket.h because this shouldn't really be used for anything, blocking is evil
 static array<byte> recvall(socket* sock, unsigned int len)
 {
 	array<byte> ret;
-	while (ret.size() < len)
+	ret.resize(len);
+	
+	size_t pos = 0;
+	while (pos < len)
 	{
-		maybe<array<byte>> part = sock->recv(true);
-		assert_ret(part, NULL);
-		assert_ret(part.value.size() != 0, NULL);
-		ret += part.value;
+		int part = sock->recv(ret.data()+pos, ret.size()-pos, true);
+		assert_ret(part >= 0, NULL);
+		pos += part;
 	}
 	return ret;
 }
@@ -37,21 +36,21 @@ static void clienttest(socket* rs)
 }
 
 test("plain connection") { clienttest(socket::create("google.com", 80)); }
-//test("SSL client") { clienttest(socketssl::create("google.com", 443)); }
-//test("SSL permissiveness")
-//{
-	//autoptr<socket> s;
-	//assert(!(s=socketssl::create("172.217.18.142", 443))); // invalid subject name (this is Google)
-	//assert( (s=socketssl::create("172.217.18.142", 443, true)));
-	//assert(!(s=socketssl::create("badfish.filippo.io", 443))); // invalid cert root
-	//assert( (s=socketssl::create("badfish.filippo.io", 443, true)));
-//}
-
-void listentest(const char * localhost)
+test("SSL client") { clienttest(socketssl::create("google.com", 443)); }
+test("SSL permissiveness")
 {
-	autoptr<socketlisten> l = socketlisten::create(7777);
+	autoptr<socket> s;
+	assert(!(s=socketssl::create("badfish.filippo.io", 443))); // invalid cert root
+	assert( (s=socketssl::create("badfish.filippo.io", 443, true)));
+	assert(!(s=socketssl::create("172.217.18.142", 443))); // invalid subject name (this is Google)
+	assert( (s=socketssl::create("172.217.18.142", 443, true))); // I'd use san.filippo.io, but that one is self-signed as well
+}
+
+void listentest(const char * localhost, int port)
+{
+	autoptr<socketlisten> l = socketlisten::create(port);
 	assert(l);
-	autoptr<socket> c1 = socket::create(localhost, 7777);
+	autoptr<socket> c1 = socket::create(localhost, port);
 	assert(c1);
 	//socket* lr = l; // can't select &l because autoptr<socketlisten>* isn't socket**
 	//assert(socket::select(&lr, 1, 100) == 0); // apparently the connection takes a while to make it through the kernel, at least on Windows
@@ -76,7 +75,7 @@ void listentest(const char * localhost)
 	assert(!memcmp(ret.data(), "foo", 3));
 }
 
-test("listen on localhost") { listentest("localhost"); }
-test("listen on 127.0.0.1") { listentest("127.0.0.1"); }
-test("listen on ::1")       { listentest("::1"); }
+test("listen on localhost") { listentest("localhost", 7777); }
+test("listen on 127.0.0.1") { listentest("127.0.0.1", 7778); }
+test("listen on ::1")       { listentest("::1", 7779); }
 #endif

@@ -219,7 +219,11 @@ endif
 
 TRUE_CFLAGS = -std=c99 $(CCXXFLAGS) $(CFLAGS) $(CONF_CFLAGS)
 TRUE_CXXFLAGS =-std=c++11 -fno-rtti $(CCXXFLAGS) $(CXXFLAGS) $(CONF_CXXFLAGS)
-TRUE_LFLAGS = $(LFLAGS) -fvisibility=hidden -static-libgcc $(CONF_LFLAGS)
+TRUE_LFLAGS = $(LFLAGS) -fvisibility=hidden $(CONF_LFLAGS)
+
+ifeq ($(OS),windows)
+  TRUE_LFLAGS += -static-libgcc 
+endif
 
 #On Windows, cleaning up the object directory is expected to be done with 'del /q obj\*' in a batch script.
 clean:
