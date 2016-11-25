@@ -106,6 +106,8 @@ template<typename T, size_t N> char(&ARRAY_SIZE_CORE(T(&x)[N]))[N];
 //PPFOREACH(STRING, foo, bar, baz)
 //limited to 365 entries, but that's enough.
 
+
+
 //requirements:
 //- static_assert(false) throws something at compile time
 //- multiple static_assert(true) works
@@ -207,7 +209,7 @@ template<typename T, typename... Args> static T min(const T& a, Args... args)
 template<typename T> static T max(const T& a) { return a; }
 template<typename T, typename... Args> static T max(const T& a, Args... args)
 {
-	const T& b = min(args...);
+	const T& b = max(args...);
 	if (a < b) return b;
 	else return a;
 }
@@ -293,11 +295,12 @@ class null_t_impl {};
 
 
 
-#if defined(__linux__) || GCC_VERSION >= 40900
-#define asprintf(...) malloc_assert(asprintf(__VA_ARGS__) >= 0)
-#else
-void asprintf(char * * ptr, const char * fmt, ...);
-#endif
+//#if defined(__linux__) || GCC_VERSION >= 40900
+//#define asprintf(...) malloc_assert(asprintf(__VA_ARGS__) >= 0)
+//#else
+//void asprintf(char * * ptr, const char * fmt, ...);
+//#endif
+
 #ifdef _WIN32
 void* memmem(const void * haystack, size_t haystacklen, const void * needle, size_t needlelen);
 #endif

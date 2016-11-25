@@ -62,20 +62,20 @@ public:
 	//Must be created by windowmenu_menu::create_top.
 	virtual void set_menu(windowmenu_menu* menu) = 0;
 	
-	//Creates a status bar at the bottom of the window. It is undefined what happens if numslots equals or exceeds 32.
-	//align is how each string is aligned; 0 means touch the left side, 1 means centered, 2 means touch the right side.
-	//dividerpos is in 240ths of the window size. Values 0 and 240, as well as
-	// a divider position to the left of the previous one, yield undefined behaviour.
-	//dividerpos[numslots-1] is ignored; the status bar always covers the entire width of the window.
-	//It is implementation defined whether the previous status bar strings remain, or if you must use statusbar_set again.
-	//It is implementation defined whether dividers will be drawn. However, it is guaranteed
-	// that the implementation will look like the rest of the operating system, as far as that's feasible.
-	//It is implementation defined what exactly happens if a string is too
-	// long to fit; however, it is guaranteed to show as much as it can.
-	//To remove the status bar, set numslots to 0.
-	virtual void statusbar_create(int numslots, const int * align, const int * dividerpos) = 0;
-	//Sets a string on the status bar. The index is zero-based. All strings are initially blank.
-	virtual void statusbar_set(int slot, const char * text) = 0;
+	////Creates a status bar at the bottom of the window. It is undefined what happens if numslots equals or exceeds 32.
+	////align is how each string is aligned; 0 means touch the left side, 1 means centered, 2 means touch the right side.
+	////dividerpos is in 240ths of the window size. Values 0 and 240, as well as
+	//// a divider position to the left of the previous one, yield undefined behaviour.
+	////dividerpos[numslots-1] is ignored; the status bar always covers the entire width of the window.
+	////It is implementation defined whether the previous status bar strings remain, or if you must use statusbar_set again.
+	////It is implementation defined whether dividers will be drawn. However, it is guaranteed
+	//// that the implementation will look like the rest of the operating system, as far as that's feasible.
+	////It is implementation defined what exactly happens if a string is too
+	//// long to fit; however, it is guaranteed to show as much as it can.
+	////To remove the status bar, set numslots to 0.
+	//virtual void statusbar_create(int numslots, const int * align, const int * dividerpos) = 0;
+	////Sets a string on the status bar. The index is zero-based. All strings are initially blank.
+	//virtual void statusbar_set(int slot, const char * text) = 0;
 	
 	//This replaces the contents of a window.
 	virtual void replace_contents(widget_base* contents) = 0;
@@ -148,8 +148,8 @@ public:
 	//2 - Widget has orders to consume extra space if there's any left over and nothing really wants it. (Padding)
 	//3 - Widget will look better if given extra space. (Textbox, listbox)
 	//4 - Widget is ordered to be resizable. (Canvas, viewport)
-	unsigned char widthprio;
-	unsigned char heightprio;
+	uint8_t widthprio;
+	uint8_t heightprio;
 	virtual ~widget_base() {};
 };
 
@@ -341,32 +341,32 @@ public:
 #define widget_create_textbox(...) (new widget_textbox(__VA_ARGS__))
 
 
-//A canvas is a simple image. It's easy to work with, but performance is poor and it can't vsync, so it shouldn't be used for video.
-class widget_canvas : public widget_base { WIDGET_BASE
-public:
-	widget_canvas(unsigned int width, unsigned int height);
-	~widget_canvas();
-	//can't disable this
-	
-	widget_canvas* resize(unsigned int width, unsigned int height);
-	uint32_t * (*draw_begin)();
-	void draw_end();
-	
-	//TODO
-	////Whether to hide the cursor while it's on top of this widget.
-	////The mouse won't instantly hide; if it's moving, it will be visible. The exact details are up to the implementation,
-	//// but it will be similar to "the mouse is visible if it has moved within the last 1000 milliseconds".
-	//widget_canvas* set_hide_cursor(bool hide);
-	//
-	////This must be called before the window is shown, and only exactly once.
-	////All given filenames are invalidated once the callback returns.
-	//widget_canvas* set_support_drop(function<void(const char * const * filenames)> on_file_drop);
-	
-public:
-	struct impl;
-	impl * m;
-};
-#define widget_create_canvas(width, height) (new widget_canvas(width, height))
+////A canvas is a simple image. It's easy to work with, but performance is poor and it can't vsync, so it shouldn't be used for video.
+//class widget_canvas : public widget_base { WIDGET_BASE
+//public:
+//	widget_canvas(unsigned int width, unsigned int height);
+//	~widget_canvas();
+//	//can't disable this
+//	
+//	widget_canvas* resize(unsigned int width, unsigned int height);
+//	uint32_t * (*draw_begin)();
+//	void draw_end();
+//	
+//	//TODO
+//	////Whether to hide the cursor while it's on top of this widget.
+//	////The mouse won't instantly hide; if it's moving, it will be visible. The exact details are up to the implementation,
+//	//// but it will be similar to "the mouse is visible if it has moved within the last 1000 milliseconds".
+//	//widget_canvas* set_hide_cursor(bool hide);
+//	//
+//	////This must be called before the window is shown, and only exactly once.
+//	////All given filenames are invalidated once the callback returns.
+//	//widget_canvas* set_support_drop(function<void(const char * const * filenames)> on_file_drop);
+//	
+//public:
+//	struct impl;
+//	impl * m;
+//};
+//#define widget_create_canvas(width, height) (new widget_canvas(width, height))
 
 
 //A viewport fills the same purpose as a canvas, but the tradeoffs go the opposite way.
@@ -389,7 +389,10 @@ public:
 	//If the widget changes size, this will be reported to onresize(). Guaranteed to only be called if actually changed.
 	//This callback will be called if the widget is altered by resize(). The rest of Arlib avoids calling callbacks for API-sourced calls,
 	// but the video driver isn't the one who called resize().
-	//If the driver wants to destroy its window, it must call set_contents(0, NULL, NULL) before the next window_run_*() or ->resize().
+	//The driver must return the new window after the resize. This may be the same as the old one. If different,
+	// the driver is responsible for destroying the old one.
+	//If the program wants to destroy the video driver, it must call set_contents(0, NULL, NULL) before doing so.
+	//If the driver doesn't need the resize callback, it may return 0. However, set_contents() is still required.
 	//ondestroy is called whenever the viewport is destroyed, if the viewport isn't disconnected first.
 	void set_child(uintptr_t windowhandle, function<void(unsigned int width, unsigned int height)> onresize, function<void()> ondestroy);
 	
@@ -713,34 +716,34 @@ void window_run_wait();//Returns only after doing something. Use while idling. I
                        //It may also return due to uninteresting events, as often as it wants;
                        // however, repeatedly calling it will leave the CPU mostly idle.
 
-//Shows a message box. You can do that by creating a label and some buttons, but it gives inferior results.
-//Returns true for OK and Yes, and false for Cancel/No/close window.
-//The title may or may not be ignored.
-enum mbox_sev { mb_info, mb_warn, mb_err };
-enum mbox_btns { mb_ok, mb_okcancel, mb_yesno };
-bool window_message_box(const char * text, const char * title, enum mbox_sev severity, enum mbox_btns buttons);
+////Shows a message box. You can do that by creating a label and some buttons, but it gives inferior results.
+////Returns true for OK and Yes, and false for Cancel/No/close window.
+////The title may or may not be ignored.
+//enum mbox_sev { mb_info, mb_warn, mb_err };
+//enum mbox_btns { mb_ok, mb_okcancel, mb_yesno };
+//bool window_message_box(const char * text, const char * title, enum mbox_sev severity, enum mbox_btns buttons);
 
-//Usable for both ROMs and dylibs. If dylib is true, the returned filenames are for the system's
-// dynamic linker; this will disable gvfs-like systems the dynamic linker can't understand, and may
-// hide files not marked executable, if this makes sense. If false, only file_read/etc is guaranteed
-// to work.
-//If multiple is true, multiple files may be picked; if not, only one can be picked. Should
-// generally be true for dylibs and false for ROMs, but not guaranteed.
-//The parent window will be disabled while the dialog is active.
-//Both extensions and return value have the format { "smc", ".sfc", NULL }. Extensions are optional.
-//Return value is full paths, zero or more. Duplicates are allowed in both input and output.
-//The return value is valid until the next call to window_file_picker() or window_run_*(), whichever comes first.
-const char * const * window_file_picker(window * parent,
-                                        const char * title,
-                                        const char * const * extensions,
-                                        const char * extdescription,
-                                        bool dylib,
-                                        bool multiple);
+////Usable for both ROMs and dylibs. If dylib is true, the returned filenames are for the system's
+//// dynamic linker; this will disable gvfs-like systems the dynamic linker can't understand, and may
+//// hide files not marked executable, if this makes sense. If false, only file_read/etc is guaranteed
+//// to work.
+////If multiple is true, multiple files may be picked; if not, only one can be picked. Should
+//// generally be true for dylibs and false for ROMs, but not guaranteed.
+////The parent window will be disabled while the dialog is active.
+////Both extensions and return value have the format { "smc", ".sfc", NULL }. Extensions are optional.
+////Return value is full paths, zero or more. Duplicates are allowed in both input and output.
+////The return value is valid until the next call to window_file_picker() or window_run_*(), whichever comes first.
+//const char * const * window_file_picker(window * parent,
+//                                        const char * title,
+//                                        const char * const * extensions,
+//                                        const char * extdescription,
+//                                        bool dylib,
+//                                        bool multiple);
 
-//Returns the number of microseconds since an undefined start time.
-//The start point doesn't change while the program is running, but need not be the same across reboots, nor between two processes.
-//It can be program launch, system boot, the Unix epoch, or whatever.
-uint64_t window_get_time();
+////Returns the number of microseconds since an undefined start time.
+////The start point doesn't change while the program is running, but need not be the same across reboots, nor between two processes.
+////It can be program launch, system boot, the Unix epoch, or whatever.
+//uint64_t window_get_time();
 
 //Implementation details, don't touch.
 void _window_init_inner();
@@ -770,4 +773,3 @@ extern struct window_x11_info window_x11;
 //TODO: If porting to Qt, use https://woboq.com/blog/verdigris-qt-without-moc.html
 //Windows resources are bad enough, but at least they have a reason to exist -
 // they have to be available without executing the program. moc has no such excuse.
-//TODO: check if section attributes can replace the .rc

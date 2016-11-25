@@ -236,9 +236,9 @@ void WuTF_args(int* argc_p, char** * argv_p)
 	
 	for (i=0;i<argc;i++)
 	{
-		int cb = WideCharToMultiByte(CP_UTF8, 0, (uint16_t*)wargv[i], -1, NULL, 0, NULL, NULL);
+		int cb = WideCharToMultiByte(CP_UTF8, 0, wargv[i], -1, NULL, 0, NULL, NULL);
 		argv[i] = (char*)HeapAlloc(GetProcessHeap(), 0, cb);
-		WideCharToMultiByte(CP_UTF8, 0, (uint16_t*)wargv[i], -1, argv[i], cb, NULL, NULL);
+		WideCharToMultiByte(CP_UTF8, 0, wargv[i], -1, argv[i], cb, NULL, NULL);
 	}
 	argv[argc]=0;
 	

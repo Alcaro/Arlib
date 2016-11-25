@@ -100,4 +100,6 @@ int main(int argc, char * argv[])
 		process(true);
 #endif
 	}
+	
+	return 0;
 }

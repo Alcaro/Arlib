@@ -1,3 +1,4 @@
+#if 0
 #include "file.h"
 #include "os.h"
 #include "thread.h"
@@ -240,4 +241,5 @@ file* file::create(const char * filename)
 //{
 
 //}
+#endif
 #endif

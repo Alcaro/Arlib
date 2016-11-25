@@ -1,6 +1,7 @@
 #include "os.h"
 #include "thread.h"
 #include <stdlib.h>
+#include <string.h>
 
 #ifdef __unix__
 #include <dlfcn.h>
@@ -55,9 +56,6 @@ dylib* dylib::create(const char * filename, bool * owned)
 	{
 		if (!GetModuleHandleEx(0, filename, (HMODULE*)&ret)) ret=NULL;
 		*owned=(!ret);
-		//Windows may be able to force load a DLL twice using ntdll!LdrLoadDll
-		// <https://github.com/wine-mirror/wine/blob/master/dlls/ntdll/loader.c#L2324>
-		//but Linux can't, and calling ntdll is generally discouraged, so I'm not using that.
 	}
 	
 	if (!ret)
@@ -93,6 +91,22 @@ void dylib::release()
 	FreeLibrary((HMODULE)this);
 }
 #endif
+
+bool dylib::sym_multi(funcptr* out, const char * names)
+{
+	bool all = true;
+	
+	while (*names)
+	{
+		*out = this->sym_func(names);
+		if (!*out) all = false;
+		
+		out++;
+		names += strlen(names)+1;
+	}
+	
+	return all;
+}
 
 
 

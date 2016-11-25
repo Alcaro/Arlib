@@ -67,9 +67,9 @@ public:
 		multiline // node\n  :value
 	};
 	
-	//If you pass in data that's not valid for that mode (for example, val="foo bar" and mode=eq won't work),
+	//If you pass in data that's not valid for that mode (for example, val="foo bar" and mode=eq),
 	// then it silently switches to the lowest working mode (in the above example, quote).
-	//Since enter() implies the tag has children, it will also disobey the inline modes; use node() for that.
+	//Since enter() implies the tag has children, it will also disobey the inline modes; use node() if you want it inlined.
 	void enter(cstring name, cstring val, mode m = anon);
 	void exit();
 	void linebreak();

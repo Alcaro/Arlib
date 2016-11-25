@@ -34,9 +34,9 @@ public:
 		//- Some graphics cards and drivers are not compatible
 		//- Poorly tested driver path, may be slow or buggy
 		//- You may not render to the default framebuffer, 0; you must render to gl.defaultFramebuffer()
-		//    (if you don't use framebuffers, you can ignore this; defaultFrameBuffer is bound on creation)
+		//    (if you don't use framebuffers, you can ignore this; defaultFramebuffer is bound on creation)
 		//- You must call gl.notifyResize() whenever the window is resized (whether by the application or the user), in addition to gl.Viewport/etc
-		//- Swap intervals other than 0 and 1 are not supported, not even -1.
+		//- Swap intervals other than 0 and 1 are not supported, not even -1
 		//- May be slower, especially with vsync off
 		//The flag is ignored on non-Windows systems.
 		//It is safe to use gl.defaultFramebuffer and gl.notifyResize on non-d3dsync objects.
@@ -111,6 +111,7 @@ public:
 	funcptr getProcAddress(const char * proc) { return core->getProcAddress(proc); }
 	
 	//If the window is resized, use this function to report the new size.
+	//Not needed if the object is created from a viewport.
 	void notifyResize(GLsizei width, GLsizei height) { core->notifyResize(width, height); }
 	//Used only for Direct3D sync. If you're not using that, just use 0.
 	GLuint outputFramebuffer() { return core->outputFramebuffer(); }

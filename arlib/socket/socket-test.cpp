@@ -37,15 +37,15 @@ static void clienttest(socket* rs)
 }
 
 test("plain connection") { clienttest(socket::create("google.com", 80)); }
-test("SSL client") { clienttest(socketssl::create("google.com", 443)); }
-test("SSL permissiveness")
-{
-	autoptr<socket> s;
-	assert(!(s=socketssl::create("172.217.18.142", 443))); // invalid subject name (this is Google)
-	assert( (s=socketssl::create("172.217.18.142", 443, true)));
-	assert(!(s=socketssl::create("badfish.filippo.io", 443))); // invalid cert root
-	assert( (s=socketssl::create("badfish.filippo.io", 443, true)));
-}
+//test("SSL client") { clienttest(socketssl::create("google.com", 443)); }
+//test("SSL permissiveness")
+//{
+	//autoptr<socket> s;
+	//assert(!(s=socketssl::create("172.217.18.142", 443))); // invalid subject name (this is Google)
+	//assert( (s=socketssl::create("172.217.18.142", 443, true)));
+	//assert(!(s=socketssl::create("badfish.filippo.io", 443))); // invalid cert root
+	//assert( (s=socketssl::create("badfish.filippo.io", 443, true)));
+//}
 
 void listentest(const char * localhost)
 {

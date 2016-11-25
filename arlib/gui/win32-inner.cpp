@@ -735,7 +735,7 @@ struct widget_viewport::impl {
 	unsigned int lastwidth;
 	unsigned int lastheight;
 	
-	function<void(size_t width, size_t height)> onresize;
+	function<uintptr_t(size_t width, size_t height)> onresize;
 	function<void()> ondestroy;
 };
 
@@ -782,7 +782,7 @@ void widget_viewport::place(void* resizeinf, unsigned int x, unsigned int y, uns
 	{
 		m->lastwidth = width;
 		m->lastheight = height;
-		m->onresize(width, height);
+		m->hwnd = (HWND)m->onresize(width, height);
 	}
 }
 
@@ -813,7 +813,7 @@ uintptr_t widget_viewport::get_parent()
 	return m->parent->_get_handle();
 }
 
-void widget_viewport::set_child(uintptr_t windowhandle, function<void(size_t width, size_t height)> onresize, function<void()> ondestroy)
+void widget_viewport::set_child(uintptr_t windowhandle, function<uintptr_t(size_t width, size_t height)> onresize, function<void()> ondestroy)
 {
 	m->hwnd = (HWND)windowhandle;
 	m->onresize = onresize;

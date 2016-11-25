@@ -1,3 +1,4 @@
+#if 0
 #pragma once
 #include "global.h"
 #include <string.h>
@@ -44,7 +45,7 @@ public:
 	char* filename;
 	size_t len;
 	
-	//The returned object is guaranteed equivalent to the given one, assuming the file is not changed or removed in the meanwhile.
+	//The returned object is guaranteed equivalent to the given one, unless the file was moved or removed in the meanwhile.
 	virtual file* clone() { return file::create(this->filename); }
 	
 	virtual size_t read(void* target, size_t start, size_t len) = 0;
@@ -152,6 +153,7 @@ void file_find_close(void* find);
 char * _window_native_get_absolute_path(const char * basepath, const char * path, bool allow_up);
 
 void _window_init_file();
+#endif
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -170,6 +172,7 @@ void _window_init_file();
 //TODO: create a path verifier that checks if a path is within a specified directory
 //TODO: create a path policy that checks if a path is within one of many allowed directories
 
+static inline void _window_init_file() {}
 
 
 

@@ -1,3 +1,4 @@
+#if 0
 #include "file.h"
 #include "os.h"
 #include "thread.h"
@@ -298,5 +299,6 @@ fail:
 	close(fd);
 	return NULL;
 }
+#endif
 #endif
 #endif

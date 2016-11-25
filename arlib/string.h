@@ -15,7 +15,7 @@ class cstring;
 class string {
 	static const int obj_size = 16; // maximum 120, or the inline length overflows
 	                                // (127 would fit, but that requires an extra alignment byte, which throws the sizeof assert)
-	                                // minimum 16 (pointer + various members + alignment)
+	                                // minimum 16 (pointer + various members + alignment) (actually minimum 12 on 32bit, but who needs 32bit)
 	static const int max_inline = obj_size-1;
 	
 	union {

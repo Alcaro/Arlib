@@ -37,7 +37,7 @@ struct {
 static const char glx_proc_names[]={ GLX_SYMS() };
 #undef GLX_SYM
 
-static bool libLoad()
+bool libLoad()
 {
 	glx.lib = dlopen("libGL.so", RTLD_LAZY);
 	if (!glx.lib) return false;
@@ -56,10 +56,9 @@ static bool libLoad()
 	return true;
 }
 
-static void libUnload()
+void libUnload()
 {
-	//if I leave this enabled, unload segfaults under Valgrind
-	//if (glx.lib) dlclose(glx.lib);
+	if (glx.lib) dlclose(glx.lib);
 }
 
 
