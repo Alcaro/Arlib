@@ -52,9 +52,11 @@ void listentest(const char * localhost, int port)
 	assert(l);
 	autoptr<socket> c1 = socket::create(localhost, port);
 	assert(c1);
-	//socket* lr = l; // can't select &l because autoptr<socketlisten>* isn't socket**
-	//assert(socket::select(&lr, 1, 100) == 0); // apparently the connection takes a while to make it through the kernel, at least on Windows
+	
+	//apparently the connection takes a while to make it through the kernel, at least on Windows
 #ifdef _WIN32
+	//socket* lr = l; // can't select &l because autoptr<socketlisten>* isn't socket**
+	//assert(socket::select(&lr, 1, 100) == 0); // TODO: enable select()
 	Sleep(50);
 #endif
 	autoptr<socket> c2 = l->accept();
