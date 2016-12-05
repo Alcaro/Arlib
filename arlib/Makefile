@@ -211,7 +211,7 @@ ifeq ($(ARSOCKET),1)
     CONF_LFLAGS += -lssl -lcrypto
   else ifeq ($(ARSOCKET_SSL),tlse)
     CONF_CFLAGS += -DARLIB_SSL_TLSE
-    SOURCES_NOWARN += arlib/socket/tlse.c
+    SOURCES_NOWARN += arlib/deps/tlse.c
   else
     $(error unknown SSL library)
   endif

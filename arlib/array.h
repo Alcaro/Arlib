@@ -20,7 +20,7 @@ protected:
 public:
 	const T& operator[](size_t n) const { return items[n]; }
 	
-	const T* data() const { return items; }
+	const T* ptr() const { return items; }
 	size_t size() const { return count; }
 	
 	operator bool() { return count; }
@@ -51,6 +51,27 @@ public:
 	
 	arrayview<T> slice(size_t first, size_t count) const { return arrayview<T>(this->items+first, this->count); }
 	
+	T join() const
+	{
+		T out = this->items[0];
+		for (size_t n=1;n<this->count;n++)
+		{
+			out += this->items[n];
+		}
+		return out;
+	}
+	
+	template<typename T2> decltype(T() + T2()) join(T2 between) const
+	{
+		decltype(T() + T2()) out = this->items[0];
+		for (size_t n=1;n < this->count;n++)
+		{
+			out += between;
+			out += this->items[n];
+		}
+		return out;
+	}
+	
 	//arrayview(const arrayview<T>& other)
 	//{
 	//	clone(other);
@@ -63,9 +84,56 @@ public:
 	//}
 };
 
+//size: two pointers
+//this one can write its storage, but doesn't own it
+template<typename T> class arrayvieww : public arrayview<T> {
+	//T * items;
+	//size_t count;
+public:
+	
+	T& operator[](size_t n) { return this->items[n]; }
+	const T& operator[](size_t n) const { return this->items[n]; }
+	
+	T* ptr() { return this->items; }
+	const T* ptr() const { return this->items; }
+	
+	arrayvieww()
+	{
+		this->items=NULL;
+		this->count=0;
+	}
+	
+	arrayvieww(null_t)
+	{
+		this->items=NULL;
+		this->count=0;
+	}
+	
+	arrayvieww(T * ptr, size_t count)
+	{
+		this->items = ptr;
+		this->count = count;
+	}
+	
+	arrayvieww(const arrayvieww<T>& other)
+	{
+		this->items = other.items;
+		this->count = other.count;
+	}
+	
+	arrayvieww<T> operator=(arrayvieww<T> other)
+	{
+		this->items = other.items;
+		this->count = other.count;
+		return *this;
+	}
+	
+	arrayvieww<T> slice(size_t first, size_t count) { return arrayvieww<T>(this->items+first, this->count); }
+};
+
 //size: two pointers, plus one T per item
-//this one owns its storage
-template<typename T> class array : public arrayview<T> {
+//this one owns its storage, and manages its memory
+template<typename T> class array : public arrayvieww<T> {
 	//T * items;
 	//size_t count;
 	
@@ -73,7 +141,7 @@ template<typename T> class array : public arrayview<T> {
 	{
 		this->count = other.size(); // I can somehow not access non-this instances of my base class, so let's just use the public interface.
 		this->items = malloc(sizeof(T)*bitround(this->count));
-		for (size_t i=0;i<this->count;i++) new(&this->items[i]) T(other.data()[i]);
+		for (size_t i=0;i<this->count;i++) new(&this->items[i]) T(other.ptr()[i]);
 	}
 	
 	void swap(array<T>& other)
@@ -107,7 +175,7 @@ template<typename T> class array : public arrayview<T> {
 	
 	void resize_shrink(size_t count)
 	{
-		if (this->count < count) return;
+		if (this->count <= count) return;
 		for (size_t i=count;i<this->count;i++)
 		{
 			this->items[i].~T();
@@ -126,32 +194,8 @@ template<typename T> class array : public arrayview<T> {
 	
 public:
 	T& operator[](size_t n) { resize_grow(n+1); return this->items[n]; }
-	const T& operator[](size_t n) const { return this->items[n]; }
 	
-	T* data() { return this->items; }
-	const T* data() const { return this->items; }
 	void resize(size_t len) { resize_to(len); }
-	
-	T join() const
-	{
-		T out = this->items[0];
-		for (size_t n=1;n<this->count;n++)
-		{
-			out += this->items[n];
-		}
-		return out;
-	}
-	
-	template<typename T2> decltype(T() + T2()) join(T2 between) const
-	{
-		decltype(T() + T2()) out = this->items[0];
-		for (size_t n=1;n < this->count;n++)
-		{
-			out += between;
-			out += this->items[n];
-		}
-		return out;
-	}
 	
 	void append(const T& item) { size_t pos = this->count; resize_grow(pos+1); this->items[pos] = item; }
 	void reset() { resize_shrink(0); }

@@ -32,10 +32,10 @@ void _teststack_pop();
 	static void TESTFUNCNAME()
 #define assert_ret(x, ret) do { if (!(x)) { _testfail("\nFailed assertion " #x, __LINE__); return ret; } } while(0)
 #define assert(x) assert_ret(x,)
-#define assert_eq(x,y) do { \
-		if ((x) != (y)) \
+#define assert_eq(actual,expected) do { \
+		if ((actual) != (expected)) \
 		{ \
-			_testeqfail(#x " == " #y, __LINE__, tostring(y), tostring(x)); \
+			_testeqfail(#actual " == " #expected, __LINE__, tostring(expected), tostring(actual)); \
 			return; \
 		} \
 	} while(0)

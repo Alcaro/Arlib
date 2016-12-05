@@ -225,10 +225,10 @@ static bool isendl(char ch)
 
 static cstring cutline(cstring& input)
 {
-	//pointers are generally bad ideas, but this is such a hotspot it's worth it
-	const uint8_t * inputraw = input.bytes();
+	//pointers are generally a bad idea, but this is such a hotspot it's worth it
+	const uint8_t * inputraw = input.bytes().ptr();
 	size_t nlpos = 0;
-	if (input.bytes_term())
+	if (input.bytes_hasterm())
 	{
 		while (!isendl(inputraw[nlpos])) nlpos++;
 	}
@@ -263,7 +263,7 @@ inline bool bmlparser::getline()
 	while (m_thisline[indentlen] == ' ' || m_thisline[indentlen] == '\t') indentlen++;
 	
 	int sharedindent = min(indentlen, m_indent.length());
-	bool badwhite = (memcmp(m_thisline.bytes(), m_indent.bytes(), sharedindent)!=0);
+	bool badwhite = (memcmp(m_thisline.bytes().ptr(), m_indent.bytes().ptr(), sharedindent)!=0);
 	
 	m_indent = cut(m_thisline, 0, indentlen, 0);
 	
@@ -530,9 +530,9 @@ static void testbml_error(const char * bml)
 	while (true)
 	{
 		bmlparser::event ev = parser.next();
-if (events==999)
-printf("a=%i [%s] [%s]\n\n", ev.action, ev.name.data(), ev.value.data());
-		if (ev.action == e_error) error = true; // any error is fine, really
+//if (events==999)
+//printf("a=%i [%s] [%s]\n\n", ev.action, ev.name.data().ptr(), ev.value.data().ptr());
+		if (ev.action == e_error) error = true; // any error is fine
 		if (ev.action == e_enter) depth++;
 		if (ev.action == e_exit) depth--;
 		if (ev.action == e_finish) break;

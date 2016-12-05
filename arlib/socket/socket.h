@@ -36,17 +36,17 @@ public:
 	//WARNING: Most socket APIs treat read/write of zero bytes as EOF. Not this one! 0 is EWOULDBLOCK; EOF is an error.
 	//The first two functions will process at least one byte, or if block is false, at least zero. send() sends all bytes before returning.
 	//For UDP sockets, partial reads or writes aren't possible; you always get one or zero packets.
-	virtual int recv(byte* data, size_t datalen, bool block = false) = 0;
+	virtual int recv(arrayvieww<byte> data, bool block = false) = 0;
 	int recv(array<byte>& data, bool block = false)
 	{
-		if (data.size() == 0) data.resize(4096);
-		return recv(data.data(), data.size(), block);
+		if (data.size()==0) data.resize(4096);
+		return recv((arrayvieww<byte>)data, block);
 	}
 	virtual int sendp(arrayview<byte> data, bool block = true) = 0;
 	
 	int send(arrayview<byte> bytes)
 	{
-		const byte * data = bytes.data();
+		const byte * data = bytes.ptr();
 		unsigned int len = bytes.size();
 		unsigned int sent = 0;
 		while (sent < len)
@@ -65,8 +65,8 @@ public:
 	//	if (!ret) return maybe<string>(NULL, ret.error);
 	//	return maybe<string>((string)ret.value);
 	//}
-	int sendp(cstring data, bool block = true) { return this->sendp(arrayview<byte>(data.bytes(), data.length()), block); }
-	int send(cstring data) { return this->send(arrayview<byte>(data.bytes(), data.length())); }
+	int sendp(cstring data, bool block = true) { return this->sendp(data.bytes(), block); }
+	int send(cstring data) { return this->send(data.bytes()); }
 	
 	//Returns an index to the sockets array, or negative if timeout expires. Negative timeout mean wait forever.
 	//It's possible that an active socket returns zero bytes. However, this is rare; repeatedly select()ing and processing the data will eventually sleep.
@@ -115,6 +115,6 @@ public:
 	socket* accept();
 	~socketlisten();
 	
-	int recv(byte* data, size_t datalen, bool block = false) { return e_not_supported; }
-	int sendp(arrayview<byte> data, bool block = true) { return e_not_supported; }
+	int recv(arrayvieww<byte> data, bool block) { return e_not_supported; }
+	int sendp(arrayview<byte> data, bool block) { return e_not_supported; }
 };

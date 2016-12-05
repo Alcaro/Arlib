@@ -8,38 +8,43 @@
 
 static mutex dylib_lock;
 
-dylib* dylib::create(const char * filename, bool * owned)
+bool dylib::init(const char * filename, bool * owned)
 {
+	deinit();
+	
 	dylib_lock.lock();
-	dylib* ret=NULL;
 	
 	if (owned)
 	{
-		ret=(dylib*)dlopen(filename, RTLD_LAZY|RTLD_NOLOAD);
-		*owned=(!ret);
-		if (ret) return ret;
+		handle = (dylib*)dlopen(filename, RTLD_LAZY|RTLD_NOLOAD);
+		*owned = (!handle);
 	}
-	if (!ret) ret=(dylib*)dlopen(filename, RTLD_LAZY);
+	
+	if (!handle) handle = (dylib*)dlopen(filename, RTLD_LAZY);
 	
 	dylib_lock.unlock();
-	return ret;
+	return handle;
 }
 
 void* dylib::sym_ptr(const char * name)
 {
-	return dlsym((void*)this, name);
+	if (!handle) return NULL;
+	return dlsym(handle, name);
 }
 
 funcptr dylib::sym_func(const char * name)
 {
+	if (!handle) return NULL;
+	
 	funcptr ret;
-	*(void**)(&ret)=dlsym((void*)this, name);
+	*(void**)(&ret)=dlsym(handle, name);
 	return ret;
 }
 
-void dylib::release()
+void dylib::deinit()
 {
-	dlclose((void*)this);
+	if (handle) dlclose(handle);
+	handle = NULL;
 }
 #endif
 
@@ -47,48 +52,52 @@ void dylib::release()
 #ifdef _WIN32
 static mutex dylib_lock;
 
-dylib* dylib::create(const char * filename, bool * owned)
+bool dylib::init(const char * filename, bool * owned)
 {
+	deinit();
+	
 	dylib_lock.lock();
-	dylib* ret=NULL;
 	
 	if (owned)
 	{
-		if (!GetModuleHandleEx(0, filename, (HMODULE*)&ret)) ret=NULL;
-		*owned=(!ret);
+		if (!GetModuleHandleEx(0, filename, (HMODULE*)&handle)) handle=NULL;
+		*owned=(!handle);
 	}
 	
-	if (!ret)
+	if (!handle)
 	{
 		//this is so weird dependencies, for example winpthread-1.dll, can be placed beside the dll where they belong
 		char * filename_copy=strdup(filename);
-		char * filename_copy_slash=strrchr(filename_copy, '/');
-		if (!filename_copy_slash) filename_copy_slash=strrchr(filename_copy, '\0');
+		char * filename_copy_slash = strrchr(filename_copy, '/');
+		if (!filename_copy_slash) filename_copy_slash = strrchr(filename_copy, '\0');
 		filename_copy_slash[0]='\0';
 		SetDllDirectory(filename_copy);
 		free(filename_copy);
 		
-		ret=(dylib*)LoadLibrary(filename);
+		handle = (dylib*)LoadLibrary(filename);
 		SetDllDirectory(NULL);
 	}
 	
 	dylib_lock.unlock();
-	return ret;
+	return handle;
 }
 
 void* dylib::sym_ptr(const char * name)
 {
-	return (void*)GetProcAddress((HMODULE)this, name);
+	if (!handle) return NULL;
+	return (void*)GetProcAddress((HMODULE)handle, name);
 }
 
 funcptr dylib::sym_func(const char * name)
 {
-	return (funcptr)GetProcAddress((HMODULE)this, name);
+	if (!handle) return NULL;
+	return (funcptr)GetProcAddress((HMODULE)handle, name);
 }
 
-void dylib::release()
+void dylib::deinit()
 {
-	FreeLibrary((HMODULE)this);
+	if (handle) FreeLibrary((HMODULE)handle);
+	handle = NULL;
 }
 #endif
 

@@ -160,8 +160,7 @@ class string {
 		}
 	}
 	
-public:
-	const char * data() const
+	const char * ptr_withnul() const
 	{
 		if (!inlined() && !m_nul)
 		{
@@ -169,19 +168,20 @@ public:
 		}
 		return (char*)ptr();
 	}
+	
+public:
 	uint32_t length() const
 	{
 		if (inlined()) return max_inline-m_inline_len;
 		else return m_len;
 	}
 	
-	//May lack the NUL terminator.
-	const uint8_t * bytes() const
+	arrayview<byte> bytes() const
 	{
-		return (uint8_t*)ptr();
+		return arrayview<byte>(ptr(), length());
 	}
-	//Whether bytes() has a NUL terminator.
-	bool bytes_term() const
+	//If this is true, bytes()[bytes().length()] is '\0'. If false, it's undefined behavior.
+	bool bytes_hasterm() const
 	{
 		return (inlined() || m_nul);
 	}
@@ -192,10 +192,13 @@ private:
 	
 	void init_from(const char * str)
 	{
-		init_from((uint8_t*)str, strlen(str));
+		init_from(arrayview<byte>((uint8_t*)str, strlen(str)));
 	}
-	void init_from(const uint8_t * str, uint32_t len)
+	void init_from(arrayview<byte> data)
 	{
+		const uint8_t * str = data.ptr();
+		uint32_t len = data.size();
+		
 		if (len <= max_inline)
 		{
 			memcpy(m_inline, str, len);
@@ -232,11 +235,14 @@ private:
 	}
 	void init_from_nocopy(const char * str)
 	{
-		init_from_nocopy((uint8_t*)str, strlen(str));
+		init_from_nocopy(arrayview<byte>((uint8_t*)str, strlen(str)));
 		if (!inlined()) m_nul = true;
 	}
-	void init_from_nocopy(const uint8_t * str, uint32_t len)
+	void init_from_nocopy(arrayview<byte> data)
 	{
+		const uint8_t * str = data.ptr();
+		uint32_t len = data.size();
+		
 		if (len <= max_inline)
 		{
 			memcpy(m_inline, str, len);
@@ -324,10 +330,10 @@ private:
 public:
 	//Resizes the string to a suitable size, then allows the caller to fill it in with whatever. Initial contents are undefined.
 	//The returned pointer may only be used until the first subsequent use of the string, including read-only operations.
-	uint8_t* construct(uint32_t len)
+	arrayvieww<byte> construct(uint32_t len)
 	{
 		resize(len);
-		return ptr();
+		return arrayvieww<byte>(ptr(), len);
 	}
 	
 	void replace(int32_t pos, int32_t len, const string& newdat) // const string& is ugly, but cstring isn't declared yet.
@@ -383,7 +389,7 @@ public:
 		}
 		
 		string ret;
-		uint8_t* retptr = ret.construct(outlen);
+		uint8_t* retptr = ret.construct(outlen).ptr();
 		
 		uint8_t* prev = ptr();
 		uint8_t* myend = ptr()+length();
@@ -432,14 +438,14 @@ public:
 	string(const string& other) { init_from(other); }
 	string(string&& other) { init_from(std::move(other)); }
 	string(const char * str) { init_from(str); }
-	string(const uint8_t * str, uint32_t len) { init_from(str, len); }
-	string(arrayview<uint8_t> bytes) { init_from(bytes.data(), bytes.size()); }
+	//string(const uint8_t * str, uint32_t len) { init_from(str, len); }
+	string(arrayview<uint8_t> bytes) { init_from(bytes); }
 	string& operator=(const string& other) { release(); init_from(other); return *this; }
 	string& operator=(const char * str) { release(); init_from(str); return *this; }
 	~string() { release(); }
 	
 	operator bool() const { return length() != 0; }
-	operator const char * () const { return data(); }
+	operator const char * () const { return ptr_withnul(); }
 	
 private:
 	class charref : nocopy {
@@ -461,26 +467,26 @@ public:
 	//char operator[](uint32_t index) const { return getchar(index); }
 	char operator[](int index) const { return getchar(index); }
 	
-	static string create(const uint8_t * data, uint32_t len) { string ret=noinit(); ret.init_from(data, len); return ret; }
+	//static string create(arrayview<uint8_t> data) { string ret=noinit(); ret.init_from(data.ptr(), data.size()); return ret; }
 	
 	string substr(int32_t start, int32_t end) const
 	{
 		start = realpos(start);
 		end = realpos(end);
-		return string(ptr()+start, end-start);
+		return string(arrayview<byte>(ptr()+start, end-start));
 	}
 	inline cstring csubstr(int32_t start, int32_t end) const;
 	inline bool contains(cstring other) const;
 	
 	//Implementation detail of the equality operators. Don't use.
-	static inline bool s_eq(const uint8_t * left, uint32_t leftlen, const uint8_t * right, uint32_t rightlen)
+	static inline bool s_eq(arrayview<byte> left, arrayview<byte> right)
 	{
-		return (leftlen==rightlen && !memcmp(left, right, leftlen));
+		return (left.size()==right.size() && !memcmp(left.ptr(), right.ptr(), left.size()));
 	}
 };
 
-inline bool operator==(const string& left, const char * right ) { return string::s_eq(left.bytes(),left.length(), (uint8_t*)right,strlen(right)); }
-inline bool operator==(const string& left, const string& right) { return string::s_eq(left.bytes(),left.length(), right.bytes(),right.length()); }
+inline bool operator==(const string& left, const char * right ) { return string::s_eq(left.bytes(), arrayview<byte>((uint8_t*)right,strlen(right))); }
+inline bool operator==(const string& left, const string& right) { return string::s_eq(left.bytes(), right.bytes()); }
 inline bool operator==(const char * left,  const string& right) { return operator==(right, left); }
 inline bool operator!=(const string& left, const char * right ) { return !operator==(left, right); }
 inline bool operator!=(const string& left, const string& right) { return !operator==(left, right); }
@@ -505,10 +511,11 @@ public:
 	cstring(string&& other) : string(noinit()) { init_from_nocopy(std::move(other)); }
 	cstring(cstring&& other) : string(noinit()) { init_from_nocopy(std::move(other)); }
 	cstring(const char * str) : string(noinit()) { init_from_nocopy(str); }
-	cstring(const uint8_t * str, uint32_t len) : string(noinit()) { init_from_nocopy(str, len); }
-	cstring(arrayview<uint8_t> bytes) : string(noinit()) { init_from_nocopy(bytes.data(), bytes.size()); }
+	//cstring(const uint8_t * str, uint32_t len) : string(noinit()) { init_from_nocopy(str, len); }
+	cstring(arrayview<uint8_t> bytes) : string(noinit()) { init_from_nocopy(bytes); }
 private:
-	cstring(const uint8_t * str, uint32_t len, bool nul) : string(noinit()) { init_from_nocopy(str, len); if (!inlined()) m_nul=nul; }
+	//don't use arrayview, if (nul) then it uses len+1 bytes
+	cstring(const uint8_t * str, uint32_t len, bool nul) : string(noinit()) { init_from_nocopy(arrayview<byte>(str, len)); if (!inlined()) m_nul=nul; }
 public:
 	
 	cstring& operator=(const cstring& other) { release(); init_from_nocopy(other); return *this; }
@@ -518,13 +525,13 @@ inline cstring string::csubstr(int32_t start, int32_t end) const
 {
 	start = realpos(start);
 	end = realpos(end);
-	if (inlined()) return cstring(bytes()+start, end-start);
-	else return cstring(bytes()+start, end-start, (m_nul && (uint32_t)end == m_len));
+	if (inlined()) return cstring(arrayview<byte>(ptr()+start, end-start));
+	else return cstring(ptr()+start, end-start, (m_nul && (uint32_t)end == m_len));
 }
 
 inline bool string::contains(cstring other) const
 {
-	return memmem(this->ptr(), this->length(), other.bytes(), other.length()) != NULL;
+	return memmem(this->ptr(), this->length(), other.ptr(), other.length()) != NULL;
 }
 
 //TODO

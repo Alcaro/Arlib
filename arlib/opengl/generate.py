@@ -50,10 +50,8 @@ def filter(functions, used):
 	return [f for f in functions if f["name"] in used]
 
 
-#header = readfile("/usr/include/GL/gl.h")
-#header += readfile("/usr/include/GL/glext.h")
-header = readfile("gl.h")
-header += readfile("glext.h")
+header = readfile("../deps/gl.h")
+header += readfile("../deps/glext.h")
 
 functions = compile(header)
 

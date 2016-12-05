@@ -79,12 +79,13 @@ public:
 	
 	void fetch(bool block)
 	{
-		maybe<array<byte>> ret = sock->recv(block);
-		if (!ret) return error();
+		array<byte> retbytes;
+		int ret = sock->recv(retbytes, block);
+		if (ret<0) return error();
 		
-		recv_buf = realloc(recv_buf, recv_buf_len + ret.value.size() + 1024);
-		memcpy(recv_buf+recv_buf_len, ret.value.data(), ret.value.size());
-		recv_buf_len += ret.value.size();
+		recv_buf = realloc(recv_buf, recv_buf_len + ret + 1024);
+		memcpy(recv_buf+recv_buf_len, retbytes.ptr(), ret);
+		recv_buf_len += ret;
 	}
 	
 	void fetch() { fetch(true); }
@@ -274,22 +275,25 @@ public:
 		}
 	}
 	
-	maybe<array<byte>> recv(bool block = false)
+	int recv(arrayvieww<byte> data, bool block = false)
 	{
-		if (!sock) return NULL;
+		if (!sock) return -1;
+		
 		fetch(block);
 		process();
 		
-		size_t tmp = ret_buf_len;
-		ret_buf_len = 0;
-		return array<byte>(arrayview<byte>(ret_buf, tmp));
+		size_t bytes_ret = ret_buf_len;
+		if (bytes_ret > data.size()) bytes_ret = data.size();
+		memcpy(data.ptr(), ret_buf, bytes_ret);
+		ret_buf_len -= bytes_ret;
+		return bytes_ret;
 	}
 	
 	int sendp(arrayview<byte> bytes, bool block = true)
 	{
 		if (!sock) return -1;
 		
-		const byte* data = bytes.data();
+		const byte* data = bytes.ptr();
 		unsigned int len = bytes.size();
 		
 		fetchnb();
@@ -325,7 +329,7 @@ public:
 
 }
 
-socketssl* socketssl::create(socket* parent, string domain, bool permissive)
+socketssl* socketssl::create(socket* parent, cstring domain, bool permissive)
 {
 	initialize();
 	socketssl_impl* ret = new socketssl_impl();

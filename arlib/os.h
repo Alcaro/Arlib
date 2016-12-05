@@ -15,24 +15,27 @@
 // but that's a pointless level of indirection - instead, I cast the allocated value and return that!
 //It's probably undefined, but the compiler won't be able to prove that, so it has to do what I want.
 class dylib : nocopy {
-	dylib(){}
-public:
-	//owned tells whether the DLL was loaded before calling this
-	//this is an atomic operation; if multiple threads call dylib::create for the same file, only one will get owned!=NULL
+	void* handle;
 	
-	static dylib* create(const char * filename, bool * owned=NULL);
-	static const char * ext() { return DYLIB_EXT; }
+public:
+	dylib() { handle=NULL; }
+	dylib(const char * filename) { handle=NULL; init(filename); }
+	
+	//owned tells whether the DLL was loaded before calling this
+	//this is an atomic operation; if multiple threads call dylib::create for the same file, only one will get owned==true
+	//init() may only be called once
+	bool init(const char * filename, bool * owned=NULL);
 	void* sym_ptr(const char * name);
 	funcptr sym_func(const char * name);
+	template<typename T> T sym(const char * name) { return (T)sym_func(name); }
 	
 	//Fetches multiple symbols. 'names' is expected to be a NUL-separated list of names, terminated with a blank one.
 	// (You don't need to do anything special to create this terminator. Just use the NUL terminator the compiler adds.)
 	//Returns whether all of them were successfully fetched. Failures are NULL.
 	bool sym_multi(funcptr* out, const char * names);
 	
-	//per http://chadaustin.me/cppinterface.html - redirect operator delete to a function, this doesn't come from the normal allocator.
-	static void operator delete(void* p) { if (p) ((dylib*)p)->release(); }
-	void release();//this is the real destructor, you can use either this one or delete it
+	void deinit();
+	~dylib() { deinit(); }
 };
 
 //If the program is run under a debugger, this triggers a breakpoint. If not, ignored.

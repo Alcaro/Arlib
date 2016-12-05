@@ -7,7 +7,7 @@ ARSOCKET = 1
 #valid values: openssl, wolfssl, tlse, no
 #ignored on windows (other than 'no', which is obeyed), always uses schannel
 #default openssl
-ARSOCKET_SSL = openssl
+ARSOCKET_SSL = tlse
 ARSANDBOX = 1
 
 #honored variables, in addition to the ones listed here:
@@ -36,6 +36,10 @@ ARSANDBOX = 1
 include arlib/Makefile
 
 #TODO:
+#./configure; possibly only verifies dependencies and lets makefile do the real job
+#  or maybe makefile calls configure?
 #./test (bash? python?)
-#./configure (bash); possibly only verifies dependencies and lets makefile do the real job
-#   or maybe makefile calls configure?
+#  make test calls some python script, which calls the makefile with new arguments? the current setup is fairly stupid
+#    maybe the make test script is in arlib/, not ./
+#test all SSLs at once, rename socketssl_impl to socketssl_tlse and ifdef socketssl::create
+#  maybe always compile all SSLs, rely on --gc-sections to wipe the unused ones

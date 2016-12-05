@@ -2,7 +2,7 @@
 
 #ifdef ARLIB_SSL_TLSE
 extern "C" {
-#include "tlse.h"
+#include "../deps/tlse.h"
 }
 #include <sys/stat.h>
 #include <dirent.h>

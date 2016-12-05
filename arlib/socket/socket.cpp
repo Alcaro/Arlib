@@ -150,16 +150,16 @@ public:
 		return e_broken;
 	}
 	
-	int recv(byte* data, size_t datalen, bool block = false)
+	int recv(arrayvieww<byte> data, bool block = false)
 	{
 		setblock(block);
-		return fixret(::recv(this->fd, (char*)data, datalen, MSG_NOSIGNAL | (block ? 0 : MSG_DONTWAIT)));
+		return fixret(::recv(this->fd, (char*)data.ptr(), data.size(), MSG_NOSIGNAL | (block ? 0 : MSG_DONTWAIT)));
 	}
 	
 	int sendp(arrayview<byte> data, bool block = true)
 	{
 		setblock(block);
-		return fixret(::send(fd, (char*)data.data(), data.size(), MSG_NOSIGNAL | (block ? 0 : MSG_DONTWAIT)));
+		return fixret(::send(fd, (char*)data.ptr(), data.size(), MSG_NOSIGNAL | (block ? 0 : MSG_DONTWAIT)));
 	}
 	
 	~socket_impl()

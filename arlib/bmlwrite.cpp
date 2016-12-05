@@ -4,8 +4,8 @@
 inline string bmlwriter::indent()
 {
 	string ret;
-	uint8_t* ptr = ret.construct(m_indent*2);
-	memset(ptr, ' ', m_indent*2);
+	arrayvieww<byte> bytes = ret.construct(m_indent*2);
+	memset(bytes.ptr(), ' ', m_indent*2);
 	return ret;
 }
 
