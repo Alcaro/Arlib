@@ -5,6 +5,8 @@
 #include <stdint.h>
 #include <string.h>
 
+//TODO: fiddle with https://github.com/ckennelly/hole-punch
+
 #define socket socket_t
 class socket : nocopy {
 protected:

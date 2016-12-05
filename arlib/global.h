@@ -317,8 +317,8 @@ template<typename T> static inline T bitround(T in)
 	in|=in>>2;
 	in|=in>>4;
 	in|=in>>8;
-	if (sizeof(T)>2) in|=in>>8>>8;
-	if (sizeof(T)>4) in|=in>>8>>8>>8>>8;
+	if (sizeof(in)>2) in|=in>>8>>8; // double shift to shut up bitshift-out-of-range warnings
+	if (sizeof(in)>4) in|=in>>8>>8>>8>>8;
 	in++;
 	return in;
 }

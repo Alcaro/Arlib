@@ -44,6 +44,7 @@ test("SSL permissiveness")
 	assert( (s=socketssl::create("badfish.filippo.io", 443, true)));
 	assert(!(s=socketssl::create("172.217.18.142", 443))); // invalid subject name (this is Google)
 	assert( (s=socketssl::create("172.217.18.142", 443, true))); // I'd use san.filippo.io, but that one is self-signed as well
+	assert( (s=socketssl::create("git.io", 443, true))); // requires SNI
 }
 
 void listentest(const char * localhost, int port)

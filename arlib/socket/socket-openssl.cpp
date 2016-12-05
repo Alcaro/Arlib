@@ -35,6 +35,7 @@ public:
 		ret->sock = parent;
 		ret->fd = parent->get_fd();
 		ret->ssl = SSL_new(ctx);
+		SSL_set_tlsext_host_name(ret->ssl, (const char*)domain);
 		//ret->nonblock = false;
 		SSL_set_fd(ret->ssl, ret->fd);
 		//TODO: set fd to nonblock
