@@ -33,19 +33,21 @@ public:
 		t_debug_context  = 0x002000, // Requests a debug context. Doesn't actually enable debugging, use gl.enableDefaultDebugger or gl.DebugMessageControl/etc.
 		t_depth_buffer   = 0x004000, // These two only apply to the main buffer. You can always create additional FBOs with or without depth/stencil.
 		t_stencil_buffer = 0x008000,
+		
 #ifdef AROPENGL_D3DSYNC
 		//Direct3D vsync is an advanced feature that uses WGL_NV_DX_interop and D3DSWAPEFFECT_FLIPEX to ensure smooth framerate on Windows.
 		//Advantages:
-		//- Less stuttering, especially with DWM enabled (at least on some computers - on others, vsync is already smooth)
+		//- Less stuttering, especially with DWM enabled (at least on some computers, sometimes vsync is already smooth)
 		//Disadvantages:
 		//- Requires Windows 7 or newer
 		//- Some graphics cards and drivers are not compatible
 		//- Poorly tested driver path, may be slow or buggy (in fact, I believe I found a Nvidia driver bug while creating this)
 		//- You may not render to the default framebuffer, 0; you must render to gl.defaultFramebuffer()
-		//    (if you don't use framebuffers, you can ignore this; defaultFramebuffer is bound on creation and on every buffer switch)
+		//    (if you don't use framebuffers, you can ignore this; defaultFramebuffer is bound on creation)
 		//- You must call gl.notifyResize() whenever the window is resized (whether by the application or the user), in addition to gl.Viewport/etc
 		//- Swap intervals other than 0 and 1 are not supported, not even -1
 		//- May be slower, especially with vsync off
+		//- D/S buffers are currently not created (TODO: remove limitation)
 		//The flag is ignored on non-Windows systems.
 		//It is safe to use gl.defaultFramebuffer and gl.notifyResize on non-d3dsync objects.
 # ifdef _WIN32

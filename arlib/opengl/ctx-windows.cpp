@@ -241,7 +241,7 @@ public:
 		memset(&pfd, 0, sizeof(PIXELFORMATDESCRIPTOR));
 		pfd.nSize = sizeof(PIXELFORMATDESCRIPTOR);
 		pfd.nVersion = 1;
-		pfd.dwFlags = PFD_DRAW_TO_WINDOW|PFD_SUPPORT_OPENGL|PFD_DOUBLEBUFFER;
+		pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER;
 		pfd.iPixelType = PFD_TYPE_RGBA;
 		pfd.cColorBits = 24;
 		pfd.cAlphaBits = 0;
@@ -249,6 +249,11 @@ public:
 		pfd.cDepthBits = (stenbuf ? 24 : depthbuf ? 16 : 0);
 		pfd.cStencilBits = (stenbuf ? 8 : 0);
 		pfd.cAuxBuffers = 0;
+#ifdef AROPENGL_D3DSYNC
+		if (this->d3dsync) pfd.dwFlags &= ~PFD_DOUBLEBUFFER;
+		pfd.cDepthBits = 0;
+		pfd.cStencilBits = 0;
+#endif
 		pfd.iLayerType = PFD_MAIN_PLANE;
 		SetPixelFormat(this->GL_hdc, ChoosePixelFormat(this->GL_hdc, &pfd), &pfd);
 		this->GL_hglrc = wgl.CreateContext(this->GL_hdc);
@@ -352,7 +357,7 @@ public:
 		
 		//the framebuffer must be bound after calling AllocRenderTarget, or the Nvidia driver claims the framebuffer is incomplete
 		//this bug can be fixed by querying the current FBO and binding that, which shouldn't have any effect
-		//additionally, the Intel driver doesn't care
+		//additionally, the Intel driver is happy with either order
 		//I suspect driver bug of some kind
 		glGenFramebuffers(1, &GL_fboname);
 		glBindFramebuffer(GL_FRAMEBUFFER, GL_fboname);
