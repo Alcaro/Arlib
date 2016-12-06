@@ -341,17 +341,22 @@ public:
 		SYM(PFNGLFRAMEBUFFERTEXTUREPROC, glFramebufferTexture);
 #undef SYM
 		
-		glGenFramebuffers(1, &GL_fboname);
-		glBindFramebuffer(GL_FRAMEBUFFER, GL_fboname);
 		glGenTextures(1, &GL_texturename);
 		glBindTexture(GL_TEXTURE_2D, GL_texturename);
-		glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_texturename, 0);
 		
 		D3D_sharehandle = wgl.DXOpenDeviceNV(this->D3D_device);
 		
 		this->D3D_device->GetBackBuffer(0, 0, D3DBACKBUFFER_TYPE_MONO, &this->D3D_backbuf);
 		
 		AllocRenderTarget();
+		
+		//the framebuffer must be bound after calling AllocRenderTarget, or the Nvidia driver claims the framebuffer is incomplete
+		//this bug can be fixed by querying the current FBO and binding that, which shouldn't have any effect
+		//additionally, the Intel driver doesn't care
+		//I suspect driver bug of some kind
+		glGenFramebuffers(1, &GL_fboname);
+		glBindFramebuffer(GL_FRAMEBUFFER, GL_fboname);
+		glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_texturename, 0);
 		
 		return true;
 	}
