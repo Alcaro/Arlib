@@ -18,14 +18,17 @@
 # define GLEXT_64_TYPES_DEFINED
 #endif
 
-#include <GL/gl.h>
-#include <GL/glext.h>
+#if defined(__has_include)
+#if __has_include(<GL/wglext.h>)
 #include <GL/wglext.h>
+#endif
+#endif
+#ifndef WGL_WGLEXT_VERSION
+#include "../deps/wglext.h"
+#endif
 
 #ifdef AROPENGL_D3DSYNC
-# define interface struct
 # include <D3D9.h>
-# undef interface
 
 # ifndef D3DPRESENT_FORCEIMMEDIATE
 #  define D3DPRESENT_FORCEIMMEDIATE 0x00000100L
@@ -181,15 +184,13 @@ public:
 	
 	/*private*/ bool init(HWND parent, HWND* window_, uint32_t flags)
 	{
+		DWORD glwndflags = WS_CHILD | WS_VISIBLE;
 #ifdef AROPENGL_D3DSYNC
 		this->d3dsync = (flags & aropengl::t_direct3d_vsync);
+		if (this->d3dsync) glwndflags &= ~WS_VISIBLE;
 #endif
 		
-		this->GL_hwnd = CreateWindow("arlib", NULL, WS_CHILD | (
-#ifdef AROPENGL_D3DSYNC
-		                                                        this->d3dsync ? 0 :
-#endif
-		                                                        WS_VISIBLE), 0, 0, 1, 1, parent, NULL, NULL, NULL);
+		this->GL_hwnd = CreateWindow("arlib", NULL, glwndflags, 0, 0, 1, 1, parent, NULL, NULL, NULL);
 		
 		*window_ = this->GL_hwnd;
 		this->GL_hdc = GetDC(this->GL_hwnd);
@@ -313,10 +314,10 @@ public:
 		//https://msdn.microsoft.com/en-us/library/windows/desktop/bb172585(v=vs.85).aspx
 		//_ONE is _DEFAULT, but also calls timeBeginPeriod to improve precision
 		//anything opting in to Direct3D vsync is clearly a high-performance program, and thus wants the increased precision
-		parameters.PresentationInterval = D3DPRESENT_INTERVAL_DEFAULT;
+		parameters.PresentationInterval = D3DPRESENT_INTERVAL_ONE;
 		
 		if (FAILED(d3d->CreateDeviceEx(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, this->D3D_hwnd,
-		                               D3DCREATE_MIXED_VERTEXPROCESSING,
+		                               D3DCREATE_MIXED_VERTEXPROCESSING|D3DCREATE_MULTITHREADED,
 		                               &parameters, NULL, &this->D3D_device)))
 		{
 			return false;
@@ -338,7 +339,7 @@ public:
 		SYM(PFNGLGENFRAMEBUFFERSPROC, glGenFramebuffers);
 		SYM(PFNGLBINDFRAMEBUFFERPROC, glBindFramebuffer);
 		SYM(PFNGLFRAMEBUFFERTEXTUREPROC, glFramebufferTexture);
-#undef sym
+#undef SYM
 		
 		glGenFramebuffers(1, &GL_fboname);
 		glBindFramebuffer(GL_FRAMEBUFFER, GL_fboname);
@@ -377,8 +378,10 @@ public:
 		this->D3D_GLtarget->Release();
 		this->D3D_GLtarget = NULL;
 		
-		CloseHandle(D3D_sharetexture);
-		D3D_sharetexture = NULL;
+		//those D3D share handles are weird stuff like 0xC0007000, closing them throws errors
+		//I'll assume it's freed by deleting the rendertarget, device or IDirect3D9Ex, and that reusing it does not leak
+		//CloseHandle(D3D_sharetexture);
+		//D3D_sharetexture = NULL;
 	}
 #endif
 	

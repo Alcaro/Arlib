@@ -2,7 +2,6 @@
 #include "../global.h"
 #include "../string.h"
 
-#ifdef ARLIB_SANDBOX
 //Allows safely executing untrusted code.
 //
 //Exact rules:
@@ -98,7 +97,7 @@ public:
 		bool try_lock() { return parent->try_wait(id); }
 		void unlock() { parent->release(id); }
 	};
-	channel_t channel(int id) { return (channel_t){this, id}; }
+	channel_t channel(int id) { channel_t ret; ret.parent=this; ret.id=id; return ret; }
 	
 	//Allocates memory shared between the two processes. At least 8 memory areas are supported. It's
 	// up to the user how to use them; a recommendation is to put a fixed-size control data block in
@@ -144,4 +143,3 @@ private:
 	sandbox(){}
 	sandbox(impl* m) : m(m) {}
 };
-#endif

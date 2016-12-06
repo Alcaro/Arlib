@@ -6,6 +6,7 @@
 #ifdef _WIN32
 	#include <winsock2.h>
 	#include <ws2tcpip.h>
+	#include <mstcpip.h>
 	#define MSG_NOSIGNAL 0
 	#define MSG_DONTWAIT 0
 	#define close closesocket
@@ -106,8 +107,10 @@ static int connect(const char * domain, int port)
 	return fd;
 }
 
+} // must close namespace for MSVC compat
+
 //MSG_DONTWAIT is usually better, but accept() doesn't take that argument
-void setblock(int fd, bool newblock)
+static void setblock(int fd, bool newblock)
 {
 #ifdef _WIN32
 	u_long nonblock = !newblock;
@@ -119,6 +122,8 @@ void setblock(int fd, bool newblock)
 	fcntl(fd, F_SETFL, flags);
 #endif
 }
+
+namespace {
 
 class socket_impl : public socket {
 #ifdef _WIN32

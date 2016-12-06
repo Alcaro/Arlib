@@ -2,8 +2,16 @@
 #include "../global.h"
 #include "../gui/window.h"
 
+#if defined(__has_include)
+#if __has_include(<GL/gl.h>) && __has_include(<GL/glext.h>)
 #include <GL/gl.h>
 #include <GL/glext.h>
+#endif
+#endif
+#ifndef GL_TRUE
+#include "../deps/gl.h"
+#include "../deps/glext.h"
+#endif
 
 #ifndef GLAPIENTRY
 #ifdef _WIN32
@@ -28,26 +36,31 @@ public:
 #ifdef AROPENGL_D3DSYNC
 		//Direct3D vsync is an advanced feature that uses WGL_NV_DX_interop and D3DSWAPEFFECT_FLIPEX to ensure smooth framerate on Windows.
 		//Advantages:
-		//- Less stuttering, especially with DWM enabled
+		//- Less stuttering, especially with DWM enabled (at least on some computers - on others, vsync is already smooth)
 		//Disadvantages:
 		//- Requires Windows 7 or newer
 		//- Some graphics cards and drivers are not compatible
-		//- Poorly tested driver path, may be slow or buggy
+		//- Poorly tested driver path, may be slow or buggy (in fact, I believe I found a Nvidia driver bug while creating this)
 		//- You may not render to the default framebuffer, 0; you must render to gl.defaultFramebuffer()
-		//    (if you don't use framebuffers, you can ignore this; defaultFramebuffer is bound on creation)
+		//    (if you don't use framebuffers, you can ignore this; defaultFramebuffer is bound on creation and on every buffer switch)
 		//- You must call gl.notifyResize() whenever the window is resized (whether by the application or the user), in addition to gl.Viewport/etc
 		//- Swap intervals other than 0 and 1 are not supported, not even -1
 		//- May be slower, especially with vsync off
 		//The flag is ignored on non-Windows systems.
 		//It is safe to use gl.defaultFramebuffer and gl.notifyResize on non-d3dsync objects.
+# ifdef _WIN32
 		t_direct3d_vsync = 0x010000,
+# else
+		t_direct3d_vsync = 0,
+#  undef AROPENGL_D3DSYNC
+# endif
 #endif
 	};
 	
 	class context : nocopy {
 	public:
 		//this is basically the common subset of WGL/GLX/etc
-		//you want the outer class, as it offers proper extension management
+		//you want the outer class, as it offers proper extension/symbol management
 		static context* create(uintptr_t parent, uintptr_t* window, uint32_t flags);
 		
 		virtual void makeCurrent(bool make) = 0; // If false, releases the context. The context is current on creation.
@@ -77,8 +90,6 @@ public:
 		return create(context::create(parent, window, flags));
 	}
 	
-	//Due to problems ensuring destructor ordering, the viewport is not automatically disconnected from the driver upon destruction.
-	//Either destroy the viewport too, disconnect it yourself, or ensure a new driver (whether OpenGL or not) is quickly created on the viewport.
 	bool create(widget_viewport* port, uint32_t flags)
 	{
 		uintptr_t newwindow;

@@ -23,7 +23,10 @@
 #    define _CRT_SECURE_NO_WARNINGS
 #  endif
 #  include <windows.h>
-#  undef interface // screw that, I'm not interested in COM shittery
+#endif
+
+#ifdef _MSC_VER
+#pragma warning(disable:C4800) // forcing value to bool 'true' or 'false' (performance warning)
 #endif
 
 #ifndef _GNU_SOURCE

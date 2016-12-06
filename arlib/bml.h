@@ -9,7 +9,7 @@
 parent child=1
 parent2
 */
-//would yield { enter, parent, "" } { enter, child, 1 } { exit } { exit } { enter, parent2, "" } { exit }.
+//would yield { enter, "parent", "" } { enter, "child", "1" } { exit } { exit } { enter, "parent2", "" } { exit }.
 //The parser keeps trying after an { error }, giving you a partial view of the damaged document; however,
 // there are no guarantees on how much you can see, and it is likely for one error to cause many more, or misplaced nodes.
 //enter/exit is always paired, even in the presense of errors.
@@ -22,6 +22,11 @@ public:
 		cstring name;
 		cstring value; // or error message
 		               // putting error first would be cleaner in the parser, but reader clarity is more important, and this name is better
+		
+		//these constructors are because MSVC2013 can't parse (event){ enter, "foo", "bar" }
+		event(int action) : action(action) {}
+		event(int action, cstring name) : action(action), name(name) {}
+		event(int action, cstring name, cstring value) : action(action), name(name), value(value) {}
 	};
 	
 	//Remember the cstring rules: If this cstring doesn't hold a reference, don't touch its buffer until the object is disposed.

@@ -1,42 +1,7 @@
 #include "file.h"
 #include "test.h"
 
-//TODO: to test:
-#if 0
-//file
-	static file* open(cstring filename);
-	static array<string> listdir(cstring path);
-	
-	static string dirname(cstring path);
-	static string basename(cstring path);
-	
-	string path;
-	size_t len;
-	
-	virtual size_t read(array<byte>& target, size_t start) = 0;
-
-	virtual arrayview<byte> mmap(size_t start, size_t len) = 0;
-	virtual void unmap(arrayview<byte> data) = 0;
-
-//filewrite
-	enum mode {
-		m_default,        // If the file exists, opens it. If it doesn't, creates a new file.     (O_CREAT)         (OPEN_ALWAYS)
-		m_existing,       // Fails if the file doesn't exist.                                     (0)               (OPEN_EXISTING)
-		m_replace,        // If the file exists, it's either deleted and recreated, or truncated. (O_CREAT|O_TRUNC) (CREATE_ALWAYS)
-		m_create_excl,    // Fails if the file does exist.                                        (O_CREAT|O_EXCL)  (CREATE_NEW)
-	};
-
-	static filewrite* open(cstring filename, mode m = m_default);
-	static bool unlink(cstring filename);
-	
-	virtual bool resize(size_t newsize) = 0;
-	virtual bool write(arrayview<byte> data, size_t start = 0) = 0;
-	virtual bool replace(arrayview<byte> data) { return resize(data.size()) && write(data); }
-	
-	virtual arrayvieww<byte> mmapw(size_t start, size_t len) = 0;
-	arrayvieww<byte> mmapw() { return this->mmapw(0, this->len); }
-	virtual void unmapw(arrayvieww<byte> data) = 0;
-#endif
+#ifdef ARLIB_TEST
 
 //criteria:
 //- must be a normal file, no /dev/*
@@ -157,3 +122,4 @@ test("file writing")
 	assert(filewrite::unlink(WRITABLE_FILE));
 	assert(filewrite::unlink(WRITABLE_FILE)); // ensure it properly deals with unlinking a nonexistent file
 }
+#endif

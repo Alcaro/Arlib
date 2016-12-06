@@ -242,7 +242,7 @@ public:
 	}
 	
 	//takes ownership of the given data
-	static array<T> create_from(T* ptr, size_t count)
+	static array<T> create_usurp(T* ptr, size_t count)
 	{
 		array<T> ret;
 		ret.items = ptr;
