@@ -2,13 +2,10 @@
 #include "../global.h"
 #include "../gui/window.h"
 
-#if defined(__has_include)
-#if __has_include(<GL/gl.h>) && __has_include(<GL/glext.h>)
+#if !defined(_WIN32) || __has_include(<GL/glext.h>)
 #include <GL/gl.h>
 #include <GL/glext.h>
-#endif
-#endif
-#ifndef GL_TRUE
+#else
 #include "../deps/gl.h"
 #include "../deps/glext.h"
 #endif

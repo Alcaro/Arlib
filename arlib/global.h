@@ -29,6 +29,10 @@
 #pragma warning(disable:C4800) // forcing value to bool 'true' or 'false' (performance warning)
 #endif
 
+#ifndef __has_include
+#define __has_include(x) false
+#endif
+
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE //strdup, realpath, asprintf
 #endif

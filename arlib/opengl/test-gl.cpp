@@ -1,6 +1,9 @@
 /*
+windows:
 g++ -DARLIB_D3DTEST -DARLIB_OPENGL -DARGUI_WINDOWS -DAROPENGL_D3DSYNC -std=c++11 -fno-exceptions -fno-rtti -O3 *.cpp ../os.cpp ../gui/*.cpp ../malloc.cpp ../file-win32.cpp -lgdi32 -lcomctl32 -lcomdlg32 -o test.exe && test.exe && del test.exe
-exit
+
+linux:
+g++ -DARLIB_D3DTEST -DARLIB_OPENGL -DARGUI_GTK3 -DARGUIPROT_X11 -std=c++11 -fno-exceptions -fno-rtti -O3 *.cpp ../os.cpp ../gui/*.cpp ../malloc.cpp ../file-win32.cpp -ldl `pkg-config --cflags --libs gtk+-3.0` -lX11 -static-libgcc -o test
 */
 
 #ifdef ARLIB_D3DTEST
@@ -37,7 +40,9 @@ void process(bool d3d)
 	window* wnd = window_create(port);
 	
 	uint32_t flags = aropengl::t_ver_3_3 | aropengl::t_debug_context;
+#ifdef AROPENGL_D3DSYNC
 	if (d3d) flags |= aropengl::t_direct3d_vsync;
+#endif
 	//flags |= aropengl::t_depth_buffer;
 	aropengl gl(port, flags);
 	if (!gl) return;
@@ -106,7 +111,9 @@ int main(int argc, char * argv[])
 	for (int i=0;i<5;i++)
 	{
 		process(false);
+#ifdef AROPENGL_D3DSYNC
 		process(true);
+#endif
 	}
 }
 #endif
