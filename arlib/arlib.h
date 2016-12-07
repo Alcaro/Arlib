@@ -9,6 +9,7 @@
 //   everything guilty, except gui/, is handled
 //- replace variadic widget constructors with templates
 //- socket::recv should take array<uint8_t>* as out parameter, errors/length are in return
+//- add some mandatory define in makefile; if not present, enable all features, for MSVC compat
 
 //WARNING: Arlib comes with zero stability guarantees. It can and will change in arbitrary ways, for any reason and at any time.
 

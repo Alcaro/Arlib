@@ -1,5 +1,5 @@
 /*
-g++ -DARLIB_D3DTEST -DARLIB_OPENGL -DARGUI_WINDOWS -DAROPENGL_D3DSYNC -std=c++11 -fno-exceptions -fno-rtti -O3 *.cpp ..\os.cpp ..\gui\*.cpp ..\malloc.cpp ..\file-win32.cpp -lgdi32 -lcomctl32 -lcomdlg32 -o test.exe && test.exe && del test.exe
+g++ -DARLIB_D3DTEST -DARLIB_OPENGL -DARGUI_WINDOWS -DAROPENGL_D3DSYNC -std=c++11 -fno-exceptions -fno-rtti -O3 *.cpp ../os.cpp ../gui/*.cpp ../malloc.cpp ../file-win32.cpp -lgdi32 -lcomctl32 -lcomdlg32 -o test.exe && test.exe && del test.exe
 exit
 */
 
