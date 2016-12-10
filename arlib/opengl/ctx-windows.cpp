@@ -250,9 +250,12 @@ public:
 		pfd.cStencilBits = (stenbuf ? 8 : 0);
 		pfd.cAuxBuffers = 0;
 #ifdef AROPENGL_D3DSYNC
-		if (this->d3dsync) pfd.dwFlags &= ~PFD_DOUBLEBUFFER;
-		pfd.cDepthBits = 0;
-		pfd.cStencilBits = 0;
+		if (this->d3dsync)
+		{
+			pfd.dwFlags &= ~PFD_DOUBLEBUFFER;
+			pfd.cDepthBits = 0;
+			pfd.cStencilBits = 0;
+		}
 #endif
 		pfd.iLayerType = PFD_MAIN_PLANE;
 		SetPixelFormat(this->GL_hdc, ChoosePixelFormat(this->GL_hdc, &pfd), &pfd);

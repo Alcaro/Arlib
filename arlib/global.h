@@ -26,7 +26,7 @@
 #endif
 
 #ifdef _MSC_VER
-#pragma warning(disable:C4800) // forcing value to bool 'true' or 'false' (performance warning)
+#pragma warning(disable:4800) // forcing value to bool 'true' or 'false' (performance warning)
 #endif
 
 #ifndef __has_include

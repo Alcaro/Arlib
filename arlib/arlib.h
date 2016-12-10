@@ -1,15 +1,10 @@
 //TODO:
 //- cool down on string.h refcounting
-//- remove all mallocs, except containers.h and maybe some other system-level code
-//- figure out if intarray.h is used; if no, remove
-//- specialize array<uint8_t> and similar for primitive types
-//- remove maybe, or find a better implementation
-//- reimplement files
-//- remove every non-reference pointer from public APIs
-//   everything guilty, except gui/, is handled
-//- replace variadic widget constructors with templates
-//- socket::recv should take array<uint8_t>* as out parameter, errors/length are in return
-//- add some mandatory define in makefile; if not present, enable all features, for MSVC compat
+//- SSO for array<>
+//- make strings and arrays nullable, so failure vs empty answer can be determined
+//- window.h: remove pointers
+//- window.h: remove varargs
+//- msvc compat: add some define that, if absent, enables every feature
 
 //WARNING: Arlib comes with zero stability guarantees. It can and will change in arbitrary ways, for any reason and at any time.
 
