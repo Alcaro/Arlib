@@ -1,6 +1,7 @@
 // from https://github.com/eduardsui/tlse
 #define TLS_AMALGAMATION
 #define _XOPEN_SOURCE 600
+#undef DEBUG
 
 /********************************************************************************
  Copyright (c) 2016, Eduard Suica

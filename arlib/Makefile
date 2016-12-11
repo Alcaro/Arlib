@@ -10,7 +10,6 @@ SPACE +=
 
 ifeq ($(OS),Windows_NT)
   OS = windows
-  #$(error objdump something and check which sections can be nuked)
 else
   UNAME_S := $(shell uname -s)
   ifeq ($(UNAME_S),Linux)
@@ -217,6 +216,8 @@ ifeq ($(ARSOCKET),1)
   endif
 endif
 
+SOURCES += arlib/deps/miniz.c
+
 TRUE_CFLAGS = -std=c99 $(CCXXFLAGS) $(CFLAGS) $(CONF_CFLAGS)
 TRUE_CXXFLAGS =-std=c++11 -fno-rtti $(CCXXFLAGS) $(CXXFLAGS) $(CONF_CXXFLAGS)
 TRUE_LFLAGS = $(LFLAGS) -fvisibility=hidden $(CONF_LFLAGS)
@@ -257,5 +258,3 @@ test: obj/arlibtest$(EXESUFFIX)
 	$(TESTRUNNER) obj/arlibtest$(EXESUFFIX)
 check: test
 endif
-
-#todo: replace with ./test shell script (make test/check should still exist)

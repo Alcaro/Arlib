@@ -49,7 +49,7 @@ public:
 		this->count = N;
 	}
 	
-	arrayview<T> slice(size_t first, size_t count) const { return arrayview<T>(this->items+first, this->count); }
+	arrayview<T> slice(size_t first, size_t count) const { return arrayview<T>(this->items+first, count); }
 	
 	T join() const
 	{
@@ -128,7 +128,7 @@ public:
 		return *this;
 	}
 	
-	arrayvieww<T> slice(size_t first, size_t count) { return arrayvieww<T>(this->items+first, this->count); }
+	arrayvieww<T> slice(size_t first, size_t count) { return arrayvieww<T>(this->items+first, count); }
 };
 
 //size: two pointers, plus one T per item
@@ -200,6 +200,13 @@ public:
 	void append(const T& item) { size_t pos = this->count; resize_grow(pos+1); this->items[pos] = item; }
 	void reset() { resize_shrink(0); }
 	
+	void remove(size_t index)
+	{
+		this->items[index].~T();
+		memmove(this->items+index, this->items+index+1, sizeof(T)*(this->count-1-index));
+		this->count--;
+	}
+	
 	array()
 	{
 		this->items=NULL;
@@ -222,12 +229,10 @@ public:
 		clone(other);
 	}
 	
-#ifdef HAVE_MOVE
 	array(array<T>&& other)
 	{
 		swap(other);
 	}
-#endif
 	
 	array<T> operator=(array<T> other)
 	{

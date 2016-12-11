@@ -1,6 +1,7 @@
 #ifdef ARLIB_TEST
 #include "test.h"
 #include "array.h"
+#include "gui/window.h"
 
 struct testlist {
 	void(*func)();
@@ -64,6 +65,12 @@ void _testeqfail(cstring name, int line, cstring expected, cstring actual)
 #undef main // the real main is #define'd to something stupid on test runs
 int main(int argc, char* argv[])
 {
+#ifndef ARGUI_NONE
+	window_init(&argc, &argv);
+#else
+	_window_init_file();
+#endif
+	
 	int count[2]={0,0};
 	
 	//flip list backwards
