@@ -162,7 +162,7 @@ namespace {
 			SetFilePointerEx(this->handle, lipos, NULL, FILE_BEGIN);
 		}
 		
-		size_t read(array<byte>& target, size_t start)
+		size_t read(arrayvieww<byte> target, size_t start)
 		{
 			seek(start);
 			DWORD actual;
@@ -280,4 +280,6 @@ bool filewrite::unlink(cstring filename)
 	return unlink_fs(filename);
 }
 //#endif
+
+void _window_init_file() {}
 #endif

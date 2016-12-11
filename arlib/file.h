@@ -2,10 +2,12 @@
 #include "global.h"
 #include "string.h"
 
+class filewrite;
 class file : nocopy {
 	file(){}
 protected:
 	file(cstring filename) : path(filename) {}
+	file(cstring filename, size_t len) : path(filename), len(len) {}
 	
 	//This one will create the file from the filesystem.
 	//create() can simply return create_fs(filename), or can additionally support stuff like gvfs.
@@ -29,8 +31,8 @@ public:
 	string path;
 	size_t len;
 	
-	//This doesn't resize the argument.
-	virtual size_t read(array<byte>& target, size_t start) = 0;
+	//Reading outside the file will return partial results.
+	virtual size_t read(arrayvieww<byte> target, size_t start) = 0;
 	array<byte> read()
 	{
 		array<byte> ret;
@@ -48,17 +50,23 @@ public:
 	
 	//Mappings must be deallocated before deleting the file object.
 	//If the underlying file is changed, it's undefined whether the mappings update. To force an update, delete and recreate the mapping.
+	//Mapping outside the file is undefined behavior.
 	virtual arrayview<byte> mmap(size_t start, size_t len) = 0;
 	arrayview<byte> mmap() { return this->mmap(0, this->len); }
 	virtual void unmap(arrayview<byte> data) = 0;
 	
 	virtual ~file() {}
+	
+	//Mostly usable for debug purposes.
+	static file* create_mem_view(arrayview<byte> data);
+	static filewrite* create_mem_copy(array<byte> data);
 };
 
 
 class filewrite : public file {
 protected:
 	filewrite(cstring filename) : file(filename) {}
+	filewrite(cstring filename, size_t len) : file(filename, len) {}
 	
 public:
 	enum mode {
@@ -95,4 +103,4 @@ public:
 	virtual void unmapw(arrayvieww<byte> data) = 0;
 };
 
-static inline void _window_init_file() {}
+void _window_init_file();

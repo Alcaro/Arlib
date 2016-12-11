@@ -80,6 +80,7 @@ test("file writing")
 	assert_eq(string(file::read(WRITABLE_FILE)), "foo");
 	
 	f->resize(8);
+	assert(f->len == 8);
 	byte expected[8]={'f','o','o',0,0,0,0,0};
 	array<byte> actual = file::read(WRITABLE_FILE);
 	assert(actual.ptr());
