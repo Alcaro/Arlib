@@ -27,7 +27,7 @@ public:
 	SSL* ssl;
 	//bool nonblock;
 	
-	static socketssl_impl* create(socket* parent, string domain, bool permissive)
+	static socketssl_impl* create(socket* parent, cstring domain, bool permissive)
 	{
 		if (!parent) return NULL;
 		
@@ -89,14 +89,14 @@ public:
 	}
 	
 	//only supports nonblocking
-	int recv(uint8_t* data, size_t len, bool block = false)
+	int recv(arrayvieww<uint8_t> data, bool block = false)
 	{
-		return fixret(SSL_read(ssl, data, len));
+		return fixret(SSL_read(ssl, data.ptr(), data.size()));
 	}
 	
 	int sendp(arrayview<uint8_t> data, bool block = true)
 	{
-		return fixret(SSL_write(ssl, data.data(), data.size()));
+		return fixret(SSL_write(ssl, data.ptr(), data.size()));
 	}
 	
 	~socketssl_impl()

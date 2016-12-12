@@ -107,10 +107,10 @@ static int connect(const char * domain, int port)
 	return fd;
 }
 
-} // must close namespace for MSVC compat
+} // close namespace
 
 //MSG_DONTWAIT is usually better, but accept() doesn't take that argument
-static void setblock(int fd, bool newblock)
+void socket::setblock(int fd, bool newblock)
 {
 #ifdef _WIN32
 	u_long nonblock = !newblock;

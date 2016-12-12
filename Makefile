@@ -4,10 +4,10 @@ AROPENGL = 1
 ARTHREAD = 0
 ARWUTF = 0
 ARSOCKET = 1
-#valid values: openssl, wolfssl, tlse, no
+#valid values: openssl, gnutls, tlse, no
 #ignored on windows (other than 'no', which is obeyed), always uses schannel
 #default openssl
-ARSOCKET_SSL = tlse
+ARSOCKET_SSL = gnutls
 ARSANDBOX = 1
 
 #honored variables, in addition to the ones listed here:

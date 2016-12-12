@@ -208,6 +208,9 @@ ifeq ($(ARSOCKET),1)
   else ifeq ($(ARSOCKET_SSL),openssl)
     CONF_CFLAGS += -DARLIB_SSL_OPENSSL
     CONF_LFLAGS += -lssl -lcrypto
+  else ifeq ($(ARSOCKET_SSL),gnutls)
+    CONF_CFLAGS += -DARLIB_SSL_GNUTLS
+    CONF_LFLAGS += -lgnutls
   else ifeq ($(ARSOCKET_SSL),tlse)
     CONF_CFLAGS += -DARLIB_SSL_TLSE
     SOURCES_NOWARN += arlib/deps/tlse.c

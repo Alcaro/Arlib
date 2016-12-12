@@ -16,6 +16,8 @@ protected:
 	//deallocates the socket, returning its fd, while letting the fd remain valid
 	static int decompose(socket* sock) { int ret = sock->fd; sock->fd=-1; delete sock; return ret; }
 	
+	static void setblock(int fd, bool newblock);
+	
 public:
 	//Returns NULL on connection failure.
 	static socket* create(cstring domain, int port);
@@ -84,7 +86,8 @@ class socketssl : public socket {
 protected:
 	socketssl(){}
 public:
-	//If 'permissive' is true, the server certficate will be ignored. Expired, self-signed, untrusted root, wrong domain, everything's fine.
+	//If 'permissive' is true, the server certficate will be ignored.
+	//Expired, self-signed, untrusted root, wrong domain, everything's fine.
 	static socketssl* create(cstring domain, int port, bool permissive=false)
 	{
 		return socketssl::create(socket::create(domain, port), domain, permissive);
