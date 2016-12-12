@@ -108,7 +108,7 @@ g_log_set_always_fatal((GLogLevelFlags)(G_LOG_LEVEL_CRITICAL|G_LOG_LEVEL_WARNING
 //	return (ret==GTK_RESPONSE_ACCEPT || ret==GTK_RESPONSE_OK || ret==GTK_RESPONSE_YES);
 //}
 //
-//const char * const * window_file_picker(struct window * parent,
+//const char * const * window_file_picker(window * parent,
 //                                        const char * title,
 //                                        const char * const * extensions,
 //                                        const char * extdescription,

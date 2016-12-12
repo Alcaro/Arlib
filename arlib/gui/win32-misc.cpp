@@ -77,7 +77,7 @@ bool window_message_box(const char * text, const char * title, enum mbox_sev sev
 	return (ret==IDOK || ret==IDYES);
 }
 
-const char * const * window_file_picker(struct window * parent,
+const char * const * window_file_picker(window * parent,
                                         const char * title,
                                         const char * const * extensions,
                                         const char * extdescription,

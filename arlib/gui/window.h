@@ -414,7 +414,6 @@ public:
 
 class widget_listbox_virtual : public widget_base { WIDGET_BASE
 private:
-	widget_listbox_virtual() {}
 	void construct(unsigned int numcolumns, const char * * columns);
 	
 public:

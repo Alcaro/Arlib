@@ -129,7 +129,7 @@ static void place_window(HWND hwnd, void* resizeinf, unsigned int x, unsigned in
 
 
 struct widget_label::impl {
-	struct window * parent;
+	window* parent;
 	HWND hwnd;
 	uint8_t state;
 	//char padding[7];
@@ -146,7 +146,7 @@ widget_label::widget_label(const char * text) : m(new impl)
 	m->state=0;
 }
 
-unsigned int widget_label::init(struct window * parent, uintptr_t parenthandle)
+unsigned int widget_label::init(window* parent, uintptr_t parenthandle)
 {
 	m->parent=parent;
 	char* text=(char*)m->hwnd;
@@ -203,7 +203,7 @@ widget_label* widget_label::set_alignment(int alignment)
 
 
 struct widget_button::impl {
-	//struct window * parent;
+	//window* parent;
 	HWND hwnd;
 	
 	function<void()> onclick;
@@ -225,7 +225,7 @@ widget_button::widget_button(const char * text) : m(new impl)
 	m->hwnd=(HWND)strdup(text);
 }
 
-unsigned int widget_button::init(struct window * parent, uintptr_t parenthandle)
+unsigned int widget_button::init(window* parent, uintptr_t parenthandle)
 {
 	char* text=(char*)m->hwnd;
 	m->hwnd=CreateWindow(WC_BUTTON, text, WS_CHILD|WS_VISIBLE|WS_TABSTOP, 0, 0, 16, 16,
@@ -273,7 +273,7 @@ widget_button* widget_button::set_onclick(function<void()> onclick)
 
 
 struct widget_checkbox::impl {
-	struct window * parent;
+	window* parent;
 	HWND hwnd;
 	
 	function<void(bool checked)> onclick;
@@ -295,7 +295,7 @@ widget_checkbox::widget_checkbox(const char * text) : m(new impl)
 	m->hwnd=(HWND)strdup(text);
 }
 
-unsigned int widget_checkbox::init(struct window * parent, uintptr_t parenthandle)
+unsigned int widget_checkbox::init(window* parent, uintptr_t parenthandle)
 {
 	m->parent=parent;
 	char* text=(char*)m->hwnd;
@@ -379,7 +379,7 @@ struct widget_radio::impl {
 			bool disabled;
 		};
 		struct { //active otherwise
-			struct window * parent;
+			window* parent;
 			HWND hwnd;
 		};
 	};
@@ -426,7 +426,7 @@ widget_radio::widget_radio(const char * text) : m(new impl)
 	m->text=strdup(text);
 }
 
-unsigned int widget_radio::init(struct window * parent, uintptr_t parenthandle)
+unsigned int widget_radio::init(window* parent, uintptr_t parenthandle)
 {
 	bool disabled=m->disabled;
 	char* text=m->text;
@@ -741,7 +741,7 @@ struct widget_viewport::impl {
 
 
 
-unsigned int widget_viewport::init(struct window * parent, uintptr_t parenthandle)
+unsigned int widget_viewport::init(window* parent, uintptr_t parenthandle)
 {
 	m->parent = parent;
 	m->hwnd = NULL;
@@ -920,7 +920,7 @@ void widget_viewport::set_child(uintptr_t windowhandle, function<void(size_t wid
 #endif
 
 struct widget_listbox_virtual::impl {
-	struct window * parent;
+	window* parent;
 	HWND hwnd;
 	
 	unsigned int rows;
@@ -968,7 +968,7 @@ void widget_listbox_virtual::construct(unsigned int numcolumns, const char * * c
 	m->initialized=false;
 }
 
-unsigned int widget_listbox_virtual::init(struct window * parent, uintptr_t parenthandle)
+unsigned int widget_listbox_virtual::init(window* parent, uintptr_t parenthandle)
 {
 	m->parent=parent;
 	const char * * columns=(const char**)m->hwnd;
@@ -1258,11 +1258,11 @@ struct widget_frame::impl {
 widget_frame::widget_frame(const char * text, widget_base* contents) : m(new impl)
 {
 	m->initialized=false;
-	m->child=(struct widget_base*)contents;
+	m->child=contents;
 	m->hwnd=(HWND)strdup(text);
 }
 
-unsigned int widget_frame::init(struct window * parent, uintptr_t parenthandle)
+unsigned int widget_frame::init(window* parent, uintptr_t parenthandle)
 {
 	//this->parent=parent;//this one can't do anything that changes its size
 	char * text=(char*)m->hwnd;

@@ -287,12 +287,13 @@ public:
 		file& f = filedat[i];
 		array<byte> ret = unpackfiledat(f);
 		
+		//APPNOTE.TXT specifies some bizarre generator constant, 0xdebb20e3
+		//no idea how to use that, the normal crc32 (0xedb88320) works fine
 		if (crc32(ret) != f.crc32) return NULL;
 		if (time) *time = fromdosdate(f.dosdate);
 		return ret;
 	}
 	
-	//Only usable if the zipfile was created with a filewrite.
 	//Writing a blank array deletes the file.
 	void write(cstring name, arrayview<byte> data, time_t date = 0)
 	{
