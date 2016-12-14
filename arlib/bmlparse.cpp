@@ -502,6 +502,32 @@ bmlparser::event test4e[]={
 	{ e_finish }
 };
 
+//screwy whitespace on otherwise blank lines is probably allowed
+//I can't justify allowing blank lines only,
+//I can't justify allowing only one of same-as-above and same-as-below,
+//and I can't justify allowing three different options but not all of them.
+//therefore, only one option remains.
+const char * test5 =
+"a\n"
+"  b\n"
+"\n"
+" \n"
+"  \n"
+"   \n"
+"    \n"
+"     \n"
+"\t\n"
+"    c\n";
+bmlparser::event test5e[]={
+	{ e_enter, "a" },
+		{ e_enter, "b" },
+			{ e_enter, "c" },
+			{ e_exit },
+		{ e_exit },
+	{ e_exit },
+	{ e_finish }
+};
+
 static void testbml(const char * bml, bmlparser::event* expected)
 {
 	bmlparser parser(bml);
@@ -551,6 +577,7 @@ test()
 	testcall(testbml(test2, test2e));
 	testcall(testbml(test3, test3e));
 	testcall(testbml(test4, test4e));
+	testcall(testbml(test5, test5e));
 	
 	testcall(testbml_error("*"));          // invalid node name
 	testcall(testbml_error("a=\""));       // unclosed quote
@@ -567,5 +594,7 @@ test()
 	testcall(testbml_error("a\n  :b\n c"));
 	testcall(testbml_error("a\n :b\n\t:c"));
 	testcall(testbml_error("a\n :b\n\tc"));
+	testcall(testbml_error("a\n :b\n\n :c"));//blank line in multiline
+	testcall(testbml_error("a\n :b\n \n :c"));//this too
 }
 #endif
