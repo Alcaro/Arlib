@@ -285,6 +285,7 @@ public:
 		size_t bytes_ret = ret_buf_len;
 		if (bytes_ret > data.size()) bytes_ret = data.size();
 		memcpy(data.ptr(), ret_buf, bytes_ret);
+		memmove(ret_buf, ret_buf+bytes_ret, ret_buf_len-bytes_ret);
 		ret_buf_len -= bytes_ret;
 		return bytes_ret;
 	}
