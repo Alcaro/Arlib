@@ -126,19 +126,19 @@ void socket::setblock(int fd, bool newblock)
 namespace {
 
 class socket_impl : public socket {
+public:
 #ifdef _WIN32
 	bool m_blocking = true;
-	void setblock(bool newblock)
+	/*private*/ void setblock(bool newblock)
 	{
 		//if (m_blocking == newblock) return;
 		//m_blocking = newblock;
-		::setblock(this->fd, newblock);
+		socket::setblock(this->fd, newblock);
 	}
 #else
-	void setblock(bool newblock) {} // MSG_DONTWAIT exists here
+	/*private*/ void setblock(bool newblock) {} // MSG_DONTWAIT exists here
 #endif
 	
-public:
 	socket_impl(int fd) { this->fd = fd; }
 	
 	/*private*/ int fixret(int ret)

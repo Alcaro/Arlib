@@ -22,12 +22,7 @@ public:
 	}
 	
 #define LEAF(T) void operator()(cstring name, T& item) { w.node(name, tostring(item)); }
-	LEAF(char);
-	LEAF(int);
-	LEAF(unsigned int);
-	LEAF(bool);
-	LEAF(float);
-	LEAF(time_t);
+	ALLSTRINGABLE(LEAF);
 #undef LEAF
 };
 
@@ -107,13 +102,8 @@ class bmlunserialize_impl {
 		}
 	}
 	
-#define LEAF(T) void item(T& out) { out = fromstring<T>(thisval); }
-	LEAF(char);
-	LEAF(int);
-	LEAF(unsigned int);
-	LEAF(bool);
-	LEAF(float);
-	LEAF(time_t);
+#define LEAF(T) void item(T& out) { fromstring(thisval, out); }
+	ALLSTRINGABLE(LEAF);
 #undef LEAF
 	
 public:

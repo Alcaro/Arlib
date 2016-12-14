@@ -42,7 +42,7 @@ static time_t timegm(register struct tm * t)
 }
 
 #ifdef _WIN32 // surprisingly, this is safe - gmtime() returns a thread local
-#define gmtime_r(a,b) (*(b)=gmtime(a))
+#define gmtime_r(a,b) (*(b)=*gmtime(a))
 #endif
 
 static time_t fromdosdate(uint32_t date)
