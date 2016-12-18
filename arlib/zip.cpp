@@ -78,8 +78,7 @@ static uint32_t todosdate(time_t date)
 	       tp.tm_sec>>1;
 }
 
-class zip {
-	struct locfhead {
+	struct zip::locfhead {
 		litend<uint32_t> signature;
 		static const uint32_t signature_expected = 0x04034B50;
 		litend<uint16_t> vermin;
@@ -94,9 +93,8 @@ class zip {
 		litend<uint16_t> len_fname;
 		litend<uint16_t> len_exfield;
 	};
-	static_assert(sizeof(locfhead)==30);
 	
-	struct centdirrec {
+	struct zip::centdirrec {
 		litend<uint32_t> signature;
 		static const uint32_t signature_expected = 0x02014B50;
 		litend<uint16_t> verused;
@@ -117,9 +115,8 @@ class zip {
 		litend<uint32_t> attr_ext;
 		litend<uint32_t> header_start;
 	};
-	static_assert(sizeof(centdirrec)==46);
 	
-	struct endofcdr {
+	struct zip::endofcdr {
 		litend<uint32_t> signature;
 		static const uint32_t signature_expected = 0x06054B50;
 		litend<uint16_t> diskid_this;
@@ -130,11 +127,15 @@ class zip {
 		litend<uint32_t> cdrstart_fromdisk;
 		litend<uint16_t> zipcommentlen;
 	};
-	static_assert(sizeof(endofcdr)==22);
 	
 	
-	endofcdr* getendofcdr(arrayview<byte> data)
+	zip::endofcdr* zip::getendofcdr(arrayview<byte> data)
 	{
+		//must be somewhere in zip::, they're private
+		static_assert(sizeof(zip::locfhead)==30);
+		static_assert(sizeof(zip::centdirrec)==46);
+		static_assert(sizeof(zip::endofcdr)==22);
+		
 		for (size_t commentlen=0;commentlen<65536;commentlen++)
 		{
 			if (data.size() < sizeof(endofcdr)+commentlen) return NULL;
@@ -151,7 +152,7 @@ class zip {
 		return NULL;
 	}
 	
-	centdirrec* getcdr(arrayview<byte> data, endofcdr* end)
+	zip::centdirrec* zip::getcdr(arrayview<byte> data, endofcdr* end)
 	{
 		if (end->cdrstart_fromdisk+sizeof(centdirrec) > data.size()) return NULL;
 		centdirrec* ret = (centdirrec*)data.slice(end->cdrstart_fromdisk, sizeof(centdirrec)).ptr();
@@ -159,7 +160,7 @@ class zip {
 		return ret;
 	}
 	
-	centdirrec* nextcdr(arrayview<byte> data, centdirrec* cdr)
+	zip::centdirrec* zip::nextcdr(arrayview<byte> data, centdirrec* cdr)
 	{
 		size_t start = (uint8_t*)cdr - data.ptr();
 		size_t len = sizeof(centdirrec) + cdr->len_fname + cdr->len_exfield + cdr->len_fcomment;
@@ -170,7 +171,7 @@ class zip {
 		return next;
 	}
 	
-	locfhead* geth(arrayview<byte> data, centdirrec* cdr)
+	zip::locfhead* zip::geth(arrayview<byte> data, centdirrec* cdr)
 	{
 		if (cdr->header_start+sizeof(locfhead) > data.size()) return NULL;
 		locfhead* ret = (locfhead*)data.slice(cdr->header_start, sizeof(locfhead)).ptr();
@@ -178,7 +179,7 @@ class zip {
 		return ret;
 	}
 	
-	arrayview<byte> fh_fname(arrayview<byte> data, locfhead* fh)
+	arrayview<byte> zip::fh_fname(arrayview<byte> data, locfhead* fh)
 	{
 		size_t start = (uint8_t*)fh - data.ptr();
 		if (start + sizeof(locfhead) + fh->len_fname > data.size()) return NULL;
@@ -186,7 +187,7 @@ class zip {
 		return data.slice(start+sizeof(locfhead), fh->len_fname);
 	}
 	
-	arrayview<byte> fh_data(arrayview<byte> data, locfhead* fh)
+	arrayview<byte> zip::fh_data(arrayview<byte> data, locfhead* fh)
 	{
 		size_t start = (uint8_t*)fh - data.ptr();
 		size_t len = sizeof(locfhead) + fh->len_fname + fh->len_exfield;
@@ -196,26 +197,7 @@ class zip {
 	}
 	
 	
-	array<string> filenames;
-	struct file {
-		//would've put filenames here too, but then I can't return them in files()
-		uint32_t decomplen;
-		uint16_t method;
-		array<byte> data;
-		uint32_t crc32;
-		uint32_t dosdate;
-	};
-	array<file> filedat;
-	
-	
-public:
-	zip() {}
-	zip(arrayview<byte> data)
-	{
-		init(data);
-	}
-	
-	bool init(arrayview<byte> data)
+	bool zip::init(arrayview<byte> data)
 	{
 		filenames.reset();
 		filedat.reset();
@@ -239,14 +221,13 @@ public:
 		return true;
 	}
 	
-	//Invalidated whenever the file list changes.
-	arrayview<string> files()
-	{
-		return filenames;
-	}
+	////Invalidated whenever the file list changes.
+	//arrayview<string> files()
+	//{
+	//	return filenames;
+	//}
 	
-private:
-	size_t find_file(cstring name)
+	size_t zip::find_file(cstring name)
 	{
 		for (size_t i=0;i<filenames.size();i++)
 		{
@@ -255,7 +236,7 @@ private:
 		return (size_t)-1;
 	}
 	
-	array<byte> unpackfiledat(file& f)
+	array<byte> zip::unpackfiledat(file& f)
 	{
 		switch (f.method)
 		{
@@ -277,9 +258,8 @@ private:
 			}
 		}
 	}
-public:
 	
-	array<byte> read(cstring name, time_t * time = NULL)
+	array<byte> zip::read(cstring name, time_t * time)
 	{
 		size_t i = find_file(name);
 		if (i==(size_t)-1) return NULL;
@@ -294,8 +274,7 @@ public:
 		return ret;
 	}
 	
-	//Writing a blank array deletes the file.
-	void write(cstring name, arrayview<byte> data, time_t date = 0)
+	void zip::write(cstring name, arrayview<byte> data, time_t date)
 	{
 		size_t i = find_file(name);
 		if (!data)
@@ -335,14 +314,13 @@ public:
 		}
 	}
 	
-private:
-	static int fileminver(file& f)
+	int zip::fileminver(zip::file& f)
 	{
 		if (f.method == 8) return 20;
 		return 10;
 	}
 	
-	static bool strascii(cstring s)
+	bool zip::strascii(cstring s)
 	{
 		for (size_t i=0;i<s.length();i++)
 		{
@@ -351,8 +329,7 @@ private:
 		return true;
 	}
 	
-public:
-	array<byte> pack()
+	array<byte> zip::pack()
 	{
 		array<byte> ret;
 		
@@ -425,7 +402,7 @@ public:
 		
 		return ret;
 	}
-};
+
 
 #ifdef ARLIB_TEST
 const uint8_t zipbytes[433] = {
