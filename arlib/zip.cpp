@@ -78,330 +78,330 @@ static uint32_t todosdate(time_t date)
 	       tp.tm_sec>>1;
 }
 
-	struct zip::locfhead {
-		litend<uint32_t> signature;
-		static const uint32_t signature_expected = 0x04034B50;
-		litend<uint16_t> vermin;
-		litend<uint16_t> bitflags;
-		litend<uint16_t> compmethod;
-		//litend<uint16_t> modtime;
-		//litend<uint16_t> moddate; // merging these
-		litend<uint32_t> moddate;
-		litend<uint32_t> crc32;
-		litend<uint32_t> size_comp;
-		litend<uint32_t> size_decomp;
-		litend<uint16_t> len_fname;
-		litend<uint16_t> len_exfield;
-	};
+struct zip::locfhead {
+	litend<uint32_t> signature;
+	static const uint32_t signature_expected = 0x04034B50;
+	litend<uint16_t> vermin;
+	litend<uint16_t> bitflags;
+	litend<uint16_t> compmethod;
+	//litend<uint16_t> modtime;
+	//litend<uint16_t> moddate; // merging these
+	litend<uint32_t> moddate;
+	litend<uint32_t> crc32;
+	litend<uint32_t> size_comp;
+	litend<uint32_t> size_decomp;
+	litend<uint16_t> len_fname;
+	litend<uint16_t> len_exfield;
+};
+
+struct zip::centdirrec {
+	litend<uint32_t> signature;
+	static const uint32_t signature_expected = 0x02014B50;
+	litend<uint16_t> verused;
+	litend<uint16_t> vermin;
+	litend<uint16_t> bitflags;
+	litend<uint16_t> compmethod;
+	//litend<uint16_t> modtime;
+	//litend<uint16_t> moddate; // merging these
+	litend<uint32_t> moddate;
+	litend<uint32_t> crc32;
+	litend<uint32_t> size_comp;
+	litend<uint32_t> size_decomp;
+	litend<uint16_t> len_fname;
+	litend<uint16_t> len_exfield;
+	litend<uint16_t> len_fcomment;
+	litend<uint16_t> disknr;
+	litend<uint16_t> attr_int;
+	litend<uint32_t> attr_ext;
+	litend<uint32_t> header_start;
+};
+
+struct zip::endofcdr {
+	litend<uint32_t> signature;
+	static const uint32_t signature_expected = 0x06054B50;
+	litend<uint16_t> diskid_this;
+	litend<uint16_t> diskid_cdrst;
+	litend<uint16_t> numfiles_thisdisk;
+	litend<uint16_t> numfiles;
+	litend<uint32_t> cdrsize;
+	litend<uint32_t> cdrstart_fromdisk;
+	litend<uint16_t> zipcommentlen;
+};
+
+
+zip::endofcdr* zip::getendofcdr(arrayview<byte> data)
+{
+	//must be somewhere in zip::, they're private
+	static_assert(sizeof(zip::locfhead)==30);
+	static_assert(sizeof(zip::centdirrec)==46);
+	static_assert(sizeof(zip::endofcdr)==22);
 	
-	struct zip::centdirrec {
-		litend<uint32_t> signature;
-		static const uint32_t signature_expected = 0x02014B50;
-		litend<uint16_t> verused;
-		litend<uint16_t> vermin;
-		litend<uint16_t> bitflags;
-		litend<uint16_t> compmethod;
-		//litend<uint16_t> modtime;
-		//litend<uint16_t> moddate; // merging these
-		litend<uint32_t> moddate;
-		litend<uint32_t> crc32;
-		litend<uint32_t> size_comp;
-		litend<uint32_t> size_decomp;
-		litend<uint16_t> len_fname;
-		litend<uint16_t> len_exfield;
-		litend<uint16_t> len_fcomment;
-		litend<uint16_t> disknr;
-		litend<uint16_t> attr_int;
-		litend<uint32_t> attr_ext;
-		litend<uint32_t> header_start;
-	};
-	
-	struct zip::endofcdr {
-		litend<uint32_t> signature;
-		static const uint32_t signature_expected = 0x06054B50;
-		litend<uint16_t> diskid_this;
-		litend<uint16_t> diskid_cdrst;
-		litend<uint16_t> numfiles_thisdisk;
-		litend<uint16_t> numfiles;
-		litend<uint32_t> cdrsize;
-		litend<uint32_t> cdrstart_fromdisk;
-		litend<uint16_t> zipcommentlen;
-	};
-	
-	
-	zip::endofcdr* zip::getendofcdr(arrayview<byte> data)
+	for (size_t commentlen=0;commentlen<65536;commentlen++)
 	{
-		//must be somewhere in zip::, they're private
-		static_assert(sizeof(zip::locfhead)==30);
-		static_assert(sizeof(zip::centdirrec)==46);
-		static_assert(sizeof(zip::endofcdr)==22);
+		if (data.size() < sizeof(endofcdr)+commentlen) return NULL;
 		
-		for (size_t commentlen=0;commentlen<65536;commentlen++)
+		size_t trystart = data.size()-sizeof(endofcdr)-commentlen;
+		endofcdr* ret = (endofcdr*)data.slice(trystart, sizeof(endofcdr)).ptr();
+		if (ret->signature == ret->signature_expected)
 		{
-			if (data.size() < sizeof(endofcdr)+commentlen) return NULL;
-			
-			size_t trystart = data.size()-sizeof(endofcdr)-commentlen;
-			endofcdr* ret = (endofcdr*)data.slice(trystart, sizeof(endofcdr)).ptr();
-			if (ret->signature == ret->signature_expected)
-			{
-				if (ret->diskid_this != 0) return NULL;
-				return ret;
-			}
-		}
-		
-		return NULL;
-	}
-	
-	zip::centdirrec* zip::getcdr(arrayview<byte> data, endofcdr* end)
-	{
-		if (end->cdrstart_fromdisk+sizeof(centdirrec) > data.size()) return NULL;
-		centdirrec* ret = (centdirrec*)data.slice(end->cdrstart_fromdisk, sizeof(centdirrec)).ptr();
-		if (ret->signature != ret->signature_expected) return NULL;
-		return ret;
-	}
-	
-	zip::centdirrec* zip::nextcdr(arrayview<byte> data, centdirrec* cdr)
-	{
-		size_t start = (uint8_t*)cdr - data.ptr();
-		size_t len = sizeof(centdirrec) + cdr->len_fname + cdr->len_exfield + cdr->len_fcomment;
-		if (start+len+sizeof(centdirrec) > data.size()) return NULL;
-		
-		centdirrec* next = (centdirrec*)data.slice(start+len, sizeof(centdirrec)).ptr();
-		if (next->signature != next->signature_expected) return NULL;
-		return next;
-	}
-	
-	zip::locfhead* zip::geth(arrayview<byte> data, centdirrec* cdr)
-	{
-		if (cdr->header_start+sizeof(locfhead) > data.size()) return NULL;
-		locfhead* ret = (locfhead*)data.slice(cdr->header_start, sizeof(locfhead)).ptr();
-		if (ret->signature != ret->signature_expected) return NULL;
-		return ret;
-	}
-	
-	arrayview<byte> zip::fh_fname(arrayview<byte> data, locfhead* fh)
-	{
-		size_t start = (uint8_t*)fh - data.ptr();
-		if (start + sizeof(locfhead) + fh->len_fname > data.size()) return NULL;
-		
-		return data.slice(start+sizeof(locfhead), fh->len_fname);
-	}
-	
-	arrayview<byte> zip::fh_data(arrayview<byte> data, locfhead* fh)
-	{
-		size_t start = (uint8_t*)fh - data.ptr();
-		size_t len = sizeof(locfhead) + fh->len_fname + fh->len_exfield;
-		if (start+len+sizeof(locfhead) > data.size()) return NULL;
-		
-		return data.slice(start+len, fh->size_comp);
-	}
-	
-	
-	bool zip::init(arrayview<byte> data)
-	{
-		filenames.reset();
-		filedat.reset();
-		
-		endofcdr* eod = getendofcdr(data);
-		if (!eod) return false;
-		
-		centdirrec* cdr = getcdr(data, eod);
-		while (cdr)
-		{
-			locfhead* fh = geth(data, cdr);
-			if (!fh) return false;
-			
-			filenames.append(fh_fname(data, fh));
-			file f = { fh->size_decomp, fh->compmethod, fh_data(data, fh), fh->crc32, fh->moddate };
-			filedat.append(f);
-			
-			cdr = nextcdr(data, cdr);
-		}
-		
-		return true;
-	}
-	
-	////Invalidated whenever the file list changes.
-	//arrayview<string> files()
-	//{
-	//	return filenames;
-	//}
-	
-	size_t zip::find_file(cstring name)
-	{
-		for (size_t i=0;i<filenames.size();i++)
-		{
-			if (filenames[i]==name) return i;
-		}
-		return (size_t)-1;
-	}
-	
-	array<byte> zip::unpackfiledat(file& f)
-	{
-		switch (f.method)
-		{
-			case 0:
-			{
-				return f.data;
-			}
-			case 8:
-			{
-				array<byte> ret;
-				ret.resize(f.decomplen);
-				size_t actualsize = tinfl_decompress_mem_to_mem(ret.ptr(), ret.size(), f.data.ptr(), f.data.size(), 0);
-				if (actualsize != f.decomplen) return NULL;
-				return ret;
-			}
-			default:
-			{
-				return NULL;
-			}
+			if (ret->diskid_this != 0) return NULL;
+			return ret;
 		}
 	}
 	
-	array<byte> zip::read(cstring name, time_t * time)
+	return NULL;
+}
+
+zip::centdirrec* zip::getcdr(arrayview<byte> data, endofcdr* end)
+{
+	if (end->cdrstart_fromdisk+sizeof(centdirrec) > data.size()) return NULL;
+	centdirrec* ret = (centdirrec*)data.slice(end->cdrstart_fromdisk, sizeof(centdirrec)).ptr();
+	if (ret->signature != ret->signature_expected) return NULL;
+	return ret;
+}
+
+zip::centdirrec* zip::nextcdr(arrayview<byte> data, centdirrec* cdr)
+{
+	size_t start = (uint8_t*)cdr - data.ptr();
+	size_t len = sizeof(centdirrec) + cdr->len_fname + cdr->len_exfield + cdr->len_fcomment;
+	if (start+len+sizeof(centdirrec) > data.size()) return NULL;
+	
+	centdirrec* next = (centdirrec*)data.slice(start+len, sizeof(centdirrec)).ptr();
+	if (next->signature != next->signature_expected) return NULL;
+	return next;
+}
+
+zip::locfhead* zip::geth(arrayview<byte> data, centdirrec* cdr)
+{
+	if (cdr->header_start+sizeof(locfhead) > data.size()) return NULL;
+	locfhead* ret = (locfhead*)data.slice(cdr->header_start, sizeof(locfhead)).ptr();
+	if (ret->signature != ret->signature_expected) return NULL;
+	return ret;
+}
+
+arrayview<byte> zip::fh_fname(arrayview<byte> data, locfhead* fh)
+{
+	size_t start = (uint8_t*)fh - data.ptr();
+	if (start + sizeof(locfhead) + fh->len_fname > data.size()) return NULL;
+	
+	return data.slice(start+sizeof(locfhead), fh->len_fname);
+}
+
+arrayview<byte> zip::fh_data(arrayview<byte> data, locfhead* fh)
+{
+	size_t start = (uint8_t*)fh - data.ptr();
+	size_t len = sizeof(locfhead) + fh->len_fname + fh->len_exfield;
+	if (start+len+sizeof(locfhead) > data.size()) return NULL;
+	
+	return data.slice(start+len, fh->size_comp);
+}
+
+
+bool zip::init(arrayview<byte> data)
+{
+	filenames.reset();
+	filedat.reset();
+	
+	endofcdr* eod = getendofcdr(data);
+	if (!eod) return false;
+	
+	centdirrec* cdr = getcdr(data, eod);
+	while (cdr)
 	{
-		size_t i = find_file(name);
-		if (i==(size_t)-1) return NULL;
+		locfhead* fh = geth(data, cdr);
+		if (!fh) return false;
 		
-		file& f = filedat[i];
-		array<byte> ret = unpackfiledat(f);
+		filenames.append(fh_fname(data, fh));
+		file f = { fh->size_decomp, fh->compmethod, fh_data(data, fh), fh->crc32, fh->moddate };
+		filedat.append(f);
 		
-		//APPNOTE.TXT specifies some bizarre generator constant, 0xdebb20e3
-		//no idea how to use that, the normal crc32 (0xedb88320) works fine
-		if (crc32(ret) != f.crc32) return NULL;
-		if (time) *time = fromdosdate(f.dosdate);
-		return ret;
+		cdr = nextcdr(data, cdr);
 	}
 	
-	void zip::write(cstring name, arrayview<byte> data, time_t date)
+	return true;
+}
+
+////Invalidated whenever the file list changes.
+//arrayview<string> files()
+//{
+//	return filenames;
+//}
+
+size_t zip::find_file(cstring name)
+{
+	for (size_t i=0;i<filenames.size();i++)
 	{
-		size_t i = find_file(name);
-		if (!data)
+		if (filenames[i]==name) return i;
+	}
+	return (size_t)-1;
+}
+
+array<byte> zip::unpackfiledat(file& f)
+{
+	switch (f.method)
+	{
+		case 0:
 		{
-			if (i==(size_t)-1) return;
-			else
-			{
-				filenames.remove(i);
-				filedat.remove(i);
-			}
-			return;
+			return f.data;
 		}
-		
-		if (i==(size_t)-1)
+		case 8:
 		{
-			i = filenames.size();
-			filenames.append(name);
+			array<byte> ret;
+			ret.resize(f.decomplen);
+			size_t actualsize = tinfl_decompress_mem_to_mem(ret.ptr(), ret.size(), f.data.ptr(), f.data.size(), 0);
+			if (actualsize != f.decomplen) return NULL;
+			return ret;
 		}
-		file& f = filedat[i];
-		f.decomplen = data.size();
-		f.crc32 = crc32(data);
-		if (date) f.dosdate = todosdate(date); // else leave unchanged, or leave as 0
-		
-		array<byte> comp;
-		comp.resize(data.size());
-		size_t complen = tdefl_compress_mem_to_mem(comp.ptr(), comp.size(), data.ptr(), data.size(), TDEFL_DEFAULT_MAX_PROBES);
-		if (complen != 0 && complen < data.size())
+		default:
 		{
-			comp.resize(complen);
-			f.method = 8;
-			f.data = std::move(comp);
+			return NULL;
 		}
+	}
+}
+
+array<byte> zip::read(cstring name, time_t * time)
+{
+	size_t i = find_file(name);
+	if (i==(size_t)-1) return NULL;
+	
+	file& f = filedat[i];
+	array<byte> ret = unpackfiledat(f);
+	
+	//APPNOTE.TXT specifies some bizarre generator constant, 0xdebb20e3
+	//no idea how to use that, the normal crc32 (0xedb88320) works fine
+	if (crc32(ret) != f.crc32) return NULL;
+	if (time) *time = fromdosdate(f.dosdate);
+	return ret;
+}
+
+void zip::write(cstring name, arrayview<byte> data, time_t date)
+{
+	size_t i = find_file(name);
+	if (!data)
+	{
+		if (i==(size_t)-1) return;
 		else
 		{
-			f.method = 0;
-			f.data = data;
+			filenames.remove(i);
+			filedat.remove(i);
 		}
+		return;
 	}
 	
-	int zip::fileminver(zip::file& f)
+	if (i==(size_t)-1)
 	{
-		if (f.method == 8) return 20;
-		return 10;
+		i = filenames.size();
+		filenames.append(name);
 	}
+	file& f = filedat[i];
+	f.decomplen = data.size();
+	f.crc32 = crc32(data);
+	if (date) f.dosdate = todosdate(date); // else leave unchanged, or leave as 0
 	
-	bool zip::strascii(cstring s)
+	array<byte> comp;
+	comp.resize(data.size());
+	size_t complen = tdefl_compress_mem_to_mem(comp.ptr(), comp.size(), data.ptr(), data.size(), TDEFL_DEFAULT_MAX_PROBES);
+	if (complen != 0 && complen < data.size())
 	{
-		for (size_t i=0;i<s.length();i++)
-		{
-			if (s[i]>=128 || s[i]<0) return false;
-		}
-		return true;
+		comp.resize(complen);
+		f.method = 8;
+		f.data = std::move(comp);
 	}
-	
-	array<byte> zip::pack()
+	else
 	{
-		array<byte> ret;
+		f.method = 0;
+		f.data = data;
+	}
+}
+
+int zip::fileminver(zip::file& f)
+{
+	if (f.method == 8) return 20;
+	return 10;
+}
+
+bool zip::strascii(cstring s)
+{
+	for (size_t i=0;i<s.length();i++)
+	{
+		if (s[i]>=128 || s[i]<0) return false;
+	}
+	return true;
+}
+
+array<byte> zip::pack()
+{
+	array<byte> ret;
+	
+	array<size_t> headerstarts;
+	for (size_t i=0;i<filenames.size();i++)
+	{
+		headerstarts.append(ret.size());
 		
-		array<size_t> headerstarts;
-		for (size_t i=0;i<filenames.size();i++)
-		{
-			headerstarts.append(ret.size());
-			
-			file& f = filedat[i];
-			locfhead h = {
-				/*signature*/   locfhead::signature_expected,
-				/*vermin*/      fileminver(f), // also contains host OS, but not important. and even if it was, pointless field
-				/*bitflags*/    strascii(filenames[i]) ? 0 : 1<<11, // UTF-8 filenames
-				/*compmethod*/  f.method,
-				/*modtime*/     //merged
-				/*moddate*/     f.dosdate,
-				/*crc32*/       f.crc32,
-				/*size_comp*/   f.data.size(),
-				/*size_decomp*/ f.decomplen,
-				/*len_fname*/   filenames[i].length(),
-				/*len_exfield*/ 0,
-			};
-			arrayview<byte> hb((uint8_t*)&h, sizeof(h));
-			ret += hb;
-			ret += filenames[i].bytes();
-			ret += f.data;
-		}
-		
-		size_t cdrstart = ret.size();
-		for (size_t i=0;i<filenames.size();i++)
-		{
-			file& f = filedat[i];
-			centdirrec cdr = {
-				/*signature*/   centdirrec::signature_expected,
-				/*verused*/      63, // don't think anything really cares about this, just use latest
-				/*vermin*/       fileminver(f),
-				/*bitflags*/     strascii(filenames[i]) ? 0 : 1<<11,
-				/*compmethod*/   f.method,
-				/*modtime*/      //merged
-				/*moddate*/      f.dosdate,
-				/*crc32*/        f.crc32,
-				/*size_comp*/    f.data.size(),
-				/*size_decomp*/  f.decomplen,
-				/*len_fname*/    filenames[i].length(),
-				/*len_exfield*/  0,
-				/*len_fcomment*/ 0,
-				/*disknr*/       0,
-				/*attr_int*/     0,
-				/*attr_ext*/     0, // APPNOTE.TXT doesn't document this, other packers I checked are huge mazes. just gonna ignore it
-				/*header_start*/ headerstarts[i],
-			};
-			arrayview<byte> cdrb((uint8_t*)&cdr, sizeof(cdr));
-			ret += cdrb;
-			ret += filenames[i].bytes();
-		}
-		size_t cdrend = ret.size();
-		
-		endofcdr eod = {
-			/*signature*/         endofcdr::signature_expected,
-			/*diskid_this*/       0,
-			/*diskid_cdrst*/      0,
-			/*numfiles_thisdisk*/ filenames.size(),
-			/*numfiles*/          filenames.size(),
-			/*cdrsize*/           cdrend-cdrstart,
-			/*cdrstart_fromdisk*/ cdrstart,
-			/*zipcommentlen*/     0,
+		file& f = filedat[i];
+		locfhead h = {
+			/*signature*/   locfhead::signature_expected,
+			/*vermin*/      fileminver(f), // also contains host OS, but not important. and even if it was, pointless field
+			/*bitflags*/    strascii(filenames[i]) ? 0 : 1<<11, // UTF-8 filenames
+			/*compmethod*/  f.method,
+			/*modtime*/     //merged
+			/*moddate*/     f.dosdate,
+			/*crc32*/       f.crc32,
+			/*size_comp*/   f.data.size(),
+			/*size_decomp*/ f.decomplen,
+			/*len_fname*/   filenames[i].length(),
+			/*len_exfield*/ 0,
 		};
-		arrayview<byte> eodb((uint8_t*)&eod, sizeof(eod));
-		ret += eodb;
-		
-		return ret;
+		arrayview<byte> hb((uint8_t*)&h, sizeof(h));
+		ret += hb;
+		ret += filenames[i].bytes();
+		ret += f.data;
 	}
+	
+	size_t cdrstart = ret.size();
+	for (size_t i=0;i<filenames.size();i++)
+	{
+		file& f = filedat[i];
+		centdirrec cdr = {
+			/*signature*/   centdirrec::signature_expected,
+			/*verused*/      63, // don't think anything really cares about this, just use latest
+			/*vermin*/       fileminver(f),
+			/*bitflags*/     strascii(filenames[i]) ? 0 : 1<<11,
+			/*compmethod*/   f.method,
+			/*modtime*/      //merged
+			/*moddate*/      f.dosdate,
+			/*crc32*/        f.crc32,
+			/*size_comp*/    f.data.size(),
+			/*size_decomp*/  f.decomplen,
+			/*len_fname*/    filenames[i].length(),
+			/*len_exfield*/  0,
+			/*len_fcomment*/ 0,
+			/*disknr*/       0,
+			/*attr_int*/     0,
+			/*attr_ext*/     0, // APPNOTE.TXT doesn't document this, other packers I checked are huge mazes. just gonna ignore it
+			/*header_start*/ headerstarts[i],
+		};
+		arrayview<byte> cdrb((uint8_t*)&cdr, sizeof(cdr));
+		ret += cdrb;
+		ret += filenames[i].bytes();
+	}
+	size_t cdrend = ret.size();
+	
+	endofcdr eod = {
+		/*signature*/         endofcdr::signature_expected,
+		/*diskid_this*/       0,
+		/*diskid_cdrst*/      0,
+		/*numfiles_thisdisk*/ filenames.size(),
+		/*numfiles*/          filenames.size(),
+		/*cdrsize*/           cdrend-cdrstart,
+		/*cdrstart_fromdisk*/ cdrstart,
+		/*zipcommentlen*/     0,
+	};
+	arrayview<byte> eodb((uint8_t*)&eod, sizeof(eod));
+	ret += eodb;
+	
+	return ret;
+}
 
 
 #ifdef ARLIB_TEST
