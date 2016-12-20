@@ -133,9 +133,11 @@ namespace {
 	public:
 		int fd;
 		
-		file_fs(cstring filename, int fd) : filewrite(filename), fd(fd)
+		file_fs(int fd) : fd(fd) {}
+		
+		size_t len()
 		{
-			len = lseek(fd, 0, SEEK_END);
+			return lseek(fd, 0, SEEK_END);
 		}
 		
 		size_t read(arrayvieww<byte> target, size_t start)
@@ -147,9 +149,7 @@ namespace {
 		
 		bool resize(size_t newsize)
 		{
-			bool ret = (ftruncate(this->fd, newsize)==0);
-			len = lseek(fd, 0, SEEK_END);
-			return ret;
+			return (ftruncate(this->fd, newsize)==0);
 		}
 		
 		bool write(arrayview<byte> data, size_t start)
@@ -185,7 +185,7 @@ file* file::open_fs(cstring filename)
 {
 	int fd = ::open(filename, O_RDONLY);
 	if (fd<0) return NULL;
-	return new file_fs(filename, fd);
+	return new file_fs(fd);
 }
 
 filewrite* filewrite::open_fs(cstring filename, mode m)
@@ -193,7 +193,7 @@ filewrite* filewrite::open_fs(cstring filename, mode m)
 	int flags[] = { O_RDWR|O_CREAT, O_RDWR, O_RDWR|O_CREAT|O_TRUNC, O_RDWR|O_CREAT|O_EXCL };
 	int fd = ::open(filename, flags[m], 0666);
 	if (fd<0) return NULL;
-	return new file_fs(filename, fd);
+	return new file_fs(fd);
 }
 
 bool filewrite::unlink_fs(cstring filename)

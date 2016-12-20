@@ -1,19 +1,17 @@
 #pragma once
 #include "global.h"
 #include "string.h"
+#include "array.h"
 
 class filewrite;
 class file : nocopy {
-	file(){}
 protected:
-	file(cstring filename) : path(filename) {}
-	file(cstring filename, size_t len) : path(filename), len(len) {}
+	file(){}
 	
 	//This one will create the file from the filesystem.
 	//create() can simply return create_fs(filename), or can additionally support stuff like gvfs.
 	static file* open_fs(cstring filename);
 	
-	class mem;
 public:
 	//While this object may look thread-safe, it isn't. One thread at the time only.
 	//Interacting with mmap() results doesn't count as interaction.
@@ -27,16 +25,13 @@ public:
 	static string dirname(cstring path);
 	static string basename(cstring path);
 	
-	//Changing these two is undefined behavior. Only the implementation may do that.
-	string path;
-	size_t len;
-	
 	//Reading outside the file will return partial results.
+	virtual size_t len() = 0;
 	virtual size_t read(arrayvieww<byte> target, size_t start) = 0;
 	array<byte> read()
 	{
 		array<byte> ret;
-		ret.resize(this->len);
+		ret.resize(this->len());
 		size_t actual = this->read(ret, 0);
 		ret.resize(actual);
 		return ret;
@@ -52,7 +47,7 @@ public:
 	//If the underlying file is changed, it's undefined whether the mappings update. To force an update, delete and recreate the mapping.
 	//Mapping outside the file is undefined behavior.
 	virtual arrayview<byte> mmap(size_t start, size_t len) = 0;
-	arrayview<byte> mmap() { return this->mmap(0, this->len); }
+	arrayview<byte> mmap() { return this->mmap(0, this->len()); }
 	virtual void unmap(arrayview<byte> data) = 0;
 	
 	virtual ~file() {}
@@ -65,8 +60,7 @@ public:
 
 class filewrite : public file {
 protected:
-	filewrite(cstring filename) : file(filename) {}
-	filewrite(cstring filename, size_t len) : file(filename, len) {}
+	filewrite() {}
 	
 public:
 	enum mode {
@@ -99,8 +93,61 @@ public:
 	//The only allowed method on a file object that has an existing writable mapping is unmapw.
 	//Fails if it goes outside the file; use resize().
 	virtual arrayvieww<byte> mmapw(size_t start, size_t len) = 0;
-	arrayvieww<byte> mmapw() { return this->mmapw(0, this->len); }
+	arrayvieww<byte> mmapw() { return this->mmapw(0, this->len()); }
 	virtual void unmapw(arrayvieww<byte> data) = 0;
+};
+
+class filemem : public file {
+public:
+	arrayview<byte> data;
+	
+	filemem() {}
+	filemem(arrayview<byte> data) : data(data) {}
+	
+	size_t len() { return data.size(); }
+	size_t read(arrayvieww<byte> target, size_t start)
+	{
+		size_t nbyte = min(target.size(), data.size()-start);
+		memcpy(target.ptr(), data.slice(start, nbyte).ptr(), nbyte);
+		return nbyte;
+	}
+	
+	arrayview<byte> mmap(size_t start, size_t len) { return data.slice(start, len); }
+	void unmap(arrayview<byte> data) {}
+};
+
+class filememw : public filewrite {
+public:
+	array<byte> data;
+	
+	filememw() {}
+	filememw(arrayview<byte> data) : data(data) {}
+	filememw(array<byte>&& data) : data(data) {}
+	
+	size_t len() { return data.size(); }
+	bool resize(size_t newsize)
+	{
+		data.resize(newsize);
+		return true;
+	}
+	
+	size_t read(arrayvieww<byte> target, size_t start)
+	{
+		size_t nbyte = min(target.size(), data.size()-start);
+		memcpy(target.ptr(), data.slice(start, nbyte).ptr(), nbyte);
+		return nbyte;
+	}
+	bool write(arrayview<byte> source, size_t start = 0)
+	{
+		data.reserve(start+source.size());
+		memcpy(data.slice(start, source.size()).ptr(), source.ptr(), source.size());
+		return true;
+	}
+	
+	arrayview<byte>   mmap(size_t start, size_t len) { return data.slice(start, len); }
+	arrayvieww<byte> mmapw(size_t start, size_t len) { return data.slice(start, len); }
+	void  unmap(arrayview<byte>  data) {}
+	void unmapw(arrayvieww<byte> data) {}
 };
 
 void _window_init_file();

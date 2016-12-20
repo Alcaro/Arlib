@@ -28,21 +28,21 @@ test("file reading")
 {
 	autoptr<file> f = file::open(READONLY_FILE);
 	assert(f);
-	assert(f->len);
-	assert(f->len > strlen(READONLY_FILE_HEAD));
-	assert(f->len >= 66000);
+	assert(f->len());
+	assert(f->len() > strlen(READONLY_FILE_HEAD));
+	assert(f->len() >= 66000);
 	array<byte> bytes = f->read();
-	assert(bytes.size() == f->len);
+	assert(bytes.size() == f->len());
 	assert(!memcmp(bytes.ptr(), READONLY_FILE_HEAD, strlen(READONLY_FILE_HEAD)));
 	
 	arrayview<byte> map = f->mmap();
 	assert(map.ptr());
-	assert(map.size() == f->len);
+	assert(map.size() == f->len());
 	assert(!memcmp(bytes.ptr(), map.ptr(), bytes.size()));
 	
 	arrayview<byte> map2 = f->mmap();
 	assert(map2.ptr());
-	assert(map2.size() == f->len);
+	assert(map2.size() == f->len());
 	assert(!memcmp(bytes.ptr(), map2.ptr(), bytes.size()));
 	f->unmap(map2);
 	
@@ -80,7 +80,7 @@ test("file writing")
 	assert_eq(string(file::read(WRITABLE_FILE)), "foo");
 	
 	f->resize(8);
-	assert(f->len == 8);
+	assert(f->len() == 8);
 	byte expected[8]={'f','o','o',0,0,0,0,0};
 	array<byte> actual = file::read(WRITABLE_FILE);
 	assert(actual.ptr());
@@ -106,9 +106,9 @@ test("file writing")
 	//file exists, these three should work
 	f=NULL; assert( (f=filewrite::open(WRITABLE_FILE, filewrite::m_default)));
 	f=NULL; assert( (f=filewrite::open(WRITABLE_FILE, filewrite::m_existing)));
-	assert_eq(f->len, 8);
+	assert_eq(f->len(), 8);
 	f=NULL; assert( (f=filewrite::open(WRITABLE_FILE, filewrite::m_replace)));
-	assert_eq(f->len, 0);
+	assert_eq(f->len(), 0);
 	f=NULL; assert(!(f=filewrite::open(WRITABLE_FILE, filewrite::m_create_excl)));//but this shouldn't
 	
 	f=NULL;

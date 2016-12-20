@@ -477,6 +477,38 @@ public:
 	}
 	inline cstring csubstr(int32_t start, int32_t end) const;
 	inline bool contains(cstring other) const;
+	inline bool startswith(cstring other) const;
+	inline bool endswith(cstring other) const;
+	
+	static string codepoint(uint32_t cp)
+	{
+		string ret;
+		if (cp<=0x7F)
+		{
+			ret[0] = cp;
+		}
+		else if (cp<=0x07FF)
+		{
+			ret[0] = (((cp>> 6)     )|0xC0);
+			ret[1] = (((cp    )&0x3F)|0x80);
+		}
+		else if (cp>=0xD800 && cp<=0xDFFF) return "\xEF\xBF\xBD";
+		else if (cp<=0xFFFF)
+		{
+			ret[0] = (((cp>>12)&0x0F)|0xE0);
+			ret[1] = (((cp>>6 )&0x3F)|0x80);
+			ret[2] = (((cp    )&0x3F)|0x80);
+		}
+		else if (cp<=0x10FFFF)
+		{
+			ret[0] = (((cp>>18)&0x07)|0xF0);
+			ret[1] = (((cp>>12)&0x3F)|0x80);
+			ret[2] = (((cp>>6 )&0x3F)|0x80);
+			ret[3] = (((cp    )&0x3F)|0x80);
+		}
+		else return "\xEF\xBF\xBD";
+		return ret;
+	}
 	
 	//Implementation detail of the equality operators. Don't use.
 	static inline bool s_eq(arrayview<byte> left, arrayview<byte> right)
@@ -532,6 +564,18 @@ inline cstring string::csubstr(int32_t start, int32_t end) const
 inline bool string::contains(cstring other) const
 {
 	return memmem(this->ptr(), this->length(), other.ptr(), other.length()) != NULL;
+}
+
+inline bool string::startswith(cstring other) const
+{
+	if (other.length() > this->length()) return false;
+	return (!memcmp(this->ptr(), other.ptr(), other.length()));
+}
+
+inline bool string::endswith(cstring other) const
+{
+	if (other.length() > this->length()) return false;
+	return (!memcmp(this->ptr()+this->length()-other.length(), other.ptr(), other.length()));
 }
 
 //TODO

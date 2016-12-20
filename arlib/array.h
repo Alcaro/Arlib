@@ -9,7 +9,7 @@
 //this object does not own its storage, it's just a pointer wrapper
 template<typename T> class arrayview {
 protected:
-	T * items;
+	T * items; // not const, despite not necessarily being writable; this makes arrayvieww/array a lot simpler
 	size_t count;
 	
 	//void clone(const arrayview<T>& other)
@@ -82,6 +82,9 @@ public:
 	//	clone(other);
 	//	return *this;
 	//}
+	
+	const T* begin() { return this->items; }
+	const T* end() { return this->items+this->count; }
 };
 
 //size: two pointers
@@ -129,6 +132,9 @@ public:
 	}
 	
 	arrayvieww<T> slice(size_t first, size_t count) { return arrayvieww<T>(this->items+first, count); }
+	
+	T* begin() { return this->items; }
+	T* end() { return this->items+this->count; }
 };
 
 //size: two pointers, plus one T per item
@@ -196,6 +202,7 @@ public:
 	T& operator[](size_t n) { resize_grow(n+1); return this->items[n]; }
 	
 	void resize(size_t len) { resize_to(len); }
+	void reserve(size_t len) { resize_grow(len); }
 	
 	void append(const T& item) { size_t pos = this->count; resize_grow(pos+1); this->items[pos] = item; }
 	void reset() { resize_shrink(0); }
@@ -251,7 +258,8 @@ public:
 	{
 		array<T> ret;
 		ret.items = ptr;
-		ret.count = count;
+		ret.count = 0;
+		ret.resize_grow_noinit(count);
 		return ret;
 	}
 	

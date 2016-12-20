@@ -2,7 +2,7 @@
 #include "array.h"
 #include "file.h"
 
-class zip {
+class zip : nocopy {
 	struct locfhead;
 	struct centdirrec;
 	struct endofcdr;
@@ -16,7 +16,7 @@ class zip {
 	
 	array<string> filenames;
 	struct file {
-		//would've put filenames here too, but then I can't return them in files()
+		//would've put filenames here too, but then I'd need funky tricks in files()
 		uint32_t decomplen;
 		uint16_t method;
 		array<byte> data;
@@ -24,7 +24,6 @@ class zip {
 		uint32_t dosdate;
 	};
 	array<file> filedat;
-	
 	
 public:
 	zip() {}
