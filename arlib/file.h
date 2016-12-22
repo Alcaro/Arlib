@@ -9,7 +9,7 @@ public:
 	class impl : nocopy {
 		friend class file;
 	protected:
-		virtual size_t len() = 0;
+		virtual size_t size() = 0;
 		virtual bool resize(size_t newsize) = 0;
 		
 		virtual size_t read(arrayvieww<byte> target, size_t start) = 0;
@@ -27,7 +27,7 @@ public:
 	class implrd : impl {
 		friend class file;
 	protected:
-		virtual size_t len() = 0;
+		virtual size_t size() = 0;
 		bool resize(size_t newsize) { return false; }
 		
 		virtual size_t read(arrayvieww<byte> target, size_t start) = 0;
@@ -53,6 +53,7 @@ public:
 	
 	file() : core(NULL) {}
 	file(file&& f) { core=f.core; f.core=NULL; }
+	file& operator=(file&& f) { delete core; core=f.core; f.core=NULL; return *this; }
 	file(impl* core) : core(core) {}
 	file(cstring filename, mode m = m_read) : core(NULL) { open(filename, m); }
 	
@@ -79,12 +80,12 @@ public:
 	operator bool() const { return core; }
 	
 	//Reading outside the file will return partial results.
-	size_t len() const { return core->len(); }
+	size_t size() const { return core->size(); }
 	size_t read(arrayvieww<byte> target, size_t start) const { return core->read(target, start); }
 	array<byte> read() const
 	{
 		array<byte> ret;
-		ret.resize(this->len());
+		ret.resize(this->size());
 		size_t actual = this->read(ret, 0);
 		ret.resize(actual);
 		return ret;
@@ -108,73 +109,70 @@ public:
 	//If the underlying file is changed, it's undefined whether the mappings update. To force an update, delete and recreate the mapping.
 	//Mapping outside the file is undefined behavior.
 	arrayview<byte> mmap(size_t start, size_t len) const { return core->mmap(start, len); }
-	arrayview<byte> mmap() const { return this->mmap(0, this->len()); }
+	arrayview<byte> mmap() const { return this->mmap(0, this->size()); }
 	void unmap(arrayview<byte> data) const { return core->unmap(data); }
 	
 	arrayvieww<byte> mmapw(size_t start, size_t len) { return core->mmapw(start, len); }
-	arrayvieww<byte> mmapw() { return this->mmapw(0, this->len()); }
+	arrayvieww<byte> mmapw() { return this->mmapw(0, this->size()); }
 	void unmapw(arrayvieww<byte> data) { return core->unmapw(data); }
 	
 	~file() { delete core; }
 	
-	file mem(arrayview<byte> data)
+	static file mem(arrayview<byte> data)
 	{
-		return file(new file::memimplr(data));
+		return file(new file::memimpl(data));
 	}
-	file mem(array<byte>& data)
+	static file mem(array<byte>& data)
 	{
-		return file(new file::memimplw(data));
+		return file(new file::memimpl(&data));
 	}
-	class memimplr : public file::implrd {
+private:
+	class memimpl : public file::implrd {
 	public:
-		arrayview<byte> data;
+		arrayview<byte> datard;
+		array<byte>* datawr; // this object does not own the array
 		
-		memimplr() {}
-		memimplr(arrayview<byte> data) : data(data) {}
+		memimpl(arrayview<byte> data) : datard(data), datawr(NULL) {}
+		memimpl(array<byte>* data) : datard(*data), datawr(data) {}
 		
-		size_t len() { return data.size(); }
-		
-		size_t read(arrayvieww<byte> target, size_t start)
+		size_t size() { return datard.size(); }
+		bool resize(size_t newsize)
 		{
-			size_t nbyte = min(target.size(), data.size()-start);
-			memcpy(target.ptr(), data.slice(start, nbyte).ptr(), nbyte);
-			return nbyte;
+			if (!datawr) return false;
+			datawr->resize(newsize);
+			datard=*datawr;
+			return true;
 		}
 		
-		arrayview<byte>   mmap(size_t start, size_t len) { return data.slice(start, len); }
-		void  unmap(arrayview<byte>  data) {}
-	};
-	class memimplw : public file::impl {
-	public:
-		array<byte> data;
-		
-		memimplw() {}
-		memimplw(arrayview<byte> data) : data(data) {}
-		memimplw(array<byte>&& data) : data(data) {}
-		
-		size_t len() { return data.size(); }
-		bool resize(size_t newsize) { data.resize(newsize); return true; }
-		
 		size_t read(arrayvieww<byte> target, size_t start)
 		{
-			size_t nbyte = min(target.size(), data.size()-start);
-			memcpy(target.ptr(), data.slice(start, nbyte).ptr(), nbyte);
+			size_t nbyte = min(target.size(), datard.size()-start);
+			memcpy(target.ptr(), datard.slice(start, nbyte).ptr(), nbyte);
 			return nbyte;
 		}
 		virtual bool write(arrayview<byte> newdata, size_t start = 0)
 		{
+			if (!datawr) return false;
 			size_t nbyte = newdata.size();
-			data.reserve(start+nbyte);
-			memcpy(data.slice(start, nbyte).ptr(), newdata.ptr(), nbyte);
+			datawr->reserve(start+nbyte);
+			memcpy(datawr->slice(start, nbyte).ptr(), newdata.ptr(), nbyte);
+			datard=*datawr;
 			return true;
 		}
-		virtual bool replace(arrayview<byte> newdata) { data = newdata; return true; }
+		virtual bool replace(arrayview<byte> newdata)
+		{
+			if (!datawr) return false;
+			*datawr = newdata;
+			datard = *datawr;
+			return true;
+		}
 		
-		arrayview<byte>   mmap(size_t start, size_t len) { return data.slice(start, len); }
-		arrayvieww<byte> mmapw(size_t start, size_t len) { return data.slice(start, len); }
+		arrayview<byte>   mmap(size_t start, size_t len) { return datard.slice(start, len); }
+		arrayvieww<byte> mmapw(size_t start, size_t len) { if (!datawr) return NULL; return datawr->slice(start, len); }
 		void  unmap(arrayview<byte>  data) {}
 		void unmapw(arrayvieww<byte> data) {}
 	};
+public:
 	
 	//Returns all items in the given directory path, as absolute paths.
 	static array<string> listdir(cstring path);

@@ -135,9 +135,13 @@ namespace {
 		
 		file_unix(int fd) : fd(fd) {}
 		
-		size_t len()
+		size_t size()
 		{
 			return lseek(fd, 0, SEEK_END);
+		}
+		bool resize(size_t newsize)
+		{
+			return (ftruncate(this->fd, newsize)==0);
 		}
 		
 		size_t read(arrayvieww<byte> target, size_t start)
@@ -146,12 +150,6 @@ namespace {
 			if (ret<0) return 0;
 			else return ret;
 		}
-		
-		bool resize(size_t newsize)
-		{
-			return (ftruncate(this->fd, newsize)==0);
-		}
-		
 		bool write(arrayview<byte> data, size_t start)
 		{
 			size_t ret = pwrite(fd, data.ptr(), data.size(), start);

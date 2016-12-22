@@ -118,6 +118,12 @@ public:
 		this->count = count;
 	}
 	
+	template<size_t N> arrayvieww(T (&ptr)[N])
+	{
+		this->items = ptr;
+		this->count = N;
+	}
+	
 	arrayvieww(const arrayvieww<T>& other)
 	{
 		this->items = other.items;
@@ -163,6 +169,15 @@ template<typename T> class array : public arrayvieww<T> {
 	void resize_grow_noinit(size_t count)
 	{
 		if (this->count >= count) return;
+		size_t bufsize_pre = bitround(this->count);
+		size_t bufsize_post = bitround(count);
+		if (bufsize_pre != bufsize_post) this->items=realloc(this->items, sizeof(T)*bufsize_post);
+		this->count=count;
+	}
+	
+	void resize_shrink_noinit(size_t count)
+	{
+		if (this->count <= count) return;
 		size_t bufsize_pre = bitround(this->count);
 		size_t bufsize_post = bitround(count);
 		if (bufsize_pre != bufsize_post) this->items=realloc(this->items, sizeof(T)*bufsize_post);
@@ -244,6 +259,28 @@ public:
 	array<T> operator=(array<T> other)
 	{
 		swap(other);
+		return *this;
+	}
+	
+	array<T> operator=(arrayview<T> other)
+	{
+		if (other.ptr() >= this->ptr() && other.ptr() < this->ptr()+this->size())
+		{
+			size_t start = other.ptr()-this->ptr();
+			size_t len = other.size();
+			
+			for (size_t i=0;i<start;i++) this->items[i].~T();
+			memmove(this->ptr(), this->ptr()+start, sizeof(T)*len);
+			for (size_t i=start+len;i<this->count;i++) this->items[i].~T();
+			
+			resize_shrink_noinit(len);
+		}
+		else
+		{
+			for (size_t i=0;i<this->count;i++) this->items[i].~T();
+			free(this->items);
+			clone(other);
+		}
 		return *this;
 	}
 	
