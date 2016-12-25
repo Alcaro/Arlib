@@ -64,15 +64,13 @@ typedef void(*funcptr)();
 #define STR_(x) #x
 #define STR(x) STR_(x)
 
-#define GCC_VER(ma,mi,pa) (ma*10000 + mi*100 + pa)
 #ifdef __GNUC__
-#define GCC_VERSION GCC_VER(__GNUC__, __GNUC_MINOR__, __GNUC_PATCHLEVEL__)
 #define LIKELY(expr)    __builtin_expect(!!(expr), true)
 #define UNLIKELY(expr)  __builtin_expect(!!(expr), false)
 #else
-#define GCC_VERSION 0
 #define LIKELY(expr)    (expr)
 #define UNLIKELY(expr)  (expr)
+#define __GNUC__ 0
 #endif
 
 //some magic stolen from http://blogs.msdn.com/b/the1/archive/2004/05/07/128242.aspx
@@ -310,6 +308,8 @@ class null_t_impl {};
 #ifdef _WIN32
 void* memmem(const void * haystack, size_t haystacklen, const void * needle, size_t needlelen);
 #endif
+//Returns distance to first difference, or 'len' if that's smaller.
+size_t memcmp_d(const void * a, const void * b, size_t len);
 
 
 //msvc:

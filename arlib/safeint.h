@@ -7,42 +7,42 @@
 
 //Overflow-safe integer class.
 //If an operation would overflow, it gets a special sentinel value instead, and all further operations return that.
-template<typename T> class intsafe {
+template<typename T> class safeint {
 	T data;
 	
 #define HANDLE_BASE(stype, utype) \
-	static inline bool addov(utype a, utype b, utype* c) \
+	static inline bool addov_i(utype a, utype b, utype* c) \
 	{ \
 		*c = a+b; /* rely on unsigned overflow wrapping */ \
 		return *c < a; \
 	} \
-	static inline bool subov(utype a, utype b, utype* c) \
+	static inline bool subov_i(utype a, utype b, utype* c) \
 	{ \
 		*c = a-b; \
 		return (b > a); \
 	} \
-	static inline bool mulov(utype a, utype b, utype* c) \
+	static inline bool mulov_i(utype a, utype b, utype* c) \
 	{ \
 		*c = a*b; \
 		return a!=0 && *c/a!=b; \
 	} \
-	static inline bool lslov(utype a, utype b, utype* c) \
+	static inline bool lslov_i(utype a, utype b, utype* c) \
 	{ \
 		if (b >= sizeof(utype)*8) return true; \
 		*c = a<<b; \
 		return (*c>>b != a); \
 	} \
-	static inline bool addov(stype a, stype b, stype* c) \
+	static inline bool addov_i(stype a, stype b, stype* c) \
 	{ \
 		*c = (utype)a+(utype)b; \
 		return (a>0 && b>0 && *c<0) || (a<0 && b<0 && *c>0); \
 	} \
-	static inline bool subov(stype a, stype b, stype* c) \
+	static inline bool subov_i(stype a, stype b, stype* c) \
 	{ \
 		*c = (utype)a-(utype)b; \
 		return (a>0 && b<0 && *c<0) || (a<0 && b>0 && *c>0); \
 	} \
-	static inline bool mulov(stype a, stype b, stype* c) \
+	static inline bool mulov_i(stype a, stype b, stype* c) \
 	{ \
 		stype min = ((stype)-1)<<(sizeof(stype)*8-1); \
 		stype max = -(min+1); \
@@ -54,7 +54,7 @@ template<typename T> class intsafe {
 		*c = a*b; \
 		return false; \
 	} \
-	static inline bool lslov(stype a, stype b, stype* c) \
+	static inline bool lslov_i(stype a, stype b, stype* c) \
 	{ \
 		if (b<0 || b >= sizeof(stype)*8) return true; \
 		*c = (a << b); \
@@ -64,7 +64,7 @@ template<typename T> class intsafe {
 	HANDLE_BASE(signed long,      unsigned long)
 	HANDLE_BASE(signed long long, unsigned long long)
 	
-#ifndef INTSAFE_SELFTEST
+#ifndef safeint_SELFTEST
 #define HANDLE_EXT(name, op, type, ext) \
 	static inline bool name(type a, type b, type* c) \
 	{ \
@@ -73,22 +73,22 @@ template<typename T> class intsafe {
 		*c = (ext)a op (ext)b; \
 		return false; \
 	}
-HANDLE_EXT(addov, +, signed short, signed int)
-HANDLE_EXT(addov, +, signed char,  signed int)
-HANDLE_EXT(addov, +, unsigned short, unsigned int)
-HANDLE_EXT(addov, +, unsigned char,  unsigned int)
-HANDLE_EXT(subov, -, signed short, signed int)
-HANDLE_EXT(subov, -, signed char,  signed int)
-HANDLE_EXT(subov, -, unsigned short, unsigned int)
-HANDLE_EXT(subov, -, unsigned char,  unsigned int)
-HANDLE_EXT(mulov, *, signed short, signed int)
-HANDLE_EXT(mulov, *, signed char,  signed int)
-HANDLE_EXT(mulov, *, unsigned short, unsigned int)
-HANDLE_EXT(mulov, *, unsigned char,  unsigned int)
-HANDLE_EXT(lslov,<<, signed short, signed int)
-HANDLE_EXT(lslov,<<, signed char,  signed int)
-HANDLE_EXT(lslov,<<, unsigned short, unsigned int)
-HANDLE_EXT(lslov,<<, unsigned char,  unsigned int)
+HANDLE_EXT(addov_i, +, signed short, signed int)
+HANDLE_EXT(addov_i, +, signed char,  signed int)
+HANDLE_EXT(addov_i, +, unsigned short, unsigned int)
+HANDLE_EXT(addov_i, +, unsigned char,  unsigned int)
+HANDLE_EXT(subov_i, -, signed short, signed int)
+HANDLE_EXT(subov_i, -, signed char,  signed int)
+HANDLE_EXT(subov_i, -, unsigned short, unsigned int)
+HANDLE_EXT(subov_i, -, unsigned char,  unsigned int)
+HANDLE_EXT(mulov_i, *, signed short, signed int)
+HANDLE_EXT(mulov_i, *, signed char,  signed int)
+HANDLE_EXT(mulov_i, *, unsigned short, unsigned int)
+HANDLE_EXT(mulov_i, *, unsigned char,  unsigned int)
+HANDLE_EXT(lslov_i,<<, signed short, signed int)
+HANDLE_EXT(lslov_i,<<, signed char,  signed int)
+HANDLE_EXT(lslov_i,<<, unsigned short, unsigned int)
+HANDLE_EXT(lslov_i,<<, unsigned char,  unsigned int)
 #undef HANDLE_EXT
 #else
 //allow forcing the non-casting algorithm, so an exhaustive search can be done over the full range of some types
@@ -98,10 +98,10 @@ HANDLE_EXT(lslov,<<, unsigned char,  unsigned int)
 	
 #undef HANDLE_BASE
 	
-#if GCC_VERSION>=50000 && !defined(INTSAFE_SELFTEST)
-#define addov __builtin_add_overflow
-#define subov __builtin_sub_overflow
-#define mulov __builtin_mul_overflow
+#if __GNUC__>=5
+#define addov_i __builtin_add_overflow
+#define subov_i __builtin_sub_overflow
+#define mulov_i __builtin_mul_overflow
 #endif
 	
 public:
@@ -109,124 +109,132 @@ public:
 	//static const T min = T(-1)<0 ? invalid+1 : 0;
 	//static const T max = T(-1)<0 ? -min : T(-2);
 	
-	intsafe() : data(0) {}
-	template<typename U> intsafe(U val) { if (T(val)==val) data=val; else data=invalid; }
+	safeint() : data(0) {}
+	template<typename U> safeint(U val) { if (T(val)==val) data=val; else data=invalid; }
 	bool valid() { return data!=invalid; }
 	T val() { return data; }
 	
-	intsafe<T>& operator=(intsafe<T> i) { data=i.val(); return *this; }
+	safeint<T>& operator=(safeint<T> i) { data=i.val(); return *this; }
 	
-	intsafe<T> operator++(int) { intsafe<T> r = *this; *this+=1; return r; }
-	intsafe<T> operator--(int) { intsafe<T> r = *this; *this-=1; return r; }
-	intsafe<T>& operator++() { *this+=1; return *this; }
-	intsafe<T>& operator--() { *this+=1; return *this; }
+	safeint<T> operator++(int) { safeint<T> r = *this; *this+=1; return r; }
+	safeint<T> operator--(int) { safeint<T> r = *this; *this-=1; return r; }
+	safeint<T>& operator++() { *this+=1; return *this; }
+	safeint<T>& operator--() { *this+=1; return *this; }
 	
 #define OP(op, ope) \
-	intsafe<T>& operator ope(intsafe<T> i) { *this = *this op i; return *this; }
+	safeint<T>& operator ope(safeint<T> i) { *this = *this op i; return *this; }
 ALLOPER(OP)
 #undef OP
 	
 	
-	intsafe<T> operator+(intsafe<T> b)
+	safeint<T> operator+(safeint<T> b)
 	{
 		if (!valid() || !b.valid()) return invalid;
 		T ret;
-		if (addov(val(), b.val(), &ret)) return invalid;
+		if (addov_i(val(), b.val(), &ret)) return invalid;
 		else return ret;
 	}
-	intsafe<T> operator-(intsafe<T> b)
+	safeint<T> operator-(safeint<T> b)
 	{
 		if (!valid() || !b.valid()) return invalid;
 		T ret;
-		if (subov(val(), b.val(), &ret)) return invalid;
+		if (subov_i(val(), b.val(), &ret)) return invalid;
 		else return ret;
 	}
-	intsafe<T> operator*(intsafe<T> b)
+	safeint<T> operator*(safeint<T> b)
 	{
 		if (!valid() || !b.valid()) return invalid;
 		T ret;
-		if (mulov(val(), b.val(), &ret)) return invalid;
+		if (mulov_i(val(), b.val(), &ret)) return invalid;
 		else return ret;
 	}
-	intsafe<T> operator/(intsafe<T> b)
+	safeint<T> operator/(safeint<T> b)
 	{
 		if (!valid() || !b.valid()) return invalid;
 		//overflows in division throw SIGFPE rather than truncating
 		return val()/b.val();
 	}
-	intsafe<T> operator%(intsafe<T> b)
+	safeint<T> operator%(safeint<T> b)
 	{
 		if (!valid() || !b.valid()) return invalid;
 		//like division, overflow doesn't truncate
 		return val()%b.val();
 	}
-	intsafe<T> operator&(intsafe<T> b)
+	safeint<T> operator&(safeint<T> b)
 	{
 		if (!valid() || !b.valid()) return invalid;
 		//can't overflow
 		return val()&b.val();
 	}
-	intsafe<T> operator|(intsafe<T> b)
+	safeint<T> operator|(safeint<T> b)
 	{
 		if (!valid() || !b.valid()) return invalid;
 		//can't overflow (okay, it can become ::invalid, but that's fine)
 		return val()|b.val();
 	}
-	intsafe<T> operator^(intsafe<T> b)
+	safeint<T> operator^(safeint<T> b)
 	{
 		if (!valid() || !b.valid()) return invalid;
 		//can't overflow
 		return val()^b.val();
 	}
-	intsafe<T> operator<<(intsafe<T> b)
+	safeint<T> operator<<(safeint<T> b)
 	{
 		if (!valid() || !b.valid()) return invalid;
 		T ret;
-		if (lslov(val(), b.val(), &ret)) return invalid;
+		if (lslov_i(val(), b.val(), &ret)) return invalid;
 		else return ret;
 	}
-	intsafe<T> operator>>(intsafe<T> b)
+	safeint<T> operator>>(safeint<T> b)
 	{
 		if (!valid() || !b.valid()) return invalid;
 		//can't overflow
 		return val()>>b.val();
 	}
 	
-	bool operator==(intsafe<T> b)
+	bool operator==(safeint<T> b)
 	{
 		if (!valid() || !b.valid()) return false;
 		return val()==b.val();
 	}
-	bool operator!=(intsafe<T> b)
+	bool operator!=(safeint<T> b)
 	{
 		if (!valid() || !b.valid()) return true; // match NaN
 		return val()!=b.val();
 	}
-	bool operator<(intsafe<T> b)
+	bool operator<(safeint<T> b)
 	{
 		if (!valid() || !b.valid()) return false;
 		return val()<b.val();
 	}
-	bool operator<=(intsafe<T> b)
+	bool operator<=(safeint<T> b)
 	{
 		if (!valid() || !b.valid()) return false;
 		return val()<=b.val();
 	}
-	bool operator>(intsafe<T> b)
+	bool operator>(safeint<T> b)
 	{
 		if (!valid() || !b.valid()) return false;
 		return val()>b.val();
 	}
-	bool operator>=(intsafe<T> b)
+	bool operator>=(safeint<T> b)
 	{
 		if (!valid() || !b.valid()) return false;
 		return val()>=b.val();
 	}
+	
+	static bool addov(T a, T b, T* c) { return addov_i(a, b, c); }
+	static bool subov(T a, T b, T* c) { return subov_i(a, b, c); }
+	static bool mulov(T a, T b, T* c) { return mulov_i(a, b, c); }
+	static bool lslov(T a, T b, T* c) { return lslov_i(a, b, c); }
+#undef addov_i
+#undef subov_i
+#undef mulov_i
 };
 
 #define OP(op, ope) \
-	template<typename T> intsafe<T> operator op(T a, intsafe<T> b) { return intsafe<T>(a) op b; } \
-	template<typename T> intsafe<T> operator op(intsafe<T> a, T b) { return b op intsafe<T>(a); }
+	template<typename T, typename U> safeint<T> operator op(U a, safeint<T> b) { return safeint<T>(a) op b; } \
+	template<typename T, typename U> safeint<T> operator op(safeint<T> a, U b) { return b op safeint<T>(a); }
 ALLOPER(OP)
 OP(==, _)
 OP(!=, _)

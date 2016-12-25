@@ -91,10 +91,13 @@ endif
 OPTFLAGS := -Os -fomit-frame-pointer -fmerge-all-constants -fvisibility=hidden
 OPTFLAGS += -fno-unwind-tables -fno-asynchronous-unwind-tables
 OPTFLAGS += -ffunction-sections -fdata-sections
-OPTFLAGS += -Werror
+OPTFLAGS += -Werror -DNDEBUG
 
-ifeq ($(OPT),1)
-  CFLAGS += $(OPTFLAGS)
+ifneq ($(OPT),0)
+  CONF_CFLAGS += $(OPTFLAGS)
+  ifeq ($(OPT),spd)
+    CONF_CFLAGS += -O3
+  endif
   LFLAGS += -Wl,--gc-sections -s
   DEBUG = 0
   OBJNAME += -opt
@@ -137,8 +140,8 @@ ifneq ($(SELFTEST),)
   ifeq ($(ARLIB_MAIN),)
     CONF_CFLAGS += -DARLIB_TEST -Dmain=not_quite_main
     CFLAGS_ARLIB += -UARLIB_TEST -DARLIB_TESTRUNNER
-    DOMAINS :=
   else
+    DOMAINS :=
     SOURCES :=
     CFLAGS_ARLIB += -DARLIB_TEST -DARLIB_TESTRUNNER -DARLIB_TEST_ARLIB
   endif
@@ -227,7 +230,7 @@ ifeq ($(ARSOCKET),1)
   endif
 endif
 
-SOURCES_ARLIB += arlib/deps/miniz.c
+SOURCES_NOWARN += arlib/deps/miniz.c
 
 TRUE_CFLAGS = -std=c99 $(CCXXFLAGS) $(CFLAGS) $(CONF_CFLAGS)
 TRUE_CXXFLAGS =-std=c++11 -fno-rtti $(CCXXFLAGS) $(CXXFLAGS) $(CONF_CXXFLAGS)
