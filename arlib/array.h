@@ -11,21 +11,15 @@ protected:
 	T * items; // not const, despite not necessarily being writable; this makes arrayvieww/array a lot simpler
 	size_t count;
 	
-	//void clone(const arrayview<T>& other)
-	//{
-	//	this->count=other.count;
-	//	this->items=other.items;
-	//}
-	
 protected:
 	static const bool trivial_cons = std::is_trivial<T>::value; // constructor is memset(0)
 #if __GNUC__ >= 5
-	static const bool trivial_copy = std::is_trivially_copyable<T>::value;
+	static const bool trivial_copy = std::is_trivially_copyable<T>::value; // copy constructor is memcpy
 #else
-	static const bool trivial_copy = trivial_cons; // copy constructor is memcpy
+	static const bool trivial_copy = trivial_cons;
 #endif
 	//static const bool trivial_comp = std::has_unique_object_representations<T>::value;
-	static const bool trivial_comp = std::is_integral<T>::value;
+	static const bool trivial_comp = std::is_integral<T>::value; // comparison operator is memcmp
 	
 public:
 	const T& operator[](size_t n) const { return items[n]; }
@@ -93,7 +87,7 @@ public:
 	//	return *this;
 	//}
 	
-	bool operator==(arrayview<T> other)
+	bool operator==(arrayview<T> other) const
 	{
 		if (size() != other.size()) return false;
 		if (this->trivial_comp)
@@ -110,13 +104,13 @@ public:
 		}
 	}
 	
-	bool operator!=(arrayview<T> other)
+	bool operator!=(arrayview<T> other) const
 	{
 		return !(*this == other);
 	}
 	
-	const T* begin() { return this->items; }
-	const T* end() { return this->items+this->count; }
+	const T* begin() const { return this->items; }
+	const T* end() const { return this->items+this->count; }
 };
 
 //size: two pointers
@@ -171,6 +165,8 @@ public:
 	
 	arrayvieww<T> slice(size_t first, size_t count) { return arrayvieww<T>(this->items+first, count); }
 	
+	const T* begin() const { return this->items; }
+	const T* end() const { return this->items+this->count; }
 	T* begin() { return this->items; }
 	T* end() { return this->items+this->count; }
 };
@@ -525,4 +521,29 @@ public:
 	{
 		if (nbits >= n_inline) free(this->bits_outline);
 	}
+	
+	//missing features from the other arrays:
+	//(some don't make sense)
+	//operator bool() { return count; }
+	//T join() const
+	//template<typename T2> decltype(T() + T2()) join(T2 between) const
+	//bool operator==(arrayview<T> other)
+	//bool operator!=(arrayview<T> other)
+	//const T* begin() { return this->items; }
+	//const T* end() { return this->items+this->count; }
+	//T* ptr() { return this->items; }
+	//const T* ptr() const { return this->items; }
+	//T* begin() { return this->items; }
+	//T* end() { return this->items+this->count; }
+	//void reserve(size_t len) { resize_grow(len); }
+	//void reserve_noinit(size_t len)
+	//void remove(size_t index)
+	//
+	//array(null_t)
+	//array(const array<T>& other)
+	//array(const arrayview<T>& other)
+	//array(array<T>&& other)
+	//array<T> operator=(array<T> other)
+	//array<T> operator=(arrayview<T> other)
+	//array<T>& operator+=(arrayview<T> other)
 };
