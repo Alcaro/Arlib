@@ -247,10 +247,7 @@ template<typename T> class array : public arrayvieww<T> {
 		{
 			this->items[i].~T();
 		}
-		size_t bufsize_pre=bitround(this->count);
-		size_t bufsize_post=bitround(count);
-		if (bufsize_pre != bufsize_post) this->items=realloc(this->items, sizeof(T)*bufsize_post);
-		this->count=count;
+		resize_shrink_noinit(count);
 	}
 	
 	void resize_to(size_t count)
@@ -270,14 +267,29 @@ public:
 		else resize_grow(len);
 	}
 	
+	void insert(size_t index, const T& item)
+	{
+		resize_grow(this->count+1);
+		memmove(this->items+index+1, this->items+index, sizeof(T)*(this->count-1-index));
+		new(&this->items[index]) T(item);
+	}
+	T& insert(size_t index)
+	{
+		resize_grow(this->count+1);
+		memmove(this->items+index+1, this->items+index, sizeof(T)*(this->count-1-index));
+		new(&this->items[index]) T();
+		return this->items[index];
+	}
+	
 	void append(const T& item) { size_t pos = this->count; resize_grow(pos+1); this->items[pos] = item; }
+	T& append() { size_t pos = this->count; resize_grow(pos+1); return this->items[pos]; }
 	void reset() { resize_shrink(0); }
 	
 	void remove(size_t index)
 	{
 		this->items[index].~T();
 		memmove(this->items+index, this->items+index+1, sizeof(T)*(this->count-1-index));
-		this->count--;
+		resize_shrink_noinit(this->count-1);
 	}
 	
 	array()
@@ -493,7 +505,7 @@ public:
 	
 	void append(bool item) { set(this->nbits, item); }
 	
-	array<bool> slice(size_t first, size_t count)
+	array<bool> slice(size_t first, size_t count) const
 	{
 		if ((first&7) == 0)
 		{
@@ -522,8 +534,7 @@ public:
 		if (nbits >= n_inline) free(this->bits_outline);
 	}
 	
-	//missing features from the other arrays:
-	//(some don't make sense)
+	//missing features from the other arrays (some don't make sense here):
 	//operator bool() { return count; }
 	//T join() const
 	//template<typename T2> decltype(T() + T2()) join(T2 between) const

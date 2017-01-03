@@ -33,6 +33,8 @@ ARSANDBOX = 1
 #  added to object file names, to allow building for multiple platforms without a make clean
 #the ones listed (CLI) should not be set by the program, but should instead be reserved for command-line arguments
 
+#don't use this, it specifies that Arlib itself is the project here
+ARLIB_MAIN = 1
 include arlib/Makefile
 
 #TODO:

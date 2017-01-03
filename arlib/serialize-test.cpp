@@ -35,6 +35,21 @@ struct ser4 {
 	template<typename T> void serialize(T& s) { mem.serialize(s); count++; }
 };
 
+struct ser5 {
+	array<int> data;
+	SERIALIZE(data);
+};
+
+struct ser6 {
+	array<ser1> data;
+	SERIALIZE(data);
+};
+
+struct ser7 {
+	ser5 par;
+	SERIALIZE(par);
+};
+
 test()
 {
 	{
@@ -52,6 +67,33 @@ test()
 		item.d.a = 3;
 		item.d.b = 4;
 		assert_eq(bmlserialize(item), "c a=1 b=2\nd a=3 b=4");
+	}
+	
+	{
+		ser5 item;
+		item.data.append(1);
+		item.data.append(2);
+		item.data.append(3);
+		assert_eq(bmlserialize(item), "data=1\ndata=2\ndata=3");
+	}
+	
+	{
+		ser6 item;
+		item.data.append();
+		item.data.append();
+		item.data[0].a=1;
+		item.data[0].b=2;
+		item.data[1].a=3;
+		item.data[1].b=4;
+		assert_eq(bmlserialize(item), "data a=1 b=2\ndata a=3 b=4");
+	}
+	
+	{
+		ser7 item;
+		item.par.data.append(1);
+		item.par.data.append(2);
+		item.par.data.append(3);
+		assert_eq(bmlserialize(item), "par data=1 data=2 data=3");
 	}
 }
 
@@ -93,6 +135,31 @@ test()
 	{
 		ser4 item = bmlunserialize<ser4>("a=1\nb=2\nd=4\ne=5\ne=5\nf=6");
 		assert_eq(item.count, 1);
+	}
+	
+	{
+		ser5 item = bmlunserialize<ser5>("data=1\ndata=2\ndata=3");
+		assert_eq(item.data.size(), 3);
+		assert_eq(item.data[0], 1);
+		assert_eq(item.data[1], 2);
+		assert_eq(item.data[2], 3);
+	}
+	
+	{
+		ser6 item = bmlunserialize<ser6>("data a=1 b=2\ndata a=3 b=4");
+		assert_eq(item.data.size(), 2);
+		assert_eq(item.data[0].a, 1);
+		assert_eq(item.data[0].b, 2);
+		assert_eq(item.data[1].a, 3);
+		assert_eq(item.data[1].b, 4);
+	}
+	
+	{
+		ser7 item = bmlunserialize<ser7>("par data=1 data=2 data=3");
+		assert_eq(item.par.data.size(), 3);
+		assert_eq(item.par.data[0], 1);
+		assert_eq(item.par.data[1], 2);
+		assert_eq(item.par.data[2], 3);
 	}
 }
 #endif
