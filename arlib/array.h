@@ -19,7 +19,8 @@ protected:
 	static const bool trivial_copy = trivial_cons;
 #endif
 	//static const bool trivial_comp = std::has_unique_object_representations<T>::value;
-	static const bool trivial_comp = std::is_integral<T>::value; // comparison operator is memcmp
+	static const bool trivial_comp = std::is_integral<T>::value; // equality comparison is memcmp
+	//don't care about destructor being trivial
 	
 public:
 	const T& operator[](size_t n) const { return items[n]; }
@@ -27,7 +28,7 @@ public:
 	const T* ptr() const { return items; }
 	size_t size() const { return count; }
 	
-	operator bool() { return count; }
+	operator bool() const { return count; }
 	
 	arrayview()
 	{
@@ -53,7 +54,7 @@ public:
 		this->count = N;
 	}
 	
-	arrayview<T> slice(size_t first, size_t count) const { return arrayview<T>(this->items+first, count); }
+	arrayview<T> slice(size_t first, size_t count) { return arrayview<T>(this->items+first, count); }
 	
 	T join() const
 	{
@@ -74,6 +75,16 @@ public:
 			out += this->items[n];
 		}
 		return out;
+	}
+	
+	template<typename T2> arrayview<T2> cast() const
+	{
+		//reject cast<string>()
+		static_assert(std::is_fundamental<T>::value);
+		static_assert(std::is_fundamental<T2>::value);
+		
+		size_t newsize = this->count*sizeof(T)/sizeof(T2);
+		return arrayview<T2>((T2*)this->items, newsize);
 	}
 	
 	//arrayview(const arrayview<T>& other)

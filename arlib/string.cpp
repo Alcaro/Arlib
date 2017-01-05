@@ -109,29 +109,35 @@ test()
 	}
 	
 	{
-		string a = "baaaaaaaaaaaaaaa";
-		array<string> b;
+		string a;
+		a = "192.168.0.1";
+		assert_eq(a.split(".").join("/"), "192/168/0/1");
+		assert_eq(a.split<1>(".").join("/"), "192/168.0.1");
+		assert_eq(a.rsplit(".").join("/"), "192/168/0/1");
+		assert_eq(a.rsplit<1>(".").join("/"), "192.168.0/1");
 		
-		b = a.split("a");
-		assert_eq(b[0], "b");
-		assert_eq(b[1], "");
-		assert_eq(b[15], "");
-		assert_eq(b.size(), 16);
+		a = "baaaaaaaaaaaaaaa";
+		assert_eq(a.split("a").join("."), "b...............");
+		assert_eq(a.split("aa").join("."), "b.......a");
+		assert_eq(a.split<1>("aa").join("."), "b.aaaaaaaaaaaaa");
+		assert_eq(a.split<1>("x").join("."), "baaaaaaaaaaaaaaa");
 		
-		b = a.split("aa");
-		assert_eq(b.size(), 8);
-		assert_eq(b[0], "b");
-		assert_eq(b[1], "");
-		assert_eq(b[6], "");
-		assert_eq(b[7], "a");
+		a = "aaaaaaaaaaaaaaab";
+		assert_eq(a.split("a").join("."), "...............b");
+		assert_eq(a.split("aa").join("."), ".......ab");
+		assert_eq(a.split<1>("aa").join("."), ".aaaaaaaaaaaaab");
+		assert_eq(a.split<1>("x").join("."), "aaaaaaaaaaaaaaab");
 		
-		b = a.split<1>("aa");
-		assert_eq(b.size(), 2);
-		assert_eq(b[0], "b");
-		assert_eq(b[1], "aaaaaaaaaaaaa");
+		a = "baaaaaaaaaaaaaaa";
+		assert_eq(a.rsplit("a").join("."), "b...............");
+		assert_eq(a.rsplit("aa").join("."), "ba.......");
+		assert_eq(a.rsplit<1>("aa").join("."), "baaaaaaaaaaaaa.");
+		assert_eq(a.rsplit<1>("x").join("."), "baaaaaaaaaaaaaaa");
 		
-		b = a.split<1>("c");
-		assert_eq(b.size(), 1);
-		assert_eq(b[0], "baaaaaaaaaaaaaaa");
+		a = "aaaaaaaaaaaaaaab";
+		assert_eq(a.rsplit("a").join("."), "...............b");
+		assert_eq(a.rsplit("aa").join("."), "a.......b");
+		assert_eq(a.rsplit<1>("aa").join("."), "aaaaaaaaaaaaa.b");
+		assert_eq(a.rsplit<1>("x").join("."), "aaaaaaaaaaaaaaab");
 	}
 }

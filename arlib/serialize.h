@@ -39,6 +39,11 @@ public:
 	}
 	
 	template<typename T> void operator()(cstring name, T& item) { node(name, item); }
+	
+	template<typename T> void hex(cstring name, T& item)
+	{
+		w.node(name, tostringhex(item));
+	}
 };
 
 template<typename T> string bmlserialize(T& item)
@@ -131,6 +136,16 @@ public:
 	static const bool serializing = false;
 	
 	void comment(cstring c) {}
+	
+	template<typename T> void hex(cstring name, T& out)
+	{
+		while (thisnode == name) // this should be a loop, in case of documents like 'foo bar=1 bar=2 bar=3'
+		{
+			fromstringhex(thisval, out);
+			thisnode = "";
+			next();
+		}
+	}
 	
 	template<typename T> void operator()(cstring name, T& out)
 	{

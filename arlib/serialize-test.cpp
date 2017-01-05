@@ -50,6 +50,34 @@ struct ser7 {
 	SERIALIZE(par);
 };
 
+struct ser8 {
+	//signed char a;
+	//signed short b;
+	//signed int c;
+	//signed long d;
+	//signed long long e;
+	unsigned char f;
+	unsigned short g;
+	unsigned int h;
+	unsigned long i;
+	unsigned long long j;
+	
+	template<typename T>
+	void serialize(T& s)
+	{
+		//s.hex("a", a);
+		//s.hex("b", b);
+		//s.hex("c", c);
+		//s.hex("d", d);
+		//s.hex("e", e);
+		s.hex("f", f);
+		s.hex("g", g);
+		s.hex("h", h);
+		s.hex("i", i);
+		s.hex("j", j);
+	}
+};
+
 test()
 {
 	{
@@ -94,6 +122,16 @@ test()
 		item.par.data.append(2);
 		item.par.data.append(3);
 		assert_eq(bmlserialize(item), "par data=1 data=2 data=3");
+	}
+	
+	{
+		ser8 item;
+		item.f = 0xAA;
+		item.g = 0xAAAA;
+		item.h = 0xAAAAAAAA;
+		item.i = 0xAAAAAAAA;
+		item.j = 0xAAAAAAAAAAAAAAAA;
+		assert_eq(bmlserialize(item), "f=AA\ng=AAAA\nh=AAAAAAAA\ni=AAAAAAAA\nj=AAAAAAAAAAAAAAAA");
 	}
 }
 
@@ -160,6 +198,15 @@ test()
 		assert_eq(item.par.data[0], 1);
 		assert_eq(item.par.data[1], 2);
 		assert_eq(item.par.data[2], 3);
+	}
+	
+	{
+		ser8 item = bmlunserialize<ser8>("f=AA\ng=AAAA\nh=AAAAAAAA\ni=AAAAAAAA\nj=AAAAAAAAAAAAAAAA");
+		assert_eq(item.f, 0xAA);
+		assert_eq(item.g, 0xAAAA);
+		assert_eq(item.h, 0xAAAAAAAA);
+		assert_eq(item.i, 0xAAAAAAAA);
+		assert_eq(item.j, 0xAAAAAAAAAAAAAAAA);
 	}
 }
 #endif

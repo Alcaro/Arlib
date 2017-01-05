@@ -66,6 +66,10 @@ class string {
 	//always allocates, doesn't try to inline
 	static uint8_t* alloc(uint8_t* prev, uint32_t prevsize, uint32_t newsize)
 	{
+#ifdef ARLIB_TEST
+		if (newsize!=0 && newsize < max_inline) abort(); // should be impossible
+		if (newsize > 1000000000) abort(); // clearly bug
+#endif
 		if (prevsize==0)
 		{
 			uint8_t* ptr = malloc(bytes_for(newsize));
@@ -448,9 +452,37 @@ public:
 		return ret;
 	}
 	
-	template<size_t limit>
+	template<size_t limit = SIZE_MAX>
 	array<string> split(const string& sep) const { return split(sep, limit); }
-	array<string> split(const string& sep) const { return split(sep, SIZE_MAX); }
+	
+	array<string> rsplit(const string& sep, size_t limit) const
+	{
+		array<string> ret;
+		const uint8_t * datastart = ptr();
+		const uint8_t * data = ptr()+length();
+		
+		const uint8_t * sepp = sep.ptr();
+		size_t sepl = sep.length();
+		
+		while (ret.size() < limit)
+		{
+			if (datastart+sepl > data) break;
+			const uint8_t * next = data-sepl;
+			while (memcmp(next, sepp, sepl)!=0)
+			{
+				if (datastart==next) goto done;
+				next--;
+			}
+			ret.insert(0, arrayview<uint8_t>(next+sepl, data-(next+sepl)));
+			data = next;
+		}
+	done:
+		ret.insert(0, arrayview<uint8_t>(datastart, data-datastart));
+		return ret;
+	}
+	
+	template<size_t limit = SIZE_MAX>
+	array<string> rsplit(const string& sep) const { return rsplit(sep, limit); }
 	
 private:
 	class noinit {};
@@ -545,10 +577,10 @@ inline bool operator!=(const string& left, const char * right ) { return !operat
 inline bool operator!=(const string& left, const string& right) { return !operator==(left, right); }
 inline bool operator!=(const char * left,  const string& right) { return !operator==(left, right); }
 
+inline string operator+(const string& left, const string& right) { string ret=left; ret+=right; return ret; }
 inline string operator+(string&& left, const char * right) { left+=right; return left; }
 inline string operator+(const string& left, const char * right) { string ret=left; ret+=right; return ret; }
 inline string operator+(string&& left, const string& right) { left+=right; return left; }
-inline string operator+(const string& left, const string& right) { string ret=left; ret+=right; return ret; }
 inline string operator+(const char * left, const string& right) { string ret=left; ret+=right; return ret; }
 
 inline string operator+(string&& left, char right) { left+=right; return left; }
