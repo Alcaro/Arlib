@@ -1,6 +1,7 @@
 #include "process.h"
 #include "test.h"
 
+#ifdef __linux__
 #include <spawn.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -55,14 +56,12 @@ static bool fd_closeall(arrayview<int> fd_keep)
 		int off = 0;
 		while (off < nbytes)
 		{
-//printf("(%i)",off);fflush(stdout);
 			linux_dirent64* dent = (linux_dirent64*)(bytes+off);
 			off += dent->d_reclen;
 			
 			int fd = atoi_simple(dent->d_name);
 			if (fd>=0 && fd!=dfd && !fd_keep.contains(fd))
 			{
-//printf("(x=%i)",fd);fflush(stdout);
 				close(fd);
 			}
 		}
@@ -71,22 +70,7 @@ static bool fd_closeall(arrayview<int> fd_keep)
 	return true;
 }
 
-class process : nocopy {
-	pid_t pid = -1;
-	int exitcode = -1;
-	
-	bool stdin_open = false;
-	array<byte> stdin_buf;
-	int stdin_fd = -1;
-	
-	int stdout_fd = -1;
-	array<byte> stdout_buf;
-	
-	bool stderr_split = false;
-	int stderr_fd = -1;
-	array<byte> stderr_buf;
-	
-	void update(bool sleep = false)
+	void process::update(bool sleep)
 	{
 		if (this->pid != -1)
 		{
@@ -157,11 +141,7 @@ class process : nocopy {
 		}
 	}
 	
-public:
-	process() {}
-	process(cstring path, arrayview<string> args) { launch(path, args); }
-	
-	bool launch(cstring path, arrayview<string> args)
+	bool process::launch_with_preexec(cstring path, arrayview<string> args, function<void()> preexec)
 	{
 		array<const char*> argv;
 		argv.append((char*)path.bytes().ptr());
@@ -185,7 +165,8 @@ public:
 			//dup2, open, close, execvp, _exit - documented as sigsafe
 			//syscall(getdents64) - all syscalls (except maybe some signal/etc-related ones) are sigsafe
 			//ptrace - thin wrapper around a syscall
-			//array::ptr and a couple of arrayview members - memory only
+			//array<>::ptr and a couple of arrayview<> members - memory only
+			//various function<> members - memory only
 			
 			dup2(stdinpair[0], 0);
 			dup2(stdoutpair[1], 1);
@@ -195,8 +176,8 @@ public:
 			int keep[] = {0,1,2};
 			fd_closeall(keep); // calls open, syscall(getdents64), close
 			
-			//for sandboxing
-			//ptrace(PTRACE_TRACEME);
+			//used for sandboxing, can set seccomp/ptrace rules
+			preexec();
 			
 			execvp(path, (char**)argv.ptr());
 			while (true) _exit(EXIT_FAILURE);
@@ -222,24 +203,15 @@ public:
 		return true;
 	}
 	
-	template<typename... Args>
-	bool launch(cstring path, Args... args)
+	//this is less primitive on Windows
+	bool process::launch(cstring path, arrayview<string> args)
 	{
-		string argv[sizeof...(Args)] = { args... };
-		return launch(path, arrayview<string>(argv));
+		return launch_with_preexec(path, args, NULL);
 	}
 	
-	bool launch(cstring path)
-	{
-		return launch(path, arrayview<string>(NULL));
-	}
+	void process::stdin(arrayview<byte> data) { stdin_buf += data; update(); }
 	
-	//Sets the child's stdin. If called multiple times, they're concatenated.
-	void stdin(arrayview<byte> data) { stdin_buf += data; update(); }
-	void stdin(cstring data) { stdin(data.bytes()); }
-	//If interact(true) is called before launch(), stdin() can be called after process start.
-	//To close the child's stdin, call interact(false).
-	void interact(bool enable)
+	void process::interact(bool enable)
 	{
 		this->stdin_open = enable;
 		update();
@@ -248,38 +220,35 @@ public:
 	//If the process is still running, these contain what it's written thus far. The data is discarded after being read.
 	//The default is to merge stderr into stdout. To keep them separate, call stderr() before launch().
 	//If wait is true, the functions will wait until the child exits or prints something on the relevant stream.
-	array<byte> stdoutb(bool wait = false)
+	array<byte> process::stdoutb(bool wait)
 	{
 		update(false);
 		while (wait && !stdout_buf) update(true);
 		return std::move(stdout_buf);
 	}
-	array<byte> stderrb(bool wait = false)
+	array<byte> process::stderrb(bool wait)
 	{
 		stderr_split=true;
 		update(false);
 		while (wait && !stderr_buf) update(true);
 		return std::move(stderr_buf);
 	}
-	//These two can return invalid UTF-8. Even if the program is specified to only process UTF-8, it's possible to read half a character.
-	string stdout(bool wait = false) { return string(stdoutb(wait)); }
-	string stderr(bool wait = false) { return string(stderrb(wait)); }
 	
-	bool running(int* exitcode = NULL)
+	bool process::running(int* exitcode)
 	{
 		update();
 		if (exitcode && this->pid==-1) *exitcode = this->exitcode;
 		return (this->pid != -1);
 	}
 	
-	void wait(int* exitcode = NULL)
+	void process::wait(int* exitcode)
 	{
 		this->stdin_open = false;
 		while (this->pid != -1) update(true);
 		if (exitcode) *exitcode = this->exitcode;
 	}
 	
-	void terminate()
+	void process::terminate()
 	{
 		if (this->pid != -1)
 		{
@@ -289,21 +258,19 @@ public:
 		}
 	}
 	
-private:
-	void destruct()
+	void process::destruct()
 	{
 		terminate();
 		if (stdin_fd!=-1) close(stdin_fd);
 		if (stdout_fd!=-1) close(stdout_fd);
 		if (stderr_fd!=-1) close(stderr_fd);
 	}
-public:
 	
-	~process()
+	process::~process()
 	{
 		destruct();
 	}
-};
+#endif
 
 #ifdef __linux__
 test()
@@ -348,18 +315,18 @@ test()
 		p.interact(true);
 		assert(p.launch("/bin/cat"));
 		p.stdin("foo");
-		usleep(1*1000);
+		usleep(100*1000); // RACE
 		assert_eq(p.stdout(), "foo");
 		assert(p.running());
 		p.interact(false);
-		usleep(1*1000); // this gets interrupted by SIGCHLD, but it's resumed
+		usleep(100*1000); // RACE (this gets interrupted by SIGCHLD, but it's resumed)
 		assert(!p.running());
 	}
 	
 	{
 		process p;
 		assert(p.launch("/bin/echo", "foo"));
-		assert_eq(p.stdout(), "");
+		assert_eq(p.stdout(), ""); // RACE
 		assert_eq(p.stdout(true), "foo\n");
 	}
 }
