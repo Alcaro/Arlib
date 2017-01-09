@@ -70,206 +70,206 @@ static bool fd_closeall(arrayview<int> fd_keep)
 	return true;
 }
 
-	void process::update(bool sleep)
+void process::update(bool sleep)
+{
+	if (this->pid != -1)
 	{
-		if (this->pid != -1)
+		//sometimes, I get EOF from the pipes (closed by process teardown), but waitpid() isn't ready to return anything
+		//any change to the timing, for example running it under strace, causes this issue to disappear
+		//feels like a kernel bug
+		//workaround: turn on blocking mode if I suspect that's happening
+		bool block = (stdout_fd==-1 && stderr_fd==-1);
+		if (waitpid(this->pid, &this->exitcode, block ? 0 : WNOHANG) > 0)
 		{
-			//sometimes, I get EOF from the pipes (closed by process teardown), but waitpid() isn't ready to return anything
-			//any change to the timing, for example running it under strace, causes this issue to disappear
-			//feels like a kernel bug
-			//workaround: turn on blocking mode if I suspect that's happening
-			bool block = (stdout_fd==-1 && stderr_fd==-1);
-			if (waitpid(this->pid, &this->exitcode, block ? 0 : WNOHANG) > 0)
-			{
-				this->pid = -1;
-			}
-		}
-		if (sleep && this->pid != -1)
-		{
-			fd_set rd;
-			fd_set wr;
-			FD_ZERO(&rd);
-			FD_ZERO(&wr);
-			if (stdout_fd != -1) FD_SET(stdout_fd, &rd);
-			if (stderr_fd != -1) FD_SET(stderr_fd, &rd);
-			if (stdin_fd != -1 && stdin_buf) FD_SET(stdin_fd, &wr);
-			select(FD_SETSIZE, &rd, &wr, NULL, NULL);
-		}
-		
-		if (stdin_fd != -1)
-		{
-			if (stdin_buf)
-			{
-				ssize_t bytes = write(stdin_fd, stdin_buf.ptr(), stdin_buf.size());
-				if (bytes == 0)
-				{
-					stdin_buf.reset();
-					close(stdin_fd);
-					stdin_fd = -1;
-				}
-				if (bytes > 0) stdin_buf = stdin_buf.slice(bytes, stdin_buf.size()-bytes);
-			}
-			if (!stdin_buf && !stdin_open)
-			{
-				close(stdin_fd);
-				stdin_fd = -1;
-			}
-		}
-		
-		if (stdout_fd != -1)
-		{
-			while (true)
-			{
-				byte buf[4096];
-				ssize_t bytes = read(stdout_fd, buf, sizeof(buf));
-				if (bytes>0) stdout_buf += arrayview<byte>(buf, bytes);
-				if (bytes==0) { close(stdout_fd); stdout_fd=-1; }
-				if (bytes<=0) break;
-			}
-		}
-		
-		if (stderr_fd != -1)
-		{
-			while (true)
-			{
-				byte buf[4096];
-				ssize_t bytes = read(stderr_fd, buf, sizeof(buf));
-				if (bytes>0) stderr_buf += arrayview<byte>(buf, bytes);
-				if (bytes==0) { close(stderr_fd); stderr_fd=-1; }
-				if (bytes<=0) break;
-			}
-		}
-	}
-	
-	bool process::launch_with_preexec(cstring path, arrayview<string> args, function<void()> preexec)
-	{
-		array<const char*> argv;
-		argv.append((char*)path.bytes().ptr());
-		for (size_t i=0;i<args.size();i++)
-		{
-			argv.append((char*)args[i].bytes().ptr());
-		}
-		argv.append(NULL);
-		
-		int stdinpair[2];
-		int stdoutpair[2];
-		int stderrpair[2];
-		pipe2(stdinpair, O_CLOEXEC);  // close-on-exec for a fd intended only to be used by a child process?
-		pipe2(stdoutpair, O_CLOEXEC); // answer: dup2 resets cloexec
-		pipe2(stderrpair, O_CLOEXEC); // O_NONBLOCK is absent because no child expects a nonblocking stdout
-		
-		this->pid = fork();
-		if (this->pid == 0)
-		{
-			//the following external functions are used in the child process:
-			//dup2, open, close, execvp, _exit - documented as sigsafe
-			//syscall(getdents64) - all syscalls (except maybe some signal/etc-related ones) are sigsafe
-			//ptrace - thin wrapper around a syscall
-			//array<>::ptr and a couple of arrayview<> members - memory only
-			//various function<> members - memory only
-			
-			dup2(stdinpair[0], 0);
-			dup2(stdoutpair[1], 1);
-			if (this->stderr_split) dup2(stderrpair[1], 2);
-			else dup2(stdoutpair[1], 2);
-			
-			int keep[] = {0,1,2};
-			fd_closeall(keep); // calls open, syscall(getdents64), close
-			
-			//used for sandboxing, can set seccomp/ptrace rules
-			preexec();
-			
-			execvp(path, (char**)argv.ptr());
-			while (true) _exit(EXIT_FAILURE);
-		};
-		
-		close(stdinpair[0]);
-		close(stdoutpair[1]);
-		close(stderrpair[1]);
-		this->stdin_fd = stdinpair[1];
-		this->stdout_fd = stdoutpair[0];
-		this->stderr_fd = stderrpair[0];
-		fcntl(this->stdin_fd, F_SETFL, fcntl(this->stdin_fd, F_GETFL)|O_NONBLOCK);
-		fcntl(this->stdout_fd, F_SETFL, fcntl(this->stdout_fd, F_GETFL)|O_NONBLOCK);
-		fcntl(this->stderr_fd, F_SETFL, fcntl(this->stderr_fd, F_GETFL)|O_NONBLOCK);
-		
-		if (this->pid == -1)
-		{
-			destruct();
-			return false;
-		}
-		
-		update();
-		return true;
-	}
-	
-	//this is less primitive on Windows
-	bool process::launch(cstring path, arrayview<string> args)
-	{
-		return launch_with_preexec(path, args, NULL);
-	}
-	
-	void process::stdin(arrayview<byte> data) { stdin_buf += data; update(); }
-	
-	void process::interact(bool enable)
-	{
-		this->stdin_open = enable;
-		update();
-	}
-	
-	//If the process is still running, these contain what it's written thus far. The data is discarded after being read.
-	//The default is to merge stderr into stdout. To keep them separate, call stderr() before launch().
-	//If wait is true, the functions will wait until the child exits or prints something on the relevant stream.
-	array<byte> process::stdoutb(bool wait)
-	{
-		update(false);
-		while (wait && !stdout_buf) update(true);
-		return std::move(stdout_buf);
-	}
-	array<byte> process::stderrb(bool wait)
-	{
-		stderr_split=true;
-		update(false);
-		while (wait && !stderr_buf) update(true);
-		return std::move(stderr_buf);
-	}
-	
-	bool process::running(int* exitcode)
-	{
-		update();
-		if (exitcode && this->pid==-1) *exitcode = this->exitcode;
-		return (this->pid != -1);
-	}
-	
-	void process::wait(int* exitcode)
-	{
-		this->stdin_open = false;
-		while (this->pid != -1) update(true);
-		if (exitcode) *exitcode = this->exitcode;
-	}
-	
-	void process::terminate()
-	{
-		if (this->pid != -1)
-		{
-			kill(this->pid, SIGKILL);
-			this->exitcode = -1;
 			this->pid = -1;
 		}
 	}
-	
-	void process::destruct()
+	if (sleep && this->pid != -1)
 	{
-		terminate();
-		if (stdin_fd!=-1) close(stdin_fd);
-		if (stdout_fd!=-1) close(stdout_fd);
-		if (stderr_fd!=-1) close(stderr_fd);
+		fd_set rd;
+		fd_set wr;
+		FD_ZERO(&rd);
+		FD_ZERO(&wr);
+		if (stdout_fd != -1) FD_SET(stdout_fd, &rd);
+		if (stderr_fd != -1) FD_SET(stderr_fd, &rd);
+		if (stdin_fd != -1 && stdin_buf) FD_SET(stdin_fd, &wr);
+		select(FD_SETSIZE, &rd, &wr, NULL, NULL);
 	}
 	
-	process::~process()
+	if (stdin_fd != -1)
+	{
+		if (stdin_buf)
+		{
+			ssize_t bytes = write(stdin_fd, stdin_buf.ptr(), stdin_buf.size());
+			if (bytes == 0)
+			{
+				stdin_buf.reset();
+				close(stdin_fd);
+				stdin_fd = -1;
+			}
+			if (bytes > 0) stdin_buf = stdin_buf.slice(bytes, stdin_buf.size()-bytes);
+		}
+		if (!stdin_buf && !stdin_open)
+		{
+			close(stdin_fd);
+			stdin_fd = -1;
+		}
+	}
+	
+	if (stdout_fd != -1)
+	{
+		while (true)
+		{
+			byte buf[4096];
+			ssize_t bytes = read(stdout_fd, buf, sizeof(buf));
+			if (bytes>0) stdout_buf += arrayview<byte>(buf, bytes);
+			if (bytes==0) { close(stdout_fd); stdout_fd=-1; }
+			if (bytes<=0) break;
+		}
+	}
+	
+	if (stderr_fd != -1)
+	{
+		while (true)
+		{
+			byte buf[4096];
+			ssize_t bytes = read(stderr_fd, buf, sizeof(buf));
+			if (bytes>0) stderr_buf += arrayview<byte>(buf, bytes);
+			if (bytes==0) { close(stderr_fd); stderr_fd=-1; }
+			if (bytes<=0) break;
+		}
+	}
+}
+
+bool process::launch_with_preexec(cstring path, arrayview<string> args, function<void()> preexec)
+{
+	array<const char*> argv;
+	argv.append((char*)path.bytes().ptr());
+	for (size_t i=0;i<args.size();i++)
+	{
+		argv.append((char*)args[i].bytes().ptr());
+	}
+	argv.append(NULL);
+	
+	int stdinpair[2];
+	int stdoutpair[2];
+	int stderrpair[2];
+	pipe2(stdinpair, O_CLOEXEC);  // close-on-exec for a fd intended only to be used by a child process?
+	pipe2(stdoutpair, O_CLOEXEC); // answer: dup2 resets cloexec
+	pipe2(stderrpair, O_CLOEXEC); // O_NONBLOCK is absent because no child expects a nonblocking stdout
+	
+	this->pid = fork();
+	if (this->pid == 0)
+	{
+		//the following external functions are used in the child process:
+		//dup2, open, close, execvp, _exit - documented as sigsafe
+		//syscall(getdents64) - all syscalls (except maybe some signal/etc-related ones) are sigsafe
+		//ptrace - thin wrapper around a syscall
+		//array<>::ptr and a couple of arrayview<> members - memory only
+		//various function<> members - memory only
+		
+		dup2(stdinpair[0], 0);
+		dup2(stdoutpair[1], 1);
+		if (this->stderr_split) dup2(stderrpair[1], 2);
+		else dup2(stdoutpair[1], 2);
+		
+		int keep[] = {0,1,2};
+		fd_closeall(keep); // calls open, syscall(getdents64), close
+		
+		//used for sandboxing, can set seccomp/ptrace rules
+		preexec();
+		
+		execvp(path, (char**)argv.ptr());
+		while (true) _exit(EXIT_FAILURE);
+	};
+	
+	close(stdinpair[0]);
+	close(stdoutpair[1]);
+	close(stderrpair[1]);
+	this->stdin_fd = stdinpair[1];
+	this->stdout_fd = stdoutpair[0];
+	this->stderr_fd = stderrpair[0];
+	fcntl(this->stdin_fd, F_SETFL, fcntl(this->stdin_fd, F_GETFL)|O_NONBLOCK);
+	fcntl(this->stdout_fd, F_SETFL, fcntl(this->stdout_fd, F_GETFL)|O_NONBLOCK);
+	fcntl(this->stderr_fd, F_SETFL, fcntl(this->stderr_fd, F_GETFL)|O_NONBLOCK);
+	
+	if (this->pid == -1)
 	{
 		destruct();
+		return false;
 	}
+	
+	update();
+	return true;
+}
+
+//this is less primitive on Windows
+bool process::launch(cstring path, arrayview<string> args)
+{
+	return launch_with_preexec(path, args, NULL);
+}
+
+void process::stdin(arrayview<byte> data) { stdin_buf += data; update(); }
+
+void process::interact(bool enable)
+{
+	this->stdin_open = enable;
+	update();
+}
+
+//If the process is still running, these contain what it's written thus far. The data is discarded after being read.
+//The default is to merge stderr into stdout. To keep them separate, call stderr() before launch().
+//If wait is true, the functions will wait until the child exits or prints something on the relevant stream.
+array<byte> process::stdoutb(bool wait)
+{
+	update(false);
+	while (wait && !stdout_buf) update(true);
+	return std::move(stdout_buf);
+}
+array<byte> process::stderrb(bool wait)
+{
+	stderr_split=true;
+	update(false);
+	while (wait && !stderr_buf) update(true);
+	return std::move(stderr_buf);
+}
+
+bool process::running(int* exitcode)
+{
+	update();
+	if (exitcode && this->pid==-1) *exitcode = this->exitcode;
+	return (this->pid != -1);
+}
+
+void process::wait(int* exitcode)
+{
+	this->stdin_open = false;
+	while (this->pid != -1) update(true);
+	if (exitcode) *exitcode = this->exitcode;
+}
+
+void process::terminate()
+{
+	if (this->pid != -1)
+	{
+		kill(this->pid, SIGKILL);
+		this->exitcode = -1;
+		this->pid = -1;
+	}
+}
+
+void process::destruct()
+{
+	terminate();
+	if (stdin_fd!=-1) close(stdin_fd);
+	if (stdout_fd!=-1) close(stdout_fd);
+	if (stderr_fd!=-1) close(stderr_fd);
+}
+
+process::~process()
+{
+	destruct();
+}
 #endif
 
 #ifdef __linux__
