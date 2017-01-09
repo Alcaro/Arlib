@@ -19,10 +19,11 @@
 #include "function.h"
 #include "intwrap.h"
 #include "os.h"
+#include "process.h"
 #include "safeint.h"
 #include "serialize.h"
-#include "string.h"
 #include "stringconv.h"
+#include "string.h"
 #include "test.h"
 #include "zip.h"
 

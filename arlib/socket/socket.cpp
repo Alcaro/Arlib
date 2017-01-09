@@ -24,7 +24,7 @@
 #endif
 
 //wrapper because 'socket' is a type in this code, so socket(2) needs another name
-static int mksocket(int domain, int type, int protocol) { return socket(domain, type, protocol); }
+static int mksocket(int domain, int type, int protocol) { return socket(domain, type|SOCK_CLOEXEC, protocol); }
 #define socket socket_t
 
 namespace {

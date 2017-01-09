@@ -11,7 +11,7 @@
 //
 //WARNING: There is NO SECURITY WHATSOEVER on Windows. A "sandboxed" process can do anything the parent can.
 //Windows provides plenty of ways to restrict a process, but
-//- Most of them are blacklists, disabling a particular privilege; I want whitelists
+//- All I could find are blacklists, disabling a particular privilege; I want whitelists
 //- There are so many resource kinds I can't keep track how to restrict everything, or even list
 //    them; it will also fail open if a new resource kind is introduced
 //- Many lockdown functions temporarily disable privileges, rather than completely delete them

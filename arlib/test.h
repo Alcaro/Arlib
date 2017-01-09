@@ -29,6 +29,17 @@ void _teststack_pop();
 
 void _test_skip(cstring why);
 
+template<typename T, typename T2>
+void _assert_eq(const T&  actual,   const char * actual_exp,
+                const T2& expected, const char * expected_exp,
+                int line)
+{
+	if (actual != expected)
+	{
+		_testeqfail((string)actual_exp+" == "+expected_exp, line, tostring(expected), tostring(actual)); \
+	}
+}
+
 #define TESTFUNCNAME JOIN(_testfunc, __LINE__)
 #define test(...) \
 	static void TESTFUNCNAME(); \
@@ -39,11 +50,8 @@ void _test_skip(cstring why);
 #define assert_msg_ret(x, msg, ret) do { if (!(x)) { _testfail((string)"\nFailed assertion " #x ": "+msg, __LINE__); return ret; } } while(0)
 #define assert_msg(x, msg) assert_msg_ret(x,msg,)
 #define assert_eq(actual,expected) do { \
-		if ((actual) != (expected)) \
-		{ \
-			_testeqfail(#actual " == " #expected, __LINE__, tostring(expected), tostring(actual)); \
-			return; \
-		} \
+		_assert_eq(actual, #actual, expected, #expected, __LINE__); \
+		if (_test_result) return; \
 	} while(0)
 #define assert_fail(msg) do { _testfail((string)"\n"+msg, __LINE__); return; } while(0)
 #define assert_fail_nostack(msg) do { _testfail((string)"\n"+msg, -1); return; } while(0)

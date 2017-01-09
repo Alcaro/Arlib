@@ -77,7 +77,7 @@ public:
 		return out;
 	}
 	
-	template<typename T2> arrayview<T2> cast() const
+	template<typename T2> arrayview<T2> reinterpret() const
 	{
 		//reject cast<string>()
 		static_assert(std::is_fundamental<T>::value);
@@ -85,6 +85,15 @@ public:
 		
 		size_t newsize = this->count*sizeof(T)/sizeof(T2);
 		return arrayview<T2>((T2*)this->items, newsize);
+	}
+	
+	bool contains(const T& other) const
+	{
+		for (size_t n=0;n<this->count;n++)
+		{
+			if (this->items[n] == other) return true;
+		}
+		return false;
 	}
 	
 	//arrayview(const arrayview<T>& other)

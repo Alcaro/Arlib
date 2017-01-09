@@ -379,6 +379,7 @@ test()
 		string b = a; // needs an extra reference
 		a += "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 		assert_eq(a, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ");
+		assert_eq(b, "abcdefghijklmnopqrstuvwxyz");
 	}
 	
 	{

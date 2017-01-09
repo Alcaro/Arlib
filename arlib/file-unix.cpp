@@ -182,7 +182,7 @@ namespace {
 file::impl* file::open_impl_fs(cstring filename, mode m)
 {
 	int flags[] = { O_RDONLY, O_RDWR|O_CREAT, O_RDWR, O_RDWR|O_CREAT|O_TRUNC, O_RDWR|O_CREAT|O_EXCL };
-	int fd = ::open(filename, flags[m], 0666);
+	int fd = ::open(filename, flags[m]|O_CLOEXEC, 0666);
 	if (fd<0) return NULL;
 	return new file_unix(fd);
 }

@@ -532,7 +532,7 @@ test("ZIP writing")
 	assert(z.init(arrayview<byte>(zipbytes, sizeof(zipbytes))));
 	
 	array<byte> zb = z.pack();
-	assert_eq(zb.size(), sizeof(zipbytes));
+	assert_eq(zb.size(), sizeof(zipbytes)); // this tool wipes the file attributes
 	
 	//puts("");
 	//puts("---------");
@@ -574,6 +574,6 @@ test("ZIP writing")
 	zip z4;
 	assert(z4.init(nulsc));
 	array<byte> nulsdc = z4.read("nul.bin");
-	for (int i=0;i<65536;i++) assert_eq(nulsdc[i], 0);
+	assert(nulsdc == nuls);
 }
 #endif
