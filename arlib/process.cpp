@@ -9,10 +9,6 @@
 #include <sys/wait.h>
 #include <signal.h>
 
-//WARNING: fork() only clones the calling thread. Other threads could be holding important
-// resources, such as the malloc mutex.
-//As such, post-fork() code must only call async-signal-safe functions. In particular, be careful with C++ destructors.
-
 //atoi is locale-aware, not gonna trust that to not call malloc or otherwise be stupid
 static int atoi_simple(const char * text)
 {
@@ -28,8 +24,8 @@ static int atoi_simple(const char * text)
 }
 
 //trusting everything to set O_CLOEXEC isn't enough, this is a sandbox
-//throws about fifty errors in Valgrind - don't care
-static bool fd_closeall(arrayview<int> fd_keep)
+//throws about fifty errors in Valgrind for fd 1024 - don't care
+static bool closefrom(int lowfd)
 {
 	//getdents[64] is documented do-not-use and opendir should be used instead.
 	//However, we're in (the equivalent of) a signal handler, and opendir is not signal safe.
@@ -60,7 +56,7 @@ static bool fd_closeall(arrayview<int> fd_keep)
 			off += dent->d_reclen;
 			
 			int fd = atoi_simple(dent->d_name);
-			if (fd>=0 && fd!=dfd && !fd_keep.contains(fd))
+			if (fd>=0 && fd!=dfd && fd>=lowfd)
 			{
 				close(fd);
 			}
@@ -158,25 +154,36 @@ bool process::launch_with_preexec(cstring path, arrayview<string> args, function
 	pipe2(stdoutpair, O_CLOEXEC); // answer: dup2 resets cloexec
 	pipe2(stderrpair, O_CLOEXEC); // O_NONBLOCK is absent because no child expects a nonblocking stdout
 	
+	//ensure output from preexec() doesn't do anything silly
+	fflush(::stdin);
+	fflush(::stdout);
+	fflush(::stderr);
+	
 	this->pid = fork();
 	if (this->pid == 0)
 	{
-		//the following external functions are used in the child process:
+		//WARNING:
+		//fork(), POSIX.1-2008, http://pubs.opengroup.org/onlinepubs/9699919799/functions/fork.html
+		//  If a multi-threaded process calls fork(), the new process shall contain a replica of the
+		//  calling thread and its entire address space, possibly including the states of mutexes and
+		//  other resources. Consequently, to avoid errors, the child process may only execute
+		//  async-signal-safe operations until such time as one of the exec functions is called.
+		//In particular, C++ destructors should be avoided.
+		//
+		//The following external functions are used in the child process:
 		//dup2, open, close, execvp, _exit - documented as sigsafe
 		//syscall(getdents64) - all syscalls (except maybe some signal/etc-related ones) are sigsafe
-		//ptrace - thin wrapper around a syscall
-		//array<>::ptr and a couple of arrayview<> members - memory only
-		//various function<> members - memory only
+		//array::ptr - memory only
+		//function::operator() - memory only (can call copy constructors, but there are no arguments)
 		
-		dup2(stdinpair[0], 0);
+		dup2(stdinpair[0], 0); // if stdin isn't desired, the other end is closed by the update() at the end
 		dup2(stdoutpair[1], 1);
 		if (this->stderr_split) dup2(stderrpair[1], 2);
 		else dup2(stdoutpair[1], 2);
 		
-		int keep[] = {0,1,2};
-		fd_closeall(keep); // calls open, syscall(getdents64), close
+		closefrom(3); // calls open, syscall(getdents64), close
 		
-		//used for sandboxing, can set seccomp/ptrace rules
+		//HIGHLY DANGEROUS, use ONLY if you know what you're doing
 		preexec();
 		
 		execvp(path, (char**)argv.ptr());
@@ -275,6 +282,8 @@ process::~process()
 #ifdef __linux__
 test()
 {
+	test_skip("too slow and noisy under Valgrind");
+	
 	//there are a couple of race conditions here, but I believe they're all safe
 	{
 		process p;
@@ -315,11 +324,11 @@ test()
 		p.interact(true);
 		assert(p.launch("/bin/cat"));
 		p.stdin("foo");
-		usleep(100*1000); // RACE
+		usleep(10*1000); // RACE
 		assert_eq(p.stdout(), "foo");
 		assert(p.running());
 		p.interact(false);
-		usleep(100*1000); // RACE (this gets interrupted by SIGCHLD, but it's resumed)
+		usleep(1*1000); // RACE (this gets interrupted by SIGCHLD, but it's resumed)
 		assert(!p.running());
 	}
 	
