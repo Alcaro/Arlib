@@ -142,6 +142,7 @@ public:
 
     inline R operator()(ARG_TYPES_AND_NAMES) const
     {
+#error std::move
         return (*func)(obj C ARG_NAMES);
     }
 

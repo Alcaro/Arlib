@@ -4,7 +4,7 @@
 //TODO:
 //- fetch howsmyssl, ensure the only failure is the session cache
 
-#ifdef ARLIB_TESTggg // disable these because they take way too long
+#ifdef ARLIB_TEST
 //not in socket.h because this shouldn't really be used for anything, blocking is evil
 static array<byte> recvall(socket* sock, unsigned int len)
 {
@@ -48,11 +48,12 @@ static void clienttest(socket* rs)
 	assert(!memcmp(ret.ptr(), "HTTP", 4));
 }
 
-test("plaintext client") { clienttest(socket::create("google.com", 80)); }
-test("SSL client") { clienttest(socketssl::create("google.com", 443)); }
-test("SSL SNI") { clienttest(socketssl::create("git.io", 443)); } // this server throws an error unless SNI is enabled
+test("plaintext client") { test_skip("too slow"); clienttest(socket::create("google.com", 80)); }
+test("SSL client") { test_skip("too slow"); clienttest(socketssl::create("google.com", 443)); }
+test("SSL SNI") { test_skip("too slow"); clienttest(socketssl::create("git.io", 443)); } // this server throws an error unless SNI is enabled
 test("SSL permissiveness")
 {
+	test_skip("too slow");
 	autoptr<socket> s;
 	assert(!(s=socketssl::create("badfish.filippo.io", 443))); // invalid cert root
 	assert( (s=socketssl::create("badfish.filippo.io", 443, true)));
@@ -62,6 +63,10 @@ test("SSL permissiveness")
 
 void listentest(const char * localhost, int port)
 {
+#ifdef __linux__
+	test_skip("spurious failures due to TIME_WAIT");
+#endif
+	
 	autoptr<socketlisten> l = socketlisten::create(port);
 	assert(l);
 	autoptr<socket> c1 = socket::create(localhost, port);

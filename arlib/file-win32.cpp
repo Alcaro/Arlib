@@ -144,22 +144,24 @@
 //}
 
 namespace {
-	class file_fs : public filewrite {
+	class file_fs : public file::impl {
 	public:
 		HANDLE handle;
 		
-		file_fs(cstring filename, HANDLE handle) : filewrite(filename), handle(handle)
-		{
-			LARGE_INTEGER size;
-			GetFileSizeEx(this->handle, &size);
-			this->len = size.QuadPart;
-		}
+		file_fs(HANDLE handle) : handle(handle) {}
 		
 		/*private*/ void seek(size_t pos)
 		{
 			LARGE_INTEGER lipos;
 			lipos.QuadPart = pos;
 			SetFilePointerEx(this->handle, lipos, NULL, FILE_BEGIN);
+		}
+		
+		size_t size()
+		{
+			LARGE_INTEGER size;
+			GetFileSizeEx(this->handle, &size);
+			return size.QuadPart;
 		}
 		
 		size_t read(arrayvieww<byte> target, size_t start)
@@ -173,12 +175,7 @@ namespace {
 		bool resize(size_t newsize)
 		{
 			seek(newsize);
-			if (SetEndOfFile(this->handle))
-			{
-				this->len = newsize;
-				return true;
-			}
-			else return false;
+			return (SetEndOfFile(this->handle));
 		}
 		
 		bool write(arrayview<byte> data, size_t start)
@@ -186,12 +183,7 @@ namespace {
 			seek(start);
 			DWORD actual;
 			WriteFile(this->handle, data.ptr(), data.size(), &actual, NULL);
-			if (actual==data.size())
-			{
-				this->len = max(this->len, start+data.size());
-				return true;
-			}
-			else return false;
+			return (actual==data.size());
 		}
 		
 		//stupid allocation granularity, its reason to exist (Alpha AXP) is long gone
@@ -243,43 +235,30 @@ namespace {
 }
 
 #define FILE_SHARE_ALL (FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE)
-file* file::open_fs(cstring filename)
+file::impl* file::open_impl_fs(cstring filename, mode m)
 {
-	HANDLE file = CreateFile(filename, GENERIC_READ, FILE_SHARE_ALL, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+	DWORD dispositions[] = { OPEN_EXISTING, OPEN_ALWAYS, OPEN_EXISTING, CREATE_ALWAYS, CREATE_NEW };
+	DWORD access = (m==m_read ? GENERIC_READ : GENERIC_READ|GENERIC_WRITE);
+	HANDLE file = CreateFile(filename, access, FILE_SHARE_ALL, NULL, dispositions[m], FILE_ATTRIBUTE_NORMAL, NULL);
 	if (file == INVALID_HANDLE_VALUE) return NULL;
-	return new file_fs(filename, file);
+	return new file_fs(file);
 }
 
-filewrite* filewrite::open_fs(cstring filename, mode m)
-{
-	DWORD dispositions[] = { OPEN_ALWAYS, OPEN_EXISTING, CREATE_ALWAYS, CREATE_NEW };
-	HANDLE file = CreateFile(filename, GENERIC_READ|GENERIC_WRITE, FILE_SHARE_ALL, NULL, dispositions[m], FILE_ATTRIBUTE_NORMAL, NULL);
-	if (file == INVALID_HANDLE_VALUE) return NULL;
-	return new file_fs(filename, file);
-}
-
-bool filewrite::unlink_fs(cstring filename)
+bool file::unlink_fs(cstring filename)
 {
 	if (DeleteFile(filename)) return true;
 	else return (GetLastError() == ERROR_FILE_NOT_FOUND);
 }
 
 //#ifdef ARGUI_NONE
-file* file::open(cstring filename)
+file::impl* file::open_impl(cstring filename, mode m)
 {
-	return open_fs(filename);
+	return open_impl_fs(filename, m);
 }
 
-filewrite* filewrite::open(cstring filename, mode m)
-{
-	return open_fs(filename, m);
-}
-
-bool filewrite::unlink(cstring filename)
+bool file::unlink(cstring filename)
 {
 	return unlink_fs(filename);
 }
 //#endif
-
-void _window_init_file() {}
 #endif

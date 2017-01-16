@@ -9,6 +9,7 @@
 	#include <mstcpip.h>
 	#define MSG_NOSIGNAL 0
 	#define MSG_DONTWAIT 0
+	#define SOCK_CLOEXEC 0
 	#define close closesocket
 	#define usleep(n) Sleep(n/1000)
 	#ifdef _MSC_VER

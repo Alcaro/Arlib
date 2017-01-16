@@ -40,10 +40,22 @@ void _assert_eq(const T&  actual,   const char * actual_exp,
 	}
 }
 
+//silence sign-comparison warning if lhs is size_t and rhs is integer constant
+template<typename T, typename T2>
+void _assert_eq(const T&  actual,   const char * actual_exp,
+                int       expected, const char * expected_exp,
+                int line)
+{
+	if ((std::is_unsigned<T>::value && expected<0) || (int)actual != expected || actual != (T)expected)
+	{
+		_testeqfail((string)actual_exp+" == "+expected_exp, line, tostring(expected), tostring(actual)); \
+	}
+}
+
 #define TESTFUNCNAME JOIN(_testfunc, __LINE__)
 #define test(...) \
 	static void TESTFUNCNAME(); \
-	static _testdecl JOIN(_testdecl, __LINE__)(TESTFUNCNAME, __FILE__ ":" STR(__LINE__), _test_maybeptr(__VA_ARGS__)); \
+	_testdecl JOIN(_testdecl, __LINE__)(TESTFUNCNAME, __FILE__ ":" STR(__LINE__), _test_maybeptr(__VA_ARGS__)); \
 	static void TESTFUNCNAME()
 #define assert_ret(x, ret) do { if (!(x)) { _testfail("\nFailed assertion " #x, __LINE__); return ret; } } while(0)
 #define assert(x) assert_ret(x,)

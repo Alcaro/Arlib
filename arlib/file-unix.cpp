@@ -204,6 +204,4 @@ bool file::unlink(cstring filename)
 	return unlink_fs(filename);
 }
 //#endif
-
-void _window_init_file() {}
 #endif
