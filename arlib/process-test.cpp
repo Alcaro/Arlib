@@ -1,15 +1,34 @@
 #include "process.h"
 #include "test.h"
 
-#ifdef __linux__
+#ifndef _WIN32
+#define TRUE "/bin/true"
+#define ECHO "/bin/echo"
+#define LF "\n"
+#define ECHO_END LF
+#define CAT_FILE "/bin/cat"
+#define CAT_STDIN "/bin/cat"
+#define CAT_STDIN_END ""
+#include <unistd.h> // usleep
+#else
+#undef TRUE // screw this, I don't need two trues
+#define TRUE "cmd", "/c", "type NUL" // windows has no /bin/true, fake it
+#define ECHO "cmd", "/c", "echo"
+#define LF "\r\n"
+#define ECHO_END LF
+#define CAT_FILE "cmd", "/c", "type"
+#define CAT_STDIN "find", "/v", "\"COPY_THE_INPUT_UNCHANGED\""
+#define CAT_STDIN_END LF
+#define usleep(n) Sleep((n)/1000)
+#endif
+
 test()
 {
 	test_skip("too slow and noisy under Valgrind");
-	
 	//there are a couple of race conditions here, but I believe they're all safe
 	{
 		process p;
-		assert(p.launch("/bin/true"));
+		assert(p.launch(TRUE));
 		int status;
 		p.wait(&status);
 		assert_eq(status, 0);
@@ -17,50 +36,110 @@ test()
 	
 	{
 		process p;
-		assert(p.launch("/bin/echo", "foo"));
+		assert(p.launch(ECHO, "foo"));
 		int status;
 		p.wait(&status);
 		assert_eq(status, 0);
-		assert_eq(p.stdout(), "foo\n");
+		assert_eq(p.read(), "foo" ECHO_END);
 	}
 	
 	{
 		process p;
-		p.stdin("foo");
-		assert(p.launch("/bin/cat"));
+		p.write("foo");
+		assert(p.launch(CAT_STDIN));
 		p.wait();
-		assert_eq(p.stdout(), "foo");
+		assert_eq(p.read(), "foo" CAT_STDIN_END);
 	}
 	
 	{
 		process p;
 		p.interact(true);
-		assert(p.launch("/bin/cat"));
-		p.stdin("foo");
+		assert(p.launch(CAT_STDIN));
+		p.write("foo");
 		p.wait();
-		assert_eq(p.stdout(), "foo");
+		assert_eq(p.read(), "foo" CAT_STDIN_END);
 	}
 	
 	{
 		process p;
 		p.interact(true);
-		assert(p.launch("/bin/cat"));
-		p.stdin("foo");
-		usleep(10*1000); // RACE
-		assert_eq(p.stdout(), "foo");
+		assert(p.launch(CAT_STDIN));
+		p.write("foo" LF);
+		assert_eq(p.read(true), "foo" LF);
+		p.write("foo" LF);
+		assert_eq(p.read(true), "foo" LF);
+		p.write("foo" LF);
+		assert_eq(p.read(true), "foo" LF);
+		p.write("foo" LF);
+		assert_eq(p.read(true), "foo" LF);
+	}
+	
+	test_skip("too slow");
+	{
+		process p;
+		p.interact(true);
+		assert(p.launch(CAT_STDIN));
+		p.write("foo" LF);
+		usleep(100*1000); // RACE
+		assert_eq(p.read(), "foo" LF);
 		assert(p.running());
 		p.interact(false);
-		usleep(1*1000); // RACE (this gets interrupted by SIGCHLD, but it's resumed)
+		usleep(100*1000); // RACE (this gets interrupted by SIGCHLD, but it's resumed)
 		assert(!p.running());
 	}
 	
 	{
 		process p;
-		assert(p.launch("/bin/echo", "foo"));
-		assert_eq(p.stdout(), ""); // RACE
-		assert_eq(p.stdout(true), "foo\n");
+		assert(p.launch(ECHO, "foo"));
+		assert_eq(p.read(), ""); // RACE
+		assert_eq(p.read(true), "foo" ECHO_END);
 	}
+	
+	{
+		string lots_of_data = "a" LF;
+		while (lots_of_data.length() < 256*1024) lots_of_data += lots_of_data;
+		process p;
+		p.interact(true);
+		assert(p.launch(CAT_STDIN));
+		p.write(lots_of_data);
+		p.wait();
+		assert_eq(p.read().length(), lots_of_data.length());
+	}
+	
+	{
+		process p;
+		p.error();
+		assert(p.launch(CAT_FILE, "nonexist.ent"));
+		p.wait();
+		assert_eq(p.read(), "");
+		assert(p.error() != "");
+	}
+	
+	//{
+	//	string test_escape[] = {
+	//		"DUMMY_NODE",
+	//		"DUMMY_NODE",
+	//		"a",
+	//		"\"",
+	//		"a b",
+	//		"\"a b\"",
+	//		" ",
+	//		" a",
+	//		"a ",
+	//		"  ",
+	//		" \" ",
+	//		" \"\" ",
+	//		" \" \"",
+	//		"",
+	//		"\"",
+	//		"\\",
+	//		"\\\"",
+	//		"\\\\",
+	//		"\\\\\"",
+	//		"\\\\\\",
+	//		"\\\\\\\"",
+	//	};
+	//	//this one is supposed to test that the arguments are properly quoted,
+	//	// but there's no 'dump argv' program on windows (linux doesn't need it), so can't do it
+	//}
 }
-#else
-#error find windows equivalents
-#endif

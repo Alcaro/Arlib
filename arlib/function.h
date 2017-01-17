@@ -24,6 +24,7 @@
 #define UTIL_CALLBACK_HPP
 
 #include <stddef.h>
+#include <utility>
 
 #define UTIL_CALLBACK_HPP_INSIDE
 
@@ -142,7 +143,9 @@ public:
 
     inline R operator()(ARG_TYPES_AND_NAMES) const
     {
-#error std::move
+        //TODO: should find some way to forward these arguments rather than copying
+        //except nearly everything here is integers and arrayviews
+        //TODO: find a way to std::move the return if nonnull
         return (*func)(obj C ARG_NAMES);
     }
 

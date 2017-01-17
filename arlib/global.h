@@ -47,13 +47,8 @@
 #include "function.h"
 #include <utility>
 
-#define byte uint8_t
-
 typedef void(*funcptr)();
-
-//Note to anyone interested in reusing these objects:
-//Many, if not most, of them will likely change their interface, likely quite fundamentally, in the future.
-//No attempt is made to keep any kind of backwards or forwards compatibility.
+typedef uint8_t byte;
 
 #define using(obj) for(bool FIRST=true;FIRST;FIRST=false)for(obj;FIRST;FIRST=false)
 //in C++17, this becomes if(obj;true)
@@ -67,9 +62,13 @@ typedef void(*funcptr)();
 #ifdef __GNUC__
 #define LIKELY(expr)    __builtin_expect(!!(expr), true)
 #define UNLIKELY(expr)  __builtin_expect(!!(expr), false)
+#define MAYBE_UNUSED __attribute__((__unused__)) // shut up, stupid warnings
+#define KEEP_OBJECT __attribute__((__used__)) // for static unused variables that shouldn't be optimized out
 #else
 #define LIKELY(expr)    (expr)
 #define UNLIKELY(expr)  (expr)
+#define MAYBE_UNUSED
+#define KEEP_OBJECT
 #define __GNUC__ 0
 #endif
 
@@ -129,10 +128,8 @@ template<typename T, size_t N> char(&ARRAY_SIZE_CORE(T(&x)[N]))[N];
 //- (FAIL) works if compiled as C (tried to design an alternate implementation and ifdef it, but nothing works inside structs)
 //- (PASS) can name assertions, if desired (only under C++11)
 #ifdef __GNUC__
-#define MAYBE_UNUSED __attribute__((__unused__)) // shut up, stupid warnings
 #define TYPENAME_IF_GCC typename // gcc requires this. msvc rejects this.
 #else
-#define MAYBE_UNUSED
 #define TYPENAME_IF_GCC
 #endif
 

@@ -55,7 +55,7 @@ void _assert_eq(const T&  actual,   const char * actual_exp,
 #define TESTFUNCNAME JOIN(_testfunc, __LINE__)
 #define test(...) \
 	static void TESTFUNCNAME(); \
-	_testdecl JOIN(_testdecl, __LINE__)(TESTFUNCNAME, __FILE__ ":" STR(__LINE__), _test_maybeptr(__VA_ARGS__)); \
+	static KEEP_OBJECT _testdecl JOIN(_testdecl, __LINE__)(TESTFUNCNAME, __FILE__ ":" STR(__LINE__), _test_maybeptr(__VA_ARGS__)); \
 	static void TESTFUNCNAME()
 #define assert_ret(x, ret) do { if (!(x)) { _testfail("\nFailed assertion " #x, __LINE__); return ret; } } while(0)
 #define assert(x) assert_ret(x,)

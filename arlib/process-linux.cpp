@@ -65,6 +65,17 @@ static bool closefrom(int lowfd)
 	return true;
 }
 
+static void update_piperead(int& fd, array<byte>& out)
+{
+	while (true)
+	{
+		byte buf[4096];
+		ssize_t bytes = ::read(fd, buf, sizeof(buf));
+		if (bytes>0) out += arrayview<byte>(buf, bytes);
+		if (bytes==0) { close(fd); fd=-1; }
+		if (bytes<=0) break;
+	}
+}
 void process::update(bool sleep)
 {
 	if (this->pid != -1)
@@ -95,7 +106,7 @@ void process::update(bool sleep)
 	{
 		if (stdin_buf)
 		{
-			ssize_t bytes = write(stdin_fd, stdin_buf.ptr(), stdin_buf.size());
+			ssize_t bytes = ::write(stdin_fd, stdin_buf.ptr(), stdin_buf.size());
 			if (bytes == 0)
 			{
 				stdin_buf.reset();
@@ -111,32 +122,11 @@ void process::update(bool sleep)
 		}
 	}
 	
-	if (stdout_fd != -1)
-	{
-		while (true)
-		{
-			byte buf[4096];
-			ssize_t bytes = read(stdout_fd, buf, sizeof(buf));
-			if (bytes>0) stdout_buf += arrayview<byte>(buf, bytes);
-			if (bytes==0) { close(stdout_fd); stdout_fd=-1; }
-			if (bytes<=0) break;
-		}
-	}
-	
-	if (stderr_fd != -1)
-	{
-		while (true)
-		{
-			byte buf[4096];
-			ssize_t bytes = read(stderr_fd, buf, sizeof(buf));
-			if (bytes>0) stderr_buf += arrayview<byte>(buf, bytes);
-			if (bytes==0) { close(stderr_fd); stderr_fd=-1; }
-			if (bytes<=0) break;
-		}
-	}
+	if (stdout_fd != -1) update_piperead(stdout_fd, stdout_buf);
+	if (stderr_fd != -1) update_piperead(stderr_fd, stderr_buf);
 }
 
-bool process::launch_with_preexec(cstring path, arrayview<string> args, function<void()> preexec)
+bool process::launch(cstring path, arrayview<string> args)
 {
 	array<const char*> argv;
 	argv.append((char*)path.bytes().ptr());
@@ -152,11 +142,6 @@ bool process::launch_with_preexec(cstring path, arrayview<string> args, function
 	pipe2(stdinpair, O_CLOEXEC);  // close-on-exec for a fd intended only to be used by a child process?
 	pipe2(stdoutpair, O_CLOEXEC); // answer: dup2 resets cloexec
 	pipe2(stderrpair, O_CLOEXEC); // O_NONBLOCK is absent because no child expects a nonblocking stdout
-	
-	//ensure output from preexec() doesn't do anything silly
-	fflush(::stdin);
-	fflush(::stdout);
-	fflush(::stderr);
 	
 	this->pid = fork();
 	if (this->pid == 0)
@@ -180,12 +165,13 @@ bool process::launch_with_preexec(cstring path, arrayview<string> args, function
 		if (this->stderr_split) dup2(stderrpair[1], 2);
 		else dup2(stdoutpair[1], 2);
 		
-		closefrom(3); // calls open, syscall(getdents64), close
-		
+		execparm params = { 3, NULL };
 		//HIGHLY DANGEROUS, use ONLY if you know what you're doing
-		preexec();
+		this->preexec(&params);
+		closefrom(params.nfds_keep); // calls open, syscall(getdents64), close
 		
-		execvp(path, (char**)argv.ptr());
+		if (params.environ) execvpe(path, (char**)argv.ptr(), (char**)params.environ);
+		else execvp(path, (char**)argv.ptr());
 		while (true) _exit(EXIT_FAILURE);
 	};
 	
@@ -207,37 +193,6 @@ bool process::launch_with_preexec(cstring path, arrayview<string> args, function
 	
 	update();
 	return true;
-}
-
-//this is less primitive on Windows
-bool process::launch(cstring path, arrayview<string> args)
-{
-	return launch_with_preexec(path, args, NULL);
-}
-
-void process::stdin(arrayview<byte> data) { stdin_buf += data; update(); }
-
-void process::interact(bool enable)
-{
-	this->stdin_open = enable;
-	update();
-}
-
-//If the process is still running, these contain what it's written thus far. The data is discarded after being read.
-//The default is to merge stderr into stdout. To keep them separate, call stderr() before launch().
-//If wait is true, the functions will wait until the child exits or prints something on the relevant stream.
-array<byte> process::stdoutb(bool wait)
-{
-	update(false);
-	while (wait && !stdout_buf) update(true);
-	return std::move(stdout_buf);
-}
-array<byte> process::stderrb(bool wait)
-{
-	stderr_split=true;
-	update(false);
-	while (wait && !stderr_buf) update(true);
-	return std::move(stderr_buf);
 }
 
 bool process::running(int* exitcode)
