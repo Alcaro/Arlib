@@ -1,4 +1,4 @@
-#include "test.h"
+#include "process.h"
 
 #ifdef _WIN32
 static string escapearg(cstring arg)
@@ -37,7 +37,7 @@ static string escapearg(cstring arg)
 	//else return arg;
 }
 
-bool process::launch_impl(cstring path, arrayview<string> args)
+bool process::launch(cstring path, arrayview<string> args)
 {
 	string cmdline = escapearg(path);
 	for (cstring s : args)

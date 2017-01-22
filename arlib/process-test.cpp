@@ -4,6 +4,7 @@
 #ifndef _WIN32
 #define TRUE "/bin/true"
 #define ECHO "/bin/echo"
+#define YES "/bin/yes"
 #define LF "\n"
 #define ECHO_END LF
 #define CAT_FILE "/bin/cat"
@@ -14,6 +15,7 @@
 #undef TRUE // screw this, I don't need two trues
 #define TRUE "cmd", "/c", "type NUL" // windows has no /bin/true, fake it
 #define ECHO "cmd", "/c", "echo"
+#define YES @fixme: tree@
 #define LF "\r\n"
 #define ECHO_END LF
 #define CAT_FILE "cmd", "/c", "type"
@@ -22,6 +24,7 @@
 #define usleep(n) Sleep((n)/1000)
 #endif
 
+test(){assert(!"fill in process::outlimit()");}
 test()
 {
 	test_skip("too slow and noisy under Valgrind");
@@ -113,6 +116,15 @@ test()
 		p.wait();
 		assert_eq(p.read(), "");
 		assert(p.error() != "");
+	}
+	
+	{
+		process p;
+		p.outlimit(1024);
+		assert(p.launch(YES));
+		p.wait();
+		string out = p.read();
+		assert(out.length() >= 1024);
 	}
 	
 	//{

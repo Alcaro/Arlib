@@ -192,5 +192,3 @@ public:
 	autommap(const file& f) : arrayview(f.mmap()), f(f) {}
 	~autommap() { f.unmap(*this); }
 };
-
-void _window_init_file();

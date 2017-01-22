@@ -75,7 +75,7 @@ bool aropengl::hasExtension(const char * ext)
 	if (major >= 3)
 	{
 		GLint n;
-		this->GetIntegerv(GL_NUM_EXTENSIONS, &n);
+		gl.GetIntegerv(GL_NUM_EXTENSIONS, &n);
 		for (GLint i=0;i<n;i++)
 		{
 			if (!strcmp((char*)gl.GetStringi(GL_EXTENSIONS, i), ext)) return true;

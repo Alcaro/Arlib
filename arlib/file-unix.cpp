@@ -193,6 +193,15 @@ bool file::unlink_fs(cstring filename)
 	return ret==0 || (ret==-1 && errno==ENOENT);
 }
 
+string file::dirname(cstring path)
+{
+	return path.rsplit<1>("/")[0];
+}
+string file::basename(cstring path)
+{
+	return path.rsplit<1>("/")[1];
+}
+
 //#ifdef ARGUI_NONE
 file::impl* file::open_impl(cstring filename, mode m)
 {

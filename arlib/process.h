@@ -66,13 +66,18 @@ public:
 	void write(arrayview<byte> data) { stdin_buf += data; update(); }
 	void write(cstring data) { write(data.bytes()); }
 	
-	//If interact(true) is called before launch(), stdin() can be called after process start.
+	//If interact(true) is called before launch(), write() can be called after process start.
 	//To close the child's stdin, call interact(false).
 	void interact(bool enable)
 	{
 		this->stdin_open = enable;
 		update();
 	}
+	
+	//Stops the process from writing too much data and wasting RAM.
+	//If there, at any point, is more than 'max' bytes of unread data in the buffers, the stdout/stderr pipes are closed.
+	//Slightly more may be readable in practice, due to kernel-level buffering.
+	void outlimit(size_t max);
 	
 	//Returns what the process has written thus far (if the process has exited, all of it). The data is discarded after being read.
 	//The default is to merge stderr into stdout. To keep them separate, call stderr() before launch().
@@ -96,7 +101,7 @@ public:
 	
 	bool running(int* exitcode = NULL);
 	void wait(int* exitcode = NULL);
-	void terminate();
+	void terminate(); // The prpcess is automatically terminated if the object is destroyed.
 	
 	~process();
 };

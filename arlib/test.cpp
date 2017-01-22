@@ -78,8 +78,6 @@ int main(int argc, char* argv[])
 {
 #ifndef ARGUI_NONE
 	window_init(&argc, &argv);
-#else
-	_window_init_file();
 #endif
 	
 	int count[3]={0,0,0};

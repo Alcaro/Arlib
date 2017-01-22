@@ -139,9 +139,10 @@ bool process::launch(cstring path, arrayview<string> args)
 	int stdinpair[2];
 	int stdoutpair[2];
 	int stderrpair[2];
-	pipe2(stdinpair, O_CLOEXEC);  // close-on-exec for a fd intended only to be used by a child process?
-	pipe2(stdoutpair, O_CLOEXEC); // answer: dup2 resets cloexec
-	pipe2(stderrpair, O_CLOEXEC); // O_NONBLOCK is absent because no child expects a nonblocking stdout
+	//leaks a couple of fds if creation fails, but if that happens, process is probably screwed anyways.
+	if (pipe2(stdinpair,  O_CLOEXEC) < 0) return false; // close-on-exec for a fd intended only to be used by a child process?
+	if (pipe2(stdoutpair, O_CLOEXEC) < 0) return false; // answer: dup2 resets cloexec
+	if (pipe2(stderrpair, O_CLOEXEC) < 0) return false; // O_NONBLOCK is absent because no child expects a nonblocking stdout
 	
 	this->pid = fork();
 	if (this->pid == 0)
@@ -173,7 +174,8 @@ bool process::launch(cstring path, arrayview<string> args)
 		if (params.environ) execvpe(path, (char**)argv.ptr(), (char**)params.environ);
 		else execvp(path, (char**)argv.ptr());
 		while (true) _exit(EXIT_FAILURE);
-	};
+	}
+	//failure handled later
 	
 	close(stdinpair[0]);
 	close(stdoutpair[1]);
@@ -185,7 +187,7 @@ bool process::launch(cstring path, arrayview<string> args)
 	fcntl(this->stdout_fd, F_SETFL, fcntl(this->stdout_fd, F_GETFL)|O_NONBLOCK);
 	fcntl(this->stderr_fd, F_SETFL, fcntl(this->stderr_fd, F_GETFL)|O_NONBLOCK);
 	
-	if (this->pid == -1)
+	if (this->pid < 0)
 	{
 		destruct();
 		return false;
