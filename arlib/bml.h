@@ -86,11 +86,11 @@ public:
 	
 	//Tells what mode will actually be used if node() is called with these parameters and in this context.
 	//To ask what enter() would do, call this with a non-inline mode.
-	mode typeof(cstring val, mode m) const;
+	mode type(cstring val, mode m) const;
 	
 private:
 	void node(cstring name, cstring val, mode m, bool enter);
-	static mode typeof_core(cstring val);
+	static mode type_core(cstring val);
 public:
 	
 	string finish() { return m_data; }

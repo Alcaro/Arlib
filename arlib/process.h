@@ -9,6 +9,7 @@ class process : nocopy {
 	array<byte> stdout_buf;
 	bool stderr_split = false;
 	array<byte> stderr_buf;
+	size_t outmax = SIZE_MAX;
 	
 #ifdef __linux__
 	pid_t pid = -1;
@@ -77,7 +78,7 @@ public:
 	//Stops the process from writing too much data and wasting RAM.
 	//If there, at any point, is more than 'max' bytes of unread data in the buffers, the stdout/stderr pipes are closed.
 	//Slightly more may be readable in practice, due to kernel-level buffering.
-	void outlimit(size_t max);
+	void outlimit(size_t max) { this->outmax = max; }
 	
 	//Returns what the process has written thus far (if the process has exited, all of it). The data is discarded after being read.
 	//The default is to merge stderr into stdout. To keep them separate, call stderr() before launch().

@@ -41,7 +41,7 @@ void _assert_eq(const T&  actual,   const char * actual_exp,
 }
 
 //silence sign-comparison warning if lhs is size_t and rhs is integer constant
-template<typename T, typename T2>
+template<typename T>
 void _assert_eq(const T&  actual,   const char * actual_exp,
                 int       expected, const char * expected_exp,
                 int line)

@@ -24,14 +24,13 @@ bool window_try_init(int * argc, char * * argv[]);
 
 //On Windows, attaches stdout/stderr to the console of the launching process. On Linux, does nothing.
 //On both, returns whether the process is currently in a terminal. Returns true if I/O is redirected.
-
-//Returns whether the process was launched from a console.
+bool window_console_attach(); // Returns whether it worked.
+//Returns whether the process was launched from a console, without actually connecting it.
 //If yes, calling window_console_attach will connect stdout/stderr to something (stdin not guaranteed to work).
 bool window_console_avail();
-bool window_console_attach(); // Returns whether it worked.
 
 //On Windows, the program is assumed portable, so it returns the program directory.
-//On Linux, the program is assumed installed, so it returns the user's config directory.
+//On Linux, the program is assumed installed, so it returns ~/.config.
 string window_config_path();
 
 //window toolkit is not choosable at runtime

@@ -58,6 +58,8 @@ public:
 	
 	T join() const
 	{
+		if (!this->count) return T();
+		
 		T out = this->items[0];
 		for (size_t n=1;n<this->count;n++)
 		{
@@ -68,6 +70,8 @@ public:
 	
 	template<typename T2> decltype(T() + T2()) join(T2 between) const
 	{
+		if (!this->count) return decltype(T() + T2())();
+		
 		decltype(T() + T2()) out = this->items[0];
 		for (size_t n=1;n < this->count;n++)
 		{

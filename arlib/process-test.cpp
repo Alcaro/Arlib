@@ -2,20 +2,20 @@
 #include "test.h"
 
 #ifndef _WIN32
+#include <unistd.h> // usleep
 #define TRUE "/bin/true"
 #define ECHO "/bin/echo"
-#define YES "/bin/yes"
+#define YES "/usr/bin/yes"
 #define LF "\n"
 #define ECHO_END LF
 #define CAT_FILE "/bin/cat"
 #define CAT_STDIN "/bin/cat"
 #define CAT_STDIN_END ""
-#include <unistd.h> // usleep
 #else
 #undef TRUE // screw this, I don't need two trues
 #define TRUE "cmd", "/c", "type NUL" // windows has no /bin/true, fake it
 #define ECHO "cmd", "/c", "echo"
-#define YES @fixme: tree@
+#define YES "cmd", "/c", "tree /f c:" // not actually infinite, but close enough
 #define LF "\r\n"
 #define ECHO_END LF
 #define CAT_FILE "cmd", "/c", "type"
@@ -24,10 +24,11 @@
 #define usleep(n) Sleep((n)/1000)
 #endif
 
-test(){assert(!"fill in process::outlimit()");}
 test()
 {
-	test_skip("too slow and noisy under Valgrind");
+#ifdef __linux__
+	test_skip("too noisy under Valgrind");
+#endif
 	//there are a couple of race conditions here, but I believe they're all safe
 	{
 		process p;
@@ -77,18 +78,23 @@ test()
 		assert_eq(p.read(true), "foo" LF);
 	}
 	
-	test_skip("too slow");
 	{
 		process p;
-		p.interact(true);
-		assert(p.launch(CAT_STDIN));
-		p.write("foo" LF);
-		usleep(100*1000); // RACE
-		assert_eq(p.read(), "foo" LF);
-		assert(p.running());
-		p.interact(false);
-		usleep(100*1000); // RACE (this gets interrupted by SIGCHLD, but it's resumed)
-		assert(!p.running());
+		p.error();
+		assert(p.launch(CAT_FILE, "nonexist.ent"));
+		p.wait();
+		assert_eq(p.read(), "");
+		assert(p.error() != "");
+	}
+	
+	{
+		process p;
+		p.outlimit(1024);
+		assert(p.launch(YES));
+		p.wait();
+		string out = p.read();
+		assert(out.length() >= 1024);
+		assert(out.length() < 65536);
 	}
 	
 	{
@@ -109,22 +115,18 @@ test()
 		assert_eq(p.read().length(), lots_of_data.length());
 	}
 	
+	test_skip("too slow");
 	{
 		process p;
-		p.error();
-		assert(p.launch(CAT_FILE, "nonexist.ent"));
-		p.wait();
-		assert_eq(p.read(), "");
-		assert(p.error() != "");
-	}
-	
-	{
-		process p;
-		p.outlimit(1024);
-		assert(p.launch(YES));
-		p.wait();
-		string out = p.read();
-		assert(out.length() >= 1024);
+		p.interact(true);
+		assert(p.launch(CAT_STDIN));
+		p.write("foo" LF);
+		usleep(100*1000); // RACE
+		assert_eq(p.read(), "foo" LF);
+		assert(p.running());
+		p.interact(false);
+		usleep(100*1000); // RACE (this gets interrupted by SIGCHLD, but it's resumed)
+		assert(!p.running());
 	}
 	
 	//{

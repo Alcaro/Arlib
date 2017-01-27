@@ -35,8 +35,12 @@ ARWUTF ?= 0
 ARSOCKET ?= 0
 ARSOCKET_SSL ?= openssl
 
-DEBUG ?= 1
 OPT ?= 0
+ifeq ($(OPT),1)
+  DEBUG ?= 0
+else
+  DEBUG ?= 1
+endif
 
 CC = gcc
 CFLAGS =
@@ -102,8 +106,9 @@ ifneq ($(OPT),0)
   ifeq ($(OPT),spd)
     CONF_CFLAGS += -O3
   endif
-  LFLAGS += -Wl,--gc-sections -s
-  DEBUG = 0
+  ifneq ($(DEBUG),1)
+    LFLAGS += -Wl,--gc-sections -s
+  endif
   OBJNAME += -opt
 endif
 ifeq ($(DEBUG),1)

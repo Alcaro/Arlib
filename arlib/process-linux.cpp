@@ -124,6 +124,14 @@ void process::update(bool sleep)
 	
 	if (stdout_fd != -1) update_piperead(stdout_fd, stdout_buf);
 	if (stderr_fd != -1) update_piperead(stderr_fd, stderr_buf);
+	
+	if (stdout_buf.size()+stderr_buf.size() > this->outmax)
+	{
+		if (stdout_fd) close(stdout_fd);
+		if (stderr_fd) close(stderr_fd);
+		stdout_fd = -1;
+		stderr_fd = -1;
+	}
 }
 
 bool process::launch(cstring path, arrayview<string> args)

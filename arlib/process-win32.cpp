@@ -81,9 +81,11 @@ bool process::launch(cstring path, arrayview<string> args)
 	update();
 	return true;
 }
+
 //returns whether it did anything
 static bool update_piperead(HANDLE h, array<byte>& out)
 {
+	if (!h) return false;
 	DWORD newbytes;
 //printf("[");
 	if (!PeekNamedPipe(h, NULL,0, NULL, &newbytes, NULL)) return false; // happens on process death
@@ -136,6 +138,14 @@ void process::update(bool sleep)
 	
 	didsomething |= update_piperead(stdout_h, stdout_buf);
 	didsomething |= update_piperead(stderr_h, stderr_buf);
+	
+	if (stdout_buf.size()+stderr_buf.size() > this->outmax)
+	{
+		if (stdout_h) CloseHandle(stdout_h);
+		if (stderr_h) CloseHandle(stderr_h);
+		stdout_h = NULL;
+		stderr_h = NULL;
+	}
 	
 	//horrible hack, but Windows can't sanely select() pipes
 	//the closest match I can find is "asynchronous read of 1 byte; when it finishes, peek the pipe and read whatever else is there"

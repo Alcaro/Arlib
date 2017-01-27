@@ -230,7 +230,7 @@ static int socketlisten_create_ip6(int port)
 	sa.sin6_port = htons(port);
 	
 	int fd = mksocket(AF_INET6, SOCK_STREAM, 0);
-	if (fd < 0) goto fail;
+	if (fd < 0) return -1;
 	
 	if (setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, false) < 0) goto fail;
 	if (bind(fd, (struct sockaddr*)&sa, sizeof(sa)) < 0) goto fail;
@@ -244,6 +244,8 @@ fail:
 
 socketlisten* socketlisten::create(int port)
 {
+	initialize();
+	
 	int fd = -1;
 	if (fd<0) fd = socketlisten_create_ip6(port);
 #if defined(_WIN32)

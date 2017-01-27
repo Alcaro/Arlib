@@ -11,7 +11,7 @@ inline string bmlwriter::indent()
 
 void bmlwriter::node(cstring name, cstring val, mode m, bool enter)
 {
-	m = typeof(val, m);
+	m = type(val, m);
 	bool inlined = (m <= icol && m_caninline && !enter);
 	if (m_data)
 	{
@@ -62,7 +62,7 @@ void bmlwriter::enter(cstring name, cstring val, mode m) { node(name, val, m, tr
 void bmlwriter::node(cstring name, cstring val, mode m) { node(name, val, m, false); }
 void bmlwriter::exit() { m_indent--; m_caninline = false; }
 
-bmlwriter::mode bmlwriter::typeof_core(cstring val)
+bmlwriter::mode bmlwriter::type_core(cstring val)
 {
 	if (val.contains("\n") || val[0]==' ' || val[0]=='\t' || val[~0]==' ' || val[~0]=='\t') return multiline;
 	if (val.contains("\"")) return col;
@@ -71,12 +71,12 @@ bmlwriter::mode bmlwriter::typeof_core(cstring val)
 	return anon;
 }
 
-bmlwriter::mode bmlwriter::typeof(cstring val, mode m) const
+bmlwriter::mode bmlwriter::type(cstring val, mode m) const
 {
 	bool inlined = (m <= icol);
 	if (m <= icol) m = (mode)(m+4);
 	
-	m = max(typeof_core(val), m);
+	m = max(type_core(val), m);
 	if (inlined && m != multiline && m_caninline) return (mode)(m-4);
 	else return m;
 }
