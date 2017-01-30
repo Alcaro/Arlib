@@ -88,13 +88,41 @@ bool fromstring(cstring s, bool& out)
 	return false;
 }
 
+
+string tostringhex(arrayview<byte> val)
+{
+	string ret;
+	arrayvieww<byte> retb = ret.construct(val.size()*2);
+	for (size_t i=0;i<val.size();i++)
+	{
+		sprintf((char*)retb.slice(i*2, 2).ptr(), "%.2X", val[i]);
+	}
+	return ret;
+}
+
+bool fromstringhex(cstring s, arrayvieww<byte> val)
+{
+	if (val.size()*2 != s.length()) return false;
+	bool ok = true;
+	for (size_t i=0;i<val.size();i++)
+	{
+		ok &= fromstringhex(s.csubstr(i*2, i*2+2), val[i]);
+	}
+	return ok;
+}
+bool fromstringhex(cstring s, array<byte>& val)
+{
+	val.resize(s.length()/2);
+	return fromstringhex(s, (arrayvieww<byte>)val);
+}
+
+
 template<typename T> void testunhex(const char * S, unsigned long long V)
 {
 	T a;
 	assert_eq(fromstringhex(S, a), true);
 	assert_eq(a, V);
 }
-
 test()
 {
 	testcall(testunhex<unsigned char     >("aa", 0xaa));
@@ -107,4 +135,23 @@ test()
 	testcall(testunhex<unsigned long     >("AAAAAAAA", 0xAAAAAAAA));
 	testcall(testunhex<unsigned long long>("aaaaaaaaaaaaaaaa", 0xaaaaaaaaaaaaaaaa));
 	testcall(testunhex<unsigned long long>("AAAAAAAAAAAAAAAA", 0xAAAAAAAAAAAAAAAA));
+	
+	byte foo[4] = {0x12,0x34,0x56,0x78};
+	assert_eq(tostringhex(arrayview<byte>(foo)), "12345678");
+	
+	assert(fromstringhex("87654321", arrayvieww<byte>(foo)));
+	assert_eq(foo[0], 0x87); assert_eq(foo[1], 0x65); assert_eq(foo[2], 0x43); assert_eq(foo[3], 0x21);
+	
+	array<byte> bar;
+	assert(fromstringhex("1234567890", bar));
+	assert_eq(bar.size(), 5);
+	assert_eq(bar[0], 0x12);
+	assert_eq(bar[1], 0x34);
+	assert_eq(bar[2], 0x56);
+	assert_eq(bar[3], 0x78);
+	assert_eq(bar[4], 0x90);
+	
+	assert(!fromstringhex("123456", arrayvieww<byte>(foo))); // not 4 bytes
+	assert(!fromstringhex("1234567", bar)); // odd length
+	assert(!fromstringhex("0x123456", bar)); // invalid symbol
 }

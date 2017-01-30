@@ -21,8 +21,12 @@ inline string tostringhex(unsigned int val)   { char ret[32]; sprintf(ret, "%X",
 inline string tostring(  signed long val)     { char ret[32]; sprintf(ret, "%li",  val); return ret; }
 inline string tostring(unsigned long val)     { char ret[32]; sprintf(ret, "%lu",  val); return ret; }
 inline string tostringhex(unsigned long val)  { char ret[32]; sprintf(ret, "%lX",  val); return ret; }
+inline string tostringhex2(unsigned long val) { char ret[32]; sprintf(ret, "%.2lX", val); return ret; }
+inline string tostringhex4(unsigned long val) { char ret[32]; sprintf(ret, "%.4lX", val); return ret; }
+inline string tostringhex6(unsigned long val) { char ret[32]; sprintf(ret, "%.6lX", val); return ret; }
+inline string tostringhex8(unsigned long val) { char ret[32]; sprintf(ret, "%.8lX", val); return ret; }
 #ifdef _WIN32
-# ifdef __GNUC__ // my GCC doesn't recognize I64
+# ifdef __GNUC__ // my GCC doesn't recognize I64, but msvcrt does
 #  pragma GCC diagnostic push
 #  pragma GCC diagnostic ignored "-Wformat"
 # endif
@@ -65,6 +69,10 @@ bool fromstringhex(cstring s, unsigned long long & out);
 bool fromstring(cstring s, float& out);
 bool fromstring(cstring s, double& out);
 bool fromstring(cstring s, bool& out);
+
+string tostringhex(arrayview<byte> val);
+bool fromstringhex(cstring s, arrayvieww<byte> val);
+bool fromstringhex(cstring s, array<byte>& val);
 
 #define ALLSTRINGABLE(x) \
 	x(string) \

@@ -74,7 +74,7 @@ public:
 	
 	//If you pass in data that's not valid for that mode (for example, val="foo bar" and mode=eq),
 	// then it silently switches to the lowest working mode (in the above example, quote).
-	//Since enter() implies the tag has children, it will also disobey the inline modes; use node() if you want it inlined.
+	//Since enter() implies the tag has children, it will disobey the inline modes; use node() if you want it inlined.
 	void enter(cstring name, cstring val, mode m = anon);
 	void exit();
 	void linebreak();
@@ -87,6 +87,11 @@ public:
 	//Tells what mode will actually be used if node() is called with these parameters and in this context.
 	//To ask what enter() would do, call this with a non-inline mode.
 	mode type(cstring val, mode m) const;
+	
+	//Given an arbitrary string, returns a string containing only characters valid in node names ([a-zA-Z0-9.-]+). Not used automatically.
+	static string escape(cstring val);
+	//Given a string not from escape(), return value is undefined.
+	static string unescape(cstring val);
 	
 private:
 	void node(cstring name, cstring val, mode m, bool enter);

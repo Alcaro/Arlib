@@ -78,6 +78,18 @@ struct ser8 {
 	}
 };
 
+struct ser9 {
+	byte foo[4];
+	array<byte> bar;
+	
+	template<typename T>
+	void serialize(T& s)
+	{
+		s.hex("foo", arrayvieww<byte>(foo));
+		s.hex("bar", bar);
+	}
+};
+
 test()
 {
 	{
@@ -129,10 +141,26 @@ test()
 		item.f = 0xAA;
 		item.g = 0xAAAA;
 		item.h = 0xAAAAAAAA;
-		item.i = 0xAAAAAAAA;
+		item.i = 0xAAAAAAAA; // this could have another eight As on linux, but why would I even do that
 		item.j = 0xAAAAAAAAAAAAAAAA;
 		assert_eq(bmlserialize(item), "f=AA\ng=AAAA\nh=AAAAAAAA\ni=AAAAAAAA\nj=AAAAAAAAAAAAAAAA");
 	}
+	
+	{
+		ser9 item;
+		item.foo[0] = 0x12;
+		item.foo[1] = 0x34;
+		item.foo[2] = 0x56;
+		item.foo[3] = 0x78;
+		item.bar.append(0x12);
+		item.bar.append(0x34);
+		item.bar.append(0x56);
+		item.bar.append(0x78);
+		assert_eq(bmlserialize(item), "foo=12345678\nbar=12345678");
+	}
+	
+	//TODO: when adding a dict class, make sure the key "C:/Users/Administrator/My Documents/!TOP SECRET!.docx" is processed properly
+	//it should become "--C-3A-2FUsers-2FAdministrator-2FMy-20Documents-2F-21TOP-20SECRET-21.docx"
 }
 
 test()
@@ -207,6 +235,28 @@ test()
 		assert_eq(item.h, 0xAAAAAAAA);
 		assert_eq(item.i, 0xAAAAAAAA);
 		assert_eq(item.j, 0xAAAAAAAAAAAAAAAA);
+	}
+	
+	{
+		ser8 item = bmlunserialize<ser8>("f=AA\ng=AAAA\nh=AAAAAAAA\ni=AAAAAAAA\nj=AAAAAAAAAAAAAAAA");
+		assert_eq(item.f, 0xAA);
+		assert_eq(item.g, 0xAAAA);
+		assert_eq(item.h, 0xAAAAAAAA);
+		assert_eq(item.i, 0xAAAAAAAA);
+		assert_eq(item.j, 0xAAAAAAAAAAAAAAAA);
+	}
+	
+	{
+		ser9 item = bmlunserialize<ser9>("foo=12345678\nbar=12345678");
+		assert_eq(item.foo[0], 0x12);
+		assert_eq(item.foo[1], 0x34);
+		assert_eq(item.foo[2], 0x56);
+		assert_eq(item.foo[3], 0x78);
+		assert_eq(item.bar.size(), 4);
+		assert_eq(item.bar[0], 0x12);
+		assert_eq(item.bar[1], 0x34);
+		assert_eq(item.bar[2], 0x56);
+		assert_eq(item.bar[3], 0x78);
 	}
 }
 #endif

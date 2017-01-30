@@ -81,6 +81,46 @@ bmlwriter::mode bmlwriter::type(cstring val, mode m) const
 	else return m;
 }
 
+string bmlwriter::escape(cstring val)
+{
+	string esc = "--";
+	bool needescape = (val.startswith("--"));
+	for (byte c : val.bytes())
+	{
+		if (isalnum(c) || c=='.') esc+=c;
+		else if (c=='-') esc+="--";
+		else { esc+="-"+tostringhex2((uint8_t)c); needescape=true; }
+	}
+	if (needescape) return esc;
+	else return val;
+}
+
+string bmlwriter::unescape(cstring val)
+{
+	if (!val.startswith("--")) return val;
+	
+	string out;
+	for (size_t i=2;i<val.length();i++)
+	{
+		if (val[i]=='-')
+		{
+			byte tmp;
+			if (val[i+1]=='-')
+			{
+				i++;
+				out += '-';
+			}
+			else if (fromstringhex(val.csubstr(i+1, i+3), tmp))
+			{
+				i += 2;
+				out += tmp;
+			}
+		}
+		else out += val[i];
+	}
+	return out;
+}
+
 
 #ifdef ARLIB_TEST
 test()
@@ -224,6 +264,16 @@ test()
 		
 		assert_eq(w.finish(), "a\n  #x\n  b\n    :c\n    :d\n  #x");
 	}
+	
+	assert_eq(bmlwriter::escape("foo"), "foo");
+	assert_eq(bmlwriter::escape("-foo"), "-foo");
+	assert_eq(bmlwriter::escape("--foo"), "------foo");
+	assert_eq(bmlwriter::escape("-foo!"), "----foo-21");
+	
+	assert_eq(bmlwriter::unescape("foo"), "foo");
+	assert_eq(bmlwriter::unescape("-foo"), "-foo");
+	assert_eq(bmlwriter::unescape("------foo"), "--foo");
+	assert_eq(bmlwriter::unescape("----foo-21"), "-foo!");
+	assert_eq(bmlwriter::unescape("--foo-2Q"), "foo2Q");
 }
-
 #endif
