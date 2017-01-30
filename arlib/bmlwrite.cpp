@@ -1,5 +1,6 @@
 #include "bml.h"
 #include "test.h"
+#include <ctype.h>
 
 inline string bmlwriter::indent()
 {

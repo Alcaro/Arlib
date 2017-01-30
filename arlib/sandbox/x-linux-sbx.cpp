@@ -1,5 +1,5 @@
 #ifdef __linux__
-#include "sandbox-internal.h"
+#include "x-sandbox-internal.h"
 #include "../thread/atomic.h"
 #include <signal.h>
 #include <string.h>

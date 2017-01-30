@@ -65,7 +65,7 @@ static bool closefrom(int lowfd)
 	return true;
 }
 
-static void update_piperead(int& fd, array<byte>& out)
+static void update_piperead(int& fd, array<byte>& out, size_t limit)
 {
 	while (true)
 	{
@@ -74,6 +74,7 @@ static void update_piperead(int& fd, array<byte>& out)
 		if (bytes>0) out += arrayview<byte>(buf, bytes);
 		if (bytes==0) { close(fd); fd=-1; }
 		if (bytes<=0) break;
+		if (out.size() > limit) break;
 	}
 }
 void process::update(bool sleep)
@@ -122,10 +123,10 @@ void process::update(bool sleep)
 		}
 	}
 	
-	if (stdout_fd != -1) update_piperead(stdout_fd, stdout_buf);
-	if (stderr_fd != -1) update_piperead(stderr_fd, stderr_buf);
+	if (stdout_fd != -1) update_piperead(stdout_fd, stdout_buf, outmax-stderr_buf.size());
+	if (stderr_fd != -1) update_piperead(stderr_fd, stderr_buf, outmax-stdout_buf.size());
 	
-	if (stdout_buf.size()+stderr_buf.size() > this->outmax)
+	if (stdout_buf.size()+stderr_buf.size() > outmax)
 	{
 		if (stdout_fd) close(stdout_fd);
 		if (stderr_fd) close(stderr_fd);

@@ -1,5 +1,5 @@
 #ifdef __linux__
-#include "sandbox-internal.h"
+#include "x-sandbox-internal.h"
 #include <errno.h>
 #include <limits.h>
 #include <signal.h>

@@ -1,5 +1,5 @@
 #ifdef __linux__
-#include "sandbox-internal.h"
+#include "x-sandbox-internal.h"
 #undef bind
  #include <sys/types.h> /* See NOTES */
 #include <sys/socket.h>

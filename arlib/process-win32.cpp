@@ -83,12 +83,13 @@ bool process::launch(cstring path, arrayview<string> args)
 }
 
 //returns whether it did anything
-static bool update_piperead(HANDLE h, array<byte>& out)
+static bool update_piperead(HANDLE h, array<byte>& out, size_t limit)
 {
 	if (!h) return false;
 	DWORD newbytes;
 //printf("[");
 	if (!PeekNamedPipe(h, NULL,0, NULL, &newbytes, NULL)) return false; // happens on process death
+	if (out.size() + newbytes > limit) newbytes = limit-out.size();
 //printf("]");
 	if (newbytes==0) return false;
 	size_t oldbytes = out.size();
@@ -136,8 +137,8 @@ void process::update(bool sleep)
 		this->stdin_h = NULL;
 	}
 	
-	didsomething |= update_piperead(stdout_h, stdout_buf);
-	didsomething |= update_piperead(stderr_h, stderr_buf);
+	didsomething |= update_piperead(stdout_h, stdout_buf, outmax-stderr_buf.size());
+	didsomething |= update_piperead(stderr_h, stderr_buf, outmax-stdout_buf.size());
 	
 	if (stdout_buf.size()+stderr_buf.size() > this->outmax)
 	{

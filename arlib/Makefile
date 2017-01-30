@@ -5,7 +5,7 @@
 #PATH is the source filename, including extension, relative to project root, with slashes replaced with double underscore
 #example: obj/DEFAULT___linux___arlib__file-posix.cpp.o
 
-ifneq (,$(wildcard string-test.cpp))
+ifneq (,$(wildcard string.cpp))
   $(error wrong build directory, go up one level)
 endif
 
@@ -197,6 +197,9 @@ endif
 ifeq ($(ARSANDBOX),1)
   SOURCES_ARLIB += arlib/sandbox/*.cpp
   CONF_CFLAGS += -DARLIB_SANDBOX
+$(call OBJMANGLE,ARLIB,arlib/sandbox/linux-sand.cpp): arlib/sandbox/linux-sand.cpp arlib/sandbox/bpf.inc | obj
+arlib/sandbox/bpf.inc: arlib/sandbox/bpf.S arlib/sandbox/bpfasm.py
+	arlib/sandbox/bpfasm.py $< $@
   #not true since the windows sandbox isn't a real sandbox
   #ifeq ($(OS),windows)
   #  #both sandbox and WuTF need to redirect functions; this implementation is in WuTF

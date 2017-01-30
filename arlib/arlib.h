@@ -46,7 +46,7 @@
 #endif
 
 #ifdef ARLIB_SANDBOX
-//#include "sandbox/sandbox.h"
+#include "sandbox/sandbox.h"
 #endif
 
 #ifdef ARLIB_SOCKET

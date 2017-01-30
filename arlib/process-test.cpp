@@ -93,8 +93,8 @@ test()
 		assert(p.launch(YES));
 		p.wait();
 		string out = p.read();
-		assert(out.length() >= 1024);
-		assert(out.length() < 65536);
+		assert(out.length() >= 1024); // it can read a bit more than 1K if it wants to, buffer size is 4KB
+		assert(out.length() <= 8192); // on windows, limit is honored exactly
 	}
 	
 	{
@@ -115,7 +115,6 @@ test()
 		assert_eq(p.read().length(), lots_of_data.length());
 	}
 	
-	test_skip("too slow");
 	{
 		process p;
 		p.interact(true);
