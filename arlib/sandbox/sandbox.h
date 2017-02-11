@@ -26,9 +26,17 @@
 class sandcomm;
 class sandproc : public process {
 	sandcomm* conn;
+	
+	pthread_t ptrace_thr;
+	void ptrace_func();
+	static void* ptrace_func_c(void* arg);
+	
 	void preexec_fn(execparm* params);
+	bool launch_impl(cstring path, arrayview<string> args) override;
+	void waitpid_select(bool sleep) override;
+	
 public:
-	sandproc() { this->conn = NULL; this->preexec = bind_this(&sandproc::preexec_fn); }
+	sandproc() : conn(NULL), is_sandbox(true) {}
 	
 	//If the child process uses Arlib, this allows convenient communication with it. Must be called before starting the child.
 	//Like process, the object is not thread safe.

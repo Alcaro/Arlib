@@ -12,9 +12,6 @@ class process : nocopy {
 	size_t outmax = SIZE_MAX;
 	
 #ifdef __linux__
-	pid_t pid = -1;
-	int exitcode = -1;
-	
 	int stdin_fd = -1;
 	int stdout_fd = -1;
 	int stderr_fd = -1;
@@ -22,6 +19,9 @@ class process : nocopy {
 	void destruct();
 	
 protected:
+	pid_t pid = -1;
+	int exitcode = -1;
+	
 	//WARNING: fork() only clones the calling thread. Other threads could be holding important
 	// resources, such as the malloc mutex.
 	//As such, the preexec callback must only call async-signal-safe functions.
@@ -33,6 +33,10 @@ protected:
 		                              // Remember that you can't call malloc, so set this up before calling this.
 	};
 	function<void(execparm* params)> preexec;
+	
+	//virtual void waitpid_select(bool sleep);
+	virtual bool launch_impl(cstring path, arrayview<string> args);
+	
 #endif
 #ifdef _WIN32
 	HANDLE proc = NULL;
@@ -49,7 +53,11 @@ public:
 	
 	//Argument quoting is fairly screwy on Windows. Command line arguments at all are fairly screwy on Windows.
 	//You may get weird results if you use too many backslashes, quotes and spaces.
+#ifdef __linux__
+	bool launch(cstring path, arrayview<string> args) { return launch_impl(path, args); }
+#else
 	bool launch(cstring path, arrayview<string> args);
+#endif
 	
 	template<typename... Args>
 	bool launch(cstring path, Args... args)
@@ -102,7 +110,7 @@ public:
 	
 	bool running(int* exitcode = NULL);
 	void wait(int* exitcode = NULL);
-	void terminate(); // The prpcess is automatically terminated if the object is destroyed.
+	void terminate(); // The process is automatically terminated if the object is destroyed.
 	
 	~process();
 };

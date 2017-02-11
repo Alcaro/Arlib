@@ -195,6 +195,9 @@ ifeq ($(ARTHREAD),1)
 endif
 
 ifeq ($(ARSANDBOX),1)
+  ifneq ($(ARTHREAD),1)
+    $(error the sandbox requires threads support)
+  endif
   SOURCES_ARLIB += arlib/sandbox/*.cpp
   CONF_CFLAGS += -DARLIB_SANDBOX
 $(call OBJMANGLE,ARLIB,arlib/sandbox/linux-sand.cpp): arlib/sandbox/linux-sand.cpp arlib/sandbox/bpf.inc | obj

@@ -8,7 +8,7 @@
 //lock_decr(T*)
 //lock_xchg(T*, T)
 //lock_cmpxchg(T*, T, T)
-//All of them use aquire-release ordering. If you know what you're doing, you can append _acq, _rel or _loose.
+//All of them use acquire-release ordering. If you know what you're doing, you can append _acq, _rel or _loose.
 
 //All of these functions (except store) return the value before the operation.
 //(cmp)xchg obviously does, so to ease memorization, the others do too.

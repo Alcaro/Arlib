@@ -13,6 +13,11 @@ void thread_create(function<void()> start);
 
 #include "atomic.h"
 #include <string.h>
+#if defined(__unix__)
+#include <pthread.h>
+#include <semaphore.h>
+#include <errno.h>
+#endif
 
 //This is a simple tool that ensures only one thread is doing a certain action at a given moment.
 //Memory barriers are inserted as appropriate. Any memory access done while holding a lock is finished while holding this lock.
@@ -24,19 +29,16 @@ void thread_create(function<void()> start);
 // busy loop, or a hybrid scheme that spins a few times and then sleeps.
 //Remember to create all relevant mutexes before creating a thread.
 class mutex : nocopy {
-#if defined(__linux__)
-	int fut = 0;
-	
+#if defined(__unix__)
+	pthread_mutex_t mut;
 public:
-	//TODO: inline fast path
-	void lock();
-	bool try_lock();
-	void unlock();
+	mutex() { pthread_mutex_init(&mut, NULL); }
+	void lock() { pthread_mutex_lock(&mut); }
+	bool try_lock() { return pthread_mutex_trylock(&mut); }
+	void unlock() { pthread_mutex_unlock(&mut); }
+	~mutex() { pthread_mutex_destroy(&mut); }
 	
-#elif defined(__unix__)
-#error enable thread/pthread.cpp
 #elif _WIN32_WINNT >= 0x0600
-	
 #if !defined(_MSC_VER) || _MSC_VER > 1600
 	SRWLOCK srwlock = SRWLOCK_INIT;
 #else
@@ -61,7 +63,7 @@ public:
 	CRITICAL_SECTION cs;
 	
 public:
-	//yay, initializers. no real way to avoid them here.
+	//yay, initializers. no real way to avoid them here
 	mutex() { InitializeCriticalSection(&cs); }
 	void lock() { EnterCriticalSection(&cs); }
 	bool try_lock() { return TryEnterCriticalSection(&cs); }
@@ -120,47 +122,18 @@ public:
 	mutexlocker(mutex* m) { this->m=m; this->m->lock(); }
 	~mutexlocker() { this->m->unlock(); }
 };
-#define synchronized(mutex) with(mutexlocker LOCK(mutex))
+#define synchronized(mutex) using(mutexlocker LOCK(mutex))
 
-//This one lets one thread wake another.
-//The conceptual difference between this and a mutex is that while a mutex is intended to protect a
-// shared resource from being accessed simultaneously, an event is intended to wait until another
-// thread is done with something. A mutex is unlocked on the same thread as it's locked; an event is
-// unlocked on a different thread.
-//An example would be a producer-consumer scenario; if one thread is producing 200 items per second,
-// and another thread processes them at 100 items per second, then there will soon be a lot of
-// waiting items. An event allows the consumer to ask the producer to get to work, so it'll spend
-// half of its time sleeping, instead of filling the system memory.
-//An event is boolean; calling signal() twice will drop the extra signal. It is created in the unsignalled state.
-//Can be used by multiple threads, but each of signal(), wait() and signalled() should only be used by one thread.
-class event : nocopy {
-public:
-	event();
-	~event();
-	
-	void signal();
-	void wait();
-	bool signalled();
-	
-private:
-	void* data;
-};
 
-//This is like event, but it allows setting the event multiple times.
-class multievent {
+class semaphore {
+#if defined(__unix__)
+	sem_t sem;
 public:
-	multievent();
-	~multievent();
-	
-	//count is how many times to signal or wait. Calling it multiple times is equivalent to calling it with the sum of the arguments.
-	void signal(unsigned int count=1);
-	void wait(unsigned int count=1);
-	//This is how many signals are waiting to be wait()ed for. Can be below zero if something is currently waiting for this event.
-	//Alternate explaination: Increased for each entry to signal() and decreased for each entry to wait().
-	signed int count();
-private:
-	void* data;
-	signed int n_count;//Not used by all implementations.
+	semaphore() { sem_init(&sem, false, 0); }
+	void release() { sem_post(&sem); }
+	void wait() { while (sem_wait(&sem)<0 && errno==EINTR) {} } // why on earth is THIS one interruptible
+	~semaphore() { sem_destroy(&sem); }
+#endif
 };
 
 

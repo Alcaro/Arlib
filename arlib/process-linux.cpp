@@ -85,6 +85,7 @@ void process::update(bool sleep)
 		//any change to the timing, for example running it under strace, causes this issue to disappear
 		//feels like a kernel bug
 		//workaround: turn on blocking mode if I suspect that's happening
+		//TODO: this can hit if stdout/err are gone due to outlimit
 		bool block = (stdout_fd==-1 && stderr_fd==-1);
 		if (waitpid(this->pid, &this->exitcode, block ? 0 : WNOHANG) > 0)
 		{
@@ -135,7 +136,7 @@ void process::update(bool sleep)
 	}
 }
 
-bool process::launch(cstring path, arrayview<string> args)
+bool process::launch_impl(cstring path, arrayview<string> args)
 {
 	array<const char*> argv;
 	argv.append((char*)path.bytes().ptr());

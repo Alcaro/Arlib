@@ -1,6 +1,6 @@
 #include "thread.h"
 
-#ifdef ARLIB_THREAD
+#ifdef ARLIB_THREADggg
 namespace {
 
 //TODO: there is no procedure for destroying threads
