@@ -77,7 +77,7 @@ public:
 	
 	virtual ~socket() {}
 	
-	//Can be used to keep a socket alive across exec(). Don't use for an SSL socket.
+	//Can be used to keep a socket alive across exec(). Don't use for an SSL socket, use serialize() instead.
 	static socket* create_from_fd(int fd);
 	int get_fd() { return fd; }
 };
@@ -105,7 +105,8 @@ public:
 	//Can be used to keep a socket alive across exec().
 	//If successful, serialize() returns the the file descriptor needed to unserialize, and the socket is deleted.
 	//On failure, negative return and nothing happens.
-	virtual arrayview<byte> serialize(int* fd) { *fd=-1; return NULL; }
+	//Only available under TLSe.
+	array<byte> serialize(int* fd);
 	static socketssl* unserialize(int fd, arrayview<byte> data);
 };
 

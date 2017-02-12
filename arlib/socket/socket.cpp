@@ -170,7 +170,7 @@ public:
 	
 	~socket_impl()
 	{
-		close(fd);
+		if (fd>=0) close(fd);
 	}
 };
 

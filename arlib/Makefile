@@ -291,4 +291,6 @@ obj/arlibtest$(EXESUFFIX): $(OBJS)
 test: obj/arlibtest$(EXESUFFIX)
 	$(TESTRUNNER) obj/arlibtest$(EXESUFFIX)
 check: test
+test-all: obj/arlibtest$(EXESUFFIX)
+	$(TESTRUNNER) obj/arlibtest$(EXESUFFIX) +
 endif

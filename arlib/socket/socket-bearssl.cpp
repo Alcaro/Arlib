@@ -12,8 +12,8 @@
 //- serialization
 //- a slightly easier way to disable cert validation than 50 lines of wrappers
 //- sample code demonstrating how to load /etc/ssl/certs/ca-certificates.crt
+//    preferably putting most of it in BearSSL itself, but seems hard to implement without malloc
 //- more bool and int8_t, less int and char
-//- figure out what causes filesize growth; I'm getting 10536 bytes for unencrypted, but 96664 with this one
 
 extern "C" {
 #include "../deps/bearssl-0.3/inc/bearssl.h"
@@ -84,6 +84,7 @@ static bool initialize()
 		size_t tlen = br_pem_decoder_push(&pc, certs_pem.ptr(), certs_pem.size());
 		certs_pem = certs_pem.slice(tlen, certs_pem.size()-tlen);
 		
+		//what a strange API, does it really need both event streaming and a callback?
 		switch (br_pem_decoder_event(&pc)) {
 		case BR_PEM_BEGIN_OBJ:
 			cert_this.reset();
@@ -160,7 +161,7 @@ public:
 	
 	br_ssl_client_context sc;
 	br_x509_minimal_context xc;
-	x509_noanchor_context xwc;
+	x509_noanchor_context xwc = { NULL, NULL };
 	byte iobuf[BR_SSL_BUFSIZE_BIDI];
 	br_sslio_context ioc;
 	
@@ -224,7 +225,7 @@ public:
 
 socketssl* socketssl::create(socket* parent, cstring domain, bool permissive)
 {
-	if (!initialize()) return NULL;
+	if (!initialize() || !parent) return NULL;
 	return new socketssl_impl(parent, domain, permissive);
 }
 #endif

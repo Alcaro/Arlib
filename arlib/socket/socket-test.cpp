@@ -32,8 +32,7 @@ static void clienttest(socket* rs)
 	assert(s);
 	
 	//in HTTP, client talks first, ensure this doesn't return anything
-	array<byte> discard;
-	discard.resize(1);
+	byte discard[1];
 	assert(s->recv(discard) == 0);
 	
 	const char http_get[] =
@@ -61,38 +60,33 @@ test("SSL permissiveness")
 	assert( (s=socketssl::create("172.217.18.142", 443, true))); // I'd use san.filippo.io, but that one is self-signed as well; I want only one failure at once
 }
 
-static bool ser_test(autoptr<socketssl>& s)
+#ifdef ARLIB_SSL_TLSE
+static void ser_test(autoptr<socketssl>& s)
 {
 	socketssl* sp = s.release();
+	assert(sp);
+	assert(!s);
 	int fd;
 	array<byte> data = sp->serialize(&fd);
-	if (data)
-	{
-		s = socketssl::unserialize(fd, data);
-		return true;
-	}
-	else
-	{
-		s = sp;
-		return false;
-	}
+	assert(data);
+	s = socketssl::unserialize(fd, data);
 }
 test("SSL serialization")
 {
 	//test_skip("too slow");
 	autoptr<socketssl> s = socketssl::create("google.com", 443);
-	if (!ser_test(s)) test_skip("no serialization support");
+	//testcall(ser_test(s));
 	s->send("GET / HTTP/1.1\n");
-	assert(ser_test(s));
+	testcall(ser_test(s));
 	s->send("Host: google.com\nConnection: close\n\n");
-	assert(ser_test(s));
+	//testcall(ser_test(s));
 	array<byte> bytes = recvall(s, 4);
 	assert_eq(string(bytes), "HTTP");
-	assert(ser_test(s));
+	//testcall(ser_test(s));
 	bytes = recvall(s, 4);
 	assert_eq(string(bytes), "/1.1");
-	
 }
+#endif
 
 void listentest(const char * localhost, int port)
 {

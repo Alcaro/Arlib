@@ -83,64 +83,64 @@ sandproc::~sandproc() { delete this->conn; }
 	//comm->release(1);
 //}
 
-test()
-{
-	test_skip("not implemented");
-	{
-		sandproc p;
-		bool ok = p.launch("/bin/true");
-		assert(ok);
-		int status;
-		p.wait(&status);
-		assert_eq(status, 0);
-	}
-	
-	{
-		sandproc p[5];
-		for (int i=0;i<5;i++) assert(p[i].launch("/bin/sleep", "5"));
-		for (int i=0;i<5;i++)
-		{
-			int ret;
-			p[i].wait(&ret);
-			assert_eq(ret, 0);
-		}
-	}
-	
-	//{
-		//sandproc p;
-		//p.error();
-		//p.permit("/etc/not_passwd");
-		//p.permit("/etc/passw");
-		//p.permit("/etc/passwd/");
-		//p.permit("/etc/passwd_");
-		//assert(p.launch("/bin/cat", "/etc/passwd"));
-		//p.wait();
-		//assert_eq(p.read(), "");
-		//assert(p.error() != "");
-	//}
-	
-	//{
-		//sandproc p;
-		//p.error();
-		//p.permit("/etc/passwd");
-		//assert(p.launch("/bin/cat", "/etc/passwd"));
-		//p.wait();
-		//assert(p.read() != "");
-		//assert_eq(p.error(), "");
-	//}
-	
-	//{
-		//TODO: call sandfunc::enter in test.cpp
-		//sandfunc f;
-		//sandcomm* comm = f.launch(sandtest_fn);
-		//int* i = comm->malloc<int>();
-		//assert(i);
-		//*i = 1;
-		//comm->release(0);
-		//comm->wait(1);
-		//assert_eq(*i, 2);
-		//comm->free(i);
-	//}
-	
-}
+//test()
+//{
+//	test_skip("not implemented");
+//	{
+//		sandproc p;
+//		bool ok = p.launch("/bin/true");
+//		assert(ok);
+//		int status;
+//		p.wait(&status);
+//		assert_eq(status, 0);
+//	}
+//	
+//	{
+//		sandproc p[5];
+//		for (int i=0;i<5;i++) assert(p[i].launch("/bin/sleep", "5"));
+//		for (int i=0;i<5;i++)
+//		{
+//			int ret;
+//			p[i].wait(&ret);
+//			assert_eq(ret, 0);
+//		}
+//	}
+//	
+//	//{
+//		//sandproc p;
+//		//p.error();
+//		//p.permit("/etc/not_passwd");
+//		//p.permit("/etc/passw");
+//		//p.permit("/etc/passwd/");
+//		//p.permit("/etc/passwd_");
+//		//assert(p.launch("/bin/cat", "/etc/passwd"));
+//		//p.wait();
+//		//assert_eq(p.read(), "");
+//		//assert(p.error() != "");
+//	//}
+//	
+//	//{
+//		//sandproc p;
+//		//p.error();
+//		//p.permit("/etc/passwd");
+//		//assert(p.launch("/bin/cat", "/etc/passwd"));
+//		//p.wait();
+//		//assert(p.read() != "");
+//		//assert_eq(p.error(), "");
+//	//}
+//	
+//	//{
+//		//TODO: call sandfunc::enter in test.cpp
+//		//sandfunc f;
+//		//sandcomm* comm = f.launch(sandtest_fn);
+//		//int* i = comm->malloc<int>();
+//		//assert(i);
+//		//*i = 1;
+//		//comm->release(0);
+//		//comm->wait(1);
+//		//assert_eq(*i, 2);
+//		//comm->free(i);
+//	//}
+//	
+//}
 #endif

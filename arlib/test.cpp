@@ -25,6 +25,7 @@ _testdecl::_testdecl(void(*func)(), const char * loc, const char * name)
 	g_testlist = next;
 }
 
+static bool all_tests;
 int _test_result;
 
 static array<int> callstack;
@@ -69,8 +70,11 @@ void _testeqfail(cstring name, int line, cstring expected, cstring actual)
 
 void _test_skip(cstring why)
 {
-	if (!_test_result) puts("skipped: "+why);
-	_test_result = 2;
+	if (!all_tests)
+	{
+		if (!_test_result) puts("skipped: "+why);
+		_test_result = 2;
+	}
 }
 
 #undef main // the real main is #define'd to something stupid on test runs
@@ -79,6 +83,7 @@ int main(int argc, char* argv[])
 #ifndef ARGUI_NONE
 	window_init(&argc, &argv);
 #endif
+	all_tests = (argc>1);
 	
 	int count[3]={0,0,0};
 	
