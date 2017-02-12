@@ -21514,7 +21514,7 @@ int der_encode_short_integer(unsigned long num, unsigned char *out, unsigned lon
 
 #ifdef LTC_DER
 
-static const char *baseten = "0123456789";
+static const char baseten[] = "0123456789";
 
  #define STORE_V(y)                                         \
     out[x++] = der_ia5_char_encode(baseten[(y / 10) % 10]); \
@@ -24520,7 +24520,7 @@ error:
    Convert error codes to ASCII strings, Tom St Denis
  */
 
-static const char *err_2_str[] =
+static const char * const err_2_str[] =
 {
     "CRYPT_OK",
     "CRYPT_ERROR",
