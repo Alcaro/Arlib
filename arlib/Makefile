@@ -66,7 +66,6 @@ endif
 CCXXFLAGS += -Wno-comment
 
 EXESUFFIX =
-EXTRAOBJ ?=
 CONF_CXXFLAGS += $(CONF_CFLAGS)
 
 ifeq ($(OS),linux)
@@ -81,7 +80,7 @@ endif
 
 ifeq ($(OS),windows)
   EXESUFFIX = .exe
-#  EXTRAOBJ = obj/resource$(OBJNAME).o
+#  OBJ += obj/resource$(OBJNAME).o
 #  RC = windres
 #  RCFLAGS =
 #obj/resource$(OBJNAME).o: ico/*
@@ -237,6 +236,11 @@ ifeq ($(ARSOCKET),1)
   else ifeq ($(ARSOCKET_SSL),gnutls)
     CONF_CFLAGS += -DARLIB_SSL_GNUTLS
     CONF_LFLAGS += -lgnutls
+  else ifeq ($(ARSOCKET_SSL),bearssl)
+    CONF_CFLAGS += -DARLIB_SSL_BEARSSL
+    OBJS_LATE += arlib/deps/bearssl-0.3/build/libbearssl.a
+arlib/deps/bearssl-0.3/build/libbearssl.a:
+	$(MAKE) -C arlib/deps/bearssl-0.3/ CFLAGS='$(OPTFLAGS) -DBR_AES_X86NI=0' lib
   else ifeq ($(ARSOCKET_SSL),tlse)
     CONF_CFLAGS += -DARLIB_SSL_TLSE
     SOURCES_NOWARN += arlib/deps/tlse.c
@@ -257,10 +261,10 @@ endif
 
 #On Windows, cleaning up the object directory is expected to be done with 'del /q obj\*' in a batch script.
 clean:
-	rm obj/* || true
+	rm -f obj/*
 
 clean-prof:
-	rm obj/*.o || true
+	rm -f obj/*.o
 
 obj:
 	mkdir obj
@@ -271,6 +275,7 @@ DOMAINS += DEFAULT ARLIB NOWARN
 OBJNAME := $(subst $(SPACE),,$(OBJNAME))
 SOURCES_DEFAULT := $(SOURCES)
 OBJS += $(foreach domain,$(sort $(DOMAINS)),$(call OBJMANGLE,$(domain),$(wildcard $(SOURCES_$(domain)))))
+OBJS += $(OBJS_LATE)
 
 .DEFAULT_GOAL := all
 all: $(OUTNAME)

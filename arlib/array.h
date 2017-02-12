@@ -305,7 +305,8 @@ public:
 		return this->items[index];
 	}
 	
-	void append(const T& item) { size_t pos = this->count; resize_grow(pos+1); this->items[pos] = item; }
+	void append(const arrayview<T>& item) = delete;
+	T& append(const T& item) { size_t pos = this->count; resize_grow(pos+1); this->items[pos] = item; return this->items[pos]; }
 	T& append() { size_t pos = this->count; resize_grow(pos+1); return this->items[pos]; }
 	void reset() { resize_shrink(0); }
 	

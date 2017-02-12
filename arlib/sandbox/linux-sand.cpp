@@ -34,7 +34,6 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <errno.h>
-#include <assert.h>
 #include <pthread.h>
 
 bool sandproc::launch_impl(cstring path, arrayview<string> args)
@@ -86,6 +85,7 @@ sandproc::~sandproc() { delete this->conn; }
 
 test()
 {
+	test_skip("not implemented");
 	{
 		sandproc p;
 		bool ok = p.launch("/bin/true");
@@ -110,6 +110,9 @@ test()
 		//sandproc p;
 		//p.error();
 		//p.permit("/etc/not_passwd");
+		//p.permit("/etc/passw");
+		//p.permit("/etc/passwd/");
+		//p.permit("/etc/passwd_");
 		//assert(p.launch("/bin/cat", "/etc/passwd"));
 		//p.wait();
 		//assert_eq(p.read(), "");

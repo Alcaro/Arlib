@@ -105,9 +105,8 @@ public:
 	//Can be used to keep a socket alive across exec().
 	//If successful, serialize() returns the the file descriptor needed to unserialize, and the socket is deleted.
 	//On failure, negative return and nothing happens.
-	virtual size_t serialize_size() { return 0; }
-	virtual tuple<int, array<byte>> serialize() { return tuple<int, array<byte>>(-1, NULL); }
-	static socketssl* unserialize(tuple<int, array<byte>> data);
+	virtual arrayview<byte> serialize(int* fd) { *fd=-1; return NULL; }
+	static socketssl* unserialize(int fd, arrayview<byte> data);
 };
 
 //socket::select() works on these, but recv/send will fail

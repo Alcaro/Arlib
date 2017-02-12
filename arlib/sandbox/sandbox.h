@@ -33,10 +33,10 @@ class sandproc : public process {
 	
 	void preexec_fn(execparm* params);
 	bool launch_impl(cstring path, arrayview<string> args) override;
-	void waitpid_select(bool sleep) override;
+	//void waitpid_select(bool sleep) override;
 	
 public:
-	sandproc() : conn(NULL), is_sandbox(true) {}
+	sandproc() : conn(NULL) {}
 	
 	//If the child process uses Arlib, this allows convenient communication with it. Must be called before starting the child.
 	//Like process, the object is not thread safe.

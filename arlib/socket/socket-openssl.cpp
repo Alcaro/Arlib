@@ -5,7 +5,7 @@
 #include <openssl/err.h>
 #include <openssl/x509v3.h>
 
-static SSL_CTX * ctx;
+static SSL_CTX* ctx;
 
 static void initialize()
 {
@@ -105,6 +105,16 @@ public:
 		SSL_free(ssl);
 		delete sock;
 	}
+	
+	arrayview<byte> serialize(int* fd)
+	{
+		*fd=-1;
+		return NULL;
+	}
+	static socketssl* unserialize(int fd, arrayview<byte> data)
+	{
+		return NULL;
+	}
 };
 
 socketssl* socketssl::create(socket* parent, cstring domain, bool permissive)
@@ -113,6 +123,10 @@ socketssl* socketssl::create(socket* parent, cstring domain, bool permissive)
 	if (!ctx) return NULL;
 	
 	return socketssl_impl::create(parent, domain, permissive);
+}
+socketssl* socketssl::unserialize(int fd, arrayview<byte> data)
+{
+	return socketssl_impl::unserialize(fd, data);
 }
 
 
