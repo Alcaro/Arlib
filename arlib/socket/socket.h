@@ -22,6 +22,7 @@ public:
 	//Returns NULL on connection failure.
 	static socket* create(cstring domain, int port);
 	//Always succeeds. If the server can't be contacted, returns failure on first write or read.
+	//NOTE: DNS lookup is still synchronous.
 	static socket* create_async(cstring domain, int port);
 	//Always succeeds. If the server can't be contacted, may return e_broken at some point, or may just discard everything.
 	static socket* create_udp(cstring domain, int port);
@@ -71,7 +72,8 @@ public:
 	int send(cstring data) { return this->send(data.bytes()); }
 	
 	//Returns an index to the sockets array, or negative if timeout expires. Negative timeout mean wait forever.
-	//It's possible that an active socket returns zero bytes. However, this is rare; repeatedly select()ing and processing the data will eventually sleep.
+	//It's possible that an active socket returns zero bytes.
+	// However, this is rare; repeatedly select()ing and processing the data will eventually sleep.
 	//(It may be caused by packets with wrong checksum, SSL renegotiation, or whatever.)
 	//static int select(socket* * socks, unsigned int nsocks, int timeout_ms = -1);
 	
@@ -82,18 +84,30 @@ public:
 	int get_fd() { return fd; }
 };
 
+//SSL feature matrix:
+//                      | OpenSSL | SChannel | GnuTLS | BearSSL | TLSe | Comments
+//Basic functionality   | Yes     | ?        | Yes    | Yes     | Yes* | TLSe doesn't support SNI
+//Nonblocking           | Yes     | ?        | Yes    | Yes     | Yes  | OpenSSL supports nonblocking, but not blocking
+//Permissive (expired)  | -       | -        | -      | -       | -    | Can't find a public server with expired key to test on
+//Permissive (unrooted) | Yes     | ?        | Yes    | Yes     | No
+//Permissive (bad name) | Yes     | ?        | Yes    | No      | No   | Bad names are very rare
+//Serialize             | No      | No       | No     | No      | No   | TLSe claims to support it, but I can't get it working
+//Server                | No      | No       | No     | No      | No
+//Binary size           | 4       | 2.5      | 4      | 80      | 169  | In kilobytes, estimated; DLLs not counted
+
 class socketssl : public socket {
 protected:
 	socketssl(){}
 public:
-	//If 'permissive' is true, the server certficate will be ignored.
-	//Expired, self-signed, untrusted root, wrong domain, everything's fine.
+	//If 'permissive' is false and the cert is untrusted (expired, bad root, wrong domain, etc), returns NULL.
 	static socketssl* create(cstring domain, int port, bool permissive=false)
 	{
 		return socketssl::create(socket::create(domain, port), domain, permissive);
 	}
 	//On entry, this takes ownership of the socket. Even if connection fails, the socket may not be used anymore.
-	//The socket must be a normal TCP socket (create_async is fine). UDP and nested SSL is not supported.
+	//The socket must be a normal TCP socket; UDP and nested SSL is not supported.
+	//socket::create_async counts as normal. However, this may return success immediately, even if the server certificate is bad.
+	// In this case, recv() will never succeed, and send() will never send anything to the server (but may buffer data internally).
 	static socketssl* create(socket* parent, cstring domain, bool permissive=false);
 	
 	//set_cert or set_cert_cb must be called before read or write.

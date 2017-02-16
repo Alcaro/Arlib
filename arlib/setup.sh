@@ -1,5 +1,5 @@
 #!/bin/bash
-[ -e Makefile ] && exit
+[ -e Makefile ] && echo 'Already configured' && exit
 
 program=$1
 [[ -z $program ]] && program=$(basename $(pwd))
@@ -8,8 +8,21 @@ echo '#include "arlib/arlib.h"' > arlib.h
 
 mkdir obj
 
-echo "PROGRAM = $program" > Makefile
-echo "include arlib/Makefile" >> Makefile
+cat > Makefile <<-EOF
+	PROGRAM = $program
+	ARGUI = 0
+	AROPENGL = 0
+	ARTHREAD = 0
+	ARWUTF = 0
+	ARSOCKET = 0
+	#valid values: openssl, gnutls, tlse, bearssl, no
+	#ignored on windows (other than 'no', which is obeyed), always uses schannel
+	#default openssl
+	ARSOCKET_SSL = tlse
+	ARSANDBOX = 0
+	
+	include arlib/Makefile
+EOF
 
 cat > z0_run.bat <<-EOF
 	goto q
@@ -43,10 +56,10 @@ cat > z6_run64.bat <<-EOF
 	pause
 	:q
 	cls
-	del $program64.exe
-	if exist $program64.exe goto h
-	mingw32-make CC=gcc64 CXX=g++64 LD=g++64 RCFLAGS="-Fpe-x86-64" OBJSUFFIX="-64" -j4 OUTNAME=$program64.exe
-	$program64.exe
+	del ${program}64.exe
+	if exist ${program}64.exe goto h
+	mingw32-make CC=gcc64 CXX=g++64 LD=g++64 RCFLAGS="-Fpe-x86-64" OBJSUFFIX="-64" -j4 OUTNAME=${program}64.exe
+	${program}64.exe
 	goto h
 EOF
 
@@ -102,3 +115,5 @@ cat > zt_testsuite.bat <<-EOF
 	pause
 	goto h
 EOF
+
+echo 'Done'

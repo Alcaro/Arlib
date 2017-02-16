@@ -1,17 +1,15 @@
 #include "socket.h"
 
 #ifdef ARLIB_SSL_OPENSSL
+#include "../thread.h"
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 #include <openssl/x509v3.h>
 
 static SSL_CTX* ctx;
 
-static void initialize()
+RUN_ONCE_FN(initialize)
 {
-	static bool initialized = false;
-	if (initialized) return;
-	initialized = true;
 	//SSL_load_error_strings(); // TODO
 	SSL_library_init();
 	ctx = SSL_CTX_new(SSLv23_client_method());
@@ -19,13 +17,12 @@ static void initialize()
 	SSL_CTX_set_cipher_list(ctx, "HIGH:!DSS:!aNULL@STRENGTH");
 }
 
-static bool validate_hostname(const char *hostname, const X509 *server_cert);
+static bool validate_hostname(const char * hostname, const X509 * server_cert);
 
 class socketssl_impl : public socketssl {
 public:
 	socket* sock;
 	SSL* ssl;
-	//bool nonblock;
 	
 	static socketssl_impl* create(socket* parent, cstring domain, bool permissive)
 	{
@@ -36,17 +33,13 @@ public:
 		ret->fd = parent->get_fd();
 		ret->ssl = SSL_new(ctx);
 		SSL_set_tlsext_host_name(ret->ssl, (const char*)domain);
-		//ret->nonblock = false;
 		SSL_set_fd(ret->ssl, ret->fd);
-		//TODO: set fd to nonblock
 		
 		if (!permissive)
 		{
 			SSL_set_verify(ret->ssl, SSL_VERIFY_PEER, NULL);
 		}
 		
-		//plausible cert failure cases: unrooted (including self-signed), expired, wrong domain
-		//permissive should allow the former two, but still block the third
 #if OPENSSL_VERSION_NUMBER >= 0x10100000 // >= 1.1.0
 #error test, especially set0 vs set1
 		SSL_set1_host(ssl, "example.com");
@@ -63,10 +56,12 @@ public:
 		bool ok = (SSL_connect(ret->ssl)==1);
 		
 #if OPENSSL_VERSION_NUMBER < 0x10002000 // < 1.0.2
-		if (ok && !permissive && !validate_hostname(domain, SSL_get_peer_certificate(ret->ssl)))
+		X509* cert = SSL_get_peer_certificate(ret->ssl);
+		if (ok && !permissive && !validate_hostname(domain, cert))
 		{
 			ok=false;
 		}
+		X509_free(cert);
 #endif
 		
 		if (!ok)
@@ -88,14 +83,15 @@ public:
 		return e_ssl_failure;
 	}
 	
-	//only supports nonblocking
-	int recv(arrayvieww<uint8_t> data, bool block = false)
+	int recv(arrayvieww<uint8_t> data, bool block)
 	{
+		setblock(fd, block);
 		return fixret(SSL_read(ssl, data.ptr(), data.size()));
 	}
 	
-	int sendp(arrayview<uint8_t> data, bool block = true)
+	int sendp(arrayview<uint8_t> data, bool block)
 	{
+		setblock(fd, block);
 		return fixret(SSL_write(ssl, data.ptr(), data.size()));
 	}
 	
@@ -105,16 +101,6 @@ public:
 		SSL_free(ssl);
 		delete sock;
 	}
-	
-	arrayview<byte> serialize(int* fd)
-	{
-		*fd=-1;
-		return NULL;
-	}
-	static socketssl* unserialize(int fd, arrayview<byte> data)
-	{
-		return NULL;
-	}
 };
 
 socketssl* socketssl::create(socket* parent, cstring domain, bool permissive)
@@ -123,10 +109,6 @@ socketssl* socketssl::create(socket* parent, cstring domain, bool permissive)
 	if (!ctx) return NULL;
 	
 	return socketssl_impl::create(parent, domain, permissive);
-}
-socketssl* socketssl::unserialize(int fd, arrayview<byte> data)
-{
-	return socketssl_impl::unserialize(fd, data);
 }
 
 

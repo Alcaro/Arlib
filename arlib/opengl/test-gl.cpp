@@ -3,7 +3,7 @@ windows:
 g++ -DARLIB_D3DTEST -DARLIB_OPENGL -DARGUI_WINDOWS -DAROPENGL_D3DSYNC -std=c++11 -fno-exceptions -fno-rtti -O3 *.cpp ../os.cpp ../gui/*.cpp ../malloc.cpp ../file-win32.cpp ../string.cpp ../memmem.cpp -lgdi32 -lcomctl32 -lcomdlg32 -o test.exe && test.exe && del test.exe
 
 linux:
-g++ -DARLIB_D3DTEST -DARLIB_OPENGL -DARGUI_GTK3 -DARGUIPROT_X11 -std=c++11 -fno-exceptions -fno-rtti -O3 *.cpp ../os.cpp ../gui/*.cpp ../malloc.cpp ../file-unix.cpp ../string.cpp ../memmem.cpp -ldl `pkg-config --cflags --libs gtk+-3.0` -lX11 -static-libgcc -o test
+g++ -DARLIB_D3DTEST -DARLIB_OPENGL -DARGUI_GTK3 -DARGUIPROT_X11 -std=c++11 -fno-exceptions -fno-rtti -O3 *.cpp ../os.cpp ../gui/*.cpp ../malloc.cpp ../file-unix.cpp ../string.cpp ../memmem.cpp -ldl `pkg-config --cflags --libs gtk+-3.0` -lX11 -o test
 */
 
 #ifdef ARLIB_D3DTEST
@@ -36,8 +36,11 @@ void math(int* data, int ndata, float& avg, float& stddev)
 
 void process(bool d3d)
 {
-	widget_viewport* port = widget_create_viewport(300, 200);
-	window* wnd = window_create(port);
+	printf("d3d=%i ", d3d);
+	fflush(stdout);
+	
+	static widget_viewport* port = widget_create_viewport(300, 200);
+	static window* wnd = window_create(port);
 	
 	uint32_t flags = aropengl::t_ver_3_3 | aropengl::t_debug_context;
 #ifdef AROPENGL_D3DSYNC
@@ -62,7 +65,7 @@ void process(bool d3d)
 	
 	uint64_t prev = perfcounter();
 	
-	for (int i=0;i<SKIP+FRAMES;i++)
+	for (int i=0;i<SKIP+FRAMES && wnd->is_visible();i++)
 	{
 		window_run_iter();
 		
@@ -84,13 +87,11 @@ void process(bool d3d)
 		prev = now;
 	}
 	
-	delete wnd;
-	
 	float avg;
 	float stddev;
 	math(times+SKIP, FRAMES, avg, stddev);
 	
-	printf("d3d=%i avg=%f stddev=%f ", d3d, avg, stddev);
+	printf("avg=%f stddev=%f ", avg, stddev);
 	std::sort(times+SKIP, times+SKIP+FRAMES);
 	printf("min=%i,%i ", times[SKIP+0], times[SKIP+1]);
 	printf("max=%i,%i,%i,%i,%i\n", times[SKIP+FRAMES-1], times[SKIP+FRAMES-2], times[SKIP+FRAMES-3], times[SKIP+FRAMES-4], times[SKIP+FRAMES-5]);

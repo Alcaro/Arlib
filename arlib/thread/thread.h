@@ -125,8 +125,8 @@ public:
 #define synchronized(mutex) using(mutexlocker LOCK(mutex))
 
 
-class semaphore {
-#if defined(__unix__)
+class semaphore : nomove {
+#ifdef __unix__
 	sem_t sem;
 public:
 	semaphore() { sem_init(&sem, false, 0); }
@@ -134,15 +134,55 @@ public:
 	void wait() { while (sem_wait(&sem)<0 && errno==EINTR) {} } // why on earth is THIS one interruptible
 	~semaphore() { sem_destroy(&sem); }
 #endif
+#ifdef _WIN32
+	HANDLE sem;
+public:
+	semaphore() { sem = CreateSemaphore(NULL, 0, 1000, NULL); }
+	void release() { ReleaseSemaphore(sem, 1, NULL); }
+	void wait() { WaitForSingleObject(sem, INFINITE); }
+	~semaphore() { CloseHandle(sem); }
+#endif
 };
 
 
-void thread_sleep(unsigned int usec);
+class runonce : nomove {
+	typedef void (*once_fn_t)(void);
+#ifdef __unix__
+	pthread_once_t once = PTHREAD_ONCE_INIT;
+public:
+	void run(once_fn_t fn) { pthread_once(&once, fn); }
+#endif
+#ifdef _WIN32
+#if _WIN32_WINNT >= 0x0600
+	INIT_ONCE once = INIT_ONCE_STATIC_INIT;
+	//strangely enough, pthread is the lowest common denominator here
+	static BOOL CALLBACK wrap(INIT_ONCE* once, void* param, void** context)
+	{
+		(*(once_fn_t*)param)();
+		return TRUE;
+	}
+public:
+	void run(once_fn_t fn)
+	{
+		InitOnceExecuteOnce(&once, wrap, &fn, NULL);
+	}
+#else
+#error no XP support
+#endif
+#endif
+};
+#define RUN_ONCE(fn) do { static runonce once; once.run(fn); } while(0);
+#define RUN_ONCE_FN(name) static void name##_core(); static void name() { RUN_ONCE(name##_core); } static void name##_core()
 
-//Returns a value that's unique to the current thread for as long as the process lives. Does not
-// necessarily have any relationship to OS-level thread IDs, but usually is.
-//This just forwards to somewhere in libc or kernel32 or something, but it's so rarely called it doesn't matter.
-size_t thread_get_id();
+
+//void thread_sleep(unsigned int usec);
+
+#ifdef __unix__
+static inline size_t thread_get_id() { return pthread_self(); }
+#endif
+#ifdef _WIN32
+static inline size_t thread_get_id() { return GetCurrentThreadId(); }
+#endif
 
 //This one creates 'count' threads, calls work() in each of them with 'id' from 0 to 'count'-1, and
 // returns once each thread has returned.
@@ -170,5 +210,7 @@ public:
 	bool try_lock() { return true; }
 	void unlock() { }
 };
+#define RUN_ONCE(fn) do { static bool first=true; if (first) fn(); first=false; } while(0);
+#define RUN_ONCE_FN(name) static void name##_core(); static void name() { RUN_ONCE(name##_core); } static void name##_core()
 
 #endif

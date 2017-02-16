@@ -3,6 +3,7 @@
 #ifdef ARLIB_SSL_BEARSSL
 #include "../file.h"
 #include "../stringconv.h"
+#include "../thread.h"
 //Wishlist:
 //- extern "C"
 //- br_sslio_tryread and br_sslio_trywrite
@@ -68,10 +69,8 @@ static bool append_cert(arrayview<byte> xc)
 	return true;
 }
 
-static bool initialize()
+RUN_ONCE_FN(initialize)
 {
-	if (certs) return true;
-	
 	array<byte> certs_pem_mem = file::read("/etc/ssl/certs/ca-certificates.crt");
 	arrayview<byte> certs_pem = certs_pem_mem;
 	
@@ -100,11 +99,11 @@ static bool initialize()
 		
 		case BR_PEM_ERROR:
 			certs.reset();
-			return false;
+			return;
 		}
 	}
 	
-	return true;
+	return;
 }
 
 
@@ -137,7 +136,8 @@ static unsigned xwc_end_chain(const br_x509_class ** ctx)
 	x509_noanchor_context* xwc = (x509_noanchor_context*)ctx;
 	unsigned r = (*xwc->inner)->end_chain(xwc->inner);
 	if (r == BR_ERR_X509_NOT_TRUSTED) return 0;
-	else return r;
+	//if (r == BR_ERR_X509_BAD_SERVER_NAME) return 0; // doesn't work
+	return r;
 }
 static const br_x509_pkey * xwc_get_pkey(const br_x509_class * const * ctx, unsigned * usages)
 {
@@ -163,7 +163,6 @@ public:
 	br_x509_minimal_context xc;
 	x509_noanchor_context xwc = { NULL, NULL };
 	byte iobuf[BR_SSL_BUFSIZE_BIDI];
-	br_sslio_context ioc;
 	
 	bool block;
 	
@@ -180,41 +179,129 @@ public:
 		}
 		br_ssl_engine_set_buffer(&sc.eng, iobuf, sizeof(iobuf), true);
 		br_ssl_client_reset(&sc, domain, false);
-		br_sslio_init(&ioc, &sc.eng, sock_read, this, sock_write, this);
 	}
 	
-	/*private*/ static int sock_read(void* ctx, byte* buf, size_t len)
+	//returns whether anything happened
+	/*private*/ bool process_send(bool block)
 	{
-		socketssl_impl* this_ = (socketssl_impl*)ctx;
-		return this_->sock->recv(arrayvieww<byte>(buf, len), this_->block);
+		if (!sock) return false;
+		
+		size_t buflen;
+		byte* buf = br_ssl_engine_sendrec_buf(&sc.eng, &buflen);
+		if (buflen)
+		{
+			int bytes = sock->sendp(arrayview<byte>(buf, buflen), block);
+			if (bytes < 0)
+			{
+				delete sock;
+				sock = NULL;
+				return true;
+			}
+			if (bytes > 0)
+			{
+				br_ssl_engine_sendrec_ack(&sc.eng, bytes);
+				return true;
+			}
+		}
+		return false;
 	}
-	/*private*/ static int sock_write(void* ctx, const byte * buf, size_t len)
+	
+	//returns whether anything happened
+	/*private*/ bool process_recv(bool block)
 	{
-		socketssl_impl* this_ = (socketssl_impl*)ctx;
-		return this_->sock->sendp(arrayview<byte>(buf, len), this_->block);
+		if (!sock) return false;
+		
+		size_t buflen;
+		byte* buf = br_ssl_engine_recvrec_buf(&sc.eng, &buflen);
+		if (buflen)
+		{
+			int bytes = sock->recv(arrayvieww<byte>(buf, buflen), block);
+			if (bytes < 0)
+			{
+				delete sock;
+				sock = NULL;
+				return true;
+			}
+			if (bytes > 0)
+			{
+				br_ssl_engine_recvrec_ack(&sc.eng, bytes);
+				return true;
+			}
+		}
+		return false;
+	}
+	
+	/*private*/ void process(bool block)
+	{
+		if (process_send(false)) block = false;
+		if (process_recv(block)) block = false;
+		if (process_send(block)) block = false;
+	}
+	
+	bool establish()
+	{
+		//https://bearssl.org/apidoc/bearssl__ssl_8h.html#ad58834389d963630e201c4d0f2fe4be6
+		//  br_ssl_engine_get_session_parameters
+		//"The initial handshake is completed when the context first allows application data to be injected."
+		size_t dummy;
+		while (!br_ssl_engine_sendapp_buf(&sc.eng, &dummy))
+		{
+			process(true);
+			if (!sock) return false;
+			if (br_ssl_engine_last_error(&sc.eng)!=BR_ERR_OK) return false;
+		}
+		return true;
 	}
 	
 	int recv(arrayvieww<byte> data, bool block)
 	{
-		this->block = block;
-		return br_sslio_read(&ioc, data.ptr(), data.size());
+		process(false);
+		
+	again:
+		if (!sock) return -1;
+		
+		size_t buflen;
+		byte* buf = br_ssl_engine_recvapp_buf(&sc.eng, &buflen);
+		if (buflen > data.size()) buflen = data.size();
+		if (!buflen)
+		{
+			if (block)
+			{
+				process(true);
+				goto again;
+			}
+			else return 0;
+		}
+		
+		memcpy(data.ptr(), buf, buflen);
+		br_ssl_engine_recvapp_ack(&sc.eng, buflen);
+		return buflen;
 	}
+	
 	int sendp(arrayview<byte> data, bool block)
 	{
-		if (block)
+		process(false);
+		
+	again:
+		if (!sock) return -1;
+		
+		size_t buflen;
+		byte* buf = br_ssl_engine_sendapp_buf(&sc.eng, &buflen);
+		if (buflen > data.size()) buflen = data.size();
+		if (!buflen)
 		{
-			this->block = true;
-			bool ok = true;
-			ok &= (br_sslio_write_all(&ioc, data.ptr(), data.size()) >= 0);
-			ok &= (br_sslio_flush(&ioc) >= 0);
-			if (ok) return data.size();
-			else return -1;
+			if (block)
+			{
+				process(true);
+				goto again;
+			}
+			else return 0;
 		}
-		else
-		{
-			this->block = false;
-			return br_sslio_write(&ioc, data.ptr(), data.size());
-		}
+		
+		memcpy(buf, data.ptr(), buflen);
+		br_ssl_engine_sendapp_ack(&sc.eng, buflen);
+		br_ssl_engine_flush(&sc.eng, false);
+		return buflen;
 	}
 	
 	~socketssl_impl()
@@ -225,7 +312,14 @@ public:
 
 socketssl* socketssl::create(socket* parent, cstring domain, bool permissive)
 {
-	if (!initialize() || !parent) return NULL;
-	return new socketssl_impl(parent, domain, permissive);
+	initialize();
+	if (!certs || !parent) return NULL;
+	socketssl_impl* ret = new socketssl_impl(parent, domain, permissive);
+	if (!ret->establish())
+	{
+		delete ret;
+		return NULL;
+	}
+	return ret;
 }
 #endif

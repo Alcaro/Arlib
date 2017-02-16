@@ -83,15 +83,13 @@ static int connect(const char * domain, int port)
 		close(fd);
 		return -1;
 	}
+	
 #ifndef _WIN32
 	setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, 1); // enable
 	setsockopt(fd, SOL_TCP, TCP_KEEPCNT, 3); // ping count before the kernel gives up
 	setsockopt(fd, SOL_TCP, TCP_KEEPIDLE, 30); // seconds idle until it starts pinging
 	setsockopt(fd, SOL_TCP, TCP_KEEPINTVL, 10); // seconds per ping once the pings start
 #else
-	u_long yes = 1;
-	ioctlsocket(fd, FIONBIO, &yes);
-	
 	struct tcp_keepalive keepalive = {
 		1,       // SO_KEEPALIVE
 		30*1000, // TCP_KEEPIDLE in milliseconds
@@ -110,7 +108,7 @@ static int connect(const char * domain, int port)
 
 } // close namespace
 
-//MSG_DONTWAIT is usually better, but accept() doesn't take that argument
+//MSG_DONTWAIT is usually better, but accept() and connect() don't take that argument
 void socket::setblock(int fd, bool newblock)
 {
 #ifdef _WIN32
@@ -128,23 +126,10 @@ namespace {
 
 class socket_impl : public socket {
 public:
-#ifdef _WIN32
-	bool m_blocking = true;
-	/*private*/ void setblock(bool newblock)
-	{
-		//if (m_blocking == newblock) return;
-		//m_blocking = newblock;
-		socket::setblock(this->fd, newblock);
-	}
-#else
-	/*private*/ void setblock(bool newblock) {} // MSG_DONTWAIT exists here
-#endif
-	
 	socket_impl(int fd) { this->fd = fd; }
 	
 	/*private*/ int fixret(int ret)
 	{
-//printf("r=%i e=%i wb=%i\n", ret, WSAGetLastError(), WSAEWOULDBLOCK);
 		if (ret > 0) return ret;
 		if (ret == 0) return e_closed;
 #ifdef __unix__
@@ -158,13 +143,17 @@ public:
 	
 	int recv(arrayvieww<byte> data, bool block = false)
 	{
-		setblock(block);
+#ifdef _WIN32 // for Linux, MSG_DONTWAIT is enough
+		socket::setblock(this->fd, block);
+#endif
 		return fixret(::recv(this->fd, (char*)data.ptr(), data.size(), MSG_NOSIGNAL | (block ? 0 : MSG_DONTWAIT)));
 	}
 	
 	int sendp(arrayview<byte> data, bool block = true)
 	{
-		setblock(block);
+#ifdef _WIN32
+		socket::setblock(this->fd, block);
+#endif
 		return fixret(::send(fd, (char*)data.ptr(), data.size(), MSG_NOSIGNAL | (block ? 0 : MSG_DONTWAIT)));
 	}
 	
@@ -192,7 +181,6 @@ socket* socket::create(cstring domain, int port)
 	return socket_wrap(connect(domain, port));
 }
 
-//static socket* socket::create_async(const char * domain, int port);
 //static socket* socket::create_udp(const char * domain, int port);
 
 //int socket::select(socket* * socks, int nsocks, int timeout_ms)
@@ -248,7 +236,7 @@ socketlisten* socketlisten::create(int port)
 	
 	int fd = -1;
 	if (fd<0) fd = socketlisten_create_ip6(port);
-#if defined(_WIN32)
+#if defined(_WIN32) && _WIN32_WINNT < 0x0600
 	//Windows XP can't dualstack the v6 addresses, so let's keep the fallback
 	if (fd<0) fd = socketlisten_create_ip4(port);
 #endif

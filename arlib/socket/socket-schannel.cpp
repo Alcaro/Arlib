@@ -4,6 +4,7 @@
 //but heavily rewritten for stability and compactness
 
 #ifdef ARLIB_SSL_SCHANNEL
+#include "../thread.h"
 #ifndef _WIN32
 #error SChannel only exists on Windows
 #endif
@@ -40,10 +41,8 @@ static CredHandle cred;
 #define SEC_Entry WINAPI
 #endif
 
-static void initialize()
+RUN_ONCE_FN(initialize)
 {
-	if (SSPI) return;
-	
 	//linking a DLL is easy, but when there's only one exported function, spending the extra effort is worth it
 	HMODULE secur32 = LoadLibraryA("secur32.dll");
 	typedef PSecurityFunctionTableA SEC_Entry (*InitSecurityInterfaceA_t)(void);

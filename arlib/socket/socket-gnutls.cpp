@@ -1,6 +1,7 @@
 #include "socket.h"
 
 #ifdef ARLIB_SSL_GNUTLS
+#include "../thread.h"
 //could use the gnutls C++ api, but why should I
 //extra dependency, and the added convenience isn't relevant on such a small component
 #include <gnutls/gnutls.h>
@@ -14,11 +15,8 @@ static bool init_ok = false;
 #define CAFILE "/etc/ssl/certs/ca-certificates.crt"
 static int _verify_certificate_callback(gnutls_session_t session);
 
-static void initialize()
+RUN_ONCE_FN(initialize)
 {
-	static bool initialized = false;
-	if (initialized) return;
-	
 #define CHECK(x) if ((x)<0) return
 	CHECK(gnutls_check_version("3.1.4") != NULL);
 	
@@ -90,8 +88,7 @@ public:
 		int ret;
 		do {
 			ret = gnutls_handshake(session);
-		}
-		while (ret < 0 && gnutls_error_is_fatal(ret) == 0);
+		} while (ret < 0 && !gnutls_error_is_fatal(ret));
 		if (ret < 0) return false;
 		
 		//char* desc = gnutls_session_get_desc(session);

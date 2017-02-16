@@ -5,6 +5,7 @@ extern "C" {
 #include "../deps/tlse.h"
 }
 #include "../file.h"
+#include "../thread.h"
 
 //TLSe flaws and limitations:
 //- can't share root certs between contexts (with possible exception of tls_accept, didn't check)
@@ -20,10 +21,8 @@ extern "C" {
 // separate context here to ensure they're not loaded multiple times, saves memory and time
 static TLSContext* rootcerts;
 
-static void initialize()
+RUN_ONCE_FN(initialize)
 {
-	if (rootcerts) return;
-	
 	rootcerts = tls_create_context(false, TLS_V12);
 	
 #ifdef __unix__

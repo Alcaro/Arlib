@@ -200,6 +200,7 @@ ifeq ($(ARSANDBOX),1)
   SOURCES_ARLIB += arlib/sandbox/*.cpp
   CONF_CFLAGS += -DARLIB_SANDBOX
 $(call OBJMANGLE,ARLIB,arlib/sandbox/linux-sand.cpp): arlib/sandbox/linux-sand.cpp arlib/sandbox/bpf.inc | obj
+#this could be in obj/, but if I put it there, Python is mandatory for building Arlib. I'd rather not.
 arlib/sandbox/bpf.inc: arlib/sandbox/bpf.S arlib/sandbox/bpfasm.py
 	arlib/sandbox/bpfasm.py $< $@
   #not true since the windows sandbox isn't a real sandbox

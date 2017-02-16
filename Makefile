@@ -7,7 +7,7 @@ ARSOCKET = 1
 #valid values: openssl, gnutls, tlse, bearssl, no
 #ignored on windows (other than 'no', which is obeyed), always uses schannel
 #default openssl
-ARSOCKET_SSL = tlse
+ARSOCKET_SSL = bearssl
 ARSANDBOX = 1
 
 #honored variables, in addition to the ones listed here:
