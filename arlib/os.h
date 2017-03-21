@@ -10,10 +10,6 @@
 #define DYLIB_MAKE_NAME(name) name DYLIB_EXT
 #endif
 
-//Nasty stuff going on here... it's impossible to construct this object.
-//The size varies per platform, so I have to allocate the object. This could be done by putting in a void* member,
-// but that's a pointless level of indirection - instead, I cast the allocated value and return that!
-//It's probably undefined, but the compiler won't be able to prove that, so it has to do what I want.
 class dylib : nocopy {
 	void* handle;
 	
@@ -23,14 +19,14 @@ public:
 	
 	//owned tells whether the DLL was loaded before calling this
 	//this is an atomic operation; if multiple threads call dylib::create for the same file, only one will get owned==true
-	//init() may only be called once
-	bool init(const char * filename, bool * owned=NULL);
+	//if called multiple times, unloads the previous dylib
+	bool init(const char * filename, bool * owned = NULL);
 	void* sym_ptr(const char * name);
 	funcptr sym_func(const char * name);
 	template<typename T> T sym(const char * name) { return (T)sym_func(name); }
 	
 	//Fetches multiple symbols. 'names' is expected to be a NUL-separated list of names, terminated with a blank one.
-	// (You don't need to do anything special to create this terminator. Just use the NUL terminator the compiler adds.)
+	// (This is easiest done by using multiple NUL-terminated strings. The compiler appends another NUL.)
 	//Returns whether all of them were successfully fetched. Failures are NULL.
 	bool sym_multi(funcptr* out, const char * names);
 	

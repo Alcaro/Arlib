@@ -51,7 +51,7 @@ public:
 	//(1) The more code paths, the more potential for bugs, especially the code paths I don't regularly test
 	//(2) Saving seven bytes is pointless, a mutex is for protecting other resources and they're bigger
 	//(3) Microsoft's implementation is probably better optimized
-	//(4) I can't test it without a machine running 8 or higher, and I don't have that.
+	//(4) I can't test it without a machine running 8 or higher, and I don't have that
 	
 public:
 	void lock() { AcquireSRWLockExclusive(&srwlock); }
@@ -192,7 +192,7 @@ void thread_split(unsigned int count, function<void(unsigned int id)> work);
 
 
 //It is permitted to define this as (e.g.) QThreadStorage<T> rather than compiler magic.
-//However, it must support operator=(T) and operator T(), so QThreadStorage is not directly usable. A subclass may be.
+//However, it must support operator=(T) and operator T(), so QThreadStorage is not directly usable. A wrapper may be.
 //An implementation must support all stdint.h types, all basic integral types (char, short, etc), and all pointers.
 #ifdef __GNUC__
 #define THREAD_LOCAL(t) __thread t

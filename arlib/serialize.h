@@ -11,12 +11,13 @@
 //public:
 //	static const bool serializing;
 //	
-//	//If the name isn't a valid BML node name (alphanumerics, dash and period only), undefined behavior.
 //	//Valid types:
 //	//- Any integral type ('char' doesn't count as integral)
 //	//- string (but not cstring)
 //	//- Any serializable object (see below)
-//	//- Any array of the above (but no nested arrays)
+//	//- Any array of the above (for BML, no nested arrays)
+//	//- For BML, the name must be a valid BML node name (alphanumerics, dash and period only), otherwise undefined behavior
+//	//    (if you're unsure, use bmlwriter::escape)
 //	template<typename T> void item(cstring name, T& item);
 //	
 //	//Similar to item().

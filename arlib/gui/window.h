@@ -401,13 +401,11 @@ public:
 	
 	//As this widget is resizable, it needs a way to report size changes.
 	//This is done via this function. Call it and the widget will move and resize the window to whereever this widget is located.
-	//If the widget changes size, this will be reported to onresize(). Guaranteed to only be called if actually changed.
+	//If the widget changes size, this will be reported to onresize() after resizing. Guaranteed to only be called if actually changed.
 	//This callback will be called if the widget is altered by resize(). The rest of Arlib avoids calling callbacks for API-sourced calls,
 	// but the video driver isn't the one who called resize().
-	//The driver must return the new window after the resize. This may be the same as the old one. If different,
-	// the driver is responsible for destroying the old one.
 	//If the program wants to destroy the video driver, it must call set_contents(0, NULL, NULL) before doing so.
-	//If the driver doesn't need the resize callback, it may return 0. However, set_contents() is still required.
+	//If the driver doesn't need the resize callback, NULL is fine. However, this function must still be called.
 	//ondestroy is called whenever the viewport is destroyed, if the viewport isn't disconnected first.
 	void set_child(uintptr_t windowhandle, function<void(unsigned int width, unsigned int height)> onresize, function<void()> ondestroy);
 	

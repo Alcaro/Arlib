@@ -36,15 +36,28 @@ void thread_create(function<void()> start)
 	CloseHandle(h);
 }
 
-//unsigned int thread_num_cores()
-//{
-//	SYSTEM_INFO sysinf;
-//	GetSystemInfo(&sysinf);
-//	return sysinf.dwNumberOfProcessors;
-//}
-//
-//void thread_sleep(unsigned int usec)
-//{
-//	Sleep(usec/1000);
-//}
+unsigned int thread_num_cores()
+{
+	SYSTEM_INFO sysinf;
+	GetSystemInfo(&sysinf);
+	return sysinf.dwNumberOfProcessors;
+}
+
+void thread_sleep(unsigned int usec)
+{
+	Sleep(usec/1000);
+}
+
+
+uintptr_t thread_get_id()
+{
+	//disassembly:
+	//call   *0x406118
+	//jmp    0x76c11427 <KERNEL32!GetCurrentThreadId+7>
+	//jmp    *0x76c1085c
+	//mov    %fs:0x10,%eax
+	//mov    0x24(%eax),%eax
+	//ret
+	return GetCurrentThreadId();
+}
 #endif

@@ -28,7 +28,7 @@ public:
 	static socket* create_udp(cstring domain, int port);
 	
 	enum {
-		e_lazy_dev = -1, // Whoever implemented this socket layer was lazy and just returned -1. Treat it as e_broken or an unknown error.
+		e_lazy_dev = -1, // Whoever implemented this socket handler was lazy and just returned -1. Treat it as e_broken or an unknown error.
 		e_closed = -2, // Remote host chose to gracefully close the connection.
 		e_broken = -3, // Connection was forcibly torn down.
 		e_udp_too_big = -4, // Attempted to process an unacceptably large UDP packet.
@@ -37,6 +37,7 @@ public:
 	};
 	
 	//WARNING: Most socket APIs treat read/write of zero bytes as EOF. Not this one! 0 is EWOULDBLOCK; EOF is an error.
+	// This reduces the number of special cases; EOF is usually treated the same way as unknown errors, and EWOULDBLOCK is usually not an error.
 	//The first two functions will process at least one byte, or if block is false, at least zero. send() sends all bytes before returning.
 	//For UDP sockets, partial reads or writes aren't possible; you always get one or zero packets.
 	virtual int recv(arrayvieww<byte> data, bool block = false) = 0;
@@ -93,8 +94,8 @@ public:
 //Permissive (bad name) | Yes     | ?        | Yes    | No      | No   | Bad names are very rare
 //Serialize             | No      | No       | No     | No      | No   | TLSe claims to support it, but I can't get it working
 //Server                | No      | No       | No     | No      | No
-//Binary size           | 4       | 2.5      | 4      | 80      | 169  | In kilobytes, estimated; DLLs not counted
-
+//Reputable author      | Yes     | Yes      | Yes    | Yes     | No
+//Binary size           | 4       | 2.5      | 4      | 80      | 169  | In kilobytes, estimated; DLLs not included
 class socketssl : public socket {
 protected:
 	socketssl(){}

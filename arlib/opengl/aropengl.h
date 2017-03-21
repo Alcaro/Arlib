@@ -100,6 +100,12 @@ public:
 		return true;
 	}
 	
+	//Must be called after the window is resized. Not needed if created from a viewport.
+	void notifyResize(unsigned int width, unsigned int height)
+	{
+		core->notifyResize(width, height);
+	}
+	
 	aropengl() { create(NULL); }
 	aropengl(context* core) { create(core); }
 	aropengl(uintptr_t parent, uintptr_t* window, uint32_t flags) { create(parent, window, flags); }

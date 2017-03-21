@@ -14,7 +14,7 @@ struct threaddata_pthread {
 };
 static void * threadproc(void * userdata)
 {
-	struct threaddata_pthread * thdat=(struct threaddata_pthread*)userdata;
+	struct threaddata_pthread * thdat = (struct threaddata_pthread*)userdata;
 	thdat->func();
 	free(thdat);
 	return NULL;
@@ -22,10 +22,10 @@ static void * threadproc(void * userdata)
 
 void thread_create(function<void()> start)
 {
-	struct threaddata_pthread * thdat=malloc(sizeof(struct threaddata_pthread));
-	thdat->func=start;
+	struct threaddata_pthread * thdat = malloc(sizeof(struct threaddata_pthread));
+	thdat->func = start;
 	pthread_t thread;
-	if (pthread_create(&thread, NULL, threadproc, thdat)) abort();
+	if (pthread_create(&thread, NULL, threadproc, thdat) != 0) abort();
 	pthread_detach(thread);
 }
 

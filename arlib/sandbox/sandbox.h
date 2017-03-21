@@ -4,7 +4,7 @@
 //
 //Exact rules:
 // Other than as allowed by the parent, the child may not read per-user data or system configuration,
-//  or write to permanent storage. Internet counts as permanent.
+//  or write to permanent storage. Internet counts as permanent. The child may find out what OS it's running on.
 
 //Not implemented on Windows. It provides plenty of ways to restrict a process, but
 //- All I could find are blacklists, disabling a particular privilege; I want whitelists
@@ -14,7 +14,7 @@
 //- There's little or no documentation on which privileges are required for the operations I need
 //- The lockdown functions are often annoying to call, involving variable-width arrays in
 //    structures, and LCIDs that likely vary between reboots
-//And I cannot trust such a system. I only trust whitelists, like Linux seccomp.
+//I cannot trust such a system. I only trust whitelists, like Linux seccomp.
 //Even Chrome couldn't find anything comprehensive; they use everything they can find (restricted token, job object, desktop,
 // SetProcessMitigationPolicy, firewall, etc), but some operations, such as accessing FAT32 volumes, still pass through.
 //It feels like the Windows sandboxing functions are designed for trusted code operating on untrusted data, rather than untrusted code.
@@ -38,7 +38,8 @@ class sandproc : public process {
 public:
 	sandproc() : conn(NULL) {}
 	
-	//If the child process uses Arlib, this allows convenient communication with it. Must be called before starting the child.
+	//If the child process uses Arlib, this allows convenient communication with it.
+	//Must be called before starting the child, and exactly once (or never).
 	//Like process, the object is not thread safe.
 	sandcomm* connect();
 	
@@ -48,9 +49,11 @@ public:
 	
 	//To start the sandbox, use process::launch(). Other process:: functions are also available.
 	
-	//Allows access to a file, or a directory and all of its contents.
-	//Usable both before and after launch(). Can not be undone, destroy the process if you want that.
-	void permit(cstring path, bool write);
+	//Allows access to a file, or a directory and all of its contents. Usable both before and after launch().
+	//Can not be undone, the process may already have opened the file; to be sure, destroy the process.
+	void permit(cstring path, bool writable) { permit_at(path, path, writable); }
+	//To allow moving the filesystem around. For example, /
+	void permit_at(cstring real, cstring mount_at, bool writable);
 	
 	~sandproc();
 };
@@ -58,6 +61,7 @@ public:
 class sandcomm : nomove {
 public:
 	//For thread safety purposes, the parent and child count as interacting with different objects.
+	//However, only one thread in each process may interact with the sandcomm object, or its associated sandproc.
 	
 	//If the process isn't in an Arlib sandbox, or parent didn't call connect(), returns NULL. Can only be called once.
 	static sandcomm* connect();
@@ -108,6 +112,6 @@ public:
 class sandfunc {
 public:
 	static void enter(); // Must be the first thing in main(), before window_init() or similar.
-	sandcomm* launch(void(*proc)(sandcomm* comm)); // Not the function<> template, pointers can't be passed like that
+	sandcomm* launch(void(*proc)(sandcomm* comm)); // Not the function<> template, pointers can't be passed around like that.
 };
 #endif

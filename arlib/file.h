@@ -95,7 +95,7 @@ public:
 		else return NULL;
 	}
 	
-	// May only be used if there are no mappings alive, not even read-only.
+	//May only be used if there are no mappings alive, not even read-only.
 	bool resize(size_t newsize) { return core->resize(newsize); }
 	//Writes outside the file will extend it. If the write starts after the current size, it's zero extended. Includes mmapw.
 	bool write(arrayview<byte> data, size_t start = 0) { return core->write(data, start); }
@@ -191,4 +191,13 @@ public:
 	autommap(const file& f, size_t start, size_t end) : arrayview(f.mmap(start, end)), f(f) {}
 	autommap(const file& f) : arrayview(f.mmap()), f(f) {}
 	~autommap() { f.unmap(*this); }
+};
+
+class autommapw : public arrayvieww<byte> {
+	file& f;
+public:
+	autommapw(file& f, arrayvieww<byte> b) : arrayvieww(b), f(f) {}
+	autommapw(file& f, size_t start, size_t end) : arrayvieww(f.mmapw(start, end)), f(f) {}
+	autommapw(file& f) : arrayvieww(f.mmapw()), f(f) {}
+	~autommapw() { f.unmapw(*this); }
 };

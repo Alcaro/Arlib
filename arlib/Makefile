@@ -12,6 +12,11 @@ endif
 SPACE :=
 SPACE +=
 
+define LF
+
+
+endef
+
 ifeq ($(OS),Windows_NT)
   OS = windows
 else
@@ -136,9 +141,9 @@ CFLAGS_DEFAULT =
 CFLAGS_NOWARN = -w
 
 .SECONDEXPANSION:
-obj/%.c.o: $$(call SOURCENAME,$$@) | obj
+obj/%.c.o: $$(call SOURCENAME,$$@) arlib.h | obj
 	$(CC) $(TRUE_CFLAGS) $(CFLAGS_$(call DOMAINNAME,$@)) -c $< -o $@
-obj/%.cpp.o: $$(call SOURCENAME,$$@) | obj
+obj/%.cpp.o: $$(call SOURCENAME,$$@) arlib.h | obj
 	$(CXX) $(TRUE_CXXFLAGS) $(CFLAGS_$(call DOMAINNAME,$@)) -c $< -o $@
 
 SOURCES += *.cpp
@@ -159,15 +164,16 @@ endif
 ifeq ($(ARGUI),1)
   SOURCES_ARLIB += arlib/gui/*.cpp
   ifeq ($(OS),windows)
-    CONF_CFLAGS += -DARGUI_WINDOWS
+    DEFINES += ARGUI_WINDOWS
     CONF_LFLAGS += -lgdi32 -lcomctl32 -lcomdlg32
   endif
   ifeq ($(OS),linux)
-    CONF_CFLAGS += $(shell pkg-config --cflags gtk+-3.0) -DARGUI_GTK3 -DARGUIPROT_X11
+    DEFINES += ARGUI_GTK3 ARGUIPROT_X11
+    CONF_CFLAGS += $(shell pkg-config --cflags gtk+-3.0)
     CONF_LFLAGS += -ldl -lX11 $(shell pkg-config --libs gtk+-3.0)
   endif
 else
-  CONF_CFLAGS += -DARGUI_NONE
+  DEFINES += ARGUI_NONE
 endif
 
 ifeq ($(AROPENGL),1)
@@ -175,18 +181,18 @@ ifeq ($(AROPENGL),1)
     $(error can't use OpenGL without the GUI)
   endif
   SOURCES_ARLIB += arlib/opengl/*.cpp
-  CONF_CFLAGS += -DARLIB_OPENGL
+  DEFINES += ARLIB_OPENGL
   ifeq ($(OS),linux)
     CONF_LFLAGS += -ldl
   endif
   ifeq ($(AROPENGL_D3DSYNC),1)
-    CONF_CFLAGS += -DAROPENGL_D3DSYNC
+    DEFINES += AROPENGL_D3DSYNC
   endif
 endif
 
 ifeq ($(ARTHREAD),1)
   SOURCES_ARLIB += arlib/thread/*.cpp
-  CONF_CFLAGS += -DARLIB_THREAD
+  DEFINES += ARLIB_THREAD
   ifeq ($(OS),linux)
     CONF_CFLAGS += -pthread
     CONF_LFLAGS += -pthread
@@ -198,7 +204,7 @@ ifeq ($(ARSANDBOX),1)
     $(error the sandbox requires threads support)
   endif
   SOURCES_ARLIB += arlib/sandbox/*.cpp
-  CONF_CFLAGS += -DARLIB_SANDBOX
+  DEFINES += ARLIB_SANDBOX
 $(call OBJMANGLE,ARLIB,arlib/sandbox/linux-sand.cpp): arlib/sandbox/linux-sand.cpp arlib/sandbox/bpf.inc | obj
 #this could be in obj/, but if I put it there, Python is mandatory for building Arlib. I'd rather not.
 arlib/sandbox/bpf.inc: arlib/sandbox/bpf.S arlib/sandbox/bpfasm.py
@@ -214,12 +220,12 @@ endif
 
 ifeq ($(ARWUTF),1)
   SOURCES_ARLIB += arlib/wutf/*.cpp
-  CONF_CFLAGS += -DARLIB_WUTF
+  DEFINES += ARLIB_WUTF
 endif
 
 ifeq ($(ARSOCKET),1)
   SOURCES_ARLIB += arlib/socket/*.cpp
-  CONF_CFLAGS += -DARLIB_SOCKET
+  DEFINES += ARLIB_SOCKET
   
   ifeq ($(OS),windows)
     CONF_LFLAGS += -lws2_32
@@ -229,21 +235,21 @@ ifeq ($(ARSOCKET),1)
     #no SSL
     #socketssl will still be available at compile time, but fails linking
   else ifeq ($(OS),windows)
-    CONF_CFLAGS += -DARLIB_SSL_SCHANNEL
+    CFLAGS_ARLIB += -DARLIB_SSL_SCHANNEL
     CONF_LFLAGS += -lcrypt32 -lsecur32
   else ifeq ($(ARSOCKET_SSL),openssl)
-    CONF_CFLAGS += -DARLIB_SSL_OPENSSL
+    CFLAGS_ARLIB += -DARLIB_SSL_OPENSSL
     CONF_LFLAGS += -lssl -lcrypto
   else ifeq ($(ARSOCKET_SSL),gnutls)
-    CONF_CFLAGS += -DARLIB_SSL_GNUTLS
+    CFLAGS_ARLIB += -DARLIB_SSL_GNUTLS
     CONF_LFLAGS += -lgnutls
   else ifeq ($(ARSOCKET_SSL),bearssl)
-    CONF_CFLAGS += -DARLIB_SSL_BEARSSL
+    CFLAGS_ARLIB += -DARLIB_SSL_BEARSSL
     OBJS_LATE += arlib/deps/bearssl-0.3/build/libbearssl.a
 arlib/deps/bearssl-0.3/build/libbearssl.a:
 	$(MAKE) -C arlib/deps/bearssl-0.3/ CFLAGS='$(OPTFLAGS) -DBR_AES_X86NI=0' lib
   else ifeq ($(ARSOCKET_SSL),tlse)
-    CONF_CFLAGS += -DARLIB_SSL_TLSE
+    CFLAGS_ARLIB += ARLIB_SSL_TLSE
     SOURCES_NOWARN += arlib/deps/tlse.c
   else
     $(error unknown SSL library)
@@ -253,7 +259,7 @@ endif
 SOURCES_NOWARN += arlib/deps/miniz.c
 
 TRUE_CFLAGS = -std=c99 $(CCXXFLAGS) $(CFLAGS) $(CONF_CFLAGS)
-TRUE_CXXFLAGS =-std=c++11 -fno-rtti $(CCXXFLAGS) $(CXXFLAGS) $(CONF_CXXFLAGS)
+TRUE_CXXFLAGS = -std=c++11 -fno-rtti $(CCXXFLAGS) $(CXXFLAGS) $(CONF_CXXFLAGS)
 TRUE_LFLAGS = $(LFLAGS) -fvisibility=hidden $(CONF_LFLAGS)
 
 ifeq ($(OS),windows)
@@ -269,6 +275,15 @@ clean-prof:
 
 obj:
 	mkdir obj
+
+#CFLAGS_ARLIB += $(patsubst %,-D%,$(DEFINES))
+CONF_CFLAGS += $(patsubst %,-D%,$(DEFINES))
+
+#ARLIB_H := $(patsubst %,\#define %$(LF),$(DEFINES))
+#arlib.h: Makefile
+#	$(eval export ARLIB_H)
+#	echo "$$ARLIB_H" > arlib.h
+#	echo '#include "arlib/arlib.h"' >> arlib.h
 
 
 DOMAINS += DEFAULT ARLIB NOWARN
