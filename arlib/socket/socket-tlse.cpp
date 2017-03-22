@@ -175,7 +175,7 @@ public:
 		return bytes;
 	}
 	
-	bool unserialize(int fd, arrayview<byte> data)
+	bool deserialize(int fd, arrayview<byte> data)
 	{
 		this->fd = fd;
 		this->sock = socket::create_from_fd(fd);
@@ -194,11 +194,11 @@ array<byte> socketssl::serialize(int* fd)
 {
 	return ((socketssl_impl*)this)->serialize(fd);
 }
-socketssl* socketssl::unserialize(int fd, arrayview<byte> data)
+socketssl* socketssl::deserialize(int fd, arrayview<byte> data)
 {
 	initialize();
 	socketssl_impl* ret = new socketssl_impl();
-	if (ret->unserialize(fd, data)) return ret;
+	if (ret->deserialize(fd, data)) return ret;
 	delete ret;
 	return NULL;
 }

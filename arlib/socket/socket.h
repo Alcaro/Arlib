@@ -93,7 +93,7 @@ public:
 //Permissive (unrooted) | Yes     | ?        | Yes    | Yes     | No
 //Permissive (bad name) | Yes     | ?        | Yes    | No      | No   | Bad names are very rare
 //Serialize             | No      | No       | No     | No      | No   | TLSe claims to support it, but I can't get it working
-//Server                | No      | No       | No     | No      | No
+//Server                | No      | No       | No     | No      | No   | Likely possible on everything, I'm just lazy
 //Reputable author      | Yes     | Yes      | Yes    | Yes     | No
 //Binary size           | 4       | 2.5      | 4      | 80      | 169  | In kilobytes, estimated; DLLs not included
 class socketssl : public socket {
@@ -120,9 +120,9 @@ public:
 	//Can be used to keep a socket alive across exec().
 	//If successful, serialize() returns the the file descriptor needed to unserialize, and the socket is deleted.
 	//On failure, negative return and nothing happens.
-	//Only available under TLSe.
+	//Only available under TLSe. Non-virtual, to fail in linker rather than runtime on other implementations.
 	array<byte> serialize(int* fd);
-	static socketssl* unserialize(int fd, arrayview<byte> data);
+	static socketssl* deserialize(int fd, arrayview<byte> data);
 };
 
 //socket::select() works on these, but recv/send will fail

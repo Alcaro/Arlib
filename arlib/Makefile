@@ -245,6 +245,7 @@ ifeq ($(ARSOCKET),1)
     CONF_LFLAGS += -lgnutls
   else ifeq ($(ARSOCKET_SSL),bearssl)
     CFLAGS_ARLIB += -DARLIB_SSL_BEARSSL
+    SOURCES_ARLIB += arlib/socket/socket-bearssl-serialize.c
     OBJS_LATE += arlib/deps/bearssl-0.3/build/libbearssl.a
 arlib/deps/bearssl-0.3/build/libbearssl.a:
 	$(MAKE) -C arlib/deps/bearssl-0.3/ CFLAGS='$(OPTFLAGS) -DBR_AES_X86NI=0' lib

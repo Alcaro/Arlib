@@ -60,7 +60,7 @@ test("SSL permissiveness")
 	assert( (s=socketssl::create("172.217.18.142", 443, true))); // I'd use san.filippo.io, but that one is self-signed as well; I want only one failure at once
 }
 
-#ifdef ARLIB_SSL_TLSE
+#ifdef ARLIB_SSL_BEARSSL
 static void ser_test(autoptr<socketssl>& s)
 {
 	socketssl* sp = s.release();
@@ -69,20 +69,20 @@ static void ser_test(autoptr<socketssl>& s)
 	int fd;
 	array<byte> data = sp->serialize(&fd);
 	assert(data);
-	s = socketssl::unserialize(fd, data);
+	s = socketssl::deserialize(fd, data);
 }
 test("SSL serialization")
 {
 	//test_skip("too slow");
 	autoptr<socketssl> s = socketssl::create("google.com", 443);
-	//testcall(ser_test(s));
+	testcall(ser_test(s));
 	s->send("GET / HTTP/1.1\n");
 	testcall(ser_test(s));
 	s->send("Host: google.com\nConnection: close\n\n");
-	//testcall(ser_test(s));
+	testcall(ser_test(s));
 	array<byte> bytes = recvall(s, 4);
 	assert_eq(string(bytes), "HTTP");
-	//testcall(ser_test(s));
+	testcall(ser_test(s));
 	bytes = recvall(s, 4);
 	assert_eq(string(bytes), "/1.1");
 }
