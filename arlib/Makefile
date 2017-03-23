@@ -229,14 +229,20 @@ ifeq ($(ARSOCKET),1)
   
   ifeq ($(OS),windows)
     CONF_LFLAGS += -lws2_32
+    ifdef ARSOCKET_SSL_WINDOWS
+      ARSOCKET_SSL := $(ARSOCKET_SSL_WINDOWS)
+    else
+      ARSOCKET_SSL := schannel
+    endif
   endif
   
   ifeq ($(ARSOCKET_SSL),no)
     #no SSL
     #socketssl will still be available at compile time, but fails linking
-  else ifeq ($(OS),windows)
+  else ifeq ($(ARSOCKET_SSL),schannel)
     CFLAGS_ARLIB += -DARLIB_SSL_SCHANNEL
-    CONF_LFLAGS += -lcrypt32 -lsecur32
+    #TODO: check if this is still needed
+    #CONF_LFLAGS += -lcrypt32 -lsecur32
   else ifeq ($(ARSOCKET_SSL),openssl)
     CFLAGS_ARLIB += -DARLIB_SSL_OPENSSL
     CONF_LFLAGS += -lssl -lcrypto
@@ -245,8 +251,9 @@ ifeq ($(ARSOCKET),1)
     CONF_LFLAGS += -lgnutls
   else ifeq ($(ARSOCKET_SSL),bearssl)
     CFLAGS_ARLIB += -DARLIB_SSL_BEARSSL
-    SOURCES_ARLIB += arlib/socket/socket-bearssl-serialize.c
+    SOURCES_ARLIB += arlib/socket/bear-ser.c
     OBJS_LATE += arlib/deps/bearssl-0.3/build/libbearssl.a
+    CONF_LFLAGS += -lcrypt32
 arlib/deps/bearssl-0.3/build/libbearssl.a:
 	$(MAKE) -C arlib/deps/bearssl-0.3/ CFLAGS='$(OPTFLAGS) -DBR_AES_X86NI=0' lib
   else ifeq ($(ARSOCKET_SSL),tlse)

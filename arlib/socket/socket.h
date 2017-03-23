@@ -91,8 +91,9 @@ public:
 //Nonblocking           | Yes     | ?        | Yes    | Yes     | Yes  | OpenSSL supports nonblocking, but not blocking
 //Permissive (expired)  | -       | -        | -      | -       | -    | Can't find a public server with expired key to test on
 //Permissive (unrooted) | Yes     | ?        | Yes    | Yes     | No
-//Permissive (bad name) | Yes     | ?        | Yes    | No      | No   | Bad names are very rare
-//Serialize             | No      | No       | No     | No      | No   | TLSe claims to support it, but I can't get it working
+//Permissive (bad name) | Yes     | ?        | Yes    | No      | No   | Bad names are very rare outside testing
+//Serialize             | No      | No       | No     | Yes*    | No   | TLSe claims to support it, but I can't get it working
+//                                                                     | BearSSL is homemade and will need rewrites if upstream changes
 //Server                | No      | No       | No     | No      | No   | Likely possible on everything, I'm just lazy
 //Reputable author      | Yes     | Yes      | Yes    | Yes     | No
 //Binary size           | 4       | 2.5      | 4      | 80      | 169  | In kilobytes, estimated; DLLs not included

@@ -140,7 +140,7 @@ void process::update(bool sleep)
 	didsomething |= update_piperead(stdout_h, stdout_buf, outmax-stderr_buf.size());
 	didsomething |= update_piperead(stderr_h, stderr_buf, outmax-stdout_buf.size());
 	
-	if (stdout_buf.size()+stderr_buf.size() > this->outmax)
+	if (stdout_buf.size()+stderr_buf.size() >= this->outmax)
 	{
 		if (stdout_h) CloseHandle(stdout_h);
 		if (stderr_h) CloseHandle(stderr_h);

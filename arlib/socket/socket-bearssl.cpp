@@ -5,21 +5,25 @@
 #include "../stringconv.h"
 #include "../thread.h"
 //Wishlist:
-//- extern "C"
+//- extern "C" in header
 //- serialization that I didn't have to write myself
 //- a slightly easier way to disable cert validation than 50 lines of wrappers
-//    maybe it's like this to strongly discourage such shenanigans
-//- sample code demonstrating how to load /etc/ssl/certs/ca-certificates.crt
+//    or maybe it's intentional, to discourage such shenanigans
+//- official sample code demonstrating how to load /etc/ssl/certs/ca-certificates.crt
 //    preferably putting most of it in BearSSL itself, but seems hard to implement without malloc
+//    preferably with Windows-specific paths as well
 //- more bool and int8_t, less int and char
 
 extern "C" {
 #include "../deps/bearssl-0.3/inc/bearssl.h"
 
-void br_ssl_client_freeze(br_ssl_client_context* sc);
-void br_ssl_client_unfreeze(br_ssl_client_context* frozen, br_ssl_client_context* target);
-void br_x509_minimal_freeze(br_x509_minimal_context* sc, br_ssl_engine_context* reference);
-void br_x509_minimal_unfreeze(br_x509_minimal_context* frozen, br_x509_minimal_context* target, br_ssl_engine_context* reference);
+//see socket-bearssl-serialize.c for docs
+typedef struct br_frozen_ssl_client_context_ {
+	br_ssl_client_context cc;
+	br_x509_minimal_context xc;
+} br_frozen_ssl_client_context;
+void br_ssl_client_freeze(br_frozen_ssl_client_context* fr, const br_ssl_client_context* cc, const br_x509_minimal_context* xc);
+void br_ssl_client_unfreeze(br_frozen_ssl_client_context* fr, br_ssl_client_context* cc, br_x509_minimal_context* xc);
 }
 
 
@@ -38,7 +42,7 @@ static byte* blobdup(arrayview<byte> blob)
 {
 	return certs_blobs.append(blob).ptr();
 }
-static bool append_cert(arrayview<byte> xc)
+static bool append_cert_x509(arrayview<byte> xc)
 {
 	br_x509_trust_anchor& ta = certs.append();
 	
@@ -74,11 +78,9 @@ static bool append_cert(arrayview<byte> xc)
 	return true;
 }
 
-RUN_ONCE_FN(initialize)
+//unused on Windows, its cert store gives me x509s directly
+MAYBE_UNUSED static void append_certs_pem_x509(arrayview<byte> certs_pem)
 {
-	array<byte> certs_pem_mem = file::read("/etc/ssl/certs/ca-certificates.crt");
-	arrayview<byte> certs_pem = certs_pem_mem;
-	
 	br_pem_decoder_context pc;
 	br_pem_decoder_init(&pc);
 	array<byte> cert_this;
@@ -99,7 +101,7 @@ RUN_ONCE_FN(initialize)
 			break;
 		
 		case BR_PEM_END_OBJ:
-			if (cert_this) append_cert(cert_this);
+			if (cert_this) append_cert_x509(cert_this);
 			break;
 		
 		case BR_PEM_ERROR:
@@ -107,8 +109,30 @@ RUN_ONCE_FN(initialize)
 			return;
 		}
 	}
+}
+
+#ifdef _WIN32
+//seems to be no way to access the Windows cert store without crypt32.dll
+//but that's fine, the useful parts of Bear don't care whether certs are from a file or blackbox service
+#include <wincrypt.h>
+#endif
+
+RUN_ONCE_FN(initialize)
+{
+#ifndef _WIN32
+	append_certs_pem_x509(file::read("/etc/ssl/certs/ca-certificates.crt"));
+#else
+	HCERTSTORE store = CertOpenSystemStore((HCRYPTPROV)NULL, "ROOT");
+	if (!store) return;
 	
-	return;
+	const CERT_CONTEXT * ctx = NULL;
+	while ((ctx = CertEnumCertificatesInStore(store, ctx)))
+	{
+		append_cert_x509(arrayview<byte>(ctx->pbCertEncoded, ctx->cbCertEncoded));
+	}
+	CertFreeCertificateContext(ctx);
+	CertCloseStore(store, 0);
+#endif
 }
 
 
@@ -269,7 +293,7 @@ public:
 		size_t buflen;
 		byte* buf = br_ssl_engine_recvapp_buf(&s.sc.eng, &buflen);
 		if (buflen > data.size()) buflen = data.size();
-		if (!buflen)
+		if (buflen == 0)
 		{
 			if (block)
 			{
@@ -294,7 +318,7 @@ public:
 		size_t buflen;
 		byte* buf = br_ssl_engine_sendapp_buf(&s.sc.eng, &buflen);
 		if (buflen > data.size()) buflen = data.size();
-		if (!buflen)
+		if (buflen == 0)
 		{
 			if (block)
 			{
@@ -317,16 +341,21 @@ public:
 	
 	
 	
+	struct state_fr {
+		br_frozen_ssl_client_context sc;
+		bool permissive;
+		byte iobuf[BR_SSL_BUFSIZE_BIDI];
+	};
+	
 	array<byte> serialize(int* fd)
 	{
 		array<byte> bytes;
-		bytes.resize(sizeof(state));
-		state& out = *(state*)bytes.ptr();
-		memcpy(&out, &s, sizeof(s));
+		bytes.resize(sizeof(state_fr));
+		state_fr& out = *(state_fr*)bytes.ptr();
 		
-		br_x509_minimal_freeze(&s.xc, &s.sc.eng);
-		br_ssl_client_freeze(&s.sc);
-		//freezing iobuf isn't needed
+		br_ssl_client_freeze(&out.sc, &s.sc, &s.xc);
+		out.permissive = (s.xwc.vtable != NULL);
+		memcpy(out.iobuf, s.iobuf, sizeof(out.iobuf));
 		
 		*fd = decompose(this->sock);
 		this->sock = NULL;
@@ -339,10 +368,12 @@ public:
 	socketssl_impl(int fd, arrayview<byte> data)
 	{
 		this->sock = socket::create_from_fd(fd);
-		state& prev = *(state*)data.ptr();
+		const state_fr& in = *(state_fr*)data.ptr();
+		
+		state ref;
 		
 		br_ssl_client_init_full(&s.sc, &s.xc, certs.ptr(), certs.size());
-		if (prev.xwc.vtable)
+		if (in.permissive)
 		{
 			s.xwc.vtable = &x509_noanchor_vtable;
 			s.xwc.inner = &s.xc.vtable;
@@ -351,9 +382,10 @@ public:
 		else s.xwc.vtable = NULL;
 		br_ssl_engine_set_buffer(&s.sc.eng, s.iobuf, sizeof(s.iobuf), true);
 		
-		br_ssl_client_unfreeze(&prev.sc, &s.sc);
-		br_x509_minimal_unfreeze(&prev.xc, &s.xc, &s.sc.eng);
-		memcpy(s.iobuf, prev.iobuf, sizeof(s.iobuf));
+		br_frozen_ssl_client_context fr_sc;
+		memcpy(&fr_sc, &in.sc, sizeof(fr_sc));
+		br_ssl_client_unfreeze(&fr_sc, &s.sc, &s.xc);
+		memcpy(s.iobuf, in.iobuf, sizeof(s.iobuf));
 	}
 };
 
@@ -376,7 +408,7 @@ array<byte> socketssl::serialize(int* fd)
 }
 socketssl* socketssl::deserialize(int fd, arrayview<byte> data)
 {
-	if (sizeof(socketssl_impl::state)!=data.size()) return NULL;
+	if (sizeof(socketssl_impl::state_fr)!=data.size()) return NULL;
 	initialize();
 	return new socketssl_impl(fd, data);
 }

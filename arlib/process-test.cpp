@@ -29,6 +29,7 @@ test()
 #ifdef __linux__
 	test_skip("too noisy under Valgrind");
 #endif
+	test_skip("kinda slow");
 	//there are a couple of race conditions here, but I believe they're all safe
 	{
 		process p;

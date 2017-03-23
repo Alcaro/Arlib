@@ -5,6 +5,9 @@
 //- fetch howsmyssl, ensure the only failure is the session cache
 
 #ifdef ARLIB_TEST
+//#undef test_skip
+//#define test_skip(x)
+
 //not in socket.h because this shouldn't really be used for anything, blocking is evil
 static array<byte> recvall(socket* sock, unsigned int len)
 {
@@ -70,6 +73,7 @@ static void ser_test(autoptr<socketssl>& s)
 	array<byte> data = sp->serialize(&fd);
 	assert(data);
 	s = socketssl::deserialize(fd, data);
+	assert(s);
 }
 test("SSL serialization")
 {
