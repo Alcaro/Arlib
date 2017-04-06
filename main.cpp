@@ -14,11 +14,12 @@ static array<byte> recvall(socket* sock, unsigned int len)
 	}
 	return ret;
 }
-int main()
+int ymain()
 {
 	//socket* s = socket::create("google.com", 80);
 	socketssl* s = socketssl::create("google.com", 443);
 	//s->sendp("GET / HTTP/1.1\nHost: google.com\nConnection: close\n\n", false);
 	s->send("GET / HTTP/1.1\nHost: google.com\nConnection: close\n\n");
 	puts(string(recvall(s, 200)));
+	return 0;
 }

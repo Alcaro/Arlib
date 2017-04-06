@@ -1,5 +1,6 @@
 #include "../process.h"
 
+/*
 //Allows safely executing untrusted code.
 //
 //Exact rules:
@@ -115,3 +116,4 @@ public:
 	sandcomm* launch(void(*proc)(sandcomm* comm)); // Not the function<> template, pointers can't be passed around like that.
 };
 #endif
+*/

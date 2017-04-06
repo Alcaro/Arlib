@@ -6,23 +6,17 @@
 #ifdef __unix__
 #include <dlfcn.h>
 
-static mutex dylib_lock;
-
-bool dylib::init(const char * filename, bool * owned)
+bool dylib::init(const char * filename)
 {
 	deinit();
-	
-	dylib_lock.lock();
-	
-	if (owned)
-	{
-		handle = (dylib*)dlopen(filename, RTLD_LAZY|RTLD_NOLOAD);
-		*owned = (!handle);
-	}
-	
-	if (!handle) handle = (dylib*)dlopen(filename, RTLD_LAZY);
-	
-	dylib_lock.unlock();
+	handle = (dylib*)dlopen(filename, RTLD_LAZY);
+	return handle;
+}
+
+bool dylib::init_uniq(const char * filename)
+{
+	deinit();
+	handle = (dylib*)dlmopen(LM_ID_NEWLM, filename, RTLD_LAZY);
 	return handle;
 }
 
@@ -52,20 +46,18 @@ void dylib::deinit()
 #ifdef _WIN32
 static mutex dylib_lock;
 
-bool dylib::init(const char * filename, bool * owned)
+static HANDLE dylib_init(const char * filename, bool uniq)
 {
 	deinit();
-	
-	dylib_lock.lock();
-	
-	if (owned)
+	synchronized(dylib_lock)
 	{
-		if (!GetModuleHandleEx(0, filename, (HMODULE*)&handle)) handle=NULL;
-		*owned=(!handle);
-	}
-	
-	if (!handle)
-	{
+		HANDLE handle;
+		
+		if (uniq)
+		{
+			if (GetModuleHandleEx(0, filename, (HMODULE*)&handle)) return NULL;
+		}
+		
 		//this is so weird dependencies, for example winpthread-1.dll, can be placed beside the dll where they belong
 		char * filename_copy=strdup(filename);
 		char * filename_copy_slash = strrchr(filename_copy, '/');
@@ -76,10 +68,14 @@ bool dylib::init(const char * filename, bool * owned)
 		
 		handle = (dylib*)LoadLibrary(filename);
 		SetDllDirectory(NULL);
+		
+		return handle;
 	}
+}
+
+bool dylib::init(const char * filename, bool * owned)
+{
 	
-	dylib_lock.unlock();
-	return handle;
 }
 
 void* dylib::sym_ptr(const char * name)

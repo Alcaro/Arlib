@@ -41,10 +41,10 @@ ARSOCKET ?= 0
 ARSOCKET_SSL ?= openssl
 
 OPT ?= 0
-ifeq ($(OPT),1)
-  DEBUG ?= 0
-else
+ifeq ($(OPT),0)
   DEBUG ?= 1
+else
+  DEBUG ?= 0
 endif
 
 CC = gcc
@@ -113,7 +113,7 @@ ifneq ($(OPT),0)
   ifneq ($(DEBUG),1)
     LFLAGS += -Wl,--gc-sections -s
   endif
-  OBJNAME += -opt
+  OBJNAME := $(OBJNAME)-opt
 endif
 ifeq ($(DEBUG),1)
   CFLAGS += -g -DDEBUG
@@ -200,22 +200,7 @@ ifeq ($(ARTHREAD),1)
 endif
 
 ifeq ($(ARSANDBOX),1)
-  ifneq ($(ARTHREAD),1)
-    $(error the sandbox requires threads support)
-  endif
-  SOURCES_ARLIB += arlib/sandbox/*.cpp
-  DEFINES += ARLIB_SANDBOX
-$(call OBJMANGLE,ARLIB,arlib/sandbox/linux-sand.cpp): arlib/sandbox/linux-sand.cpp arlib/sandbox/bpf.inc | obj
-#this could be in obj/, but if I put it there, Python is mandatory for building Arlib. I'd rather not.
-arlib/sandbox/bpf.inc: arlib/sandbox/bpf.S arlib/sandbox/bpfasm.py
-	arlib/sandbox/bpfasm.py $< $@
-  #not true since the windows sandbox isn't a real sandbox
-  #ifeq ($(OS),windows)
-  #  #both sandbox and WuTF need to redirect functions; this implementation is in WuTF
-  #  #if linux ends up needing it too, I'll split out the redirector to a top-level Arlib file
-  #  #Arlib is designed for use with -Wl,--gc-sections anyways
-  #  ARWUTF = 1
-  #endif
+  include arlib/sandbox/Makefile
 endif
 
 ifeq ($(ARWUTF),1)
@@ -253,7 +238,9 @@ ifeq ($(ARSOCKET),1)
     CFLAGS_ARLIB += -DARLIB_SSL_BEARSSL
     SOURCES_ARLIB += arlib/socket/bear-ser.c
     OBJS_LATE += arlib/deps/bearssl-0.3/build/libbearssl.a
-    CONF_LFLAGS += -lcrypt32
+    ifeq ($(OS),windows)
+      CONF_LFLAGS += -lcrypt32
+    endif
 arlib/deps/bearssl-0.3/build/libbearssl.a:
 	$(MAKE) -C arlib/deps/bearssl-0.3/ CFLAGS='$(OPTFLAGS) -DBR_AES_X86NI=0' lib
   else ifeq ($(ARSOCKET_SSL),tlse)

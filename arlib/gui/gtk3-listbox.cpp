@@ -10,6 +10,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+#if GTK_MINOR_VERSION > 10 // supported versions: 3.10.8 (Ubuntu 14.04), 3.20.9 (Ubuntu 16.10)
+#define gtk_adjustment_changed(x) // turns out it does do this by itself
+#define gtk_adjustment_value_changed(x)
+#endif
+
 //there is a gtk_tree_view_insert_column_with_data_func, but while it can get rid of
 // virtual_list_get_value, it can not get rid of virtual_list_iter_n_children
 

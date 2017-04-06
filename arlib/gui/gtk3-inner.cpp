@@ -127,7 +127,10 @@ widget_label* widget_label::set_ellipsize(bool ellipsize)
 
 widget_label* widget_label::set_alignment(int alignment)
 {
+	//TODO: find not deprecated replacement
+#if GTK_MINOR_VERSION <= 10
 	gtk_misc_set_alignment(GTK_MISC(widget), ((float)alignment)/2, 0.5);
+#endif
 	return this;
 }
 

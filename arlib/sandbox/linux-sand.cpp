@@ -1,41 +1,360 @@
+#ifdef __linux__
 #include "sandbox.h"
 #include "../process.h"
 #include "../test.h"
+#undef bind
 
-#ifdef __linux__
-//Features needed:
-//- seccomp for easy cases (read(2) is fine, reboot(2) is not), ptrace for tricky stuff (open(2) is sometimes allowed)
-//- Parent process needs to handle ptrace events; do this on a separate thread
-//- permit() needs to be thread safe; the stdio functions don't need anything
-//- Make sure ptrace/waitpid don't interact in bad ways, maybe process needs a "I killed the child for you" function?
-//- Do not require any privileges
-//- Must be able to run multiple sandboxes at once
-//Independent process:
-//- Assume hostile code immediately after exec()
-//- Must be able to open files needed for initialization
-//- Cannot change this program
-//Arlib process:
-//- Support only same process
-//- Can change the program, for example adding a static void sandbox::enter()
-// - Can add an extra command line argument, can add something funny to fd 3
-//- Can assume non-hostility until said call (but it's better not to)
-//- Must be able to create events and shared memory
-// - whether the process is same or another one
-//- They don't need to share an API
-// - but they should share the BPF rules
-//  - I'll implement a 'connect to parent' operation via open("/#!arlib", O_WRONLY|O_RDWR),
-//    ptrace will intercept this and replace it with fd 3, which parent set up
-
-#include <sys/ptrace.h>
 #include <sys/user.h>
 #include <sys/wait.h>
+#include <sys/syscall.h>
 #include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/resource.h>
+#include <linux/memfd.h> // documented as sys/memfd.h, but that doesn't exist
+#include <fcntl.h>
+#define F_LINUX_SPECIFIC_BASE	1024
+#define F_ADD_SEALS	(F_LINUX_SPECIFIC_BASE + 9)
+#define F_GET_SEALS	(F_LINUX_SPECIFIC_BASE + 10) // and these only exist in linux/fcntl.h - where fcntl() doesn't exist
+#define F_SEAL_SEAL	0x0001
+#define F_SEAL_SHRINK	0x0002
+#define F_SEAL_GROW	0x0004
+#define F_SEAL_WRITE	0x0008
+#include <sys/prctl.h>
+#include <linux/filter.h>
+#include <linux/seccomp.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <errno.h>
 #include <pthread.h>
+#include <linux/audit.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 
+/*
+//ensure a AF_UNIX SOCK_SEQPACKET socketpair can't specify dest_addr
+//(turns out it can, but address is ignored. good enough)
+void stest()
+{
+	//const int type = SOCK_DGRAM;
+	const int type = SOCK_SEQPACKET;
+	//const int type = SOCK_STREAM;
+	
+	int socks[2];
+	socketpair(AF_UNIX, type, 0, socks);
+	
+	struct sockaddr_un ga = { AF_UNIX, "socket" };
+	int gal = offsetof(sockaddr_un,sun_path) + 7;
+	int g = socket(AF_UNIX, type, 0);
+	errno=0;
+	bind(g, (sockaddr*)&ga, gal);
+	perror("bind");
+	listen(g, 10);
+	perror("listen");
+	
+	struct sockaddr_un ga2 = { AF_UNIX, "\0socket" };
+	int ga2l = offsetof(sockaddr_un,sun_path) + 8;
+	int g2 = socket(AF_UNIX, type, 0);
+	errno=0;
+	bind(g2, (sockaddr*)&ga2, ga2l);
+	perror("bind");
+	listen(g2, 10);
+	perror("listen");
+	
+	//int g3 = socket(AF_UNIX, type, 0);
+	int g3 = socks[1];
+	errno=0;
+	sendto(g3, "foo",3, 0, (sockaddr*)&ga, gal);
+	perror("sendto");
+	errno=0;
+	sendto(g3, "bar",3, 0, (sockaddr*)&ga2, ga2l);
+	perror("sendto");
+	
+	while (true)
+	{
+		char out[6];
+		int n = recv(socks[0], out, 6, MSG_DONTWAIT);
+		if (n<0) break;
+		n = write(1, out, n);
+	}
+	
+	close(socks[0]);
+	close(socks[1]);
+	//close(g);
+	//close(g2);
+	if (g3!=socks[1]) close(g3);
+	unlink("socket");
+}
+// */
+
+enum broker_req_t {
+	br_nop, // [req only] does nothing, doesn't respond
+	br_ping, // successfully returns nothing
+	br_open, // flags[0] is O_RDONLY/etc, flags[1] is mode, flags[2] is unused
+	br_send, // [rsp only] broker spontaneously sent a fd, used only with sandbox-aware children that expect this
+};
+struct broker_req {
+	enum broker_req_t req;
+	uint32_t flags[3];
+	char path[260]; // Windows MAX_PATH, anything longer than this probably isn't useful
+};
+struct broker_rsp {
+	enum broker_req_t req;
+	int errno;
+};
+
+
+static int require(int x)
+{
+	//failures are easiest debugged with strace
+	if (x<0) _exit(1);
+	return x;
+}
+
+
+extern const char sandbox_preload_bin[];
+extern const unsigned sandbox_preload_len;
+
+int preloader_fd()
+{
+	static int s_fd=0;
+	if (s_fd) return s_fd;
+	
+	int fd = syscall(__NR_memfd_create, "arlib-sand-preload", MFD_CLOEXEC|MFD_ALLOW_SEALING);
+	if (fd<0)
+		goto fail;
+	if (write(fd, sandbox_preload_bin, sandbox_preload_len) != sandbox_preload_len)
+		goto fail;
+	if (fcntl(fd, F_ADD_SEALS, F_SEAL_WRITE|F_SEAL_SHRINK|F_SEAL_GROW|F_SEAL_SEAL) < 0)
+		goto fail;
+	int prev;
+	prev = lock_cmpxchg(&s_fd, 0, fd);
+	if (prev != 0)
+	{
+		close(fd);
+		return prev;
+	}
+	return fd;
+	
+fail:
+	if (fd>=0) close(fd);
+	return -1;
+}
+
+
+//atoi is locale-aware, not gonna trust that to not call malloc or otherwise be stupid
+static int atoi_simple(const char * text)
+{
+	int ret = 0;
+	while (*text)
+	{
+		if (*text<'0' || *text>'9') return -1;
+		ret *= 10;
+		ret += *text-'0';
+		text++;
+	}
+	return ret;
+}
+
+//trusting everything to set O_CLOEXEC isn't enough, this is a sandbox
+//throws about fifty errors in Valgrind for fd 1024 - don't care
+//lowfd is the LOWEST fd that IS closed; alternatively, it's the number of fds kept
+static bool closefrom(int lowfd)
+{
+	//getdents[64] is documented do-not-use and opendir should be used instead.
+	//However, we're in (the equivalent of) a signal handler, and opendir is not signal safe.
+	//Therefore, raw kernel interface it is.
+	struct linux_dirent64 {
+		ino64_t        d_ino;    /* 64-bit inode number */
+		off64_t        d_off;    /* 64-bit offset to next structure */
+		unsigned short d_reclen; /* Size of this dirent */
+		unsigned char  d_type;   /* File type */
+		char           d_name[]; /* Filename (null-terminated) */
+	};
+	
+	int dfd = open("/proc/self/fd/", O_RDONLY|O_DIRECTORY);
+	if (dfd < 0) return false;
+	
+	while (true)
+	{
+		char bytes[1024];
+		// this interface always returns full structs, no need to paste things together
+		int nbytes = syscall(SYS_getdents64, dfd, &bytes, sizeof(bytes));
+		if (nbytes < 0) { close(dfd); return false; }
+		if (nbytes == 0) break;
+		
+		int off = 0;
+		while (off < nbytes)
+		{
+			linux_dirent64* dent = (linux_dirent64*)(bytes+off);
+			off += dent->d_reclen;
+			
+			int fd = atoi_simple(dent->d_name);
+			if (fd>=0 && fd!=dfd && fd>=lowfd)
+			{
+				close(fd);
+			}
+		}
+	}
+	close(dfd);
+	return true;
+}
+
+
+#if defined(__i386__)
+#define ARCH_TRUE AUDIT_ARCH_I386
+#define REG_SYSCALL	REG_EAX
+#define REG_ARG0	REG_EBX
+#define REG_ARG1	REG_ECX
+#define REG_ARG2	REG_EDX
+#define REG_ARG3	REG_ESI
+#define REG_ARG4	REG_EDI
+#define REG_ARG5	REG_EBP
+#define REG_RESULT	REG_EAX
+#elif defined(__x86_64__)
+#define ARCH_TRUE AUDIT_ARCH_X86_64
+#define REG_SYSCALL	REG_RAX
+#define REG_ARG0	REG_RDI
+#define REG_ARG1	REG_RSI
+#define REG_ARG2	REG_RDX
+#define REG_ARG3	REG_R10
+#define REG_ARG4	REG_R8
+#define REG_ARG5	REG_R9
+#define REG_RESULT	REG_RAX
+#else
+#error Unsupported architecture.
+#endif
+
+
+static bool install_seccomp()
+{
+	static const struct sock_filter filter[] = {
+#define I_arch (offsetof(struct seccomp_data, arch))
+#define I_sysno (offsetof(struct seccomp_data, nr))
+#define I_arg0l (offsetof(struct seccomp_data, args[0]))
+#define I_arg0h (offsetof(struct seccomp_data, args[0])+4)
+#define I_arg1l (offsetof(struct seccomp_data, args[1]))
+#define I_arg1h (offsetof(struct seccomp_data, args[1])+4)
+#define I_arg2l (offsetof(struct seccomp_data, args[2]))
+#define I_arg2h (offsetof(struct seccomp_data, args[2])+4)
+#define I_arg3l (offsetof(struct seccomp_data, args[3]))
+#define I_arg3h (offsetof(struct seccomp_data, args[3])+4)
+#define I_arg4l (offsetof(struct seccomp_data, args[4]))
+#define I_arg4h (offsetof(struct seccomp_data, args[4])+4)
+#define I_arg5l (offsetof(struct seccomp_data, args[5]))
+#define I_arg5h (offsetof(struct seccomp_data, args[5])+4)
+#include "bpf.inc"
+#undef I_arch
+#undef I_sysno
+#undef I_arg0l
+#undef I_arg0h
+#undef I_arg1l
+#undef I_arg1h
+#undef I_arg2l
+#undef I_arg2h
+#undef I_arg3l
+#undef I_arg3h
+#undef I_arg4l
+#undef I_arg4h
+#undef I_arg5l
+#undef I_arg5h
+	};
+	static_assert(sizeof(filter)/sizeof(filter[0]) < 65536);
+	static const struct sock_fprog prog = {
+		.len = (unsigned short)(sizeof(filter)/sizeof(filter[0])),
+		.filter = (sock_filter*)filter,
+	};
+	require(prctl(PR_SET_NO_NEW_PRIVS, 1, 0,0,0));
+	require(prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog));
+	return true;
+}
+
+
+static int execveat(int dirfd, const char * pathname, char * const argv[], char * const envp[], int flags)
+{
+	return syscall(__NR_execveat, dirfd, pathname, argv, envp, flags);
+}
+
+
+bool boot_sand(char** argv, char** envp, int& pid, int& sock)
+{
+	//fcntl is banned by seccomp, so this goes early
+	//putting it before clone() allows sharing it between all processes
+	int preld_fd = preloader_fd();
+	if (preld_fd<0)
+		return false;
+	
+	int socks[2];
+	if (socketpair(AF_UNIX, SOCK_SEQPACKET|SOCK_CLOEXEC, 0, socks)<0)
+		return false;
+	
+	int clone_flags = CLONE_NEWUSER | CLONE_NEWPID | CLONE_NEWNET | CLONE_NEWCGROUP | CLONE_NEWIPC | CLONE_NEWNS | CLONE_NEWUTS;
+	clone_flags |= SIGCHLD; // parent termination signal, must be SIGCHLD for waitpid to work properly
+	int ret = syscall(__NR_clone, clone_flags, NULL, NULL, NULL, NULL);
+	if (ret<0) return false;
+	if (ret>0)
+	{
+		pid = ret;
+		sock = socks[0];
+		close(socks[1]);
+		return true;
+	}
+	
+	//we're the child
+	
+	//some of these steps depend on each other, don't swap them randomly
+	
+	const char * new_envp[] = {
+		//none of these envs seem to matter
+		//maybe $TERM, $LANG/$LC_*, and hardcoding $PWD="/$CWD"
+		NULL
+	};
+	
+	//we could request preld from parent, but this is easier
+	close(socks[0]);
+	if (preld_fd == 3) preld_fd = require(dup(preld_fd)); // don't bother closing this, it's done by that dup()
+	if (socks[1] != 3) require(dup2(socks[1], 3));
+	if (preld_fd != 4) require(dup2(preld_fd, 4));
+	
+	//remove cloexec on socket; it's set on fd 4, we want to keep it
+	fcntl(3, F_SETFD, 0);
+	
+	//wipe unexpected fds
+	if (!closefrom(5)) require(-1);
+	
+	struct rlimit rlim_fsize = { 1024*1024, 1024*1024 };
+	require(setrlimit(RLIMIT_FSIZE, &rlim_fsize));
+	
+	//TODO: Set cgroup memory.memsw.limit_in_bytes to 100*1024*1024
+	//TODO: Set cgroup cpu.cfs_period_us = 100*1000, cpu.cfs_quota_us = 50*1000
+	//TODO: Set cgroup pids.max to 10
+	
+	//die on parent death
+	require(prctl(PR_SET_PDEATHSIG, SIGKILL));
+	struct broker_req req = { br_nop };
+	require(send(3, &req, sizeof(req), MSG_EOR)); // ensure parent is still alive; if it's not, this fails with EPIPE
+	
+	//revoke filesystem
+	require(chroot("/proc/sys/debug/"));
+	require(chdir("/"));
+	
+	if (!install_seccomp()) require(-1);
+	
+	require(execveat(4, "", argv, (char**)new_envp, AT_EMPTY_PATH));
+	_exit(1); // execve never returns nonnegative, and require never returns from negative, but gcc knows neither
+}
+
+int main(int argc, char ** argv, char ** envp)
+{
+	int pid;
+	int sock;
+	if (!boot_sand(argv, envp, pid, sock)) return 1;
+	
+	int x;
+	waitpid(pid,&x,0);
+}
+
+/*
 bool sandproc::launch_impl(cstring path, arrayview<string> args)
 {
 	this->preexec = bind_this(&sandproc::preexec_fn);
@@ -53,6 +372,7 @@ void sandproc::preexec_fn(execparm* params)
 		params->nfds_keep = 4;
 		//dup2(conn->?, 3);
 	}
+	
 	
 	ptrace(PTRACE_TRACEME);
 	puts("AAAAAAAAAAA");
@@ -143,4 +463,5 @@ sandproc::~sandproc() { delete this->conn; }
 //	//}
 //	
 //}
+*/
 #endif

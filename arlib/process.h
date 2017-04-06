@@ -13,7 +13,7 @@ class process : nocopy {
 //- Await any child process, with timeout (WNOHANG doesn't count, it doesn't support nonzero timeouts)
 //so there's no real way to handle multiple children without hijacking something process-global.
 //clonefd would implement #1 and #3 (#2 isn't really needed), but only exists in Capsicum. And it seems incompatible with ptrace.
-//Strange how such an ancient limitation has lived so long. Windows has had WaitForMultipleObjects since at least XP.
+//Strange how such an ancient limitation has lived so long. Windows has had WaitForMultipleObjects since approximately forever.
 //An alternative solution would be chaining SIGCHLD handlers, but no userspace supports that. Except, again, it works fine on Windows.
 
 //'Await child process, but not threads' seems to be __WNOTHREAD, or maybe that's the default? Thread/process/thread group confuses me.

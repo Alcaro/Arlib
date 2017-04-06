@@ -246,9 +246,11 @@ template<typename T, typename... Args> static T max(const T& a, Args... args)
 
 
 class empty {
-#ifndef _MSC_VER     // error C2503: base classes cannot contain zero-sized arrays
-	int __zero_size[]; // this base is used only by nocopy/nomove, and they're only used by
-#endif               // nonzero objects which will optimize the empty base class anyways
+	//MSVC says error C2503: base classes cannot contain zero-sized arrays
+	//GCC says error: flexible array member 'empty::__zero_size' not at end of 'class whatever'
+	//nonzero objects which will optimize the empty base class anyways
+	
+	//int __zero_size[];
 };
 
 class nocopy : empty {

@@ -8,6 +8,10 @@
 #include <gdk/gdkx.h>
 #endif
 
+#if GTK_MINOR_VERSION > 10 // supported versions: 3.10.8 (Ubuntu 14.04), 3.20.9 (Ubuntu 16.10)
+#define gtk_window_set_has_resize_grip(x,y) // deprecated
+#endif
+
 static gint get_widget_height(GtkWidget* widget)
 {
 	if (!widget) return 0;
@@ -203,7 +207,10 @@ void statusbar_create(int numslots, const int * align, const int * dividerpos)
 		gtk_label_set_ellipsize(GTK_LABEL(label), PANGO_ELLIPSIZE_END);
 		gtk_label_set_max_width_chars(GTK_LABEL(label), 1);//why does this work
 		
+		//TODO: find not deprecated replacement
+#if GTK_MINOR_VERSION <= 10
 		gtk_misc_set_alignment(GTK_MISC(label), ((float)align[i])/2, 0.5);
+#endif
 		//const GtkAlign gtkalign[]={ GTK_ALIGN_START, GTK_ALIGN_CENTER, GTK_ALIGN_END };
 		//gtk_widget_set_halign(label, gtkalign[align[i]]);
 		

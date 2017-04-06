@@ -20,7 +20,11 @@ public:
 	//owned tells whether the DLL was loaded before calling this
 	//this is an atomic operation; if multiple threads call dylib::create for the same file, only one will get owned==true
 	//if called multiple times, unloads the previous dylib
-	bool init(const char * filename, bool * owned = NULL);
+	bool init(const char * filename);
+	//like init, but if the library is already loaded, fails
+	//may choose to load multiple copies of the library instead
+	//may incorrectly return true if called concurrently on the same DLL
+	bool init_uniq(const char * filename);
 	void* sym_ptr(const char * name);
 	funcptr sym_func(const char * name);
 	template<typename T> T sym(const char * name) { return (T)sym_func(name); }

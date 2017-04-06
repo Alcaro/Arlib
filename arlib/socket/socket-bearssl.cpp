@@ -4,20 +4,30 @@
 #include "../file.h"
 #include "../stringconv.h"
 #include "../thread.h"
-//Wishlist:
+//Possible BearSSL improvements (not all of it is worth the effort):
 //- extern "C" in header
 //- serialization that I didn't have to write myself
+//- better AES-NI feature detection; either define BR_AES_X86NI to __AES__ rather than __GNUC__>=4.8,
+//    or define __AES__ (and __SSSE3__ and whatever) manually on GCC>=4.8 (and check that this works, I'm not sure if it does)
 //- a slightly easier way to disable cert validation than 50 lines of wrappers
 //    or maybe it's intentional, to discourage such shenanigans
 //- official sample code demonstrating how to load /etc/ssl/certs/ca-certificates.crt
 //    preferably putting most of it in BearSSL itself, but seems hard to implement without malloc
-//    preferably with Windows-specific paths as well
 //- more bool and int8_t, less int and char
+//    it's fine if it's typedef br_bool=int rather than real bool, if needed to prevent compiler shenanigans
+//    <https://bearssl.org/constanttime.html#compiler-woes>, but just plain int is suboptimal
+//    (and most, if not all, booleans in the BearSSL API are constant and non-secret - no attacker cares if your iobuf is bidirectional)
+//- src/ec/ec_p256_m15.c:992 and :1001 don't seem to need to be u32, u16 works just as well
+//    (tools/client.c:234 and test/test_x509.c:504 too, but those parts aren't size sensitive)
+//- fix typoed NULLs at src/hash/ghash_pclmul.c:241, src/hash/ghash_pclmul.c:250, tools/names.c:834
+//    (not sure if that's the only ones)
+//(accepting and ignoring size 0 in br_ssl_engine_{recv,send}{app,rec}_ack would be useful,
+//    but it'd mean an extra if in there, wasting a few bytes; better put that in caller)
 
 extern "C" {
 #include "../deps/bearssl-0.3/inc/bearssl.h"
 
-//see socket-bearssl-serialize.c for docs
+//see bear-ser.c for docs
 typedef struct br_frozen_ssl_client_context_ {
 	br_ssl_client_context cc;
 	br_x509_minimal_context xc;
