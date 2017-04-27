@@ -14,7 +14,7 @@ PRELOADER_FLAGS := -fPIC -static -shared
 #Runtime libraries aren't available, don't use them and don't use anything using them
 PRELOADER_FLAGS += -nostdlib -nostartfiles -ffreestanding
 #Pretty sure most of these are implied by -ffreestanding, but better safe than sorry
-PRELOADER_FLAGS += -fno-stack-protector -fno-exceptions -fno-rtti -fno-plt -fno-jump-tables -fno-sync-libcalls
+PRELOADER_FLAGS += -fno-stack-protector -fno-exceptions -fno-rtti -fno-jump-tables -fno-sync-libcalls
 #Nothing should nor can override our symbols, and allowing it causes relocation issues
 PRELOADER_FLAGS += -fvisibility=hidden
 #AT&T assembly is ugly
@@ -33,8 +33,13 @@ endif
 #this could be in obj/, but if I put it there, Python is mandatory for building Arlib. I'd rather not.
 arlib/sandbox/bpf.inc: arlib/sandbox/bpf.S arlib/sandbox/bpfasm.py
 	python3 arlib/sandbox/bpfasm.py $< $@
-$(call OBJMANGLE,ARLIB,arlib/sandbox/linux-sand.cpp): arlib/sandbox/linux-sand.cpp arlib/sandbox/bpf.inc obj/sand-preload.elf | obj
+$(call OBJMANGLE,ARLIB,arlib/sandbox/linux-sand-launch.cpp): arlib/sandbox/linux-sand-launch.cpp arlib/sandbox/bpf.inc obj/sand-preload.elf | obj
 
-obj/sand-preload.elf: arlib/sandbox/linux-sand-preload.cpp | obj
-	$(CXX) -D SANDBOX_INTERNAL $(TRUE_CXXFLAGS) $(PRELOADER_FLAGS) $< -o $@
+PRELOADER_SOURCES = arlib/sandbox/linux-sand-preload.cpp arlib/sandbox/linux-sand-sysemu.cpp
+obj/sand-preload.elf: $(PRELOADER_SOURCES) arlib/sandbox/linux-sand-internal.h | obj
+	$(CXX) -D SANDBOX_INTERNAL $(TRUE_CXXFLAGS) $(PRELOADER_FLAGS) $(PRELOADER_SOURCES) -o $@ -Wl,-z,now
+#ensure failure if the object isn't 100% static
+#requires .DELETE_ON_ERROR, which is set in Arlib's main makefile
+	objdump -R $@ | grep -A500 -E 'DYNAMIC RELOCATION RECORDS$$' || true
+	objdump -R $@ | grep -qF 'DYNAMIC RELOCATION RECORDS (none)'
 $(call OBJMANGLE,ARLIB,arlib/sandbox/linux-sand-preload.cpp): arlib/sandbox/linux-sand-preload.cpp obj/sand-preload.elf | obj

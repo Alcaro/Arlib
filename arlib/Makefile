@@ -141,6 +141,8 @@ CFLAGS_DEFAULT =
 CFLAGS_NOWARN = -w
 
 .SECONDEXPANSION:
+.DELETE_ON_ERROR:
+
 obj/%.c.o: $$(call SOURCENAME,$$@) arlib.h | obj
 	$(CC) $(TRUE_CFLAGS) $(CFLAGS_$(call DOMAINNAME,$@)) -c $< -o $@
 obj/%.cpp.o: $$(call SOURCENAME,$$@) arlib.h | obj

@@ -201,3 +201,14 @@ public:
 	autommapw(file& f) : arrayvieww(f.mmapw()), f(f) {}
 	~autommapw() { f.unmapw(*this); }
 };
+
+
+#ifdef ARLIB_THREAD
+#ifdef __linux__
+//Callback argument is the fd, to allow one object to track multiple fds.
+//To unregister a callback, fd_monitor(fd, NULL, NULL). fd must be open at this point.
+//After fd_monitor returns, the previous callback is guaranteed to have returned for the last time.
+//Callbacks are called on a foreign thread. Use locks as appropriate.
+void fd_monitor(int fd, function<void(int)> on_read, function<void(int)> on_write);
+#endif
+#endif

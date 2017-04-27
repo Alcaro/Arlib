@@ -2,7 +2,6 @@
 #include "sandbox.h"
 #include "../process.h"
 #include "../test.h"
-#undef bind
 
 #include <sys/user.h>
 #include <sys/wait.h>
@@ -30,6 +29,7 @@
 #include <linux/audit.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <sys/mman.h>
 
 /*
 //ensure a AF_UNIX SOCK_SEQPACKET socketpair can't specify dest_addr
@@ -104,11 +104,21 @@ struct broker_rsp {
 };
 
 
-static int require(int x)
+template<typename T> T require(T x)
 {
 	//failures are easiest debugged with strace
-	if (x<0) _exit(1);
+	if ((long)x == -1) _exit(1);
 	return x;
+}
+//this could be a specialization, but in security-critical code, explicit is better than implicit
+void require_eq(bool x)
+{
+	if (!x) _exit(1);
+}
+template<typename T> T require_eq(T actual, T expected)
+{
+	if (actual != expected) _exit(1);
+	return actual;
 }
 
 
@@ -201,63 +211,10 @@ static bool closefrom(int lowfd)
 }
 
 
-#if defined(__i386__)
-#define ARCH_TRUE AUDIT_ARCH_I386
-#define REG_SYSCALL	REG_EAX
-#define REG_ARG0	REG_EBX
-#define REG_ARG1	REG_ECX
-#define REG_ARG2	REG_EDX
-#define REG_ARG3	REG_ESI
-#define REG_ARG4	REG_EDI
-#define REG_ARG5	REG_EBP
-#define REG_RESULT	REG_EAX
-#elif defined(__x86_64__)
-#define ARCH_TRUE AUDIT_ARCH_X86_64
-#define REG_SYSCALL	REG_RAX
-#define REG_ARG0	REG_RDI
-#define REG_ARG1	REG_RSI
-#define REG_ARG2	REG_RDX
-#define REG_ARG3	REG_R10
-#define REG_ARG4	REG_R8
-#define REG_ARG5	REG_R9
-#define REG_RESULT	REG_RAX
-#else
-#error Unsupported architecture.
-#endif
-
-
 static bool install_seccomp()
 {
 	static const struct sock_filter filter[] = {
-#define I_arch (offsetof(struct seccomp_data, arch))
-#define I_sysno (offsetof(struct seccomp_data, nr))
-#define I_arg0l (offsetof(struct seccomp_data, args[0]))
-#define I_arg0h (offsetof(struct seccomp_data, args[0])+4)
-#define I_arg1l (offsetof(struct seccomp_data, args[1]))
-#define I_arg1h (offsetof(struct seccomp_data, args[1])+4)
-#define I_arg2l (offsetof(struct seccomp_data, args[2]))
-#define I_arg2h (offsetof(struct seccomp_data, args[2])+4)
-#define I_arg3l (offsetof(struct seccomp_data, args[3]))
-#define I_arg3h (offsetof(struct seccomp_data, args[3])+4)
-#define I_arg4l (offsetof(struct seccomp_data, args[4]))
-#define I_arg4h (offsetof(struct seccomp_data, args[4])+4)
-#define I_arg5l (offsetof(struct seccomp_data, args[5]))
-#define I_arg5h (offsetof(struct seccomp_data, args[5])+4)
-#include "bpf.inc"
-#undef I_arch
-#undef I_sysno
-#undef I_arg0l
-#undef I_arg0h
-#undef I_arg1l
-#undef I_arg1h
-#undef I_arg2l
-#undef I_arg2h
-#undef I_arg3l
-#undef I_arg3h
-#undef I_arg4l
-#undef I_arg4h
-#undef I_arg5l
-#undef I_arg5h
+		#include "bpf.inc"
 	};
 	static_assert(sizeof(filter)/sizeof(filter[0]) < 65536);
 	static const struct sock_fprog prog = {
@@ -276,7 +233,7 @@ static int execveat(int dirfd, const char * pathname, char * const argv[], char 
 }
 
 
-bool boot_sand(char** argv, char** envp, int& pid, int& sock)
+bool boot_sand(char** argv, char** envp, pid_t& pid, int& sock)
 {
 	//fcntl is banned by seccomp, so this goes early
 	//putting it before clone() allows sharing it between all processes
@@ -307,6 +264,7 @@ bool boot_sand(char** argv, char** envp, int& pid, int& sock)
 	const char * new_envp[] = {
 		//none of these envs seem to matter
 		//maybe $TERM, $LANG/$LC_*, and hardcoding $PWD="/$CWD"
+		//"LD_DEBUG=all",
 		NULL
 	};
 	
@@ -338,20 +296,25 @@ bool boot_sand(char** argv, char** envp, int& pid, int& sock)
 	require(chroot("/proc/sys/debug/"));
 	require(chdir("/"));
 	
-	if (!install_seccomp()) require(-1);
+	require_eq(install_seccomp(), true);
 	
-	require(execveat(4, "", argv, (char**)new_envp, AT_EMPTY_PATH));
+	//no idea why 0x00007FFF'FFFFF000 isn't mappable, but sure, we can do that
+	char* final_page = (char*)0x00007FFFFFFFE000;
+	require_eq(mmap(final_page+0x1000, 0x1000, PROT_READ, MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED, -1, 0), MAP_FAILED);
+	require_eq(mmap(final_page,        0x1000, PROT_READ, MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED, -1, 0), (void*)final_page);
+	require(execveat(4, final_page+0xFFF, argv, (char**)new_envp, AT_EMPTY_PATH));
 	_exit(1); // execve never returns nonnegative, and require never returns from negative, but gcc knows neither
 }
 
+
+void sand_do_the_thing(int pid, int sock);
 int main(int argc, char ** argv, char ** envp)
 {
 	int pid;
 	int sock;
 	if (!boot_sand(argv, envp, pid, sock)) return 1;
 	
-	int x;
-	waitpid(pid,&x,0);
+	sand_do_the_thing(pid, sock);
 }
 
 /*

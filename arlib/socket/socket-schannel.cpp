@@ -10,7 +10,6 @@
 #endif
 
 #define SECURITY_WIN32
-#undef bind
 #include <stdio.h>
 #include <stdlib.h>
 #include <windows.h>

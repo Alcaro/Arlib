@@ -119,7 +119,8 @@ class mutexlocker : nocopy {
 	mutexlocker();
 	mutex* m;
 public:
-	mutexlocker(mutex* m) { this->m=m; this->m->lock(); }
+	mutexlocker(mutex* m) { this->m = m;  this->m->lock(); }
+	mutexlocker(mutex& m) { this->m = &m; this->m->lock(); }
 	~mutexlocker() { this->m->unlock(); }
 };
 #define synchronized(mutex) using(mutexlocker LOCK(mutex))

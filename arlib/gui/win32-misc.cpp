@@ -2,10 +2,8 @@
 #include "../file.h"
 #include "../os.h"
 #ifdef ARGUI_WINDOWS
-#undef bind
 #include <windows.h>
 #include <commdlg.h>
-#define bind bind_func
 #ifdef ARLIB_WUTF
 #include "../wutf/wutf.h"
 #endif

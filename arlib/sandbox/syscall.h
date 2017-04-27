@@ -3,12 +3,11 @@
 //WARNING: uses the raw kernel interface!
 //If the manpage splits an argument in high/low, then you'd better follow suit.
 //If the argument order changes between platforms, you must follow that.
-//If the syscall is completely different from the wrapper (hi clone()), use syscall.
-//In particular, there is no errno in this environment. Instead, that's handled by returning (long)-ENOENT.
+//If the syscall is completely different from the wrapper (hi clone()), you must use syscall semantics.
+//In particular, there is no errno in this environment. Instead, that's handled by returning -ENOENT.
 
 #ifdef __x86_64__
-//https://en.wikibooks.org/wiki/X86_Assembly/Interfacing_with_Linux#syscall
-#define CLOBBER "memory", "cc", "rcx", "r11"
+#define CLOBBER "memory", "cc", "rcx", "r11" // https://en.wikibooks.org/wiki/X86_Assembly/Interfacing_with_Linux#syscall
 
 static inline long syscall6(long n, long a1, long a2, long a3, long a4, long a5, long a6)
 {
@@ -20,9 +19,6 @@ static inline long syscall6(long n, long a1, long a2, long a3, long a4, long a5,
 	register long r10 asm("r10") = a4;
 	register long r8 asm("r8") = a5;
 	register long r9 asm("r9") = a6;
-	
-	//I'd use sysenter, but it returns to some silly location.
-	//I also tried int 0x80, but that's the 32bit syscalls - stracing why open() returns current pid was fun
 	__asm__ volatile("syscall" : "=r"(rax) : "r"(rax), "r"(rdi), "r"(rsi), "r"(rdx), "r"(r10), "r"(r8), "r"(r9) : CLOBBER);
 	return rax;
 }

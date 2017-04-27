@@ -5,8 +5,6 @@
 //https://github.com/halogenica/WGL_NV_DX/blob/master/SharedResource.cpp
 //https://msdn.microsoft.com/en-us/library/windows/desktop/bb174336(v=vs.85).aspx
 
-
-#undef bind
 #ifdef _MSC_VER
 //MSVC's gl.h doesn't seem to include the stuff it should. Copying these five lines from mingw's gl.h...
 # if !(defined(WINGDIAPI) && defined(APIENTRY))
@@ -41,8 +39,6 @@
 #else
 # define IFD3D(x)
 #endif
-
-#define bind bind_func
 
 namespace {
 

@@ -2,9 +2,7 @@
 #include "os.h"
 
 #ifdef _WIN32
-#undef bind
 #include <windows.h>
-#define bind bind_func
 #include <string.h>
 
 //#define MMAP_THRESHOLD 32*1024

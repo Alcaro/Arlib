@@ -1,8 +1,6 @@
 #include "window.h"
 #ifdef ARGUI_WINDOWS
-#undef bind
 #include <windows.h>
-#define bind bind_func
 #include <commctrl.h>
 #include <ctype.h>
 
