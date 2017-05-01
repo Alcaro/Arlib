@@ -3,16 +3,26 @@
 //#include <sys/socket.h>
 
 enum broker_req_t {
-	br_nop,       // [req only] does nothing, doesn't respond
-	br_open,      // flags[0] is O_RDONLY/etc, flags[1] is mode, flags[2] is unused
-	br_open_emul, // returns the fd of the emulator, path and flags unused
+	br_nop,       // [req only] does nothing, doesn't respond (used by launcher to check if parent is alive)
+	br_ping,      // does nothing, sends an empty response (unused)
+	br_open,      // open(req.path, req.flags[0], req.flags[1])
+	br_unlink,    // flags unused
+	br_access,    // access(req.path, req.flags[0])
+	br_get_emul,  // returns the fd of the emulator, path and flags unused
 	br_fork,      // returns a new fd equivalent to the existing broker fd, to be used in fork()
 	br_send,      // [rsp only] broker spontaneously sent a fd
 };
+
+//static_assert(O_RDONLY==0);
+//static_assert(O_WRONLY==1);
+//static_assert(O_RDWR==2);
+//static_assert(O_ACCMODE==3);
+//#define O_UNLINK 3 // O_RDONLY=0, O_WRONLY=1, O_RDWR=2, 3=free for grabs
+
 struct broker_req {
 	enum broker_req_t type;
 	uint32_t flags[3];
-	char path[260]; // Windows MAX_PATH, anything longer than this probably isn't useful
+	char path[260]; // same as Windows MAX_PATH, anything longer than this probably isn't useful
 };
 struct broker_rsp {
 	enum broker_req_t type;
@@ -21,7 +31,7 @@ struct broker_rsp {
 
 //CMSG_NXTHDR is a function in glibc, we can't do that
 //there's an inline version in the headers, but I can't find a reliable way to enforce its use
-//so I'll just copypaste and reformat it
+//so I'll just copypaste it
 #undef CMSG_NXTHDR
 static inline struct cmsghdr * CMSG_NXTHDR(struct msghdr * msgh, struct cmsghdr * cmsg)
 {
@@ -49,7 +59,7 @@ static inline ssize_t send_fd(int sockfd, const void * buf, size_t len, int flag
 		.msg_name = NULL, .msg_namelen = 0,
 		.msg_iov = &iov, .msg_iovlen = 1,
 		.msg_control = ctrl_buf, .msg_controllen = (fd>=0 ? sizeof(ctrl_buf) : 0),
-		.msg_flags = flags,
+		.msg_flags = 0,
 	};
 	
 	if (fd>=0)
@@ -61,7 +71,7 @@ static inline ssize_t send_fd(int sockfd, const void * buf, size_t len, int flag
 		*(int*)CMSG_DATA(ctrl_msg) = fd;
 	}
 	
-	return sendmsg(sockfd, &message, 0);
+	return sendmsg(sockfd, &message, flags);
 }
 
 static inline ssize_t recv_fd(int sockfd, void * buf, size_t len, int flags, int* fd)
@@ -72,10 +82,10 @@ static inline ssize_t recv_fd(int sockfd, void * buf, size_t len, int flags, int
 		.msg_name = NULL, .msg_namelen = 0,
 		.msg_iov = &iov, .msg_iovlen = 1,
 		.msg_control = ctrl_buf, .msg_controllen = sizeof(ctrl_buf),
-		.msg_flags = flags,
+		.msg_flags = 0,
 	};
 	
-	ssize_t ret = recvmsg(sockfd, &message, 0);
+	ssize_t ret = recvmsg(sockfd, &message, flags);
 	
 	*fd = -1;
 	for (cmsghdr* ctrl_msg=CMSG_FIRSTHDR(&message);ctrl_msg!=NULL;ctrl_msg=CMSG_NXTHDR(&message, ctrl_msg))

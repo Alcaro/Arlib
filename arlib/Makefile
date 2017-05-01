@@ -103,6 +103,7 @@ endif
 OPTFLAGS := -Os -fomit-frame-pointer -fmerge-all-constants -fvisibility=hidden
 OPTFLAGS += -fno-unwind-tables -fno-asynchronous-unwind-tables
 OPTFLAGS += -ffunction-sections -fdata-sections
+OPTFLAGS += -fno-ident
 OPTFLAGS += -Werror -DNDEBUG
 
 ifneq ($(OPT),0)
@@ -111,7 +112,7 @@ ifneq ($(OPT),0)
     CONF_CFLAGS += -O3
   endif
   ifneq ($(DEBUG),1)
-    LFLAGS += -Wl,--gc-sections -s
+    LFLAGS += -Wl,--gc-sections -s -Wl,--build-id=none
   endif
   OBJNAME := $(OBJNAME)-opt
 endif
@@ -126,6 +127,8 @@ endif
 ifeq ($(PROFILE),use)
   CONF_CFLAGS += -fprofile-use -fprofile-correction
 endif
+
+CONF_CFLAGS += -DARLIB_OBJNAME=$(OBJNAME)
 
 OUTNAME = $(PROGRAM)$(EXESUFFIX)
 

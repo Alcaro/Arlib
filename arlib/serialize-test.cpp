@@ -1,4 +1,5 @@
 #include "serialize.h"
+#include "set.h"
 #include "test.h"
 
 #ifdef ARLIB_TEST
@@ -90,6 +91,21 @@ struct ser9 {
 	}
 };
 
+struct ser10 {
+	string data;
+	SERIALIZE(data);
+};
+
+struct ser11 {
+	set<string> data;
+	SERIALIZE(data);
+};
+
+struct ser12 {
+	map<string,string> data;
+	SERIALIZE(data);
+};
+
 test()
 {
 	{
@@ -159,8 +175,31 @@ test()
 		assert_eq(bmlserialize(item), "foo=12345678\nbar=12345678");
 	}
 	
-	//TODO: when adding a dict class, make sure the key "C:/Users/Administrator/My Documents/!TOP SECRET!.docx" is processed properly
-	//it should become "--C-3A-2FUsers-2FAdministrator-2FMy-20Documents-2F-21TOP-20SECRET-21.docx"
+	{
+		ser10 item;
+		item.data = "test";
+		assert_eq(bmlserialize(item), "data=test");
+	}
+	
+	{
+		ser11 item;
+		item.data.add("foo");
+		item.data.add("test");
+		item.data.add("C:/Users/Administrator/My Documents/!TOP SECRET!.docx");
+		//the set is unordered, this can give spurious failures
+		assert_eq(bmlserialize(item), "data=foo\ndata=\"C:/Users/Administrator/My Documents/!TOP SECRET!.docx\"\ndata=test");
+	}
+	
+	{
+		ser12 item;
+		item.data.insert("foo", "bar");
+		item.data.insert("test", "C:/Users/Administrator/My Documents/!TOP SECRET!.docx");
+		item.data.insert("C:/Users/Administrator/My Documents/!TOP SECRET!.docx", "test");
+		assert_eq(bmlserialize(item), "data"
+		                              " foo=bar"
+		                              " -C-3A-2FUsers-2FAdministrator-2FMy-20Documents-2F-21TOP-20SECRET-21.docx=test"
+		                              " test=\"C:/Users/Administrator/My Documents/!TOP SECRET!.docx\"");
+	}
 }
 
 test()
@@ -257,6 +296,41 @@ test()
 		assert_eq(item.bar[1], 0x34);
 		assert_eq(item.bar[2], 0x56);
 		assert_eq(item.bar[3], 0x78);
+	}
+	
+	{
+		ser9 item = bmlunserialize<ser9>("foo=12345678\nbar=12345678");
+		assert_eq(item.foo[0], 0x12);
+		assert_eq(item.foo[1], 0x34);
+		assert_eq(item.foo[2], 0x56);
+		assert_eq(item.foo[3], 0x78);
+		assert_eq(item.bar.size(), 4);
+		assert_eq(item.bar[0], 0x12);
+		assert_eq(item.bar[1], 0x34);
+		assert_eq(item.bar[2], 0x56);
+		assert_eq(item.bar[3], 0x78);
+	}
+	
+	{
+		ser10 item = bmlunserialize<ser10>("data=test");
+		assert_eq(item.data, "test");
+	}
+	
+	{
+		ser11 item = bmlunserialize<ser11>("data=foo\ndata=\"C:/Users/Administrator/My Documents/!TOP SECRET!.docx\"\ndata=test");
+		assert(item.data.contains("foo"));
+		assert(item.data.contains("test"));
+		assert(item.data.contains("C:/Users/Administrator/My Documents/!TOP SECRET!.docx"));
+	}
+	
+	{
+		ser12 item = bmlunserialize<ser12>("data"
+		                                   " foo=bar"
+		                                   " -C-3A-2FUsers-2FAdministrator-2FMy-20Documents-2F-21TOP-20SECRET-21.docx=test"
+		                                   " test=\"C:/Users/Administrator/My Documents/!TOP SECRET!.docx\"");
+		assert_eq(item.data.get("foo"), "bar");
+		assert_eq(item.data.get("test"), "C:/Users/Administrator/My Documents/!TOP SECRET!.docx");
+		assert_eq(item.data.get("C:/Users/Administrator/My Documents/!TOP SECRET!.docx"), "test");
 	}
 }
 #endif

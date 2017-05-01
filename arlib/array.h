@@ -28,7 +28,7 @@ public:
 	const T* ptr() const { return items; }
 	size_t size() const { return count; }
 	
-	operator bool() const { return count; }
+	explicit operator bool() const { return count; }
 	
 	arrayview()
 	{
@@ -436,6 +436,8 @@ protected:
 		uint8_t bits_inline[n_inline/8];
 		uint8_t* bits_outline;
 	};
+	size_t nbits;
+	
 	uint8_t* bits()
 	{
 		if (nbits <= n_inline) return bits_inline;
@@ -446,7 +448,6 @@ protected:
 		if (nbits <= n_inline) return bits_inline;
 		else return bits_outline;
 	}
-	size_t nbits;
 	
 	class entry {
 		array<bool>& parent;
@@ -477,6 +478,25 @@ protected:
 		byte |= (val<<(n&7));
 	}
 	
+	void clear_unused(size_t nbytes)
+	{
+		size_t low = this->nbits;
+		size_t high = nbytes*8;
+		
+		high = (high+7)&~7; // wipe the rest of the byte, it doesn't matter
+		
+		uint8_t& byte = bits()[low/8];
+		byte &=~ (0xFF<<(low&7));
+		low = (low+7)&~7;
+		
+		memset(bits()+low/8, 0, (high-low)/8);
+	}
+	
+	size_t alloc_size(size_t len)
+	{
+		return bitround((len+7)/8);
+	}
+	
 public:
 	bool operator[](size_t n) const { return get(n); }
 	entry operator[](size_t n) { return entry(*this, n); }
@@ -484,19 +504,23 @@ public:
 	size_t size() const { return nbits; }
 	void reset()
 	{
-		if (nbits >= n_inline) free(this->bits_outline);
-		this->nbits = 0;
+		destruct();
+		construct();
 	}
 	
 	void resize(size_t len)
 	{
-		switch ((this->nbits > n_inline)<<1 | (len > n_inline))
+		size_t prevlen = this->nbits;
+		this->nbits = len;
+		
+		switch ((prevlen > n_inline)<<1 | (len > n_inline))
 		{
 		case 0: // small->small
+			if (len < prevlen) clear_unused(sizeof(this->bits_inline));
 			break;
 		case 1: // small->big
 			{
-				size_t newbytes = bitround((len+7)/8);
+				size_t newbytes = alloc_size(len);
 				uint8_t* newbits = malloc(newbytes);
 				memcpy(newbits, this->bits_inline, sizeof(this->bits_inline));
 				memset(newbits+sizeof(this->bits_inline), 0, newbytes-sizeof(this->bits_inline));
@@ -508,24 +532,48 @@ public:
 				uint8_t* freethis = this->bits_outline;
 				memcpy(this->bits_inline, this->bits_outline, sizeof(this->bits_inline));
 				free(freethis);
+				clear_unused(sizeof(this->bits_inline));
 			}
+			break;
 		case 3: // big->big
 			{
-				size_t prevbytes = bitround((this->nbits+7)/8);
-				size_t newbytes = bitround((len+7)/8);
+				size_t prevbytes = alloc_size(prevlen);
+				size_t newbytes = alloc_size(len);
 				if (newbytes > prevbytes)
 				{
 					bits_outline = realloc(this->bits_outline, newbytes);
-					if (newbytes > prevbytes)
-					{
-						memset(this->bits_outline+prevbytes, 0, newbytes-prevbytes);
-					}
+					clear_unused(newbytes);
+				}
+				if (len < prevlen)
+				{
+					clear_unused(newbytes);
 				}
 			}
 			break;
 		}
 		
-		this->nbits = len;
+//printf("%lu->%lu t=%i", prevlen, len, ((prevlen > n_inline)<<1 | (len > n_inline)));
+//size_t bytes;
+//if (len > n_inline) bytes = alloc_size(len);
+//else bytes = sizeof(bits_inline);
+//for (size_t i=0;i<bitround(bytes);i++)
+//{
+//printf(" %.2X", bits()[i]);
+//}
+//puts("");
+//bool fail=false;
+//if (len>prevlen)
+//{
+//for (size_t n=prevlen;n<len;n++)
+//{
+//	if (get(n))
+//	{
+//		printf("%lu->%lu: unexpected at %lu\n", prevlen, len, n);
+//		fail=true;
+//	}
+//}
+//}
+//if(fail)abort();
 	}
 	
 	void append(bool item) { set(this->nbits, item); }
@@ -548,18 +596,57 @@ public:
 		}
 	}
 	
-	array()
+private:
+	void destruct()
+	{
+		if (nbits > n_inline) free(bits_outline);
+	}
+	void construct()
 	{
 		this->nbits = 0;
-		memset(this->bits_inline, 0, sizeof(this->bits_inline));
+		memset(bits_inline, 0, sizeof(bits_inline));
 	}
-	
-	~array()
+	void construct(const array& other)
 	{
-		if (nbits >= n_inline) free(this->bits_outline);
+		nbits = other.nbits;
+		if (nbits > n_inline)
+		{
+			size_t nbytes = alloc_size(nbits);
+			bits_outline = malloc(nbytes);
+			memcpy(bits_outline, other.bits_outline, nbytes);
+		}
+		else
+		{
+			memcpy(bits_inline, other.bits_inline, sizeof(bits_inline));
+		}
+	}
+	void construct(array&& other)
+	{
+		memcpy(this, &other, sizeof(*this));
+		other.construct();
+	}
+public:
+	
+	array() { construct(); }
+	array(const array& other) { construct(other); }
+	array(array&& other) { construct(other); }
+	~array() { destruct(); }
+	
+	array& operator=(const array& other)
+	{
+		destruct();
+		construct(other);
+		return *this;
 	}
 	
-	//missing features from the other arrays (some don't make sense here):
+	array& operator=(array&& other)
+	{
+		destruct();
+		construct(other);
+		return *this;
+	}
+	
+	//missing maybe-useful features from the normal array:
 	//operator bool() { return count; }
 	//T join() const
 	//template<typename T2> decltype(T() + T2()) join(T2 between) const
@@ -567,19 +654,6 @@ public:
 	//bool operator!=(arrayview<T> other)
 	//const T* begin() { return this->items; }
 	//const T* end() { return this->items+this->count; }
-	//T* ptr() { return this->items; }
-	//const T* ptr() const { return this->items; }
-	//T* begin() { return this->items; }
-	//T* end() { return this->items+this->count; }
-	//void reserve(size_t len) { resize_grow(len); }
-	//void reserve_noinit(size_t len)
 	//void remove(size_t index)
-	//
 	//array(null_t)
-	//array(const array<T>& other)
-	//array(const arrayview<T>& other)
-	//array(array<T>&& other)
-	//array<T> operator=(array<T> other)
-	//array<T> operator=(arrayview<T> other)
-	//array<T>& operator+=(arrayview<T> other)
 };

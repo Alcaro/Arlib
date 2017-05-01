@@ -29,8 +29,12 @@ void thread_create(function<void()> start);
 // busy loop, or a hybrid scheme that spins a few times and then sleeps.
 //Remember to create all relevant mutexes before creating a thread.
 class mutex : nocopy {
+protected:
 #if defined(__unix__)
 	pthread_mutex_t mut;
+	
+	class noinit {};
+	mutex(noinit) {}
 public:
 	mutex() { pthread_mutex_init(&mut, NULL); }
 	void lock() { pthread_mutex_lock(&mut); }
@@ -63,12 +67,22 @@ public:
 	CRITICAL_SECTION cs;
 	
 public:
-	//yay, initializers. no real way to avoid them here
 	mutex() { InitializeCriticalSection(&cs); }
 	void lock() { EnterCriticalSection(&cs); }
 	bool try_lock() { return TryEnterCriticalSection(&cs); }
 	void unlock() { LeaveCriticalSection(&cs); }
 	~mutex() { DeleteCriticalSection(&cs); }
+#endif
+};
+
+
+class mutex_rec : public mutex {
+#if defined(__unix__)
+public:
+	mutex_rec();
+#else
+private: // unimplemented
+	mutex_rec();
 #endif
 };
 
@@ -211,7 +225,7 @@ public:
 	bool try_lock() { return true; }
 	void unlock() { }
 };
-#define RUN_ONCE(fn) do { static bool first=true; if (first) fn(); first=false; } while(0);
+#define RUN_ONCE(fn) do { static bool first=true; if (first) fn(); first=false; } while(0)
 #define RUN_ONCE_FN(name) static void name##_core(); static void name() { RUN_ONCE(name##_core); } static void name##_core()
 
 #endif

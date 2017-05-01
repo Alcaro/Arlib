@@ -1,11 +1,14 @@
 #ifdef __linux__
+#ifndef ARLIB_TEST
 #include "sandbox.h"
 #include "../process.h"
 #include "../test.h"
 
+#include <sys/syscall.h>
+#ifdef __NR_execveat
+
 #include <sys/user.h>
 #include <sys/wait.h>
-#include <sys/syscall.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/resource.h>
@@ -236,7 +239,7 @@ static int execveat(int dirfd, const char * pathname, char * const argv[], char 
 bool boot_sand(char** argv, char** envp, pid_t& pid, int& sock)
 {
 	//fcntl is banned by seccomp, so this goes early
-	//putting it before clone() allows sharing it between all processes
+	//putting it before clone() allows sharing it between sandbox children
 	int preld_fd = preloader_fd();
 	if (preld_fd<0)
 		return false;
@@ -262,9 +265,9 @@ bool boot_sand(char** argv, char** envp, pid_t& pid, int& sock)
 	//some of these steps depend on each other, don't swap them randomly
 	
 	const char * new_envp[] = {
-		//none of these envs seem to matter
-		//maybe $TERM, $LANG/$LC_*, and hardcoding $PWD="/$CWD"
-		//"LD_DEBUG=all",
+		"TERM=xterm", // some programs check this to know whether they can color, some check ioctl(TCGETS)
+		"PATH=/usr/bin:/bin",
+		"TMPDIR=/tmp",
 		NULL
 	};
 	
@@ -298,11 +301,12 @@ bool boot_sand(char** argv, char** envp, pid_t& pid, int& sock)
 	
 	require_eq(install_seccomp(), true);
 	
-	//no idea why 0x00007FFF'FFFFF000 isn't mappable, but sure, we can do that
+	//no idea why 0x00007FFF'FFFFF000 isn't mappable, but sure, we don't care what it is
 	char* final_page = (char*)0x00007FFFFFFFE000;
 	require_eq(mmap(final_page+0x1000, 0x1000, PROT_READ, MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED, -1, 0), MAP_FAILED);
 	require_eq(mmap(final_page,        0x1000, PROT_READ, MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED, -1, 0), (void*)final_page);
 	require(execveat(4, final_page+0xFFF, argv, (char**)new_envp, AT_EMPTY_PATH));
+	
 	_exit(1); // execve never returns nonnegative, and require never returns from negative, but gcc knows neither
 }
 
@@ -315,6 +319,7 @@ int main(int argc, char ** argv, char ** envp)
 	if (!boot_sand(argv, envp, pid, sock)) return 1;
 	
 	sand_do_the_thing(pid, sock);
+	return 0;
 }
 
 /*
@@ -427,4 +432,6 @@ sandproc::~sandproc() { delete this->conn; }
 //	
 //}
 */
+#endif
+#endif
 #endif

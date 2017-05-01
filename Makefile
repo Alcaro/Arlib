@@ -1,13 +1,13 @@
 PROGRAM = arlibtest
-ARGUI = 1
-AROPENGL = 1
+ARGUI = 0
+AROPENGL = 0
 ARTHREAD = 1
 ARWUTF = 0
 ARSOCKET = 1
-#valid values: openssl, gnutls, tlse, bearssl, no
-#ignored on windows (other than 'no', which is obeyed), always uses schannel
-#default openssl
+#valid values: openssl (default), gnutls, tlse, bearssl, no
 ARSOCKET_SSL = bearssl
+#valid values: schannel (default), bearssl, no (others may work, not tested)
+ARSOCKET_SSL_WINDOWS = schannel
 ARSANDBOX = 1
 
 #honored variables, in addition to the ones listed here:

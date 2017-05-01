@@ -1,6 +1,7 @@
 #include "../endian.h"
 #include "thread.h"
 #ifdef __linux__disabled__
+/**
 //I could try to rewrite all of this without pthread, but I'd rather not set up TLS stuff myself, that'd require replacing half of libc.
 //However, I can remove everything except pthread_create.
 //Minimum kernel version: 2.6.22 (FUTEX_PRIVATE_FLAG), released in 8 July, 2007 (source: http://kernelnewbies.org/LinuxVersions)
@@ -247,4 +248,5 @@ uintptr_t thread_get_id()
 	//(it's some big mess the first time, apparently the dependency is dynamically loaded)
 	return pthread_self();
 }
+*/
 #endif

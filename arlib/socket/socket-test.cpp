@@ -77,7 +77,7 @@ static void ser_test(autoptr<socketssl>& s)
 }
 test("SSL serialization")
 {
-	//test_skip("too slow");
+	test_skip("too slow");
 	autoptr<socketssl> s = socketssl::create("google.com", 443);
 	testcall(ser_test(s));
 	s->send("GET / HTTP/1.1\n");

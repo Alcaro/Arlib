@@ -88,9 +88,10 @@ public:
 	//To ask what enter() would do, call this with a non-inline mode.
 	mode type(cstring val, mode m) const;
 	
-	//Given an arbitrary string, returns a string containing only characters valid in node names ([a-zA-Z0-9.-]+). Not used automatically.
+	//Given an arbitrary string, returns a string containing only characters valid in node names ([a-zA-Z0-9.-]+).
+	//Not used automatically.
 	static string escape(cstring val);
-	//Given a string not from escape(), return value is undefined.
+	//Undoes escape(). If the string isn't from there, unspecified behavior.
 	static string unescape(cstring val);
 	
 private:

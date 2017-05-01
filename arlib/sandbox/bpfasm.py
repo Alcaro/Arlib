@@ -115,44 +115,87 @@ def assemble(bpf):
 	#pass 2: statements to instructions
 	#after this, opcodes is an array with the following structure:
 	"""
-	ld #42
-	[set("#0"), "BPF_LD|BPF_W|BPF_IMM", "42", "#1"]
-	labels, opcode, argument, next
-	every opcode has an implicit label named after its opcode ID, and implicitly point to next opcode
-	
 	ret #0
-	[set("#0"), "BPF_RET|BPF_IMM", "0"]
-	except return, of course
+	.l=set("#0"), .op="BPF_RET|BPF_IMM", .val="0", .jt=None, .jf=None
+	every opcode has an implicit label named after its opcode ID
 	
-	ldh [I_arch]
-	[set("#1"), "BPF_LD|BPF_H|BPF_K", "I_arch", "#2"]
+	ld #42
+	.l=set("#0"), .op="BPF_LD|BPF_W|BPF_IMM", .val="42", .jt="#1", .jf=None
+	opcodes other than return have .jt, jump if true, pointing to next opcode
 	
-	test123: ld #123
-	[set("#1", "test123"), "BPF_LD|BPF_W|BPF_IMM", "123", "#2"]
+	test123: ldh [I_arch]
+	.l=set("#1", "test123"), .op="BPF_LD|BPF_H|BPF_K", .val="I_arch", .jt="#2", .jf=None
 	
 	jeq #__NR_exit, test123
-	[set("#0"), "BPF_JMP|BPF_JEQ", "__NR_exit", "test123", "#1"]
-	branches have two targets: target if true and target if false
-	the branch taken is hardcoded
+	.l=set("#0"), .op="BPF_JMP|BPF_JEQ", .val="__NR_exit", .jt="test123", .jf="#1"
+	branch opcodes have two jump targets
 	
 	jne #__NR_exit, test123
-	[set("#0"), "BPF_JMP|BPF_JEQ", "__NR_exit", "#1", "test123"]
+	.l=set("#0"), .op="BPF_JMP|BPF_JEQ", .val="__NR_exit", .jt="#1", .jf="test123"
 	
 	jmp test123
-	[set("#0"), None, "0", "test123", "test123"]
-	unconditional jmp is implemented as true == false; opcode is ignored (hardcoded later)
+	.l=set("#0"), .op=None, .val="0", .jt="test123", .jf="test123"
+	unconditional jmp is implemented as .jt == .jf; opcode is ignored (hardcoded later)
 	"""
+	
+	class struct:
+		def clone(self):
+			ret = struct()
+			ret.__dict__ = self.__dict__.copy()
+			return ret
+		def __repr__(self):
+			return str(self.__dict__)
+	def opcode(l, op, val, jt, jf=None):
+		ret = struct()
+		ret.l = l
+		ret.op = op
+		ret.val = val
+		ret.jt = jt
+		ret.jf = jf
+		return ret
 	
 	opcodes = []
 	labelshere = set()
 	
 	defines = {}
-	def get_define(word):
-		n = 0
-		while n<10 and word in defines:
-			word = defines[word]
-			n+=1
-		return word
+	defines_rec = None
+	define_chars = "a-zA-Z0-9_"
+	def set_define(word, val):
+		if not re.fullmatch("["+define_chars+"]+", val): val = "("+val+")"
+		defines[word] = val
+		nonlocal defines_rec
+		defines_rec = None
+	
+	def define_split(text):
+		return re.findall("["+define_chars+"]+|[^"+define_chars+"]+", text)
+	
+	def flatten_define(text, defines, used):
+		words = define_split(text)
+		for i,word in enumerate(words):
+			if word in defines and word not in used:
+				used.add(word)
+				words[i] = flatten_define(defines[word], defines, used)
+				used.remove(word)
+		return ''.join(words)
+	
+	def flatten_defines(defines):
+		flat = {}
+		
+		for src in defines:
+			flat[src] = flatten_define(defines[src], defines, {src})
+		
+		return flat
+	
+	def get_define(text):
+		nonlocal defines_rec
+		if not defines_rec:
+			defines_rec = flatten_defines(defines)
+		
+		words = define_split(text)
+		for i,word in enumerate(words):
+			if word in defines_rec:
+				words[i] = defines_rec[word]
+		return ''.join(words)
 	
 	for line in bpf.split("\n"):
 		line = line.split(";")[0].strip()
@@ -175,21 +218,21 @@ def assemble(bpf):
 				define,eq,value = arg.split(" ", 2)
 				if eq != "=" or value is None:
 					die("bad let: "+line)
-				defines[define] = value
+				set_define(define, value)
 				continue
 			if op == "defines":
 				for line in open(arg).read().split("\n"):
 					if line.startswith("#define"):
 						parts = line.split(None, 2)
-						if len(parts) == 3: # ignore '#define _STDIO_H'
-							defines[parts[1]] = parts[2]
+						if len(parts) == 3: # ignore #define _STDIO_H
+							set_define(parts[1], parts[2])
 				continue
 			die("unknown opcode: "+line)
 		
 		label = None
 		if op[0]=='j':
 			if op == "jmp":
-				opcodes.append([labelshere, None, "0", arg, arg])
+				opcodes.append(opcode(l=labelshere, op=None, val="0", jt=arg, jf=arg))
 				labelshere = set()
 				continue
 			
@@ -208,14 +251,14 @@ def assemble(bpf):
 				match = "0"
 			if match:
 				match = get_define(match)
-				opcode = ops[op][pattern]
-				if isinstance(opcode,tuple):
-					if opcode[1]: opcodes.append([labelshere, opcode[0], match, label, nextlabel])
-					else:         opcodes.append([labelshere, opcode[0], match, nextlabel, label])
-				elif 'BPF_RET' in opcode:
-					opcodes.append([labelshere, opcode, match])
+				opspec = ops[op][pattern]
+				if isinstance(opspec,tuple):
+					if opspec[1]: opcodes.append(opcode(l=labelshere, op=opspec[0], val=match, jt=label, jf=nextlabel))
+					else:         opcodes.append(opcode(l=labelshere, op=opspec[0], val=match, jt=nextlabel, jf=label))
+				elif 'BPF_RET' in opspec:
+					opcodes.append(opcode(l=labelshere, op=opspec, val=match, jt=None))
 				else:
-					opcodes.append([labelshere, opcode, match, nextlabel])
+					opcodes.append(opcode(l=labelshere, op=opspec, val=match, jt=nextlabel))
 				break
 		else:
 			die("unknown addressing mode: "+line)
@@ -225,12 +268,12 @@ def assemble(bpf):
 	#pass 2.5: check that all referenced labels exist and go forwards
 	labels = set()
 	for op in reversed(opcodes):
-		for l in op[0]:
+		for l in op.l:
 			if l in labels:
 				die("duplicate label: "+l)
 			labels.add(l)
-		if len(op)>3 and op[3] not in labels: die("unknown or backwards branch: "+op[3])
-		if len(op)>4 and op[4] not in labels: die("unknown or backwards branch: "+op[4])
+		if op.jt and op.jt not in labels: die("unknown or backwards branch: "+op.jt)
+		if op.jf and op.jf not in labels: die("unknown or backwards branch: "+op.jf)
 	
 	
 	#"pass" 3: optimize
@@ -243,60 +286,60 @@ def assemble(bpf):
 		labels_used.add("#0") # the entry point is always reachable
 		label_op = {} # opcode containing a label
 		for pos,op in enumerate(opcodes):
-			for l in op[0]:
+			for l in op.l:
 				label_op[l] = op
-			if len(op)>3: labels_used.add(op[3])
-			if len(op)>4: labels_used.add(op[4])
+			if op.jt: labels_used.add(op.jt)
+			if op.jf: labels_used.add(op.jf)
 		
 		def is_jmp(op):
-			return len(op)==5
+			return op.jf
 		def is_jmp_always(op):
-			return is_jmp(op) and label_op[op[3]] is label_op[op[4]]
+			return op.jf and label_op[op.jt] is label_op[op.jf]
 		
 		delete = [False for _ in opcodes]
 		for i in range(len(opcodes)):
 			hasnext = (i+1 != len(opcodes))
 			
 			#label isn't used -> remove
-			opcodes[i][0] = set(l for l in opcodes[i][0] if l in labels_used)
+			opcodes[i].l = set(l for l in opcodes[i].l if l in labels_used)
 			
 			#opcode has no labels -> unreachable -> delete
-			if not opcodes[i][0]:
+			if not opcodes[i].l:
 				delete[i] = True
-				again = True
 			
 			#two consecutive identical returns -> flatten
-			if hasnext and len(opcodes[i])==3 and len(opcodes[i+1])==3 and opcodes[i][2]==opcodes[i+1][2]:
+			if hasnext and not opcodes[i].jt and not opcodes[i+1].jt and opcodes[i].val==opcodes[i+1].val:
 				delete[i] = True
-				opcodes[i+1][0] |= opcodes[i][0]
-				again = True
+				opcodes[i+1].l |= opcodes[i].l
 			
 			#conditional jump to unconditional (including implicit) -> replace target
 			if is_jmp(opcodes[i]):
-				target1 = label_op[opcodes[i][3]]
+				target1 = label_op[opcodes[i].jt]
 				if is_jmp_always(target1):
-					opcodes[i][3] = target1[3]
-					again=True
-				target2 = label_op[opcodes[i][4]]
+					opcodes[i].jt = target1.jt
+					again = True
+				target2 = label_op[opcodes[i].jf]
 				if is_jmp_always(target2):
-					opcodes[i][4] = target2[4]
-					again=True
+					opcodes[i].jf = target2.jt
+					again = True
 			
 			if is_jmp_always(opcodes[i]):
 				#unconditional jump to return or unconditional jump -> flatten
-				target = label_op[opcodes[i][3]]
-				if is_jmp_always(target) or 'BPF_RET' in target[1]:
-					newop = target[:]
-					newop[0] = opcodes[i][0]
+				target = label_op[opcodes[i].jt]
+				if is_jmp_always(target) or 'BPF_RET' in target.op:
+					newop = target.clone()
+					newop.l = opcodes[i].l
 					opcodes[i] = newop
-					again=True
+					again = True
 				#unconditional jump to next -> delete
 				if target is opcodes[i+1]:
 					delete[i] = True
-					opcodes[i+1][0] |= opcodes[i][0]
-					again = True
+					opcodes[i+1].l |= opcodes[i].l
 		
-		opcodes = [op for op,rem in zip(opcodes,delete) if not rem]
+		oldlen = len(opcodes)
+		opcodes = [op for op,dele in zip(opcodes,delete) if not dele]
+		if len(opcodes) != oldlen:
+			again = True
 	
 	#pass 4: generate code, or if branches go out of bounds, deoptimize by splitting out-of-bounds conditional jumps
 	out = []
@@ -307,22 +350,22 @@ def assemble(bpf):
 		out = []
 		for op in reversed(opcodes): # since we have only forwards branches, assembling backwards is easier
 			pos = len(out)
-			for l in op[0]: labels[l] = pos
+			for l in op.l: labels[l] = pos
 			pos -= 1 # -1 because jmp(0) goes to the next opcode, not the same one again
 			
-			if len(op)>4:
-				if op[3]==op[4]:
-					line = "BPF_STMT(BPF_JMP|BPF_JA, "+str(pos - labels[op[3]])+"),\n"
+			if op.jf:
+				if op.jt==op.jf:
+					line = "BPF_STMT(BPF_JMP|BPF_JA, "+str(pos - labels[op.jt])+"),\n"
 				else:
-					jt = pos - labels[op[3]]
-					jf = pos - labels[op[4]]
+					jt = pos - labels[op.jt]
+					jf = pos - labels[op.jf]
 					if jt>255 or jf>255:
 						#TODO: fix
 						#(official assembler seems to just truncate, it seems to be only intended for debugging?)
 						die("jump out of bounds")
-					line = "BPF_JUMP("+op[1]+", ("+op[2]+"), "+str(jt)+","+str(jf)+"),\n"
+					line = "BPF_JUMP("+op.op+", ("+op.val+"), "+str(jt)+","+str(jf)+"),\n"
 			else:
-				line = "BPF_STMT("+op[1]+", ("+op[2]+")),\n"
+				line = "BPF_STMT("+op.op+", ("+op.val+")),\n"
 			out.append(line)
 	
 	if len(out)>65535:
@@ -345,16 +388,40 @@ def testsuite(silent):
 			print("actual:  ", act)
 			print()
 			exit(1)
-	#ensure jeq+jmp is merged, and jmp is killed as dead code
-	test("jeq #0, ok; jmp die; ok:; ret #0; die:; ret #1",
+	#ensure this opcode assembles properly
+	test("txa; ret #0", "BPF_STMT(BPF_MISC|BPF_TXA, (0)), BPF_STMT(BPF_RET|BPF_IMM, (0)),")
+	#ensure labels don't need to be on their own line
+	test("jmp x; x: ret #0", "BPF_STMT(BPF_RET|BPF_IMM, (0)),")
+	#ensure let/defines assemble properly
+	test("let answer = 42; ret #answer", "BPF_STMT(BPF_RET|BPF_IMM, (42)),")
+	test("defines /usr/include/x86_64-linux-gnu/asm/unistd_64.h; "+
+	     "defines /usr/include/x86_64-linux-gnu/bits/syscall.h; "+
+	     "ret #SYS_exit",
+	     "BPF_STMT(BPF_RET|BPF_IMM, (60)),")
+	#make sure defines act like variables, not C macros
+	test("let two = 1+1; ret #2*two", "BPF_STMT(BPF_RET|BPF_IMM, (2*(1+1))),")
+	#make sure they don't recurse inappropriately
+	test("let bar = offsetof(struct foo, bar); ret #bar", "BPF_STMT(BPF_RET|BPF_IMM, ((offsetof(struct foo, bar)))),")
+	
+	#ensure jeq+jmp is merged, and the jmp is killed as dead code
+	test("jeq #0, ok; jmp die; ok: ret #0; die: ret #1",
 	     "BPF_JUMP(BPF_JMP|BPF_JEQ, (0), 0,1), BPF_STMT(BPF_RET|BPF_IMM, (0)), BPF_STMT(BPF_RET|BPF_IMM, (1)),")
 	#ensure jump to return is optimized
-	test("jmp die; ok:; ret #0; die:; ret #1",
+	test("jmp die; ok: ret #0; die: ret #1",
 	     "BPF_STMT(BPF_RET|BPF_IMM, (1)),")
 	#ensure consecutive identical returns are optimized
-	test("jeq #0, x; ret #1; x:; ret #1",
+	test("jeq #0, x; ret #1; x: ret #1",
 	     "BPF_STMT(BPF_RET|BPF_IMM, (1)),")
 	#ensure jeq to jmp is flattened
+	#(testcase is full of random crap, to inhibit other optimizations)
+	test("jeq #0, dummy; jeq #1, a; jmp b; dummy: ret #0; a: jmp c; b: jmp d; c: add #0; ret #1; d: add #0; ret #2",
+	     "BPF_JUMP(BPF_JMP|BPF_JEQ, (0), 1,0), "+    # jeq #0, dummy
+	     "BPF_JUMP(BPF_JMP|BPF_JEQ, (1), 1,3), "+    # jeq #1, a; jmp b
+	     "BPF_STMT(BPF_RET|BPF_IMM, (0)), "+         # dummy: ret #0
+	     "BPF_STMT(BPF_ALU|BPF_ADD|BPF_IMM, (0)), "+ # a: jmp c; c: add #0
+	     "BPF_STMT(BPF_RET|BPF_IMM, (1)), "+         # ret #1
+	     "BPF_STMT(BPF_ALU|BPF_ADD|BPF_IMM, (0)), "+ # b: jmp d; d: add #0
+	     "BPF_STMT(BPF_RET|BPF_IMM, (2)),")          # ret #2
 	test("jeq #0, c; jeq #0, a; jmp b; c:; ret #2; a:; jmp a2; b:; jmp b2; a2:; ld [0]; ret #0; b2:; ld [1]; ret #1",
 	     "BPF_JUMP(BPF_JMP|BPF_JEQ, (0), 1,0), "+ # jeq #0, c
 	     "BPF_JUMP(BPF_JMP|BPF_JEQ, (0), 1,3), "+ # jeq #0, a; jmp b; a: jmp a2; b: jmp b2
@@ -363,17 +430,6 @@ def testsuite(silent):
 	     "BPF_STMT(BPF_RET|BPF_IMM, (0)), "+      # ret #0
 	     "BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (1)), "+ # b2: ld [1]
 	     "BPF_STMT(BPF_RET|BPF_IMM, (1)),")       # ret #1
-	#ensure labels don't need to be on their own line
-	test("jmp x; x: ret #0", "BPF_STMT(BPF_RET|BPF_IMM, (0)),")
-	#ensure this opcode assembles properly
-	test("txa; ret #0", "BPF_STMT(BPF_MISC|BPF_TXA, (0)), BPF_STMT(BPF_RET|BPF_IMM, (0)),")
-	#ensure this opcode assembles properly
-	test("let answer = 42; ret #answer", "BPF_STMT(BPF_RET|BPF_IMM, (42)),")
-	#ensure this opcode assembles properly
-	test("defines /usr/include/x86_64-linux-gnu/asm/unistd_64.h; "+
-	     "defines /usr/include/x86_64-linux-gnu/bits/syscall.h; "+
-	     "ret #SYS_exit",
-	     "BPF_STMT(BPF_RET|BPF_IMM, (60)),")
 #testsuite(False)
 testsuite(True)
 
@@ -382,14 +438,14 @@ import os, sys
 
 if len(sys.argv)==1:
 	bpf = sys.stdin.read()
-	outfile = lambda: sys.stdout # lambdas to ensure file isn't created on failure
+	outfile = lambda: sys.stdout
 if len(sys.argv)==2:
 	if sys.argv[1]=='--test':
-		#testsuite(False)
+		testsuite(False)
 		exit(0)
 	
 	bpf = open(sys.argv[1], "rt").read()
-	outfile = lambda: open(os.path.splitext(sys.argv[1])[0]+".inc", "wt")
+	outfile = lambda: open(os.path.splitext(sys.argv[1])[0]+".inc", "wt") # lambda to ensure the file isn't created on failure
 	sys.stdout
 if len(sys.argv)==3:
 	bpf = open(sys.argv[1], "rt").read()

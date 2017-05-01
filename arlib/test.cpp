@@ -5,6 +5,7 @@
 #include "test.h"
 #include "array.h"
 #include "gui/window.h"
+#include "os.h"
 
 struct testlist {
 	void(*func)();
@@ -49,6 +50,7 @@ static void _testfail(cstring why)
 {
 	if (!_test_result) puts(why); // discard multiple failures from same test, they're probably caused by same thing
 	_test_result = 1;
+	debug_or_ignore();
 }
 
 void _testfail(cstring why, int line)
@@ -58,7 +60,7 @@ void _testfail(cstring why, int line)
 
 void _testeqfail(cstring name, int line, cstring expected, cstring actual)
 {
-	if (expected.contains("\n") || actual.contains("\n"))
+	if (expected.contains("\n") || actual.contains("\n") || name.length()+expected.length()+actual.length()>240)
 	{
 		_testfail("\nFailed assertion "+name+stack(line)+"\nexpected:\n"+expected+"\nactual:\n"+actual);
 	}

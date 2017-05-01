@@ -175,16 +175,16 @@ static inline void update_auxv(void** stack, uint8_t* base, Elf64_Ehdr* ehdr)
 }
 
 
-extern "C" void preload_action();
+extern "C" void preload_action(char** argv);
 extern "C" funcptr bootstrap_start(void** stack)
 {
-	preload_action();
+	preload_action((char**)stack+1);
 	
-	//this could call the syscall emulator directly, but if I don't, the preloader can be run unsandboxed
+	//this could call the syscall emulator directly, but if I don't, the preloader can run unsandboxed as well
 	//it means a SIGSYS penalty, but there's dozens of those already, another one makes no difference
 	int fd = open("/lib64/ld-linux-x86-64.so.2", O_RDONLY);
 	uint8_t hbuf[832]; // FILEBUF_SIZE from glibc elf/dl-load.c
-	uint8_t* ld_base; // ld-linux has 7 segments, this buffer fits 13 (plus ELF header)
+	uint8_t* ld_base;  // ld-linux has 7 segments, 832 bytes fits 13 (plus ELF header)
 	Elf64_Ehdr* ld_ehdr = map_binary(fd, ld_base, hbuf, sizeof(hbuf));
 	close(fd);
 	
@@ -195,8 +195,6 @@ extern "C" funcptr bootstrap_start(void** stack)
 
 }}
 
-#define STR_(x) #x
-#define STR(x) STR_(x)
 //we need the stack pointer, so we need to write the bootloader's first step in asssembly
 //I could take the address of an argument, but I'm pretty sure that's undefined behavior
 //and our callee also needs the stack, and I don't trust gcc to enforce a tail call
@@ -212,13 +210,17 @@ jmp rax
 
 
 #else
+#ifndef ARLIB_TEST
+#define STR_(x) #x
+#define STR(x) STR_(x)
+
 extern const char sandbox_preload_bin[];
 extern const unsigned sandbox_preload_len;
 __asm__(R"(
 .section .rodata
 .global sandbox_preload_bin
 sandbox_preload_bin:
-.incbin "obj/sand-preload.elf"
+.incbin "obj/sand-preload-)" STR(ARLIB_OBJNAME) R"(.elf"
 .equ my_len, .-sandbox_preload_bin
 .align 4
 .global sandbox_preload_len
@@ -226,4 +228,5 @@ sandbox_preload_len:
 .int my_len
 .section .text
 )");
+#endif
 #endif

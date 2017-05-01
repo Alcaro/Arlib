@@ -29,6 +29,16 @@ void thread_create(function<void()> start)
 	pthread_detach(thread);
 }
 
+mutex_rec::mutex_rec() : mutex(noinit())
+{
+	pthread_mutexattr_t attr;
+	pthread_mutexattr_init(&attr);
+	pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
+	pthread_mutex_init(&mut, &attr);
+	pthread_mutexattr_destroy(&attr);
+}
+
+
 //unsigned int thread_num_cores()
 //{
 //	//for more OSes: https://qt.gitorious.org/qt/qt/source/HEAD:src/corelib/thread/qthread_unix.cpp#L411, idealThreadCount()

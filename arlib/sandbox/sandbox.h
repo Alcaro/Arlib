@@ -1,6 +1,5 @@
 #include "../process.h"
 
-/*
 //Allows safely executing untrusted code.
 //
 //Exact rules:
@@ -24,6 +23,7 @@
 #ifdef __linux__
 //Currently, both parent and child must be x86_64.
 
+/*
 class sandcomm;
 class sandproc : public process {
 	sandcomm* conn;
@@ -115,5 +115,5 @@ public:
 	static void enter(); // Must be the first thing in main(), before window_init() or similar.
 	sandcomm* launch(void(*proc)(sandcomm* comm)); // Not the function<> template, pointers can't be passed around like that.
 };
-#endif
 */
+#endif

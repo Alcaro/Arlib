@@ -84,8 +84,8 @@ bmlwriter::mode bmlwriter::type(cstring val, mode m) const
 
 string bmlwriter::escape(cstring val)
 {
-	string esc = "--";
-	bool needescape = (val.startswith("--"));
+	string esc = "-";
+	bool needescape = (val.startswith("-"));
 	for (byte c : val.bytes())
 	{
 		if (isalnum(c) || c=='.') esc+=c;
@@ -98,10 +98,10 @@ string bmlwriter::escape(cstring val)
 
 string bmlwriter::unescape(cstring val)
 {
-	if (!val.startswith("--")) return val;
+	if (!val.startswith("-")) return val;
 	
 	string out;
-	for (size_t i=2;i<val.length();i++)
+	for (size_t i=1;i<val.length();i++)
 	{
 		if (val[i]=='-')
 		{
@@ -267,14 +267,14 @@ test()
 	}
 	
 	assert_eq(bmlwriter::escape("foo"), "foo");
-	assert_eq(bmlwriter::escape("-foo"), "-foo");
-	assert_eq(bmlwriter::escape("--foo"), "------foo");
-	assert_eq(bmlwriter::escape("-foo!"), "----foo-21");
+	assert_eq(bmlwriter::escape("-foo"), "---foo");
+	assert_eq(bmlwriter::escape("--foo"), "-----foo");
+	assert_eq(bmlwriter::escape("-foo!"), "---foo-21");
 	
 	assert_eq(bmlwriter::unescape("foo"), "foo");
-	assert_eq(bmlwriter::unescape("-foo"), "-foo");
-	assert_eq(bmlwriter::unescape("------foo"), "--foo");
-	assert_eq(bmlwriter::unescape("----foo-21"), "-foo!");
-	assert_eq(bmlwriter::unescape("--foo-2Q"), "foo2Q");
+	assert_eq(bmlwriter::unescape("---foo"), "-foo");
+	assert_eq(bmlwriter::unescape("-----foo"), "--foo");
+	assert_eq(bmlwriter::unescape("---foo-21"), "-foo!");
+	assert_eq(bmlwriter::unescape("-foo-2Q"), "foo2Q");
 }
 #endif

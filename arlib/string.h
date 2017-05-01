@@ -1,6 +1,7 @@
 #pragma once
 #include "global.h"
 #include "array.h"
+#include "hash.h"
 #include <string.h>
 
 //A string is a mutable sequence of bytes. It usually represents UTF-8 text, but can be arbitrary binary data, including NULs.
@@ -232,7 +233,8 @@ public:
 		return *this;
 	}
 	
-	//can't create csplit without things blowing up
+	//can't create csplit without a circular dependency
+	//  maybe if I make cstring the parent class, like arrayview/array, but that's probably more effort than it's worth
 	//limit is maximum number of cuts
 	array<string> split(const string& sep, size_t limit) const;
 	
@@ -263,7 +265,7 @@ public:
 	string& operator=(const char * str) { release(); init_from(str); return *this; }
 	~string() { release(); }
 	
-	operator bool() const { return length() != 0; }
+	explicit operator bool() const { return length() != 0; }
 	operator const char * () const { return ptr_withnul(); }
 	
 private:
@@ -300,6 +302,8 @@ public:
 	inline bool endswith(cstring other) const;
 	
 	static string codepoint(uint32_t cp);
+	
+	size_t hash() { return ::hash((char*)ptr(), length()); }
 };
 
 inline bool operator==(const string& left, const char * right ) { return left.bytes() == arrayview<byte>((uint8_t*)right,strlen(right)); }
