@@ -363,9 +363,9 @@ def assemble(bpf):
 						#TODO: fix
 						#(official assembler seems to just truncate, it seems to be only intended for debugging?)
 						die("jump out of bounds")
-					line = "BPF_JUMP("+op.op+", ("+op.val+"), "+str(jt)+","+str(jf)+"),\n"
+					line = "BPF_JUMP("+op.op+", (uint32_t)("+op.val+"), "+str(jt)+","+str(jf)+"),\n"
 			else:
-				line = "BPF_STMT("+op.op+", ("+op.val+")),\n"
+				line = "BPF_STMT("+op.op+", (uint32_t)("+op.val+")),\n"
 			out.append(line)
 	
 	if len(out)>65535:
@@ -389,47 +389,46 @@ def testsuite(silent):
 			print()
 			exit(1)
 	#ensure this opcode assembles properly
-	test("txa; ret #0", "BPF_STMT(BPF_MISC|BPF_TXA, (0)), BPF_STMT(BPF_RET|BPF_IMM, (0)),")
+	test("txa; ret #0", "BPF_STMT(BPF_MISC|BPF_TXA, (uint32_t)(0)), BPF_STMT(BPF_RET|BPF_IMM, (uint32_t)(0)),")
 	#ensure labels don't need to be on their own line
-	test("jmp x; x: ret #0", "BPF_STMT(BPF_RET|BPF_IMM, (0)),")
+	test("jmp x; x: ret #0", "BPF_STMT(BPF_RET|BPF_IMM, (uint32_t)(0)),")
 	#ensure let/defines assemble properly
-	test("let answer = 42; ret #answer", "BPF_STMT(BPF_RET|BPF_IMM, (42)),")
+	test("let answer = 42; ret #answer", "BPF_STMT(BPF_RET|BPF_IMM, (uint32_t)(42)),")
 	test("defines /usr/include/x86_64-linux-gnu/asm/unistd_64.h; "+
 	     "defines /usr/include/x86_64-linux-gnu/bits/syscall.h; "+
 	     "ret #SYS_exit",
-	     "BPF_STMT(BPF_RET|BPF_IMM, (60)),")
+	     "BPF_STMT(BPF_RET|BPF_IMM, (uint32_t)(60)),")
 	#make sure defines act like variables, not C macros
-	test("let two = 1+1; ret #2*two", "BPF_STMT(BPF_RET|BPF_IMM, (2*(1+1))),")
+	test("let two = 1+1; ret #2*two", "BPF_STMT(BPF_RET|BPF_IMM, (uint32_t)(2*(1+1))),")
 	#make sure they don't recurse inappropriately
-	test("let bar = offsetof(struct foo, bar); ret #bar", "BPF_STMT(BPF_RET|BPF_IMM, ((offsetof(struct foo, bar)))),")
+	test("let bar = offsetof(struct foo, bar); ret #bar", "BPF_STMT(BPF_RET|BPF_IMM, (uint32_t)((offsetof(struct foo, bar)))),")
 	
 	#ensure jeq+jmp is merged, and the jmp is killed as dead code
 	test("jeq #0, ok; jmp die; ok: ret #0; die: ret #1",
-	     "BPF_JUMP(BPF_JMP|BPF_JEQ, (0), 0,1), BPF_STMT(BPF_RET|BPF_IMM, (0)), BPF_STMT(BPF_RET|BPF_IMM, (1)),")
+	     "BPF_JUMP(BPF_JMP|BPF_JEQ, (uint32_t)(0), 0,1), BPF_STMT(BPF_RET|BPF_IMM, (uint32_t)(0)), BPF_STMT(BPF_RET|BPF_IMM, (uint32_t)(1)),")
 	#ensure jump to return is optimized
 	test("jmp die; ok: ret #0; die: ret #1",
-	     "BPF_STMT(BPF_RET|BPF_IMM, (1)),")
+	     "BPF_STMT(BPF_RET|BPF_IMM, (uint32_t)(1)),")
 	#ensure consecutive identical returns are optimized
 	test("jeq #0, x; ret #1; x: ret #1",
-	     "BPF_STMT(BPF_RET|BPF_IMM, (1)),")
+	     "BPF_STMT(BPF_RET|BPF_IMM, (uint32_t)(1)),")
 	#ensure jeq to jmp is flattened
 	#(testcase is full of random crap, to inhibit other optimizations)
-	test("jeq #0, dummy; jeq #1, a; jmp b; dummy: ret #0; a: jmp c; b: jmp d; c: add #0; ret #1; d: add #0; ret #2",
-	     "BPF_JUMP(BPF_JMP|BPF_JEQ, (0), 1,0), "+    # jeq #0, dummy
-	     "BPF_JUMP(BPF_JMP|BPF_JEQ, (1), 1,3), "+    # jeq #1, a; jmp b
-	     "BPF_STMT(BPF_RET|BPF_IMM, (0)), "+         # dummy: ret #0
-	     "BPF_STMT(BPF_ALU|BPF_ADD|BPF_IMM, (0)), "+ # a: jmp c; c: add #0
-	     "BPF_STMT(BPF_RET|BPF_IMM, (1)), "+         # ret #1
-	     "BPF_STMT(BPF_ALU|BPF_ADD|BPF_IMM, (0)), "+ # b: jmp d; d: add #0
-	     "BPF_STMT(BPF_RET|BPF_IMM, (2)),")          # ret #2
 	test("jeq #0, c; jeq #0, a; jmp b; c:; ret #2; a:; jmp a2; b:; jmp b2; a2:; ld [0]; ret #0; b2:; ld [1]; ret #1",
-	     "BPF_JUMP(BPF_JMP|BPF_JEQ, (0), 1,0), "+ # jeq #0, c
-	     "BPF_JUMP(BPF_JMP|BPF_JEQ, (0), 1,3), "+ # jeq #0, a; jmp b; a: jmp a2; b: jmp b2
-	     "BPF_STMT(BPF_RET|BPF_IMM, (2)), "+      # c: ret #2
-	     "BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (0)), "+ # a2: ld [0]
-	     "BPF_STMT(BPF_RET|BPF_IMM, (0)), "+      # ret #0
-	     "BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (1)), "+ # b2: ld [1]
-	     "BPF_STMT(BPF_RET|BPF_IMM, (1)),")       # ret #1
+	     "BPF_JUMP(BPF_JMP|BPF_JEQ, (uint32_t)(0), 1,0), "+ # jeq #0, c
+	     "BPF_JUMP(BPF_JMP|BPF_JEQ, (uint32_t)(0), 1,3), "+ # jeq #0, a; jmp b; a: jmp a2; b: jmp b2
+	     "BPF_STMT(BPF_RET|BPF_IMM, (uint32_t)(2)), "+      # c: ret #2
+	     "BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (uint32_t)(0)), "+ # a2: ld [0]
+	     "BPF_STMT(BPF_RET|BPF_IMM, (uint32_t)(0)), "+      # ret #0
+	     "BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (uint32_t)(1)), "+ # b2: ld [1]
+	     "BPF_STMT(BPF_RET|BPF_IMM, (uint32_t)(1)),")       # ret #1
+	#not implemented
+	##ensure identical branches are merged
+	#test("jeq #0, a; ld [0]; ret #0; a: ld [0]; ret #0",
+	#     "BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (uint32_t)(0)), "+ # ld [0]
+	#     "BPF_STMT(BPF_RET|BPF_IMM, (uint32_t)(0)), "+      # ret #0
+	#     "BPF_STMT(BPF_LD|BPF_W|BPF_ABS, (uint32_t)(1)), "+ # b2: ld [1]
+	#     "BPF_STMT(BPF_RET|BPF_IMM, (uint32_t)(1)),")       # ret #1
 #testsuite(False)
 testsuite(True)
 

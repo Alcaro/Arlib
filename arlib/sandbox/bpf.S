@@ -28,6 +28,7 @@ jeq #__NR_access, emulate
 jeq #__NR_unlink, emulate
 jeq #__NR_chmod, emulate
 jeq #__NR_umask, accept
+jeq #__NR_readlink, emulate
 
 jeq #__NR_read, accept
 jeq #__NR_readv, accept
@@ -41,20 +42,16 @@ jeq #__NR_fchmod, accept
 
 jeq #__NR_ioctl, ioctl
 jeq #__NR_getcwd, emulate
+jeq #__NR_chdir, emulate
+jeq #__NR_getdents, accept
 
 jeq #__NR_dup, accept
 jeq #__NR_dup2, accept
-
-jeq #__NR_getrlimit, accept
-#setrlimit may seem harmful, but it can't raise the hard limits so it's not
-jeq #__NR_setrlimit, accept
-jeq #__NR_sysinfo, emulate
-#/usr/bin/as uses this for whatever reason, does it need its own runtime?
-#don't know nor care why, it doesn't need that
-jeq #__NR_getrusage, emulate
+jeq #__NR_pipe, accept
 
 jeq #__NR_brk, accept
 jeq #__NR_mmap, accept
+jeq #__NR_mremap, accept
 jeq #__NR_mprotect, accept
 jeq #__NR_munmap, accept
 
@@ -68,11 +65,25 @@ jeq #__NR_fork, emulate
 jeq #__NR_vfork, emulate
 jeq #__NR_clone, clone
 jeq #__NR_wait4, wait4
-#PID is private, but it's in a PID namespace so it won't get the real one
-jeq #__NR_getpid, accept
+jeq #__NR_futex, futex
 
 jeq #__NR_execve, emulate
 jeq #__NR_execveat, execveat
+
+#PID is private, but it's in a PID namespace so it won't get the real one
+jeq #__NR_getpid, accept
+jeq #__NR_getppid, accept
+jeq #__NR_getuid, accept
+jeq #__NR_getgid, accept
+jeq #__NR_geteuid, accept
+jeq #__NR_getegid, accept
+
+jeq #__NR_getrlimit, accept
+#setrlimit may seem harmful, but it can't raise the hard limits so it's not
+jeq #__NR_setrlimit, accept
+jeq #__NR_sysinfo, emulate
+jeq #__NR_getrusage, emulate
+jeq #__NR_uname, emulate
 
 jeq #__NR_rt_sigaction, accept
 jeq #__NR_rt_sigreturn, accept
@@ -110,6 +121,9 @@ ld [arg2l]
 #used for O_CLOEXEC
 jeq #F_GETFD, accept
 jeq #F_SETFD, accept
+#can't change writability flags, so harmless
+jeq #F_GETFL, accept
+jeq #F_SETFL, accept
 
 jmp EINVAL
 
@@ -138,10 +152,10 @@ ld [arg1l]
 jset #CLONE_THREAD, clone_thread
 
 #for fork(), only this flag is allowed, no unsharing
-jne #CLONE_CHILD_SETTID|SIGCHLD, emulate
-ld [arg4h]
+jne #SIGCHLD|CLONE_CHILD_SETTID|CLONE_CHILD_CLEARTID|CLONE_PARENT_SETTID, emulate
+ld [arg3h]
 jne #0, emulate
-ld [arg4l]
+ld [arg3l]
 jne #0, emulate
 jmp accept
 
@@ -159,7 +173,7 @@ jmp EINVAL
 arch_prctl:
 #int arch_prctl(int code, unsigned long addr)
 #int arch_prctl(int code, unsigned long * addr)
-#ensure code is one of the four documented values and nothing new is added
+#ensure code is one of the four documented values, nothing funny
 defines /usr/include/x86_64-linux-gnu/asm/prctl.h
 ld [arg1h]
 jne #0, ENOSYS
@@ -197,7 +211,28 @@ jne #0, EINVAL
 jmp accept
 
 
-#accept is also a syscall, but there's no need to parse its arguments, so I'll reuse its name
+futex:
+#int futex(int* uaddr, int futex_op, int val, const struct timespec * timeout, int * uaddr2, int val3)
+#int futex(int* uaddr, int futex_op, int val, uint32_t val2, int * uaddr2, int val3)
+defines /usr/include/linux/futex.h
+ld [arg2h]
+jne #0, EINVAL
+ld [arg2l]
+and #~(FUTEX_PRIVATE_FLAG|FUTEX_CLOCK_REALTIME)
+jeq #FUTEX_WAIT, accept
+jeq #FUTEX_WAKE, accept
+#reject FD
+jeq #FUTEX_REQUEUE, accept
+jeq #FUTEX_CMP_REQUEUE, accept
+jeq #FUTEX_WAKE_OP, accept
+#reject {,UN,TRY}LOCK_PI
+jeq #FUTEX_WAIT_BITSET, accept
+jeq #FUTEX_WAKE_BITSET, accept
+#reject {WAIT,CMD}_REQUEUE_PI
+jmp ENOSYS
+
+
+#accept is also a syscall, but there's no need to parse its arguments (or accept it at all), so I'll reuse its name
 accept:
 ret #SECCOMP_RET_ALLOW
 

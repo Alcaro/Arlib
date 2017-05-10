@@ -13,6 +13,7 @@ class set {
 	public:
 		char bytes[sizeof(T)];
 		T* data() { return (T*)bytes; }
+		const T* data() const { return (T*)bytes; }
 		
 		template<typename... Args>
 		void enable(Args&&... args)
@@ -27,6 +28,11 @@ class set {
 		}
 		
 		T& member()
+		{
+			return *data();
+		}
+		
+		const T& member() const
 		{
 			return *data();
 		}
@@ -99,13 +105,18 @@ class set {
 				if (m_data[pos].tag() == i_empty) return emptyslot;
 			}
 			i++;
+			if (i == m_data.size())
+			{
+				//happens if all slots contain 'something was here' placeholders
+				return emptyslot;
+			}
 		}
 	}
 	
 	template<typename,typename>
 	friend class map;
 	//used by map
-	//if the item doesn't exist, undefined behavior
+	//if the item doesn't exist, NULL
 	template<typename T2>
 	T* get(const T2& item)
 	{
@@ -131,15 +142,13 @@ class set {
 		return m_data[pos].member();
 	}
 	
-public:
-	set()
+	void construct()
 	{
 		m_data.resize(8);
 		m_valid.resize(8);
 		m_count = 0;
 	}
-	
-	set(const set& other)
+	void construct(const set& other)
 	{
 		m_data = other.m_data;
 		m_valid = other.m_valid;
@@ -149,31 +158,41 @@ public:
 		{
 			if (m_valid[i])
 			{
-				m_data[i].enable(other.m_data[i].member());
+				const array<maybe_T>& z = other.m_data;
+				const maybe_T& y = z[i];
+				const T& x = y.member();
+				m_data[i].enable(x);
+				//m_data[i].enable(other.m_data[i].member());
 			}
 		}
 	}
-	
-	set(set&& other)
+	void construct(set&& other)
 	{
 		m_data = other.m_data;
 		m_valid = other.m_valid;
 		m_count = other.m_count;
 		
 		other.m_data.reset();
+		other.m_valid.reset();
 	}
 	
-	//TODO
-	set& operator=(const set& other) = delete;
-	set& operator=(set&& other) = delete;
-	
-	~set()
+	void destruct()
 	{
 		for (size_t i=0;i<m_data.size();i++)
 		{
 			if (m_valid[i]) m_data[i].disable(0);
+			m_valid[i] = false;
 		}
+		m_count = 0;
 	}
+	
+public:
+	set() { construct(); }
+	set(const set& other) { construct(other); }
+	set(set&& other) { construct(other); }
+	set& operator=(const set& other) { destruct(); construct(other); }
+	set& operator=(set&& other) { destruct(); construct(other); }
+	~set() { destruct(); }
 	
 	template<typename T2>
 	void add(const T2& item)
@@ -203,6 +222,7 @@ public:
 	
 	size_t size() { return m_count; }
 	
+	void reset() { destruct(); }
 	
 private:
 	class iterator {

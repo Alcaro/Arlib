@@ -51,7 +51,7 @@ public:
 		if (cend != pend) abort();
 		
 		m.type = ty_native;
-		m.n_fd = open(pp[0]+"/", O_DIRECTORY|O_PATH); // +"/" in case ppath is "/", so pp[0] is empty
+		m.n_fd = open(pp[0]+"/", O_DIRECTORY|O_PATH); // if ppath is "/", pp[0] is empty, so append a /
 		m.numwrites = max_write;
 		
 		if (m.n_fd < 0)
@@ -142,11 +142,12 @@ public:
 			errno = EACCES;
 			return -1;
 		}
+		while (pathname[~1]=='/') pathname = pathname.csubstr(0, ~1);
 		
 		bool exact_path = false;
 		
 //puts("open "+pathname);
-		mount m;
+		mount m = {}; // there's always at least one match, but gcc doesn't know that
 		size_t mlen = 0;
 		for (auto& miter : mounts)
 		{
@@ -217,6 +218,7 @@ public:
 				int fd = tmpfiles.get_or(pathname, -1);
 				if (fd < 0 && is_write)
 				{
+					//ignore mode, it gets 777
 					if (m.numwrites == 0)
 					{
 						report_access_violation(pathname, true);
@@ -229,7 +231,7 @@ public:
 					tmpfiles.insert(pathname, fd);
 				}
 				//unshare file position
-				return open("/proc/self/fd/"+tostring(fd), (flags|O_CLOEXEC|O_NOCTTY)&~O_EXCL);
+				return open("/proc/self/fd/"+tostring(fd), (flags|O_CLOEXEC|O_NOCTTY)&~(O_EXCL|O_CREAT));
 			}
 			if (op == br_unlink)
 			{
@@ -268,7 +270,7 @@ public:
 class sand_broker : nocopy {
 public:
 	pid_t pid;
-	array<int> socks; // TODO: set<int>
+	set<int> socks;
 	int exitcode;
 	
 	sand_fs fs;
@@ -276,32 +278,18 @@ public:
 	void watch_add(int sock)
 	{
 		fd_monitor(sock, bind_this(&sand_broker::on_readable), NULL);
-		socks.append(sock);
+		socks.add(sock);
 	}
 	
 	void watch_del(int sock)
 	{
 		fd_monitor(sock, NULL, NULL);
-		
-		size_t i=0;
-		while (true)
-		{
-			if (socks[i]==sock)
-			{
-				socks.remove(i);
-				break;
-			}
-			i++;
-			if (i == socks.size())
-			{
-				abort(); // unwatching something not in the watchlist = sandbox bug = panic
-			}
-		}
+		socks.remove(sock);
 	}
 	
 	void send_rsp(int sock, broker_rsp* rsp, int fd)
 	{
-		if (send_fd(sock, rsp, sizeof(*rsp), MSG_DONTWAIT|MSG_NOSIGNAL, fd) <= 0)
+		if (send_fd(sock, rsp, sizeof(*rsp), MSG_DONTWAIT|MSG_NOSIGNAL|MSG_EOR, fd) <= 0)
 		{
 			//full buffer means misbehaving child or child exited
 			//none of which should happen, so kill it
@@ -313,7 +301,6 @@ public:
 	
 	void on_readable(int sock)
 	{
-puts("recv");
 		struct broker_req req;
 		ssize_t req_sz = recv(sock, &req, sizeof(req), MSG_DONTWAIT);
 		if (req_sz==-1 && errno==EAGAIN) return;
@@ -329,12 +316,11 @@ puts("recv");
 			}
 			return;
 		}
-		else if (req_sz != sizeof(req))
+		else if (req_sz != sizeof(req) || req.path[sizeof(req.path)-1] != '\0')
 		{
-			terminate(); // no strange messages allowed
+			terminate(); // no mis-sized messages allowed, nor unterminated strings
 			return;
 		}
-puts("switch");
 		
 		broker_rsp rsp = { req.type };
 		int fd = -1;
@@ -344,24 +330,20 @@ puts("switch");
 		{
 		case br_nop:
 		{
-puts("nop");
-			return; // don't send any response
+			return; // return so send_rsp doesn't run
 		}
 		case br_ping:
 		{
-puts("ping");
-			break; // pings just return the pre-initialized struct
+			break; // pings return only { br_ping }, which we already have
 		}
 		case br_open:
 		case br_unlink:
 		case br_access:
 		{
-puts((string)"open "+req.path);
 			close_fd = true;
 			fd = fs.child_file(req.path, req.type, req.flags[0], req.flags[1]);
 //puts((string)req.path+" "+tostring(req.type)+": "+tostring(fd)+" "+tostring(errno));
 			if (fd<0) rsp.err = errno;
-puts("done");
 			break;
 		}
 		case br_get_emul:
@@ -385,14 +367,11 @@ puts("done");
 			break;
 		}
 		default:
-puts("kill");
 			terminate(); // invalid request means child is doing something stupid
 			return;
 		}
-puts("return "+tostring(fd));
 		send_rsp(sock, &rsp, fd>0 ? fd : -1);
 		if (fd>0 && close_fd) close(fd);
-puts("done");
 	}
 	
 	void cleanup()
@@ -407,7 +386,7 @@ puts("done");
 	
 	void terminate()
 	{
-		if (pid<0) return; // do NOT call kill(-1, SIGKILL) under ANY circumstances, it just reboots your session
+		if (pid<0) return; // do NOT call kill(-1, SIGKILL) under ANY circumstances, it reboots your session
 		
 		kill(pid, SIGKILL);
 		cleanup();
@@ -439,7 +418,7 @@ puts("done");
 	{
 		while (lock_read_acq(&pid) != -1)
 		{
-			usleep(10000);
+			usleep(1000);
 		}
 	}
 };
@@ -451,15 +430,22 @@ void sand_do_the_thing(int pid, int sock)
 	//TODO: use an ordered map instead
 	box.fs.grant_native_redir("/@CWD/", "./", 10);
 	box.fs.grant_native("/lib64/ld-linux-x86-64.so.2");
+	box.fs.grant_native("/usr/bin/make");
 	box.fs.grant_native("/usr/bin/gcc");
+	box.fs.grant_native("/usr/bin/g++");
 	box.fs.grant_native("/usr/bin/as");
 	box.fs.grant_native("/usr/bin/ld");
-	//box.fs.grant_native("/usr/lib/gcc/");
-	box.fs.grant_native("/usr/lib/");
+	box.fs.grant_native("/bin/sh");
+	box.fs.grant_native("/usr/lib/"); // this is a bit too broad, the list of installed packages is considered private
+	//box.fs.grant_native("/usr/lib/gcc/"); // but -lfoobar kinda requires access to it
+	box.fs.grant_errno("/usr/gnu/", ENOENT, false);
 	box.fs.grant_native("/lib/");
 	box.fs.grant_native("/dev/urandom");
+	box.fs.grant_errno("/dev/", EACCES, false);
 	box.fs.grant_errno("/etc/ld.so.nohwcap", ENOENT, false);
 	box.fs.grant_errno("/etc/ld.so.preload", ENOENT, false);
+	box.fs.grant_errno("/usr/share/locale/", ENOENT, false);
+	box.fs.grant_errno("/usr/share/locale-langpack/", ENOENT, false);
 	box.fs.grant_native("/etc/ld.so.cache");
 	box.fs.grant_errno("/usr", ENOENT, false);
 	box.fs.grant_errno("/usr/local/include/", ENOENT, false);
@@ -472,6 +458,14 @@ void sand_do_the_thing(int pid, int sock)
 	box.fs.grant_errno("/bin/gstrip", ENOENT, false);
 	box.fs.grant_native("/usr/bin/strip");
 	box.fs.grant_tmp("/tmp/", 10);
+	
+	//used by my makefile
+	box.fs.grant_errno("/usr/bin/uname", ENOENT, false);
+	box.fs.grant_native("/bin/uname");
+	box.fs.grant_native("/usr/bin/objdump");
+	box.fs.grant_errno("/usr/bin/grep", ENOENT, false);
+	box.fs.grant_native("/bin/grep");
+	
 	box.wait();
 }
 #endif

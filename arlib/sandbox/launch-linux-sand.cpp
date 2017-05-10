@@ -34,6 +34,8 @@
 #include <sys/un.h>
 #include <sys/mman.h>
 
+#include "internal-linux-sand.h"
+
 /*
 //ensure a AF_UNIX SOCK_SEQPACKET socketpair can't specify dest_addr
 //(turns out it can, but address is ignored. good enough)
@@ -90,35 +92,19 @@ void stest()
 }
 // */
 
-enum broker_req_t {
-	br_nop, // [req only] does nothing, doesn't respond
-	br_ping, // successfully returns nothing
-	br_open, // flags[0] is O_RDONLY/etc, flags[1] is mode, flags[2] is unused
-	br_send, // [rsp only] broker spontaneously sent a fd, used only with sandbox-aware children that expect this
-};
-struct broker_req {
-	enum broker_req_t req;
-	uint32_t flags[3];
-	char path[260]; // Windows MAX_PATH, anything longer than this probably isn't useful
-};
-struct broker_rsp {
-	enum broker_req_t req;
-	int errno;
-};
 
-
-template<typename T> T require(T x)
+template<typename T> inline T require(T x)
 {
 	//failures are easiest debugged with strace
 	if ((long)x == -1) _exit(1);
 	return x;
 }
-//this could be a specialization, but in security-critical code, explicit is better than implicit
-void require_eq(bool x)
+//this could be an overload, but for security-critical code, explicit is better than implicit
+inline void require_b(bool expected)
 {
-	if (!x) _exit(1);
+	if (!expected) _exit(1);
 }
-template<typename T> T require_eq(T actual, T expected)
+template<typename T> inline T require_eq(T actual, T expected)
 {
 	if (actual != expected) _exit(1);
 	return actual;
@@ -171,7 +157,7 @@ static int atoi_simple(const char * text)
 
 //trusting everything to set O_CLOEXEC isn't enough, this is a sandbox
 //throws about fifty errors in Valgrind for fd 1024 - don't care
-//lowfd is the LOWEST fd that IS closed; alternatively, it's the number of fds kept
+//lowfd is the LOWEST fd that IS closed; alternatively, it's the NUMBER of fds kept
 static bool closefrom(int lowfd)
 {
 	//getdents[64] is documented do-not-use and opendir should be used instead.
@@ -264,28 +250,28 @@ bool boot_sand(char** argv, char** envp, pid_t& pid, int& sock)
 	
 	//some of these steps depend on each other, don't swap them randomly
 	
-	const char * new_envp[] = {
-		"TERM=xterm", // some programs check this to know whether they can color, some check ioctl(TCGETS)
-		"PATH=/usr/bin:/bin",
-		"TMPDIR=/tmp",
-		NULL
-	};
-	
 	//we could request preld from parent, but this is easier
 	close(socks[0]);
 	if (preld_fd == 3) preld_fd = require(dup(preld_fd)); // don't bother closing this, it's done by that dup()
 	if (socks[1] != 3) require(dup2(socks[1], 3));
 	if (preld_fd != 4) require(dup2(preld_fd, 4));
 	
-	//remove cloexec on socket; it's set on fd 4, we want to keep it
+	//remove cloexec on socket
 	fcntl(3, F_SETFD, 0);
+	//emulator fd is also cloexec, keep it
 	
-	//wipe unexpected fds
+	//wipe unexpected fds, including the duplicates of socks[1] and preld_fd
 	if (!closefrom(5)) require(-1);
 	
-	struct rlimit rlim_fsize = { 1024*1024, 1024*1024 };
+	struct rlimit rlim_fsize = { 8*1024*1024, 8*1024*1024 };
 	require(setrlimit(RLIMIT_FSIZE, &rlim_fsize));
 	
+	
+	//char path[] = "/sys/fs/cgroup/pids/arlib-sand-XXXXXX";
+	//require_b(mkdtemp(path));
+	//require(system("ls -la /sys/fs/cgroup/pids/"));
+	//int fd_cg;
+	//fd_cg = open("/sys/fs/cgroup/cpu/tasks");
 	//TODO: Set cgroup memory.memsw.limit_in_bytes to 100*1024*1024
 	//TODO: Set cgroup cpu.cfs_period_us = 100*1000, cpu.cfs_quota_us = 50*1000
 	//TODO: Set cgroup pids.max to 10
@@ -301,7 +287,15 @@ bool boot_sand(char** argv, char** envp, pid_t& pid, int& sock)
 	
 	require_eq(install_seccomp(), true);
 	
-	//no idea why 0x00007FFF'FFFFF000 isn't mappable, but sure, we don't care what it is
+	static const char * const new_envp[] = {
+		"TERM=xterm", // some programs check this to know whether they can color, some check ioctl(TCGETS), some check both
+		"PATH=/usr/bin:/bin",
+		"TMPDIR=/tmp",
+		"LANG=en_US.UTF-8",
+		NULL
+	};
+	
+	//no idea why 0x00007FFF'FFFFF000 isn't mappable, but sure, we don't care what the last page is as long as there is one
 	char* final_page = (char*)0x00007FFFFFFFE000;
 	require_eq(mmap(final_page+0x1000, 0x1000, PROT_READ, MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED, -1, 0), MAP_FAILED);
 	require_eq(mmap(final_page,        0x1000, PROT_READ, MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED, -1, 0), (void*)final_page);

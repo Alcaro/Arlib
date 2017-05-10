@@ -142,16 +142,8 @@ static inline Elf64_Ehdr* map_binary(int fd, uint8_t*& base, uint8_t* hbuf, size
 // ld-linux won't recognize us. But we know where ld-linux starts, so let's put it in auxv. It's on
 // the stack, it's writable. (ld-linux replaces a few auxv entries too, it's only fair.)
 typedef void(*funcptr)();
-static inline void update_auxv(void** stack, uint8_t* base, Elf64_Ehdr* ehdr)
-{
-	int* argc = (int*)stack;
-	const char * * argv = (const char**)(stack+1);
-	const char * * envp = argv+*argc+1;
-	void** tmp = (void**)envp;
-	while (*tmp) tmp++;
-	
-	Elf64_auxv_t* auxv = (Elf64_auxv_t*)(tmp+1);
-	for (int i=0;auxv[i].a_type!=AT_NULL;i++)
+static inline void update_auxv(Elf64_auxv_t* auxv, uint8_t* base, Elf64_Ehdr* ehdr)
+{	for (int i=0;auxv[i].a_type!=AT_NULL;i++)
 	{
 		//don't think ld-linux uses PHDR or PHNUM, but why not
 		if (auxv[i].a_type == AT_PHDR)
@@ -175,10 +167,17 @@ static inline void update_auxv(void** stack, uint8_t* base, Elf64_Ehdr* ehdr)
 }
 
 
-extern "C" void preload_action(char** argv);
+extern "C" void preload_action(char** argv, char** envp);
 extern "C" funcptr bootstrap_start(void** stack)
 {
-	preload_action((char**)stack+1);
+	int* argc = (int*)stack;
+	char* * argv = (char**)(stack+1);
+	char* * envp = argv+*argc+1;
+	void* * tmp = (void**)envp;
+	while (*tmp) tmp++;
+	Elf64_auxv_t* auxv = (Elf64_auxv_t*)(tmp+1);
+	
+	preload_action(argv, envp);
 	
 	//this could call the syscall emulator directly, but if I don't, the preloader can run unsandboxed as well
 	//it means a SIGSYS penalty, but there's dozens of those already, another one makes no difference
@@ -188,7 +187,7 @@ extern "C" funcptr bootstrap_start(void** stack)
 	Elf64_Ehdr* ld_ehdr = map_binary(fd, ld_base, hbuf, sizeof(hbuf));
 	close(fd);
 	
-	update_auxv(stack, ld_base, ld_ehdr);
+	update_auxv(auxv, ld_base, ld_ehdr);
 	
 	return (funcptr)(ld_base + ld_ehdr->e_entry);
 }

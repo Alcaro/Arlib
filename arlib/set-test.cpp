@@ -128,7 +128,22 @@ test("set")
 		set<unhashable> item;
 		
 		for (int i=0;i<256;i++) item.add(unhashable(i));
-		//test passes if it does not enter an infinite loop
+		
+		//test passes if it does not enter an infinite loop of trying the same 4 slots over and
+		// over, when the other 4 are unused
+	}
+	
+	{
+		set<int> item;
+		
+		for (int i=0;i<256;i++)
+		{
+			item.add(i);
+			item.remove(i);
+		}
+		
+		//test passes if it does not enter an infinite loop of looking for a 'nothing more to see
+		// here' slot when all slots are 'there was something here, but keep looking'
 	}
 }
 

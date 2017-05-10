@@ -282,6 +282,7 @@ template<typename T> class array : public arrayvieww<T> {
 	
 public:
 	T& operator[](size_t n) { resize_grow(n+1); return this->items[n]; }
+	const T& operator[](size_t n) const { return this->items[n]; }
 	
 	void resize(size_t len) { resize_to(len); }
 	void reserve(size_t len) { resize_grow(len); }

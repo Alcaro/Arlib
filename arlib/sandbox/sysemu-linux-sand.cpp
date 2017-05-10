@@ -18,6 +18,7 @@
 #include <sys/socket.h>
 #include <sys/sysinfo.h>
 #include <sys/resource.h>
+#include <sys/utsname.h>
 
 //gcc recognizes various function names and reads attributes (such as extern) from the headers, force it not to
 namespace mysand { namespace {
@@ -30,7 +31,7 @@ class mutex {
 public:
 	void lock()
 	{
-		//TODO
+		//TODO (copy arlib/thread/linux.cpp)
 	}
 	void unlock()
 	{
@@ -58,6 +59,21 @@ static inline void memcpy(void * dest, const void * src, size_t n)
 	uint8_t* dest_ = (uint8_t*)dest;
 	uint8_t* src_ = (uint8_t*)src;
 	for (size_t i=0;i<n;i++) dest_[i] = src_[i];
+}
+static inline int memcmp(const void * ptr1, const void * ptr2, size_t n)
+{
+	uint8_t* ptr1_ = (uint8_t*)ptr1;
+	uint8_t* ptr2_ = (uint8_t*)ptr2;
+	for (size_t i=0;i<n;i++)
+	{
+		if (ptr1_[i] != ptr2_[i]) return ptr1_[i]-ptr2_[i];
+	}
+	return 0;
+}
+static inline void strcpy(char * dest, const char * src)
+{
+	while (*src) *dest++ = *src++;
+	*dest = '\0';
 }
 static inline size_t strlen(const char * str)
 {
@@ -93,6 +109,7 @@ static inline int fchmod(int fd, mode_t mode)
 	return syscall2(__NR_fchmod, fd, mode);
 }
 
+#define send send_
 static inline ssize_t send(int sockfd, const void * buf, size_t len, int flags)
 {
 	return syscall6(__NR_sendto, sockfd, (long)buf, len, flags, (long)NULL, 0); // no send syscall
@@ -135,55 +152,48 @@ void* malloc(size_t size)
 
 
 //basically my printf
-template<typename T> inline void debug(T x)
-{
-	static const char digits[] = "0123456789ABCDEF";
-	char buf[16];
-	size_t y = (size_t)x;
-	for (int i=0;i<16;i++)
-	{
-		buf[15-i] = digits[(y>>(i*4))&15];
-	}
-	write(1, buf, 16);
-}
-template<typename T> inline void debugd(T x)
+inline void print1(int fd, size_t y)
 {
 	char buf[40];
 	char* bufend = buf+40;
 	char* bufat = bufend;
-	size_t y = (size_t)x;
 	while (y)
 	{
 		*--bufat = '0'+(y%10);
 		y /= 10;
 	}
 	if (bufend==bufat) *--bufat='0';
-	write(1, bufat, bufend-bufat);
+	write(fd, bufat, bufend-bufat);
 }
-inline void debugs(const char * x)
+inline void print1x(int fd, size_t y)
 {
-	write(1, x, strlen(x));
+	static const char digits[] = "0123456789ABCDEF";
+	char buf[16];
+	for (int i=0;i<16;i++)
+	{
+		buf[15-i] = digits[(y>>(i*4))&15];
+	}
+	write(fd, buf, 16);
 }
-inline void debugsv(const char * x)
+inline void print1(int fd, const char * x)
 {
-	while (*x) write(1, x++, 1);
+	write(fd, x, strlen(x));
 }
-
-
-static inline void error(const char * why)
+inline void print(int fd) {}
+class hex {};
+template<typename T, typename... Tnext> inline void print(int fd, T first, Tnext... next)
 {
-	debugs(progname);
-	debugs(": ");
-	debugs(why);
-	debugs("\n");
+	print1(fd, first);
+	print(fd, next...);
 }
-static inline void error(const char * why, int why2)
+template<typename T, typename... Tnext> inline void print(int fd, hex n, T first, Tnext... next)
 {
-	debugs(progname);
-	debugs(": ");
-	debugs(why);
-	debugd(why2);
-	debugs("\n");
+	print1x(fd, first);
+	print(fd, next...);
+}
+template<typename... Ts> static inline void error(Ts... ts)
+{
+	print(2, progname, ": ", ts..., "\n");
 }
 
 
@@ -194,9 +204,8 @@ static inline int do_broker_req(broker_req* req)
 {
 	mutexlocker l(&broker_mut);
 	
-	send(FD_PARENT, req, sizeof(*req), 0);
+	send(FD_PARENT, req, sizeof(*req), MSG_EOR);
 	
-	//TODO: keep br_send replies around
 	broker_rsp rsp;
 	int fd;
 	ssize_t len = recv_fd(FD_PARENT, &rsp, sizeof(rsp), MSG_CMSG_CLOEXEC, &fd);
@@ -210,17 +219,15 @@ static inline int do_broker_req(broker_req* req)
 	else return -rsp.err;
 }
 
+static char cwd[SAND_PATHLEN];
 //not sure about the return type, glibc uses int despite buflen being size_t. guess they don't care about 2GB paths
 //then neither do I
 static inline int getcwd(char* buf, size_t size)
 {
-	buf[0]='/'; // not even gonna check the length, if size<6 then someone needs slap
-	buf[1]='@';
-	buf[2]='C';
-	buf[3]='W';
-	buf[4]='D';
-	buf[5]='\0';
-	return 6; // returns length including NUL
+	size_t outsize = strlen(cwd)+1;
+	if (outsize > size) outsize = size;
+	memcpy(buf, cwd, outsize);
+	return outsize;
 }
 
 //false for overflow
@@ -268,6 +275,14 @@ static bool flatten_path(const char * path, char * outpath, size_t outlen)
 	}
 	
 	return true;
+}
+
+static inline int chdir(const char * path)
+{
+	char buf[SAND_PATHLEN];
+	if (!flatten_path(path, buf, sizeof(buf))) return -ENOENT;
+	strcpy(cwd, buf);
+	return 0;
 }
 
 static inline int do_broker_file_req(const char * pathname, broker_req_t op, int flags1 = 0, mode_t flags2 = 0)
@@ -319,13 +334,20 @@ static inline pid_t clone(unsigned long clone_flags, unsigned long newsp,
                           int* parent_tidptr, int* child_tidptr, unsigned long tls)
 {
 	//the bpf filter allows clone with CLONE_THREAD set, so this doesn't block any usual use of SETTID
-	if (clone_flags&CLONE_CHILD_SETTID) return -EINVAL;
+	if (clone_flags&CLONE_PARENT_SETTID) return -EINVAL;
 	
+	//glibc fork() uses CHILD_{SET,CLEAR}TID to ensure a first-instruction interrupt handler getpid() is accurate
+	//PARENT_SETTID isn't, so we hijack it
 	broker_req req = { br_fork };
 	int fd = do_broker_req(&req);
 	if (fd<0) return -ENOMEM; // probably accurate enough
 	
-	pid_t ret = syscall5(__NR_clone, clone_flags|CLONE_CHILD_SETTID, newsp, (long)parent_tidptr, (long)NULL, tls);
+	unsigned long required_flags = SIGCHLD|CLONE_CHILD_SETTID|CLONE_CHILD_CLEARTID|CLONE_PARENT_SETTID;
+	if (!(clone_flags&(CLONE_CHILD_SETTID|CLONE_CHILD_CLEARTID)))
+	{
+		child_tidptr = NULL;
+	}
+	pid_t ret = syscall5(__NR_clone, required_flags, newsp, (long)NULL, (long)child_tidptr, tls);
 	//pid_t ret = syscall5(__NR_clone, clone_flags, newsp, (long)parent_tidptr, (long)0x12345678, tls);
 	if (ret<0)
 	{
@@ -348,26 +370,60 @@ static inline pid_t clone(unsigned long clone_flags, unsigned long newsp,
 	}
 }
 
-static inline int execveat(int dirfd, const char * pathname, char * const argv[], char * const envp[], int flags)
+static inline const char * * dup_prefix(const char * const * item, const char* prefix)
 {
-	//TODO: this leaks the argv malloc on failure
+	int n = 0;
+	while (item[n]) n++;
 	
+	const char * * newitem = (const char**)malloc(sizeof(char*)*(1+n+1)); // +1 for prefix, +1 for NULL
+	
+	newitem[0] = prefix;
+	for (int i=0;i<=n;i++)
+	{
+		newitem[1+i] = item[i];
+	}
+	newitem[1+n] = NULL;
+	
+	return newitem;
+}
+
+//'name' must be suffixed with =
+const char * * find_env(const char * * envp, const char * name)
+{
+	while (*envp)
+	{
+		if (!memcmp(*envp, name, strlen(name))) return envp;
+		envp++;
+	}
+	return NULL;
+}
+
+static inline int execveat(int dirfd, const char * pathname, char * const * argv, char * const * envp, int flags)
+{
 	if (dirfd != AT_FDCWD) return -ENOSYS;
 	if (flags & ~AT_EMPTY_PATH) return -ENOSYS;
 	
 	int access_ok = access(pathname, X_OK);
 	if (access_ok < 0) return access_ok;
 	
-	int n_argv = 0;
-	while (argv[n_argv]) n_argv++;
+	//TODO: this leaks the argv malloc on failure
+	const char * * new_argv = dup_prefix(argv, "[Arlib-sandbox]");
+	new_argv[1] = (char*)pathname; // discard our given argv[0], no way to make ld-linux load one file but pass another argv[0]
 	
-	char** new_argv = (char**)malloc(sizeof(char*)*(1+n_argv+1)); // +1 for ld-linux.so, +1 for NULL
-	if (!new_argv) return -ENOMEM;
-	new_argv[0] = (char*)"/lib64/ld-linux-x86-64.so.2";
-	new_argv[1] = (char*)pathname;
-	for (int i=1;i<=n_argv;i++)
+	const char * * new_envp = dup_prefix(envp, NULL);
+	const char * * env_pwd = find_env(new_envp+1, "PWD=");
+	
+	char env_pwd_buf[4+SAND_PATHLEN];
+	strcpy(env_pwd_buf, "PWD=");
+	strcpy(env_pwd_buf+strlen("PWD="), cwd);
+	if (env_pwd)
 	{
-		new_argv[1+i] = argv[i];
+		*env_pwd = env_pwd_buf;
+		new_envp++; // if there is a PWD already, replace it and ignore the prefix slot
+	}
+	else
+	{
+		new_envp[0] = env_pwd_buf;
 	}
 	
 	broker_req req = { br_get_emul };
@@ -376,9 +432,10 @@ static inline int execveat(int dirfd, const char * pathname, char * const argv[]
 	
 	const char * execveat_gate = (char*)0x00007FFFFFFFEFFF;
 	const char * execveat_gate_page = (char*)((long)execveat_gate&~0xFFF);
-	mmap((void*)execveat_gate_page, 4096, PROT_READ, MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED, -1, 0);
+	intptr_t mmap_ret = (intptr_t)mmap((void*)execveat_gate_page, 4096, PROT_READ, MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED, -1, 0);
+	if (mmap_ret<0) return mmap_ret;
 	
-	return syscall5(__NR_execveat, fd, (long)execveat_gate, (long)new_argv, (long)envp, AT_EMPTY_PATH);
+	return syscall5(__NR_execveat, fd, (long)execveat_gate, (long)new_argv, (long)new_envp, AT_EMPTY_PATH);
 }
 
 static inline int execve(const char * filename, char * const argv[], char * const envp[])
@@ -388,7 +445,7 @@ static inline int execve(const char * filename, char * const argv[], char * cons
 
 //this one is used to find amount of system RAM, for tuning gcc's garbage collector
 //stacktrace: __get_phys_pages(), sysconf(name=_SC_PHYS_PAGES), physmem_total(), init_ggc_heuristics()
-//(__get_phys_pages() also needs page size, but that's constant, 4096)
+//(__get_phys_pages() also needs page size, but that's constant and hardcoded, 4096)
 //don't bother giving it the real values, just give it something that looks tasty
 static inline int sysinfo_(struct sysinfo * info)
 {
@@ -417,6 +474,31 @@ static inline int getrusage(int who, struct rusage * usage)
 	return 0;
 }
 
+#define uname uname_
+static inline int uname(struct utsname * buf)
+{
+	//same as Ubuntu 16.04.0 live CD (despite 16.04 not being able to run the sandbox, CLONE_NEWCGROUP requires kernel 4.6)
+	//nodename is considered private information, the rest aren't really needed
+	strcpy(buf->sysname, "Linux");
+	strcpy(buf->nodename, "ubuntu");
+	strcpy(buf->release, "4.4.0-21-generic");
+	strcpy(buf->version, "#37-Ubuntu SMP Mon Apr 18 18:33:37 UTC 2016");
+	strcpy(buf->machine, "x86_64");
+	strcpy(buf->domainname, "(none)");
+	return 0;
+}
+
+static inline ssize_t readlink(const char * path, char * buf, size_t bufsiz)
+{
+	//used by ttyname(3)
+	if (!memcmp(path, "/proc/self/fd/", strlen("/proc/self/fd/")))
+	{
+		return -EACCES;
+	}
+	error("denied readlink ", path);
+	return -EACCES;
+}
+
 
 //errors are returned as -ENOENT, not {errno=ENOENT, -1}; we are (pretend to be) the kernel, not libc
 static long syscall_emul(greg_t* regs, int errno)
@@ -431,7 +513,9 @@ static long syscall_emul(greg_t* regs, int errno)
 #define ARG6 (regs[REG_R9])
 	if (errno != 0)
 	{
-		error("denied syscall ", ARG0);
+		error("denied syscall ", ARG0, " (",
+		      hex(),ARG1," ", hex(),ARG2," ", hex(),ARG3," ",
+		      hex(),ARG4," ", hex(),ARG5," ", hex(),ARG6,")");
 		return -errno;
 	}
 	
@@ -473,8 +557,9 @@ static long syscall_emul(greg_t* regs, int errno)
 	//  functions
 	//this one returns all the way out of a signal handler,
 	// and execve() allocates memory and does about a dozen syscalls
-	//therefore, implement vfork as normal fork
-	//(should've made posix_spawn a syscall)
+	//it would be possible to implement vfork by rewriting the register list, but that wouldn't solve execve
+	//instead, it's a lot easier to just implement vfork as normal fork
+	//(would've been easier if posix_spawn was a syscall)
 	case __NR_vfork: return clone(SIGCHLD, 0, NULL, NULL, 0);
 	WRAP3(execve, char*, char**, char**);
 	WRAP5(clone, unsigned long, unsigned long, int*, int*, unsigned long);
@@ -483,6 +568,9 @@ static long syscall_emul(greg_t* regs, int errno)
 	WRAP1(unlink, char*);
 	WRAP2(getrusage, int, struct rusage*);
 	WRAP2(chmod, char*, mode_t);
+	WRAP3(readlink, char*, char*, size_t);
+	WRAP1(chdir, char*);
+	WRAP1(uname, struct utsname*);
 	default:
 		error("can't emulate syscall ", ARG0);
 		return -ENOSYS;
@@ -603,12 +691,16 @@ static void unblock_signal(int signo)
 	rt_sigprocmask(SIG_UNBLOCK, &set, NULL, _NSIG/8);
 }
 
-extern "C" void preload_action(char** argv)
+extern "C" void preload_action(char** argv, char** envp)
 {
 	set_sighand(SIGSYS, sa_sigsys);
 	unblock_signal(SIGSYS);
 	
 	progname = argv[1];
+	
+	const char * * env_pwd = find_env((const char**)envp, "PWD=");
+	if (env_pwd) chdir(*env_pwd + strlen("PWD="));
+	else chdir("/@CWD");
 }
 
 }}

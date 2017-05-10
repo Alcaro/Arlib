@@ -10,7 +10,7 @@ enum broker_req_t {
 	br_access,    // access(req.path, req.flags[0])
 	br_get_emul,  // returns the fd of the emulator, path and flags unused
 	br_fork,      // returns a new fd equivalent to the existing broker fd, to be used in fork()
-	br_send,      // [rsp only] broker spontaneously sent a fd
+	br_shmem,     // for sandbox-aware children: returns a memfd, for sharing memory
 };
 
 //static_assert(O_RDONLY==0);
@@ -19,10 +19,12 @@ enum broker_req_t {
 //static_assert(O_ACCMODE==3);
 //#define O_UNLINK 3 // O_RDONLY=0, O_WRONLY=1, O_RDWR=2, 3=free for grabs
 
+#define SAND_PATHLEN 260 // same as Windows MAX_PATH, anything longer than this probably isn't useful
+
 struct broker_req {
 	enum broker_req_t type;
 	uint32_t flags[3];
-	char path[260]; // same as Windows MAX_PATH, anything longer than this probably isn't useful
+	char path[SAND_PATHLEN];
 };
 struct broker_rsp {
 	enum broker_req_t type;
