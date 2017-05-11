@@ -1,13 +1,14 @@
 #include "global.h"
-#include "array.h"
-#include "set.h"
 
 #if defined(__linux__) && defined(ARLIB_THREAD)
+#include "array.h"
+#include "set.h"
 #include "thread.h"
 
 #include <sys/epoll.h>
-#define RD_EV (EPOLLIN|EPOLLRDHUP|EPOLLHUP|EPOLLERR)
-#define WR_EV EPOLLOUT
+#include <unistd.h>
+#define RD_EV (EPOLLIN |EPOLLRDHUP|EPOLLHUP|EPOLLERR)
+#define WR_EV (EPOLLOUT|EPOLLRDHUP|EPOLLHUP|EPOLLERR)
 
 class fd_mon_t : nocopy {
 	map<int, function<void(int)>> read_act;
@@ -29,8 +30,8 @@ class fd_mon_t : nocopy {
 				{
 					for (int i=0;i<nev;i++)
 					{
-						if (ev[i].events & RD_EV)  read_act.get(ev[i].data.fd)(ev[i].data.fd);
-						if (ev[i].events & WR_EV) write_act.get(ev[i].data.fd)(ev[i].data.fd);
+						if (ev[i].events & RD_EV)  read_act.get_or(ev[i].data.fd, NULL)(ev[i].data.fd);
+						if (ev[i].events & WR_EV) write_act.get_or(ev[i].data.fd, NULL)(ev[i].data.fd);
 					}
 				}
 			}
@@ -39,24 +40,15 @@ class fd_mon_t : nocopy {
 	
 	void monitor_raw(int fd, function<void(int)> on_read, function<void(int)> on_write)
 	{
-		epoll_event ev;
-		ev.events = 0;
-		ev.data.fd = fd;
-		
-		if (on_read)
-		{
-			read_act.insert(fd, on_read);
-			ev.events |= RD_EV;
-		}
+		if (on_read) read_act.insert(fd, on_read);
 		else read_act.remove(fd);
 		
-		if (on_write)
-		{
-			write_act.insert(fd, on_write);
-			ev.events |= WR_EV;
-		}
+		if (on_write) write_act.insert(fd, on_write);
 		else write_act.remove(fd);
 		
+		epoll_event ev;
+		ev.events = (on_read ? RD_EV : 0) | (on_write ? WR_EV : 0);
+		ev.data.fd = fd;
 		if (ev.events)
 		{
 			epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd, &ev); // one of these two will fail (or do nothing), we'll ignore that
