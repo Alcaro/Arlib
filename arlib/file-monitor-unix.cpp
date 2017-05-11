@@ -2,8 +2,7 @@
 #include "array.h"
 #include "set.h"
 
-#ifdef __unix__
-#ifdef ARLIB_THREAD
+#if defined(__unix__) && !defined(__linux__) && defined(ARLIB_THREAD)
 #include "thread.h"
 
 #include <sys/types.h>
@@ -21,7 +20,7 @@ class fd_mon_t : nocopy {
 	int selfpipe[2];
 	
 	mutex_rec mut;
-	bool initialized;
+	bool initialized = false;
 	
 	void process()
 	{
@@ -31,14 +30,23 @@ class fd_mon_t : nocopy {
 			fd_set writefds;
 			FD_ZERO(&readfds);
 			FD_ZERO(&writefds);
+			int maxfd = 0;
 			
 			synchronized(mut)
 			{
-				for (auto& n : read_act)  FD_SET(n.key, &readfds);
-				for (auto& n : write_act) FD_SET(n.key, &writefds);
+				for (auto& n : read_act)
+				{
+					FD_SET(n.key, &readfds);
+					if (n.key > maxfd) maxfd = n.key;
+				}
+				for (auto& n : write_act)
+				{
+					FD_SET(n.key, &writefds);
+					if (n.key > maxfd) maxfd = n.key;
+				}
 			}
 			
-			select(FD_SETSIZE, &readfds, &writefds, NULL, NULL);
+			select(maxfd+1, &readfds, &writefds, NULL, NULL);
 			
 			synchronized(mut)
 			{
@@ -71,9 +79,10 @@ class fd_mon_t : nocopy {
 		if (initialized) return;
 		initialized = true;
 		
-		if (pipe(selfpipe) < 0) abort();
-		fcntl(selfpipe[0], F_SETFL, fcntl(selfpipe[0], F_GETFL) | O_NONBLOCK);
-		fcntl(selfpipe[1], F_SETFL, fcntl(selfpipe[1], F_GETFL) | O_NONBLOCK);
+		if (pipe2(selfpipe, O_NONBLOCK|O_CLOEXEC) < 0) abort();
+		//if (pipe(selfpipe) < 0) abort();
+		//fcntl(selfpipe[0], F_SETFL, fcntl(selfpipe[0], F_GETFL) | O_NONBLOCK);
+		//fcntl(selfpipe[1], F_SETFL, fcntl(selfpipe[1], F_GETFL) | O_NONBLOCK);
 		
 		function<void(int)> discard = [](int fd){ char x[16]; x[0] = read(fd, &x, 16); };
 		monitor_raw(selfpipe[0], discard, NULL);
@@ -103,5 +112,4 @@ void fd_monitor(int fd, function<void(int)> on_read, function<void(int)> on_writ
 {
 	fd_mon.monitor(fd, on_read, on_write);
 }
-#endif
 #endif

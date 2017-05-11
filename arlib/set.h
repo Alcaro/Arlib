@@ -217,6 +217,7 @@ public:
 			m_data[pos].disable(1);
 			m_valid[pos] = false;
 			m_count--;
+			if (m_count < m_data.size()/4 && m_data.size() > 8) rehash(m_data.size()/2);
 		}
 	}
 	
@@ -274,6 +275,7 @@ public:
 	//messing with the set during iteration half-invalidates all iterators
 	//a half-invalid iterator may return values you've already seen and may skip values, but will not crash or loop forever
 	//exception: you may not dereference a half-invalid iterator, use operator++ first
+	//as such, 'for (T i : my_set) {}' is safe, assuming caller accepts duplicates and skips; 'for (T& i : my_set)' is not
 	iterator begin() { return iterator(this, 0); }
 	iterator end() { return iterator(this, -1); }
 

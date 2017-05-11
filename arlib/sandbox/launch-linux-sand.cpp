@@ -266,12 +266,7 @@ bool boot_sand(char** argv, char** envp, pid_t& pid, int& sock)
 	struct rlimit rlim_fsize = { 8*1024*1024, 8*1024*1024 };
 	require(setrlimit(RLIMIT_FSIZE, &rlim_fsize));
 	
-	
-	//char path[] = "/sys/fs/cgroup/pids/arlib-sand-XXXXXX";
-	//require_b(mkdtemp(path));
-	//require(system("ls -la /sys/fs/cgroup/pids/"));
-	//int fd_cg;
-	//fd_cg = open("/sys/fs/cgroup/cpu/tasks");
+	//cgroups are so complex
 	//TODO: Set cgroup memory.memsw.limit_in_bytes to 100*1024*1024
 	//TODO: Set cgroup cpu.cfs_period_us = 100*1000, cpu.cfs_quota_us = 50*1000
 	//TODO: Set cgroup pids.max to 10
