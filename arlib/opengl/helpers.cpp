@@ -32,7 +32,8 @@ bool aropengl::create(context* core)
 static bool strtoken(const char * haystack, const char * needle)
 {
 	//this is annoyingly complex to parse
-	//I suspect 'people using fixed-size buffers, then extension list grows and app explodes' isn't the only reason the GL_EXTENSIONS string was deprecated
+	//I suspect 'people using fixed-size buffers, then extension list grows and app explodes'
+	// isn't the only reason the GL_EXTENSIONS string was deprecated
 	int nlen = strlen(needle);
 	while (true)
 	{
@@ -90,7 +91,8 @@ bool aropengl::hasExtension(const char * ext)
 
 
 
-static void APIENTRY debug_cb(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const char * message, void* userParam)
+static void APIENTRY debug_cb(GLenum source, GLenum type, GLuint id, GLenum severity,
+                              GLsizei length, const char * message, const void * userParam)
 {
 	const char * source_s;
 	const char * type_s;
@@ -124,11 +126,11 @@ static void APIENTRY debug_cb(GLenum source, GLenum type, GLuint id, GLenum seve
 	
 	switch (severity)
 	{
-		case GL_DEBUG_SEVERITY_HIGH:         severity_s="High"; severity_l=sev_err; break;
-		case GL_DEBUG_SEVERITY_MEDIUM:       severity_s="Medium"; severity_l=sev_warn; break;
-		case GL_DEBUG_SEVERITY_LOW:          severity_s="Low"; severity_l=sev_not; break;
-		case GL_DEBUG_SEVERITY_NOTIFICATION: severity_s="Notice"; severity_l=sev_not; break;
-		default:                             severity_s="Unknown"; severity_l=sev_unk; break;
+		case GL_DEBUG_SEVERITY_HIGH:         severity_s="High"; severity_l = sev_err; break;
+		case GL_DEBUG_SEVERITY_MEDIUM:       severity_s="Medium"; severity_l = sev_warn; break;
+		case GL_DEBUG_SEVERITY_LOW:          severity_s="Low"; severity_l = sev_not; break;
+		case GL_DEBUG_SEVERITY_NOTIFICATION: severity_s="Notice"; severity_l = sev_not; break;
+		default:                             severity_s="Unknown"; severity_l = sev_unk; break;
 	}
 	
 	fprintf((FILE*)userParam, "[GL debug: sev %s, source %s, topic %s: %s]\n", severity_s, source_s, type_s, message);
@@ -141,8 +143,8 @@ void aropengl::enableDefaultDebugger(FILE* out)
 	aropengl& gl = *this;
 	if (!out) out = stderr;
 	
-	gl.DebugMessageCallback((GLDEBUGPROC)debug_cb, out);//some headers have 'const' on the userdata, some don't
-	//https://www.opengl.org/sdk/docs/man/html/glDebugMessageCallback.xhtml says it shouldn't be const
+	gl.DebugMessageCallback((GLDEBUGPROC)debug_cb, out); // some headers have 'const' on the userdata, some don't
+	//https://www.khronos.org/registry/OpenGL/extensions/KHR/KHR_debug.txt says it should be const
 	gl.DebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DONT_CARE, 0, NULL, GL_TRUE);
 	gl.Enable(GL_DEBUG_OUTPUT_SYNCHRONOUS_ARB);
 }

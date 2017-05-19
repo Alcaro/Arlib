@@ -12,7 +12,7 @@
 #define CAT_STDIN "/bin/cat"
 #define CAT_STDIN_END ""
 #else
-#undef TRUE // screw this, I don't need two trues
+#undef TRUE // go away windows, true !== 1 and TRUE is just stupid
 #define TRUE "cmd", "/c", "type NUL" // windows has no /bin/true, fake it
 #define ECHO "cmd", "/c", "echo"
 #define YES "cmd", "/c", "tree /f c:" // not actually infinite, but close enough
@@ -26,9 +26,6 @@
 
 test()
 {
-#ifdef __linux__
-	test_skip("too noisy under Valgrind");
-#endif
 	test_skip("kinda slow");
 	//there are a couple of race conditions here, but I believe they're all safe
 	{
@@ -44,8 +41,8 @@ test()
 		assert(p.launch(ECHO, "foo"));
 		int status;
 		p.wait(&status);
-		assert_eq(status, 0);
 		assert_eq(p.read(), "foo" ECHO_END);
+		assert_eq(status, 0);
 	}
 	
 	{

@@ -20,7 +20,7 @@ class process : nocopy {
 //__WNOTHREAD may be accepted only on wait4, not waitid?
 
 //We can't cooperate with glib, g_child_watch doesn't propagate ptrace events.
-//But we can ignore it. Only g_child_watch touches the SIGCHLD handler, so we can safely claim it for ourselves.
+//But we can ignore it. Only g_child_watch touches the SIGCHLD handler, so we can safely ignore that one and claim it for ourselves.
 
 //However, there is a workaround: Await the processes' IO handles, instead of the process itself.
 // They die with the process, can be bulk awaited, waiting changes no state, and there are timeouts.
@@ -29,129 +29,11 @@ class process : nocopy {
 //  closefrom() variants do, but that's rare enough to ignore.
 //   And if the process is unexpectedly still alive when its control socket dies, easy fix.
 //  For the sandbox, this can be the SCM_RIGHTS pipe. For anything else, create a dummy pipe().
-//   Or use the three standard descriptors. Exceeding outlimit gives SIGPIPE, closing stdout is a neglible probability,
+//   Or use the three standard descriptors. Exceeding outlimit gives SIGPIPE, closing stdout prior to exit is a negligible probability,
 //     and we can add a timeout to select() and randomly waitpid them.
-//    Or SIGCHLD.
+//But the easiest solution remains: Claim SIGCHLD for ourselves.
 
-//Except ptrace is still waitpid, not a normal fd.
-// But that too can be worked around: Don't use ptrace. Use LD_PRELOAD to reroute open()/etc.
-//  Except there's still a bootstrap issue: execve() and open(env LD_PRELOAD) are required, but can't be allowed.
-//   execve can be execveat, which can be whitelisted in seccomp, but open() can't be hacked like that.
-//   Instead, I can do the ptrace parts synchronously until the LD_PRELOAD library is active, then detach.
-//    Of course, I need timeouts on this sync part, in case the program doesn't do the expected syscalls.
-//     There is no timeout on waitpid, but setitimer(ITIMER_REAL, 10ms, NULL) would yield EINTR.
-//      Unless it restarts. Or the signal ends up on another thread. Or two threads do this at once. Or something even weirder.
-//       The only solution is SIGCHLD.
-//    Since ptrace breaks at every syscall, and I'd kill the child if it does anything unexpected, maybe I can enable BPF in LD_PRELOAD?
-//     No, I can't. It'd require auditing every syscall argument (I can't assume a sane INTERP), including the BPF filter itself,
-//       and that's harder than just locking down early.
-//  Stuff doing raw syscalls in the main program would still break, of course, but that's so unlikely it can be ignored.
-//   Except libc itself.
-//    But that can be handled via SECCOMP_RET_TRAP / SIGSYS.
-//     open(env LD_PRELOAD) still needs to be handled. It I trap it, I can't handle it in ptrace; if I ptrace it, I can't trap it post-boot.
-//      Solution 1: Add another BPF filter, changing open() from RET_TRACE to RET_TRAP.
-//      Solution 2: Open the preload library pre-exec, let it trap, consume the signal, and "return" the already-open file.
-// INTERP is processed by the kernel and not visible to ptrace/etc, so I can't restrict it. Can I leak anything with a hacked INTERP?
-//  Probably not. A leakable program must:
-//   - Not use .got.plt, it's filled in by INTERP
-//       BusyBox matches this criteria; copy /bin/true to ./ls, set INTERP to BusyBox, execute, get directory listing
-//   - Be confidental; leaking a distro-provided file is harmless
-//   - Be at a known path; this must be some kind of leak or bruteforce, any predictable path is distro-provided
-//   and that combination is neglible. #1 alone is impossible for any plausible program.
-//   Still, it is a worrying thought.
-//  Maybe I can restrict INTERP with chroot, but I don't think that's available without root.
-//   Or maybe namespaces?
-//    Or explicitly call the correct INTERP.
-//     (BusyBox segfaults if I do this.)
-//     Actually, that could probably avoid ptrace too.
-//      Except it'd require open(/proc/self/fd/4), or a fail-open seccomp if LD_PRELOAD installation fails. ptrace still needed.
-
-
-//Process manager thread:
-//- installs SIGCHLD handler, which writes a byte to an internal pipe
-//    SIGCHLD from unfamiliar processes (like ptrace setup) is fine, they do nothing when pipe is read
-//    SIGCHLD isn't really needed, nearly all process deaths are accompanied with a fd dying, but 100% > 99.99%
-//    make sure to preserve errno
-//- select()s all open stdout/stderr/sandbox pipes (plus stdin, if applicable), plus the SIGCHLD pipe
-//- any activity is dispatched to the relevant handler
-//    use the synchronized(){} macro in said handlers
-//    sandbox:
-//      if it can't write, child is clearly misbehaving, so kill it rather than awaiting writability
-//      flatten all ., .. and extra /s
-//        can't protect against symlink shenanigans, O_NOFOLLOW does a little but doesn't help if a dir symlink exists
-//          do not under any circumstances allow the child access to symlinks
-//          O_BENEATH would help, but that's Capsicum only, despite its uses for avoiding .. attacks on web servers
-//            though web servers probably want symlinks? but on the other hand, locking .. is easy if you think about it
-//    SIGCHLD pipe data is ignored, it just wakes the select()
-//- if any process has no fds (stdin, stdout, stderr, sandbox), waitpid it and see if it died; if yes, remove from the process list
-//    if process has fds, no point waiting, fds die when process does and awaiting a dead pipe is activity
-//(I could probably use g_child_watch here, but no point.)
-
-//Sandbox bootstrap:
-//- set fd 3 to AF_UNIX socket pair (created pre-fork)
-//- set fd 4 to file containing preload library (possibly memfd; could create it post-fork, but pre-fork allows sharing it)
-//- PTRACE_TRACEME
-//- enable seccomp
-//- exec LD_PRELOAD=/!/arlib-sandbox.so /lib/ld-linux.so app.elf
-//- parent ptrace awaits the SECCOMP_RET_TRAP SIGSYS from open(LD_PRELOAD)
-//- ptrace fakes a return of 4 and detaches
-//    if it gets anything else, or hits a 10ms timeout, kill child
-//      timeout is implemented via SIGCHLD
-//        or WNOHANG and some 1ms sleeps, if I can't get SIGCHLD working
-//- preload lib overrides open(), replacing it with send message to parent and get fd via SCM_RIGHTS (or an error), see below
-//- it also installs a SIGSYS handler, which does the same thing
-//- and closes fd 4, for good measure (it's mapped anyways)
-//- main app enters, not knowing what's going on
-//    until it uses sandcomm::connect(), which is implemented by checking for the LD_PRELOAD value
-//      how does sandcomm find the preload lib? does dlopen(/!/arlib-sandbox.so) work, or do I 'extend' some syscall?
-
-//Sandbox socket protocol:
-//struct {
-//  int msgtype { open=1, sandcomm=2 };
-//  int errno;
-//};
-//fd sent separately
-
-//LD_PRELOAD operation:
-//  global mutex around the function, same mutex for open() and sandcomm (multi-threaded open() probably isn't the bottleneck)
-//  if open(), sendmsg()
-//    if that fails, sleep (select()) and retry
-//  if sandcomm, check if the queue (8 ints, fd or -1) contains anything; if yes, return that
-//  recvmsg()
-//    if that fails, abort()
-//  if relevant, return that
-//  otherwise, add to sandcomm queue (incorrect open() replies are impossible), repeat recvmsg
-
-//Likely traps in the sandbox:
-//- symlink(): make sure both linkpath and target are allowed, and target is writable if linkpath is
-//- exec*(): opening INTERP is not visible to BPF, and can't be audited without TOCTTOU
-//    instead, this must be forcibly prefixed with /lib/ld-linux.so, which is a fairly annoying dance:
-//    - get ptraced (maybe never detach at all?)
-//    - tracer suspends all threads (unless ptrace does that automatically)
-//    - inspect arguments
-//        ensure both argv and argv[0] are in anonymous, non-shared memory
-//          both start and end, page-straddling tastes bad
-//            could ensure argv and argv[0] are both in the same memory page, makes things easier
-//              but verification is still needed
-//                I don't know how to do that
-//                  I can't cheese it by demanding it's in LD_PRELOAD's BSS, the library could be unmapped and something else put there
-//        test that host properly handles the memory being non-readable (kill child)
-//    - approve syscall
-//    - on failure, unsuspend threads (on success, exec kills all other threads)
-//    - detach (maybe)
-//- fork():
-//    requires a new AF_UNIX pipe
-//      which of the parent's data structures get screwed up by that?
-//    possibly strange interactions with ptrace; it works, strace does it, but at what cost?
-//- OOM killer, can it be tricked into killing something it shouldn't?
-
-//so much special cases. BPF covers 95% of what I need, but the last 5% are all over the place, and there are no obvious ways to block them.
-//Nearly all of it is due to lack of kernel-level file system lockdown. (Child process handling is tricky, but not impossible.)
-//  Namespaces and chroot can do it, but that requires setuid, which gives root on failure.
-//    That is the ultimate irony and cannot be tolerated, or even risked.
-//It's better than Windows' hodgepodge of forty things locking 2% each, but for a sandbox, anything short of perfect is quite literally zero.
-//Maybe I should entrust this entire thing to Firejail. It's still setuid, but at least failures there wouldn't be my fault.
-
+	//todo: use fd monitor instead
 	void update(bool sleep = false);
 	bool stdin_open = false;
 	array<byte> stdin_buf;
@@ -167,6 +49,7 @@ class process : nocopy {
 	
 	void destruct();
 	
+	//todo: rewrite for sandbox support
 protected:
 	static void manager();
 	
@@ -175,21 +58,19 @@ protected:
 	
 	mutex mut;
 	
-	//WARNING: fork() only clones the calling thread. Other threads could be holding important
-	// resources, such as the malloc mutex.
-	//As such, the preexec callback must only call async-signal-safe functions.
-	//These are the direct syscall wrappers, plus those listed at <http://man7.org/linux/man-pages/man7/signal.7.html>.
-	//In particular, be careful with C++ destructors.
-	struct execparm {
-		int nfds_keep; // After preexec(), all file descriptors >= this (default 3) will be closed.
-		const char * const * environ; // If non-NULL, the child will use that environment. Otherwise, inherited from parent.
-		                              // Remember that you can't call malloc, so set this up before launch() is called.
-	};
-	//For pre-fork and post-fork, override launch_impl.
-	function<void(execparm* params)> preexec;
+	static bool closefrom(int lowfd);
+	//Sets the file descriptor table to fds, closing all existing fds.
+	//If a fd is -1, it's closed. Duplicates in the input are allowed.
+	//Returns false on failure, but keeps doing its best anyways.
+	//Afterwards, all new fds have the cloexec flag set. If this is undesired, use fcntl(F_SETFD).
+	static bool set_fds(array<int> fds);
 	
-	//virtual void waitpid_select(bool sleep);
-	virtual bool launch_impl(cstring path, arrayview<string> args);
+	//Like execlp, this searches PATH for the given program.
+	static string find_prog(const char * prog);
+	
+	//stdio_fd is an array of { stdin, stdout, stderr } and should be sent to set_fds (possibly with a few additions) post-fork.
+	//Must return the child's pid, or -1 on failure.
+	virtual pid_t launch_impl(array<const char*> argv, array<int> stdio_fd);
 #endif
 	
 #ifdef _WIN32
@@ -203,27 +84,109 @@ protected:
 	
 public:
 	process() {}
-	process(cstring path, arrayview<string> args) { launch(path, args); }
+	process(cstring prog, arrayview<string> args) { launch(prog, args); }
 	
 	//Argument quoting is fairly screwy on Windows. Command line arguments at all are fairly screwy on Windows.
 	//You may get weird results if you use too many backslashes, quotes and spaces.
-#ifdef __linux__
-	bool launch(cstring path, arrayview<string> args) { return launch_impl(path, args); }
-#else
-	bool launch(cstring path, arrayview<string> args);
-#endif
+	bool launch(cstring prog, arrayview<string> args);
 	
 	template<typename... Args>
-	bool launch(cstring path, Args... args)
+	bool launch(cstring prog, Args... args)
 	{
 		string argv[sizeof...(Args)] = { args... };
-		return launch(path, arrayview<string>(argv));
+		return launch(prog, arrayview<string>(argv));
 	}
 	
-	bool launch(cstring path)
+	bool launch(cstring prog)
 	{
-		return launch(path, arrayview<string>(NULL));
+		return launch(prog, arrayview<string>(NULL));
 	}
+	
+	//TODO:
+	//allow setting stdin to any of inherit, pipe, file, buffer
+	//allow setting stdout to any of inherit, pipe, file, discard
+	//allow setting stdout to any of inherit, pipe, file, discard, stdout
+	//
+	//what to name them? can't use stdin or in, they're macros on msvc
+	//stdin_inherit()/etc? that's 13 functions just for modesetting
+	//set_stdin(process::stdin)? ugly namespacing
+	//input.inherit()? seems hard to allow linking stderr to stdout in that model
+	//input = STDIN_FILENO? probably too linux specific
+	//input = process::input::create_inherit()? kinda bulky, but not too terrible
+	//set_stdin(process::input::create_inherit())? even bulkier, but public members tend to be screwy
+	//set_stdin(pipe::create_stdin())? probably good, except need directionally unambiguous typenames
+	//piperead/pipewrite? who writes? inpipe? whose input?
+	//procin? a bit too cramped
+	//process::input is probably my best bet, clear enough that it's process input aka caller calls write()
+	
+	class input : nocopy {
+		input() {}
+		
+		uintptr_t fd; // HANDLE on windows, int on linux
+		friend class process;
+		
+		array<byte> buf;
+		bool do_close = false;
+		
+		void update(int fd);
+		
+	public:
+		void write(arrayview<byte> data) { buf += data; update(fd); }
+		void write(cstring data) { write(data.bytes()); }
+		//Sends EOF to the child, after all bytes have been written.
+		void close() { do_close = true; update(fd); }
+		
+		static input* create_pipe(arrayview<byte> data = NULL);
+		// Like create_pipe, but auto closes the pipe once everything has been written.
+		static input* create_buffer(arrayview<byte> data = NULL);
+		
+		//Can't use write/close on these two. Just don't store them anywhere.
+		static input* create_file(cstring path);
+		//Uses caller's stdin. Make sure no two processes are trying to use stdin simultaneously, it acts badly.
+		static input* create_stdin();
+	};
+	//The process object takes ownership of the given object.
+	//Can only be called before launch(), and only once.
+	//Default is NULL, equivalent to /dev/null.
+	void set_stdin(input* inp);
+	
+	class output : nocopy {
+		uintptr_t fd;
+		friend class process;
+		
+		array<byte> buf;
+		size_t maxbytes = SIZE_MAX;
+		
+		void update(int fd);
+		
+	public:
+		//Stops the process from writing too much data and wasting RAM.
+		//If there, at any point, is more than 'max' bytes of unread data in the buffer, the pipe is closed.
+		//Slightly more may be readable in practice, due to kernel-level buffering.
+		void limit(size_t lim) { maxbytes = lim; }
+		
+		array<byte> readb();
+		//{
+		//	update(fd);
+		//	return std::move(buf);
+		//}
+		//Can return invalid UTF-8. Even if the program only processes UTF-8, it's possible
+		// to read half a character, if the process is still running or the outlimit was hit.
+		string read() { return string(readb()); }
+
+		static output* create_pipe();
+		static output* create_buffer();
+		static output* create_file(cstring path, bool append = false);
+		static output* create_stdout();
+		static output* create_stderr();
+		
+		virtual ~output() {}
+	};
+	void set_stdout(output* outp);
+	void set_stderr(output* outp);
+	
+	
+	
 	
 	//Sets the child's stdin. If called multiple times, they're concatenated.
 	void write(arrayview<byte> data) { stdin_buf += data; update(); }

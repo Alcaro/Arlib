@@ -17,23 +17,18 @@
 //I cannot trust such a system. I only trust whitelists, like Linux seccomp.
 //Even Chrome couldn't find anything comprehensive; they use everything they can find (restricted token, job object, desktop,
 // SetProcessMitigationPolicy, firewall, etc), but some operations, such as accessing FAT32 volumes, still pass through.
-//It feels like the Windows sandboxing functions are designed for trusted code operating on untrusted data, rather than untrusted code.
+//It feels like the Windows sandboxing functions are designed for trusted code operating on untrusted data, rather than untrusted code,
+// or for memory safe languages, or some similar absurd constraint.
 //Since I can't create satisfactory results in such an environment, I won't even try.
 
 #ifdef __linux__
 //Currently, both parent and child must be x86_64.
 
-/*
 class sandcomm;
 class sandproc : public process {
 	sandcomm* conn;
 	
-	pthread_t ptrace_thr;
-	void ptrace_func();
-	static void* ptrace_func_c(void* arg);
-	
-	void preexec_fn(execparm* params);
-	bool launch_impl(cstring path, arrayview<string> args) override;
+	pid_t launch_impl(array<const char*> argv, array<int> stdio_fd) override;
 	//void waitpid_select(bool sleep) override;
 	
 public:
@@ -45,8 +40,9 @@ public:
 	sandcomm* connect();
 	
 	//Only available before starting the child.
-	void max_cpu(unsigned lim); // in seconds
-	void max_mem(unsigned lim); // in megabytes
+	void max_cpu(unsigned lim); // in wall clock seconds, default 60
+	void max_cpu_frac(float lim); // in core-seconds per wall clock second, default 1
+	void max_mem(unsigned lim); // in megabytes, default 1024
 	
 	//To start the sandbox, use process::launch(). Other process:: functions are also available.
 	
@@ -62,29 +58,29 @@ public:
 class sandcomm : nomove {
 public:
 	//For thread safety purposes, the parent and child count as interacting with different objects.
-	//However, only one thread in each process may interact with the sandcomm object, or its associated sandproc.
+	//However, sandcomm and its sandproc count as the same object.
 	
 	//If the process isn't in an Arlib sandbox, or parent didn't call connect(), returns NULL. Can only be called once.
 	static sandcomm* connect();
 	
-	//Used to synchronize the two processes. 'chan' can be any number 0 through 7. Negative channels may be used internally.
-	//While this may look like a mutex, it's also usable as event; release and wait can be in different processes.
+	//A few binary semaphores ('sem' can be 0-7, inclusive), used to synchronize the two processes.
+	//Calling release() on an already-released semaphore is undefined behavior.
 	//Multiple threads may be in these functions simultaneously (or in these plus something else),
-	// as long as only one thread is in each channel.
-	//The channels start in the locked state.
-	void wait(int chan);
-	bool try_wait(int chan);
-	void release(int chan);
+	// but only one thread per process per semaphore.
+	//They start start in the locked state.
+	void wait(int sem);
+	bool try_wait(int sem);
+	void release(int sem);
 	
 	//To allow synchronized(box.channel(1)) {}
-	struct channel_t
+	struct semlock_t
 	{
 		sandcomm* parent; int id;
 		void lock() { parent->wait(id); }
 		bool try_lock() { return parent->try_wait(id); }
 		void unlock() { parent->release(id); }
 	};
-	channel_t channel(int id) { channel_t ret; ret.parent=this; ret.id=id; return ret; }
+	semlock_t sem(int id) { semlock_t ret; ret.parent=this; ret.id=id; return ret; }
 	
 	
 	//Clones a file handle into the child. The handle remains open in the parent. The child may get another ID.
@@ -113,7 +109,6 @@ public:
 class sandfunc {
 public:
 	static void enter(); // Must be the first thing in main(), before window_init() or similar.
-	sandcomm* launch(void(*proc)(sandcomm* comm)); // Not the function<> template, pointers can't be passed around like that.
+	sandcomm* launch(void(*proc)(sandcomm* comm)); // Not the function<> template, userdata pointers can't be passed around like that.
 };
-*/
 #endif

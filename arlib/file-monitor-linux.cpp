@@ -80,7 +80,7 @@ public:
 		}
 	}
 	
-	~fd_mon_t() { close(epoll_fd); }
+	~fd_mon_t() { if (epoll_fd != -1) close(epoll_fd); }
 };
 
 //there's no need for more than one of these

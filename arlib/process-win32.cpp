@@ -37,9 +37,9 @@ static string escapearg(cstring arg)
 	//else return arg;
 }
 
-bool process::launch(cstring path, arrayview<string> args)
+bool process::launch(cstring prog, arrayview<string> args)
 {
-	string cmdline = escapearg(path);
+	string cmdline = escapearg(prog);
 	for (cstring s : args)
 	{
 		cmdline += " "+escapearg(s);

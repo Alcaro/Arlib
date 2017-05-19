@@ -508,6 +508,7 @@ bmlparser::event test4e[]={
 //and I can't justify allowing three different options but not all of them.
 //therefore, only one option remains.
 const char * test5 =
+"\n"
 "a\n"
 "  b\n"
 "\n"
@@ -515,7 +516,7 @@ const char * test5 =
 "  \n"
 "   \n"
 "    \n"
-"     \n"
+"      \n"
 "\t\n"
 "    c\n";
 bmlparser::event test5e[]={
@@ -528,6 +529,33 @@ bmlparser::event test5e[]={
 	{ e_finish }
 };
 
+//comments
+const char * test6 =
+"\n"
+"#test\n"
+"a#test\n"
+"b #test\n"
+"c d#test\n"
+"e f #test\n"
+"g:#test\n"
+"h: #test\n"
+"i\n"
+//"#x\n" // TODO: is this (or blank lines) allowed?
+" :j\n"
+" :k\n"
+"#x\n"
+;
+bmlparser::event test6e[]={
+	{ e_enter, "a" }, { e_exit },
+	{ e_enter, "b" }, { e_exit },
+	{ e_enter, "c" }, { e_enter, "d" }, { e_exit }, { e_exit },
+	{ e_enter, "e" }, { e_enter, "f" }, { e_exit }, { e_exit },
+	{ e_enter, "g", "#test" }, { e_exit },
+	{ e_enter, "h", "#test" }, { e_exit },
+	{ e_enter, "i", "j\nk" }, { e_exit },
+	{ e_finish }
+};
+
 static void testbml(const char * bml, bmlparser::event* expected)
 {
 	bmlparser parser(bml);
@@ -535,8 +563,8 @@ static void testbml(const char * bml, bmlparser::event* expected)
 	{
 		bmlparser::event actual = parser.next();
 		
-//printf("e=%i [%s] [%s]\n", expected->action, expected->name.data(), expected->value.data());
-//printf("a=%i [%s] [%s]\n\n", actual.action, actual.name.data(), actual.value.data());
+printf("e=%i [%s] [%s]\n", expected->action, (const char*)expected->name, (const char*)expected->value);
+printf("a=%i [%s] [%s]\n\n", actual.action,  (const char*)actual.name,    (const char*)actual.value);
 		assert_eq(actual.action, expected->action);
 		assert_eq(actual.name, expected->name);
 		assert_eq(actual.value, expected->value);
@@ -578,6 +606,7 @@ test()
 	testcall(testbml(test3, test3e));
 	testcall(testbml(test4, test4e));
 	testcall(testbml(test5, test5e));
+	testcall(testbml(test6, test6e));
 	
 	testcall(testbml_error("*"));          // invalid node name
 	testcall(testbml_error("a=\""));       // unclosed quote
@@ -586,6 +615,9 @@ test()
 	testcall(testbml_error("a\n  b\n c")); // derpy indentation
 	testcall(testbml_error("a\n b\n\tc")); // mixed tabs and spaces
 	testcall(testbml_error("a=b\n :c"));   // two values
+	testcall(testbml_error(" a"));         // can't indent root node
+	testcall(testbml_error("a=b\"c"));     // no quote allowed in mode=eq
+	testcall(testbml_error("a b=c\"d"));   // nor ieq
 	
 	//derpy indentation with multilines
 	testcall(testbml_error("a\n :b\n  :c"));

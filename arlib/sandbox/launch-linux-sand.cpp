@@ -14,13 +14,13 @@
 #include <sys/resource.h>
 #include <linux/memfd.h> // documented as sys/memfd.h, but that doesn't exist
 #include <fcntl.h>
-#define F_LINUX_SPECIFIC_BASE	1024
-#define F_ADD_SEALS	(F_LINUX_SPECIFIC_BASE + 9)
-#define F_GET_SEALS	(F_LINUX_SPECIFIC_BASE + 10) // and these only exist in linux/fcntl.h - where fcntl() doesn't exist
-#define F_SEAL_SEAL	0x0001
-#define F_SEAL_SHRINK	0x0002
-#define F_SEAL_GROW	0x0004
-#define F_SEAL_WRITE	0x0008
+#define F_LINUX_SPECIFIC_BASE 1024
+#define F_ADD_SEALS   (F_LINUX_SPECIFIC_BASE + 9)  // and these only exist in linux/fcntl.h - where fcntl() doesn't exist
+#define F_GET_SEALS   (F_LINUX_SPECIFIC_BASE + 10) // and I can't include both, duplicate definitions
+#define F_SEAL_SEAL   0x0001
+#define F_SEAL_SHRINK 0x0002
+#define F_SEAL_GROW   0x0004
+#define F_SEAL_WRITE  0x0008
 #include <sys/prctl.h>
 #include <linux/filter.h>
 #include <linux/seccomp.h>
@@ -266,15 +266,26 @@ bool boot_sand(char** argv, char** envp, pid_t& pid, int& sock)
 	struct rlimit rlim_fsize = { 8*1024*1024, 8*1024*1024 };
 	require(setrlimit(RLIMIT_FSIZE, &rlim_fsize));
 	
-	//cgroups are so complex
-	//TODO: Set cgroup memory.memsw.limit_in_bytes to 100*1024*1024
-	//TODO: Set cgroup cpu.cfs_period_us = 100*1000, cpu.cfs_quota_us = 50*1000
-	//TODO: Set cgroup pids.max to 10
+	//CLONE_NEWUSER doesn't seem to grant access to cgroups
+	//once (if) it does, set these:
+	// memory.memsw.limit_in_bytes = 100*1024*1024
+	// cpu.cfs_period_us = 100*1000, cpu.cfs_quota_us = 50*1000
+	// pids.max = 10
+	//for now, just stick up some rlimit rules, to disable the most naive forkbombs or memory wastes
+	
+	struct rlimit rlim_as = { 1*1024*1024*1024, 1*1024*1024*1024 }; // this is the only one that affects mmap
+	require(setrlimit(RLIMIT_AS, &rlim_as));
+	
+	//why so many? because the rest of the pid is also included, which is often a few hundred
+	//http://elixir.free-electrons.com/linux/latest/source/kernel/fork.c#L1564
+	struct rlimit rlim_nproc = { 500, 500 };
+	require(setrlimit(RLIMIT_NPROC, &rlim_nproc));
 	
 	//die on parent death
 	require(prctl(PR_SET_PDEATHSIG, SIGKILL));
 	struct broker_req req = { br_nop };
-	require(send(3, &req, sizeof(req), MSG_EOR)); // ensure parent is still alive; if it's not, this fails with EPIPE
+	//ensure parent is still alive; if it's not, this fails with EPIPE (and SIGPIPE, but our caller may have ignored that)
+	require(send(3, &req, sizeof(req), MSG_EOR));
 	
 	//revoke filesystem
 	require(chroot("/proc/sys/debug/"));

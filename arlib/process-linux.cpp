@@ -7,6 +7,7 @@
 #include <sys/syscall.h>
 #include <sys/wait.h>
 #include <signal.h>
+#include <limits.h>
 
 //atoi is locale-aware, not gonna trust that to not call malloc or otherwise be stupid
 static int atoi_simple(const char * text)
@@ -24,7 +25,7 @@ static int atoi_simple(const char * text)
 
 //trusting everything to set O_CLOEXEC isn't enough, this is a sandbox
 //throws about fifty errors in Valgrind for fd 1024 - don't care
-static bool closefrom(int lowfd)
+bool process::closefrom(int lowfd)
 {
 	//getdents[64] is documented do-not-use and opendir should be used instead.
 	//However, we're in (the equivalent of) a signal handler, and opendir is not signal safe.
@@ -57,6 +58,9 @@ static bool closefrom(int lowfd)
 			int fd = atoi_simple(dent->d_name);
 			if (fd>=0 && fd!=dfd && fd>=lowfd)
 			{
+#ifdef ARLIB_TEST_ARLIB
+				if (fd >= 1024) continue; // shut up Valgrind
+#endif
 				close(fd);
 			}
 		}
@@ -64,6 +68,41 @@ static bool closefrom(int lowfd)
 	close(dfd);
 	return true;
 }
+
+bool process::set_fds(array<int> fds)
+{
+	if (fds.size() > INT_MAX) return false;
+	
+	bool ok = true;
+	
+	//probably doable with fewer dups, but yawn, implausible.
+	for (size_t i=0;i<fds.size();i++)
+	{
+		while (fds[i] < (int)i && fds[i] >= 0)
+		{
+			fds[i] = fcntl(fds[i], F_DUPFD_CLOEXEC);
+			if (fds[i] < 0) ok = false;
+		}
+	}
+	
+	for (size_t i=0;i<fds.size();i++)
+	{
+		if (fds[i] >= 0 && fds[i] != (int)i)
+		{
+			if (dup3(fds[i], i, O_CLOEXEC) < 0)
+			{
+				ok = false;
+				close(i);
+			}
+		}
+		if (fds[i] < 0) close(i);
+	}
+	
+	if (!closefrom(fds.size())) ok = false;
+	
+	return ok;
+}
+
 
 static void update_piperead(int& fd, array<byte>& out, size_t limit)
 {
@@ -129,33 +168,17 @@ void process::update(bool sleep)
 	
 	if (stdout_buf.size()+stderr_buf.size() > outmax)
 	{
-		if (stdout_fd) close(stdout_fd);
-		if (stderr_fd) close(stderr_fd);
+		if (stdout_fd != -1) close(stdout_fd);
+		if (stderr_fd != -1) close(stderr_fd);
 		stdout_fd = -1;
 		stderr_fd = -1;
 	}
 }
 
-bool process::launch_impl(cstring path, arrayview<string> args)
+pid_t process::launch_impl(array<const char*> argv, array<int> stdio_fd)
 {
-	array<const char*> argv;
-	argv.append((char*)path.bytes().ptr());
-	for (size_t i=0;i<args.size();i++)
-	{
-		argv.append((char*)args[i].bytes().ptr());
-	}
-	argv.append(NULL);
-	
-	int stdinpair[2];
-	int stdoutpair[2];
-	int stderrpair[2];
-	//leaks a couple of fds if creation fails, but if that happens, process is probably screwed anyways.
-	if (pipe2(stdinpair,  O_CLOEXEC) < 0) return false; // close-on-exec for a fd intended only to be used by a child process?
-	if (pipe2(stdoutpair, O_CLOEXEC) < 0) return false; // answer: dup2 resets cloexec
-	if (pipe2(stderrpair, O_CLOEXEC) < 0) return false; // O_NONBLOCK is absent because no child expects a nonblocking stdout
-	
-	this->pid = fork();
-	if (this->pid == 0)
+	pid_t ret = fork();
+	if (ret == 0)
 	{
 		//WARNING:
 		//fork(), POSIX.1-2008, http://pubs.opengroup.org/onlinepubs/9699919799/functions/fork.html
@@ -163,29 +186,41 @@ bool process::launch_impl(cstring path, arrayview<string> args)
 		//  calling thread and its entire address space, possibly including the states of mutexes and
 		//  other resources. Consequently, to avoid errors, the child process may only execute
 		//  async-signal-safe operations until such time as one of the exec functions is called.
-		//In particular, C++ destructors should be avoided.
-		//
-		//The following external functions are used in the child process:
-		//dup2, open, close, execvp, _exit - documented as sigsafe
-		//syscall(getdents64) - all syscalls (except maybe some signal/etc-related ones) are sigsafe
-		//array::ptr - memory only
-		//function::operator() - memory only (can call copy constructors, but there are no arguments)
+		//In particular, malloc must be avoided.
 		
-		dup2(stdinpair[0], 0); // if stdin isn't desired, the other end is closed by the update() at the end
-		dup2(stdoutpair[1], 1);
-		if (this->stderr_split) dup2(stderrpair[1], 2);
-		else dup2(stdoutpair[1], 2);
-		
-		execparm params = { 3, NULL };
-		//HIGHLY DANGEROUS, use ONLY if you know what you're doing
-		this->preexec(&params);
-		closefrom(params.nfds_keep); // calls open, syscall(getdents64), close
-		
-		if (params.environ) execvpe(path, (char**)argv.ptr(), (char**)params.environ);
-		else execvp(path, (char**)argv.ptr());
+		set_fds(std::move(stdio_fd));
+		for (int i=0;i<=2;i++) fcntl(i, F_SETFD, 0); // remove FD_CLOEXEC
+		execvp(argv[0], (char**)argv.ptr());
 		while (true) _exit(EXIT_FAILURE);
 	}
-	//failure handled later
+	
+	return ret;
+}
+
+bool process::launch(cstring prog, arrayview<string> args)
+{
+	array<const char*> argv;
+	argv.append((const char*)prog);
+	for (size_t i=0;i<args.size();i++)
+	{
+		argv.append((const char*)args[i]);
+	}
+	argv.append(NULL);
+	
+	int stdinpair[2];
+	int stdoutpair[2];
+	int stderrpair[2];
+	//leaks a couple of fds if creation fails, but if that happens, process is probably screwed anyways.
+	if (pipe2(stdinpair,  O_CLOEXEC) < 0) return false; // cloexec is removed in launch_impl
+	if (pipe2(stdoutpair, O_CLOEXEC) < 0) return false;
+	if (pipe2(stderrpair, O_CLOEXEC) < 0) return false;
+	
+	int stdio_fd[3] = { stdinpair[0], stdoutpair[1], (this->stderr_split ? stderrpair[1] : stdoutpair[1]) };
+	//array<int> stdio_fd;
+	//stdio_fd.append(stdinpair[0]); // if stdin isn't desired, the other end is closed by the update() at the end
+	//stdio_fd.append(stdinpair[1]);
+	//stdio_fd.append(this->stderr_split ? stderrpair[1] : stdoutpair[1]);
+	this->pid = launch_impl(std::move(argv), arrayview<int>(stdio_fd));
 	
 	close(stdinpair[0]);
 	close(stdoutpair[1]);
@@ -226,6 +261,7 @@ void process::terminate()
 	if (this->pid != -1)
 	{
 		kill(this->pid, SIGKILL);
+		waitpid(this->pid, NULL, 0);
 		this->exitcode = -1;
 		this->pid = -1;
 	}

@@ -109,7 +109,8 @@ static bool libLoadD3D()
 {
 	hD3D9=LoadLibrary("d3d9.dll");
 	if (!hD3D9) return false;
-	//lpDirect3DCreate9=Direct3DCreate9;//these are for verifying that Direct3DCreate9Ex_t matches the real function; they're not needed anymore
+	//these are for verifying that Direct3DCreate9Ex_t matches the real function; they're not needed anymore
+	//lpDirect3DCreate9=Direct3DCreate9;
 	//lpDirect3DCreate9Ex=Direct3DCreate9Ex;
 	lpDirect3DCreate9Ex=(Direct3DCreate9Ex_t)GetProcAddress(hD3D9, "Direct3DCreate9Ex");
 	if (!lpDirect3DCreate9Ex) { FreeLibrary(hD3D9); return false; }
@@ -271,7 +272,7 @@ public:
 				WGL_CONTEXT_FLAGS_ARB, debug ? WGL_CONTEXT_DEBUG_BIT_ARB : 0,
 				//WGL_CONTEXT_FLAGS_ARB, WGL_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB,
 				//https://www.opengl.org/wiki/Core_And_Compatibility_in_Contexts says do not use
-			0 };
+				0 };
 			this->GL_hglrc = wglCreateContextAttribs(this->GL_hdc, /*share*/NULL, attribs);
 			wgl.DeleteContext(hglrc_old);
 			
@@ -291,7 +292,8 @@ public:
 		{
 			*functions = wgl.GetProcAddress(names);
 #ifdef AROPENGL_D3DSYNC
-			if (d3dsync && !*functions) return false; // this demands wglSwapIntervalEXT even for d3d sync, but that one is supported by everything.
+			// this demands wglSwapIntervalEXT even for d3d sync, but that one is supported by everything.
+			if (d3dsync && !*functions) return false;
 #endif
 			
 			functions++;
@@ -334,9 +336,9 @@ public:
 	
 	/*private*/ bool JoinGLD3D()
 	{
-		//a bit untidy, but this object doesn't have access to the real one
+		//a bit untidy, but this object doesn't have access to the real aropengl object
 #define SYM(type, name) type name = (type)this->getProcAddress(STR(name)); if (!name) return false
-		typedef void (GLAPIENTRY * PFNGLGENTEXTURES)(GLsizei n, GLuint *textures);
+		typedef void (GLAPIENTRY * PFNGLGENTEXTURES)(GLsizei n, GLuint* textures);
 		typedef void (GLAPIENTRY * PFNGLBINDTEXTURE)(GLenum target, GLuint texture);
 		SYM(PFNGLGENTEXTURES, glGenTextures);
 		SYM(PFNGLBINDTEXTURE, glBindTexture);
@@ -354,10 +356,9 @@ public:
 		
 		AllocRenderTarget();
 		
-		//the framebuffer must be bound after calling AllocRenderTarget, or the Nvidia driver claims the framebuffer is incomplete
+		//the framebuffer must be bound after calling AllocRenderTarget, or the nVidia driver claims the framebuffer is incomplete
 		//this bug can be fixed by querying the current FBO and binding that, which shouldn't have any effect
-		//additionally, the Intel driver is happy with either order
-		//I suspect driver bug of some kind
+		//the Intel driver is happy with either order, I suspect driver bug of some kind
 		glGenFramebuffers(1, &GL_fboname);
 		glBindFramebuffer(GL_FRAMEBUFFER, GL_fboname);
 		glFramebufferTexture(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_texturename, 0);
@@ -369,10 +370,12 @@ public:
 	{
 		RECT wndsize;
 		GetClientRect(this->D3D_hwnd, &wndsize);
-		this->D3D_device->CreateRenderTarget(wndsize.right, wndsize.bottom, D3DFMT_X8R8G8B8, D3DMULTISAMPLE_NONE, 0, false, &this->D3D_GLtarget, &D3D_sharetexture);
+		this->D3D_device->CreateRenderTarget(wndsize.right, wndsize.bottom, D3DFMT_X8R8G8B8, D3DMULTISAMPLE_NONE,
+		                                     0, false, &this->D3D_GLtarget, &D3D_sharetexture);
 		
 		wgl.DXSetResourceShareHandleNV(this->D3D_GLtarget, D3D_sharetexture);
-		this->GL_htexture = wgl.DXRegisterObjectNV(this->D3D_sharehandle, this->D3D_GLtarget, GL_texturename, GL_TEXTURE_2D, WGL_ACCESS_WRITE_DISCARD_NV);
+		this->GL_htexture = wgl.DXRegisterObjectNV(this->D3D_sharehandle, this->D3D_GLtarget, GL_texturename,
+		                                           GL_TEXTURE_2D, WGL_ACCESS_WRITE_DISCARD_NV);
 		
 		wgl.DXLockObjectsNV(D3D_sharehandle, 1, &this->GL_htexture);
 	}

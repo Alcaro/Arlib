@@ -105,14 +105,23 @@ int main(int argc, char* argv[])
 	while (test)
 	{
 		testlist* next = test->next;
-		if (test->name) printf("Testing %s (%s)...", test->name, test->loc);
-		else printf("Testing %s...", test->loc);
-		fflush(stdout);
-		_test_result = 0;
-		callstack.reset();
-		test->func();
-		count[_test_result]++;
-		if (!_test_result) puts(" pass");
+		if (true)
+		{
+			if (test->name) printf("Testing %s (%s)...", test->name, test->loc);
+			else printf("Testing %s...", test->loc);
+			fflush(stdout);
+			_test_result = 0;
+			callstack.reset();
+			test->func();
+			count[_test_result]++;
+			if (!_test_result) puts(" pass");
+		}
+		else
+		{
+			if (test->name) printf("Skipping %s (%s)\n", test->name, test->loc);
+			else printf("Skipping %s\n", test->loc);
+			count[2]++;
+		}
 		free(test);
 		test = next;
 	}

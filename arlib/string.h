@@ -5,23 +5,35 @@
 #include <string.h>
 
 //A string is a mutable sequence of bytes. It usually represents UTF-8 text, but can be arbitrary binary data, including NULs.
-//All string:: functions taking or returning a char* assume/guarantee NUL termination. However, anything taking uint8_t* does not.
+//All string:: functions taking or returning a char* assume/guarantee NUL termination. However, anything using uint8_t* does not.
 
-//cstring is a special case of string that's not guaranteed to own its storage; it lives and dies by whatever string or array it was created from.
+//cstring is a special case of string that's not guaranteed to own its storage; it lives and dies by
+// whatever string or array it was created from.
 //Creating a cstring from another cstring leaves no dependency on this cstring; they're both bound to their source.
 //Modifying a cstring disconnects it from its source and allows the original string to be deleted.
 
 //If the string contains no NULs (not even at the end), it's considered 'weak proper'.
 //If the string contains no control characters other than \t\r\n, and is valid UTF-8, it's considered 'proper'.
-//A proper string without \t\r\n is considered 'strict proper'.
 //Many string users expect some level of properity.
 
+
+//TODO: rewrite to new data structure:
+//cstring is the base, like arrayview; it acts like const string&, except not necessarily bound to a lvalue-string
+//string doesn't have the refcounter, cstring covers 99% of the cases and the refcount overhead is pointless
+//instead, string gains create_usurp, like array
+//there is no arrayvieww equivalent
+//the inline/pointer union tricks remain
+//cstring becoming a normal string if modified is powerful, but complex to reason about and rarely useful
+//cstring members can return string if 'class string;' exists and the function bodies are after 'class string {}'
+
+class string;
 class cstring;
 
 class string {
 	static const int obj_size = 16; // maximum 120, or the inline length overflows
 	                                // (127 would fit, but that requires an extra alignment byte, which throws the sizeof assert)
-	                                // minimum 16 (pointer + various members + alignment) (actually minimum 12 on 32bit, but who needs 32bit)
+	                                // minimum 16 (pointer + various members + alignment)
+	                                //  (actually minimum 12 on 32bit, but who needs 32bit)
 	static const int max_inline = obj_size-1;
 	
 	union {

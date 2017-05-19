@@ -37,7 +37,7 @@ struct {
 static const char glx_proc_names[]={ GLX_SYMS() };
 #undef GLX_SYM
 
-bool libLoad()
+static bool libLoad()
 {
 	glx.lib = dlopen("libGL.so", RTLD_LAZY);
 	if (!glx.lib) return false;
@@ -56,7 +56,7 @@ bool libLoad()
 	return true;
 }
 
-void libUnload()
+static void libUnload()
 {
 	if (glx.lib) dlclose(glx.lib);
 }
@@ -88,7 +88,6 @@ public:
 		if (!glx.QueryVersion( window_x11.display, &glx_major, &glx_minor )) return false;
 		if (glx_major != 1 || glx_minor < 3) return false;
 		
-		// Get a matching FB config
 		int visual_attribs[] = {
 			GLX_X_RENDERABLE,  True,
 			GLX_X_VISUAL_TYPE, GLX_TRUE_COLOR,
@@ -107,7 +106,7 @@ public:
 		GLXFBConfig fbc = fbcs[0];
 		XFree(fbcs);
 		
-		XVisualInfo* vi = glx.GetVisualFromFBConfig( window_x11.display, fbc );
+		XVisualInfo* vi = glx.GetVisualFromFBConfig(window_x11.display, fbc);
 		
 		XSetWindowAttributes swa;
 		swa.colormap = XCreateColormap(window_x11.display, parent, vi->visual, AllocNone );

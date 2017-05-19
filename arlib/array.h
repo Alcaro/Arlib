@@ -138,7 +138,7 @@ public:
 };
 
 //size: two pointers
-//this one can write its storage, but doesn't own it
+//this one can write its storage, but doesn't own the storage itself
 template<typename T> class arrayvieww : public arrayview<T> {
 	//T * items;
 	//size_t count;
@@ -196,7 +196,7 @@ public:
 };
 
 //size: two pointers, plus one T per item
-//this one owns its storage, and manages its memory
+//this one owns its storage and manages its memory
 template<typename T> class array : public arrayvieww<T> {
 	//T * items;
 	//size_t count;
@@ -418,12 +418,21 @@ public:
 	}
 	
 	//takes ownership of the given data
-	static array<T> create_usurp(T* ptr, size_t count)
+	static array<T> create_usurp(arrayvieww<T> data)
 	{
 		array<T> ret;
-		ret.items = ptr;
+		ret.items = data.items;
 		ret.count = 0;
-		ret.resize_grow_noinit(count);
+		ret.resize_grow_noinit(data.count);
+		return ret;
+	}
+	
+	//remember to call all applicable destructors
+	arrayvieww<T> release()
+	{
+		arrayvieww<T> ret = *this;
+		this->items = NULL;
+		this->count = 0;
 		return ret;
 	}
 };
