@@ -10,6 +10,7 @@
 #ifdef ARGUIPROT_X11
 #include <gdk/gdkx.h>
 #else
+//TODO: if not X11, disable Viewport but keep other widgets
 #error Only X11 supported.
 #endif
 
@@ -55,6 +56,7 @@ static bool window_init(bool require, int * argc, char * * argv[])
 g_log_set_always_fatal((GLogLevelFlags)(G_LOG_LEVEL_CRITICAL|G_LOG_LEVEL_WARNING));
 #endif
 #ifdef ARGUIPROT_X11
+	gdk_set_allowed_backends("x11");
 	XInitThreads();
 #endif
 	if (require)

@@ -11,10 +11,10 @@ ARSOCKET_SSL_WINDOWS = schannel
 ARSANDBOX = 1
 
 #honored variables, in addition to the ones listed here:
-#OPT, DEBUG, PROFILE
+#OPT, DEBUG, PROFILE (CLI)
 #  OPT=1 enables heavy optimizations; DEBUG=0 removes debug flags; PROFILE=gen/opt are for PGO
 #CFLAGS, LFLAGS, CC, CXX, LD (CLI)
-#  override compiler choice and flags
+#  override compiler choice, add additional flags
 #CONF_CFLAGS, CONF_LFLAGS
 #  additional compiler/linker flags needed by this program
 #EXCEPTIONS

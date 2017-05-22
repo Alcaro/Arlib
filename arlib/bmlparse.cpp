@@ -123,13 +123,10 @@ process in this order:
 process m_exit
 process m_inlines
 
-peek line (put in m_nextline, or use m_nextline if already present)
+read line
 check for consistent whitespace (set m_indent even on failure)
 set m_indent
 check if m_indent_step.size requires exit
-
-discard peeked line
-read line
 extract main node on line; put remainder in m_inlines
 if no value, peek next line
  as long as it starts with colon, discard line and peek next
@@ -149,14 +146,30 @@ static cstring cut(cstring& input, int skipstart, int cut, int skipafter)
 	return ret;
 }
 
+//returns size of leading whitespace and comments
+static size_t bml_size_white(const cstring& data)
+{
+	int i = 0;
+	while (data[i]==' ' || data[i]=='\t') i++;
+	if (data[i]=='#' || (data[i]=='/' && data[i+1]=='/')) return data.length();
+	else return i;
+}
+
 //takes a single line, returns the first node in it
 //hasvalue is to differentiate 'foo' from 'foo='; only the former allows a multi-line value
+//returns true if found a node, false for error or nothing
+//if error, 'value' is the error message; if line was blank, 'value' is ""
 static bool bml_parse_inline_node(cstring& data, cstring& node, bool& hasvalue, cstring& value)
 {
-	int nodestart = 0;
-	while (data[nodestart]==' ' || data[nodestart]=='\t') nodestart++;
+	size_t nodestart = bml_size_white(data);
+	if (nodestart == data.length())
+	{
+		data = "";
+		value = "";
+		return false;
+	}
 	
-	int nodelen = nodestart;
+	size_t nodelen = nodestart;
 	while (isalnum(data[nodelen]) || data[nodelen]=='-' || data[nodelen]=='.') nodelen++;
 	if (nodestart == nodelen)
 	{
@@ -205,7 +218,14 @@ static bool bml_parse_inline_node(cstring& data, cstring& node, bool& hasvalue, 
 			{
 				hasvalue = true;
 				int valend = 0;
-				while (data[valend]!=' ' && data[valend]!='\0') valend++;
+				while (data[valend]!=' ' && data[valend]!='"' && data[valend]!='\0') valend++;
+				if (data[valend]=='"')
+				{
+					while (data[valend]!='\0') valend++;
+					data = data.csubstr(valend, ~0);
+					value = "Broken quoted value";
+					return false;
+				}
 				value = cut(data, 1, valend, 0);
 				return true;
 			}
@@ -218,12 +238,12 @@ static bool bml_parse_inline_node(cstring& data, cstring& node, bool& hasvalue, 
 
 static bool isendl(char ch)
 {
-	//this 32 is also a perf hack
+	//this 32 is a perf hack
 	if (ch>=32) return false;
 	return (ch=='\r' || ch=='\n' || ch=='\0');
 }
 
-static cstring cutline(cstring& input)
+static size_t linelen(const cstring& input)
 {
 	//pointers are generally a bad idea, but this is such a hotspot it's worth it
 	const uint8_t * inputraw = input.bytes().ptr();
@@ -237,30 +257,33 @@ static cstring cutline(cstring& input)
 		size_t inputlen = input.length();
 		while (nlpos < inputlen && !isendl(inputraw[nlpos])) nlpos++;
 	}
-	
+	return nlpos;
+}
+
+static cstring cutline(cstring& input)
+{
+	size_t nlpos = linelen(input);
 	return cut(input, 0, nlpos, (input[nlpos]=='\r') ? 2 : (input[nlpos]=='\n') ? 1 : 0);
 }
 
-inline void bmlparser::getlineraw()
+inline bool bmlparser::getline(bool allow_empty)
 {
 nextline:
 	if (!m_data)
 	{
+null:
 		m_thisline = "";
-		return;
+		m_indent = "";
+		return true;
 	}
-	m_thisline = cutline(m_data);
-	int indentlen = 0;
-	while (m_thisline[indentlen] == ' ' || m_thisline[indentlen] == '\t') indentlen++;
-	if (m_thisline[indentlen] == '#' || m_thisline[indentlen]=='\0') goto nextline;
-}
-
-inline bool bmlparser::getline()
-{
-	getlineraw();
 	
-	int indentlen = 0;
-	while (m_thisline[indentlen] == ' ' || m_thisline[indentlen] == '\t') indentlen++;
+	m_thisline = cutline(m_data);
+	size_t indentlen = bml_size_white(m_thisline);
+	if (indentlen == m_thisline.length())
+	{
+		if (allow_empty) goto nextline;
+		else goto null;
+	}
 	
 	int sharedindent = min(indentlen, m_indent.length());
 	bool badwhite = (memcmp(m_thisline.bytes().ptr(), m_indent.bytes().ptr(), sharedindent)!=0);
@@ -282,20 +305,18 @@ bmlparser::event bmlparser::next()
 	{
 		event ev = { enter };
 		bool dummy;
-		if (!bml_parse_inline_node(m_inlines, ev.name, dummy, ev.value))
+		if (bml_parse_inline_node(m_inlines, ev.name, dummy, ev.value))
 		{
-			ev.action = error;
-			ev.name = "";
+			m_exit = true;
 			return ev;
 		}
-		
-		m_exit = true;
-		return ev;
+		else if (ev.value) return event(error, "", ev.value);
+		//else fall through
 	}
 	
 	if (!m_thisline && m_data)
 	{
-		if (!getline()) return event(error, "", "Mixed tabs and spaces");
+		if (!getline(true)) return event(error, "", "Mixed tabs and spaces");
 	}
 	
 	if (m_indent_step.size() > m_indent.length())
@@ -304,7 +325,7 @@ bmlparser::event bmlparser::next()
 		if (!m_indent_step[m_indent.length()])
 		{
 			//this may throw random mix-tab-space errors that weren't present in the original,
-			// but only if the document contains mix-tab-space already.
+			// but only if the document contains mix-tab-space and this error already.
 			if (m_indent_step.size() > m_indent.length()) m_indent += m_indent[0];
 			else m_indent = m_indent.csubstr(0, ~1);
 			return event(error, "", "Invalid indentation depth");
@@ -331,30 +352,37 @@ bmlparser::event bmlparser::next()
 	cstring value;
 	if (!bml_parse_inline_node(m_inlines, node, hasvalue, value))
 	{
+		//m_inlines can't be empty here, we've called getline()
 		return event(error, "", value);
 	}
 	
-	int indentlen = m_indent.length(); // changed by getline
+	size_t indentlen = m_indent.length(); // changed by getline
 	//multilines
 	if (!hasvalue)
 	{
-		if (!getline()) return event(error, "", "Mixed tabs and spaces");
+		if (!getline(false)) return event(error, "", "Mixed tabs and spaces");
 		if (m_thisline[0] == ':')
 		{
 			size_t inner_indent = m_indent.length();
 			value = m_thisline.csubstr(1, ~0);
-			if (!getline()) return event(error, "", "Mixed tabs and spaces");
+			if (!getline(false)) return event(error, "", "Mixed tabs and spaces");
 			while (m_thisline[0] == ':')
 			{
 				if (inner_indent != m_indent.length()) return event(error, "", "Multi-line values must have constant indentation");
 				value += "\n" + m_thisline.csubstr(1, ~0);
-				if (!getline()) return event(error, "", "Mixed tabs and spaces");
+				if (!getline(false)) return event(error, "", "Mixed tabs and spaces");
 			}
 			
 			if (m_indent.length() != inner_indent)
 			{
-				if (m_indent.length() > inner_indent) return event(error, "", "Can't change indentation after a multi-line value");
-				if (!m_indent_step[m_indent.length()]) return event(error, "", "Invalid indentation depth");
+				if (m_indent.length() > inner_indent)
+				{
+					return event(error, "", "Can't change indentation after a multi-line value");
+				}
+				if (m_indent.length() > indentlen && !m_indent_step[m_indent.length()])
+				{
+					return event(error, "", "Invalid indentation depth");
+				}
 			}
 		}
 	}
@@ -382,8 +410,23 @@ const char * test1 =
 "node=\"\"\n"
 "node:\n"
 "node\tchild\n"
+"node   \n"
 "#bar\n"
+"node\n"
+"  :data\n"
+"node\n"
+"  child\n"
+"    :data\n"
+"node\n"
+"  child\n"
+"    :data\n"
+"  child\n"
+"node:\n"
+"node: \n"
+"node\n"
+"  :\n"
 "node";
+
 bmlparser::event test1e[]={
 	{ e_enter, "node" },
 	{ e_exit },
@@ -413,13 +456,34 @@ bmlparser::event test1e[]={
 	{ e_exit },
 	{ e_enter, "node" },
 	{ e_exit },
+	{ e_enter, "node", "data" },
+	{ e_exit },
+	{ e_enter, "node" },
+		{ e_enter, "child", "data" },
+		{ e_exit },
+	{ e_exit },
+	{ e_enter, "node" },
+		{ e_enter, "child", "data" },
+		{ e_exit },
+		{ e_enter, "child" },
+		{ e_exit },
+	{ e_exit },
+	{ e_enter, "node" },
+	{ e_exit },
+	{ e_enter, "node" },
+	{ e_exit },
+	{ e_enter, "node" },
+	{ e_exit },
+	{ e_enter, "node" },
+	{ e_exit },
 	{ e_finish }
 };
 
 const char * test2 =
 "parent\n"
 " node=123 child1=456 child2: 789 123\n"
-"  child3\n";
+"  child3\n"
+;
 bmlparser::event test2e[]={
 	{ e_enter, "parent" },
 		{ e_enter, "node", "123" },
@@ -533,26 +597,44 @@ bmlparser::event test5e[]={
 const char * test6 =
 "\n"
 "#test\n"
-"a#test\n"
-"b #test\n"
-"c d#test\n"
-"e f #test\n"
-"g:#test\n"
-"h: #test\n"
-"i\n"
-//"#x\n" // TODO: is this (or blank lines) allowed?
-" :j\n"
-" :k\n"
+" #test\n"
+"a #test\n"
+"b c #test\n"
+"d:#test\n"
+"e: #test\n"
+"f\n"
+" :g\n"
+" :h\n"
 "#x\n"
+"i=j#k\n"
+"\n"
+"//test\n"
+" //test\n"
+"a //test\n"
+"b c //test\n"
+"d://test\n"
+"e: //test\n"
+"f\n"
+" :g\n"
+" :h\n"
+"//x\n"
+"i=j//k\n"
+"\n"
 ;
 bmlparser::event test6e[]={
 	{ e_enter, "a" }, { e_exit },
-	{ e_enter, "b" }, { e_exit },
-	{ e_enter, "c" }, { e_enter, "d" }, { e_exit }, { e_exit },
-	{ e_enter, "e" }, { e_enter, "f" }, { e_exit }, { e_exit },
-	{ e_enter, "g", "#test" }, { e_exit },
-	{ e_enter, "h", "#test" }, { e_exit },
-	{ e_enter, "i", "j\nk" }, { e_exit },
+	{ e_enter, "b" }, { e_enter, "c" }, { e_exit }, { e_exit },
+	{ e_enter, "d", "#test" }, { e_exit },
+	{ e_enter, "e", "#test" }, { e_exit },
+	{ e_enter, "f", "g\nh" }, { e_exit },
+	{ e_enter, "i", "j#k" }, { e_exit },
+	
+	{ e_enter, "a" }, { e_exit },
+	{ e_enter, "b" }, { e_enter, "c" }, { e_exit }, { e_exit },
+	{ e_enter, "d", "//test" }, { e_exit },
+	{ e_enter, "e", "//test" }, { e_exit },
+	{ e_enter, "f", "g\nh" }, { e_exit },
+	{ e_enter, "i", "j//k" }, { e_exit },
 	{ e_finish }
 };
 
@@ -563,8 +645,8 @@ static void testbml(const char * bml, bmlparser::event* expected)
 	{
 		bmlparser::event actual = parser.next();
 		
-printf("e=%i [%s] [%s]\n", expected->action, (const char*)expected->name, (const char*)expected->value);
-printf("a=%i [%s] [%s]\n\n", actual.action,  (const char*)actual.name,    (const char*)actual.value);
+//printf("e=%i [%s] [%s]\n", expected->action, (const char*)expected->name, (const char*)expected->value);
+//printf("a=%i [%s] [%s]\n\n", actual.action,  (const char*)actual.name,    (const char*)actual.value);
 		assert_eq(actual.action, expected->action);
 		assert_eq(actual.name, expected->name);
 		assert_eq(actual.value, expected->value);
@@ -608,25 +690,35 @@ test()
 	testcall(testbml(test5, test5e));
 	testcall(testbml(test6, test6e));
 	
-	testcall(testbml_error("*"));          // invalid node name
-	testcall(testbml_error("a=\""));       // unclosed quote
-	testcall(testbml_error("a=\"b\"c"));   // no space after closing quote
-	testcall(testbml_error("a=\"b\"c\"")); // quote in quoted element
-	testcall(testbml_error("a\n  b\n c")); // derpy indentation
-	testcall(testbml_error("a\n b\n\tc")); // mixed tabs and spaces
-	testcall(testbml_error("a=b\n :c"));   // two values
-	testcall(testbml_error(" a"));         // can't indent root node
-	testcall(testbml_error("a=b\"c"));     // no quote allowed in mode=eq
-	testcall(testbml_error("a b=c\"d"));   // nor ieq
+	testcall(testbml_error("*"));           // invalid node name
+	testcall(testbml_error("a=\""));        // unclosed quote
+	testcall(testbml_error("a=\"b\"c"));    // no space after closing quote
+	testcall(testbml_error("a=\"b\"c\""));  // quote in quoted element
+	testcall(testbml_error("a\n  b\n c"));  // derpy indentation
+	testcall(testbml_error("a\n b\n\tc"));  // mixed tabs and spaces
+	testcall(testbml_error("a=b\n :c"));    // two values
+	testcall(testbml_error(" a"));          // can't indent root node
+	testcall(testbml_error("a=b\"c"));      // no quote allowed in mode=eq
+	testcall(testbml_error("a b=c\"d"));    // nor ieq
+	testcall(testbml_error("a#a"));         // comment not allowed here
+	testcall(testbml_error("a a#a"));       // nor here
+	testcall(testbml_error("a//a"));        // nor this kind of comments
+	testcall(testbml_error("a a//a"));      // nor here
+	testcall(testbml_error("a=\"a\"#a\"")); // no quote allowed in eq, that # isn't a comment
+	testcall(testbml_error("a=\"a\"#a"));   // not allowed like this either
 	
 	//derpy indentation with multilines
-	testcall(testbml_error("a\n :b\n  :c"));
-	testcall(testbml_error("a\n  :b\n :c"));
-	testcall(testbml_error("a\n :b\n  c"));
-	testcall(testbml_error("a\n  :b\n c"));
-	testcall(testbml_error("a\n :b\n\t:c"));
-	testcall(testbml_error("a\n :b\n\tc"));
-	testcall(testbml_error("a\n :b\n\n :c"));//blank line in multiline
-	testcall(testbml_error("a\n :b\n \n :c"));//this too
+	testcall(testbml_error("a\n :b\n  :c"));     // no increasing indentation in a multiline
+	testcall(testbml_error("a\n  :b\n :c"));     // nor decreasing
+	testcall(testbml_error("a\n :b\n  c"));      // not even if switching from multiline to child
+	testcall(testbml_error("a\n  :b\n c"));      // nor decreasing
+	testcall(testbml_error("a\n b\n  :c\n :b")); // trickier case of the above
+	testcall(testbml_error("a\n :b\n\t:c"));     // no tab-space mix
+	testcall(testbml_error("a\n :b\n\tc"));      // no tab-space mix with multi->child
+	
+	testcall(testbml_error("a\n :b\n\n :c"));    // blank line in multiline, not allowed
+	testcall(testbml_error("a\n :b\n \n :c"));   // not even if indented
+	testcall(testbml_error("a\n\n :b"));         // not allowed at start either
+	testcall(testbml_error("a\n \n :b"));        // still not even if indented
 }
 #endif

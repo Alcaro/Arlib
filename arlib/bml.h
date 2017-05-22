@@ -44,8 +44,7 @@ private:
 	cstring m_inlines;
 	bool m_exit;
 	
-	inline void getlineraw();
-	inline bool getline();
+	inline bool getline(bool allow_empty);
 };
 
 //This is also streaming.
