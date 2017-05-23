@@ -3,6 +3,7 @@
 #include "string.h"
 #include "thread.h"
 
+#ifdef ARLIB_THREAD
 //Be careful about creating child processes through other functions. Make sure they don't fight over any process-global resources.
 //Said resources are waitpid(-1) and SIGCHLD. This one requires the latter, and requires that nothing uses the former.
 //g_spawn_*(), popen() and system() are safe. However, g_child_watch_*() is not.
@@ -32,38 +33,26 @@ class process : nocopy {
 //   Or use the three standard descriptors. Exceeding outlimit gives SIGPIPE, closing stdout prior to exit is a negligible probability,
 //     and we can add a timeout to select() and randomly waitpid them.
 //But the easiest solution remains: Claim SIGCHLD for ourselves.
-
-	//todo: use fd monitor instead
-	void update(bool sleep = false);
-	bool stdin_open = false;
-	array<byte> stdin_buf;
-	array<byte> stdout_buf;
-	bool stderr_split = false;
-	array<byte> stderr_buf;
-	size_t outmax = SIZE_MAX;
-	
+public:
+	class input;
+	class output;
+private:
+	input* ch_stdin = NULL;
+	output* ch_stdout = NULL;
+	output* ch_stderr = NULL;
 #ifdef __linux__
-	int stdin_fd = -1;
-	int stdout_fd = -1;
-	int stderr_fd = -1;
-	
-	void destruct();
-	
-	//todo: rewrite for sandbox support
 protected:
-	static void manager();
-	
 	pid_t pid = -1;
 	int exitcode = -1;
 	
-	mutex mut;
 	
 	static bool closefrom(int lowfd);
 	//Sets the file descriptor table to fds, closing all existing fds.
 	//If a fd is -1, it's closed. Duplicates in the input are allowed.
 	//Returns false on failure, but keeps doing its best anyways.
 	//Afterwards, all new fds have the cloexec flag set. If this is undesired, use fcntl(F_SETFD).
-	static bool set_fds(array<int> fds);
+	//Will mangle the input array. While suboptimal, it's the only way to avoid a post-fork malloc.
+	static bool set_fds(array<int>& fds);
 	
 	//Like execlp, this searches PATH for the given program.
 	static string find_prog(const char * prog);
@@ -74,6 +63,7 @@ protected:
 #endif
 	
 #ifdef _WIN32
+#error outdated
 	HANDLE proc = NULL;
 	int exitcode = -1;
 	
@@ -102,62 +92,62 @@ public:
 		return launch(prog, arrayview<string>(NULL));
 	}
 	
-	//TODO:
-	//allow setting stdin to any of inherit, pipe, file, buffer
-	//allow setting stdout to any of inherit, pipe, file, discard
-	//allow setting stdout to any of inherit, pipe, file, discard, stdout
-	//
-	//what to name them? can't use stdin or in, they're macros on msvc
-	//stdin_inherit()/etc? that's 13 functions just for modesetting
-	//set_stdin(process::stdin)? ugly namespacing
-	//input.inherit()? seems hard to allow linking stderr to stdout in that model
-	//input = STDIN_FILENO? probably too linux specific
-	//input = process::input::create_inherit()? kinda bulky, but not too terrible
-	//set_stdin(process::input::create_inherit())? even bulkier, but public members tend to be screwy
-	//set_stdin(pipe::create_stdin())? probably good, except need directionally unambiguous typenames
-	//piperead/pipewrite? who writes? inpipe? whose input?
-	//procin? a bit too cramped
-	//process::input is probably my best bet, clear enough that it's process input aka caller calls write()
 	
 	class input : nocopy {
 		input() {}
+		input(uintptr_t fd) : fd_read(fd) {}
 		
-		uintptr_t fd; // HANDLE on windows, int on linux
+		uintptr_t fd_read = -1; // HANDLE on windows, int on linux
+		uintptr_t fd_write = -1;
 		friend class process;
 		
 		array<byte> buf;
+		bool started = false;
 		bool do_close = false;
+		mutex mut;
 		
-		void update(int fd);
+		void update(int fd); // call without holding the mutex
+		void terminate();
 		
 	public:
-		void write(arrayview<byte> data) { buf += data; update(fd); }
+		void write(arrayview<byte> data) { synchronized(mut) { buf += data; } update(0); }
 		void write(cstring data) { write(data.bytes()); }
-		//Sends EOF to the child, after all bytes have been written.
-		void close() { do_close = true; update(fd); }
+		//Sends EOF to the child, after all bytes have been written. Call only after the last write().
+		void close() { do_close = true; update(0); }
 		
-		static input* create_pipe(arrayview<byte> data = NULL);
+		static input& create_pipe(arrayview<byte> data = NULL);
+		static input& create_pipe(cstring data) { return create_pipe(data.bytes()); }
 		// Like create_pipe, but auto closes the pipe once everything has been written.
-		static input* create_buffer(arrayview<byte> data = NULL);
+		static input& create_buffer(arrayview<byte> data = NULL);
+		static input& create_buffer(cstring data) { return create_buffer(data.bytes()); }
 		
 		//Can't use write/close on these two. Just don't store them anywhere.
-		static input* create_file(cstring path);
+		static input& create_file(cstring path);
 		//Uses caller's stdin. Make sure no two processes are trying to use stdin simultaneously, it acts badly.
-		static input* create_stdin();
+		static input& create_stdin();
+		
+		~input();
 	};
 	//The process object takes ownership of the given object.
 	//Can only be called before launch(), and only once.
 	//Default is NULL, equivalent to /dev/null.
-	void set_stdin(input* inp);
+	//It is undefined behavior to create an input object and not immediately attach it to a process.
+	input* set_stdin(input& inp) { ch_stdin = &inp; return &inp; }
 	
 	class output : nocopy {
-		uintptr_t fd;
+		output() {}
+		output(uintptr_t fd) : fd_write(fd) {}
+		
+		uintptr_t fd_write = -1;
+		uintptr_t fd_read = -1;
 		friend class process;
 		
 		array<byte> buf;
+		mutex mut;
 		size_t maxbytes = SIZE_MAX;
 		
 		void update(int fd);
+		void terminate();
 		
 	public:
 		//Stops the process from writing too much data and wasting RAM.
@@ -165,70 +155,31 @@ public:
 		//Slightly more may be readable in practice, due to kernel-level buffering.
 		void limit(size_t lim) { maxbytes = lim; }
 		
-		array<byte> readb();
-		//{
-		//	update(fd);
-		//	return std::move(buf);
-		//}
+		array<byte> readb()
+		{
+			update(0);
+			synchronized(mut) { return std::move(buf); }
+			return NULL; //unreachable, gcc is just being stupid
+		}
 		//Can return invalid UTF-8. Even if the program only processes UTF-8, it's possible
 		// to read half a character, if the process is still running or the outlimit was hit.
 		string read() { return string(readb()); }
-
-		static output* create_pipe();
-		static output* create_buffer();
-		static output* create_file(cstring path, bool append = false);
-		static output* create_stdout();
-		static output* create_stderr();
 		
-		virtual ~output() {}
+		static output& create_buffer(size_t limit = SIZE_MAX);
+		static output& create_file(cstring path, bool append = false);
+		static output& create_stdout();
+		static output& create_stderr();
+		
+		~output();
 	};
-	void set_stdout(output* outp);
-	void set_stderr(output* outp);
+	output* set_stdout(output& outp) { ch_stdout = &outp; return &outp; }
+	output* set_stderr(output& outp) { ch_stderr = &outp; return &outp; }
 	
-	
-	
-	
-	//Sets the child's stdin. If called multiple times, they're concatenated.
-	void write(arrayview<byte> data) { stdin_buf += data; update(); }
-	void write(cstring data) { write(data.bytes()); }
-	
-	//If interact(true) is called before launch(), write() can be called after process start.
-	//To close the child's stdin, call interact(false).
-	void interact(bool enable)
-	{
-		this->stdin_open = enable;
-		update();
-	}
-	
-	//Stops the process from writing too much data and wasting RAM.
-	//If there, at any point, is more than 'max' bytes of unread data in the buffers, the stdout/stderr pipes are closed.
-	//Slightly more may be readable in practice, due to kernel-level buffering.
-	void outlimit(size_t max) { this->outmax = max; }
-	
-	//Returns what the process has written thus far (if the process has exited, all of it). The data is discarded after being read.
-	//The default is to merge stderr into stdout. To keep them separate, call error() before launch().
-	//If wait is true, the functions will wait until the child exits or prints something on the relevant stream.
-	array<byte> readb(bool wait = false)
-	{
-		update(false);
-		while (wait && !stdout_buf) update(true);
-		return std::move(stdout_buf);
-	}
-	array<byte> errorb(bool wait = false)
-	{
-		stderr_split=true;
-		update(false);
-		while (wait && !stderr_buf) update(true);
-		return std::move(stderr_buf);
-	}
-	//These two can return invalid UTF-8. Even if the program only processes UTF-8, it's possible to read half a character.
-	string read(bool wait = false) { return string(readb(wait)); }
-	string error(bool wait = false) { return string(errorb(wait)); }
-	//TODO: Allow stdout/stderr to follow the parent
 	
 	bool running(int* exitcode = NULL);
-	void wait(int* exitcode = NULL);
+	void wait(int* exitcode = NULL); // Remember to close stdin first.
 	void terminate(); // The process is automatically terminated if the object is destroyed.
 	
 	~process();
 };
+#endif

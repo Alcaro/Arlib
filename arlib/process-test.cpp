@@ -1,6 +1,7 @@
 #include "process.h"
 #include "test.h"
 
+#ifdef ARLIB_THREAD
 #ifndef _WIN32
 #include <unistd.h> // usleep
 #define TRUE "/bin/true"
@@ -38,91 +39,103 @@ test()
 	
 	{
 		process p;
+		process::output* out = p.set_stdout(process::output::create_buffer());
 		assert(p.launch(ECHO, "foo"));
 		int status;
 		p.wait(&status);
-		assert_eq(p.read(), "foo" ECHO_END);
+		assert_eq(out->read(), "foo" ECHO_END);
 		assert_eq(status, 0);
 	}
 	
 	{
 		process p;
-		p.write("foo");
+		p.set_stdin(process::input::create_buffer("foo"));
+		process::output* out = p.set_stdout(process::output::create_buffer());
 		assert(p.launch(CAT_STDIN));
 		p.wait();
-		assert_eq(p.read(), "foo" CAT_STDIN_END);
+		assert_eq(out->read(), "foo" CAT_STDIN_END);
 	}
 	
 	{
 		process p;
-		p.interact(true);
+		process::input* in = p.set_stdin(process::input::create_pipe());
+		process::output* out = p.set_stdout(process::output::create_buffer());
 		assert(p.launch(CAT_STDIN));
-		p.write("foo");
+		in->write("foo");
+		in->close();
 		p.wait();
-		assert_eq(p.read(), "foo" CAT_STDIN_END);
+		usleep(100000);
+		assert_eq(out->read(), "foo" CAT_STDIN_END);
 	}
 	
 	{
 		process p;
-		p.interact(true);
+		process::input* in = p.set_stdin(process::input::create_pipe());
+		process::output* out = p.set_stdout(process::output::create_buffer());
 		assert(p.launch(CAT_STDIN));
-		p.write("foo" LF);
-		assert_eq(p.read(true), "foo" LF);
-		p.write("foo" LF);
-		assert_eq(p.read(true), "foo" LF);
-		p.write("foo" LF);
-		assert_eq(p.read(true), "foo" LF);
-		p.write("foo" LF);
-		assert_eq(p.read(true), "foo" LF);
+		for (int i=0;i<5;i++)
+		{
+			in->write("foo" LF);
+			string str;
+			while (!str) str = out->read();
+			assert_eq(str, "foo" LF);
+		}
 	}
 	
 	{
 		process p;
-		p.error();
+		process::output* out = p.set_stdout(process::output::create_buffer());
+		process::output* err = p.set_stderr(process::output::create_buffer());
 		assert(p.launch(CAT_FILE, "nonexist.ent"));
 		p.wait();
-		assert_eq(p.read(), "");
-		assert(p.error() != "");
+		assert_eq(out->read(), "");
+		assert(err->read() != "");
 	}
 	
 	{
 		process p;
-		p.outlimit(1024);
+		process::output* out = p.set_stdout(process::output::create_buffer());
+		out->limit(1024);
 		assert(p.launch(YES));
 		p.wait();
-		string out = p.read();
-		assert(out.length() >= 1024); // it can read a bit more than 1K if it wants to, buffer size is 4KB
-		assert(out.length() <= 8192); // on windows, limit is honored exactly
+		string outstr = out->read();
+		assert(outstr.length() >= 1024); // it can read a bit more than 1K if it wants to, buffer size is 4KB
+		assert(outstr.length() <= 8192); // on windows, limit is honored exactly
 	}
 	
 	{
 		process p;
+		process::output* out = p.set_stdout(process::output::create_buffer());
 		assert(p.launch(ECHO, "foo"));
-		assert_eq(p.read(), ""); // RACE
-		assert_eq(p.read(true), "foo" ECHO_END);
+		assert_eq(out->read(), ""); // RACE
 	}
 	
 	{
 		string lots_of_data = "a" LF;
 		while (lots_of_data.length() < 256*1024) lots_of_data += lots_of_data;
+		
 		process p;
-		p.interact(true);
+		p.set_stdin(process::input::create_buffer(lots_of_data));
+		process::output* out = p.set_stdout(process::output::create_buffer());
+		
 		assert(p.launch(CAT_STDIN));
-		p.write(lots_of_data);
 		p.wait();
-		assert_eq(p.read().length(), lots_of_data.length());
+		assert_eq(out->read().length(), lots_of_data.length());
 	}
 	
 	{
 		process p;
-		p.interact(true);
+		process::input* in = p.set_stdin(process::input::create_pipe());
+		process::output* out = p.set_stdout(process::output::create_buffer());
+		
 		assert(p.launch(CAT_STDIN));
-		p.write("foo" LF);
-		usleep(100*1000); // RACE
-		assert_eq(p.read(), "foo" LF);
+		in->write("foo" LF);
+		usleep(50*1000); // RACE
+		assert_eq(out->read(), "foo" LF);
 		assert(p.running());
-		p.interact(false);
-		usleep(100*1000); // RACE (this gets interrupted by SIGCHLD, but it's resumed)
+		in->close();
+		usleep(50*1000); // RACE (this gets interrupted by SIGCHLD, but it's resumed)
+		usleep(50*1000); // oddly enough, I need two usleeps to make sure it works
 		assert(!p.running());
 	}
 	
@@ -152,5 +165,7 @@ test()
 	//	};
 	//	//this one is supposed to test that the arguments are properly quoted,
 	//	// but there's no 'dump argv' program on windows (linux doesn't need it), so can't do it
+	//	//and windows has about 50 different quote parsers anyways, impossible to know which to follow
 	//}
 }
+#endif

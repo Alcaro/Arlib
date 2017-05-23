@@ -1,5 +1,36 @@
 #include "../endian.h"
 #include "thread.h"
+#ifdef __linux__
+#include <limits.h>
+#include <unistd.h>
+#include <linux/futex.h>
+#include <sys/syscall.h>
+
+//spurious wakeups are possible
+//return can tell if the wakeup is bogus, but I don't really need that
+int futex_wait(int* uaddr, int val, const struct timespec * timeout)
+{
+	return syscall(__NR_futex, uaddr, FUTEX_WAIT_PRIVATE, val, timeout);
+}
+int futex_wake(int* uaddr)
+{
+	return syscall(__NR_futex, uaddr, FUTEX_WAKE_PRIVATE, 1);
+}
+int futex_wake_all(int* uaddr)
+{
+	return syscall(__NR_futex, uaddr, FUTEX_WAKE_PRIVATE, INT_MAX);
+}
+
+void futex_wait_while_eq(int* uaddr, int val)
+{
+	while (lock_read(uaddr)==val) futex_wait(uaddr, val);
+}
+void futex_set_and_wake(int* uaddr, int val)
+{
+	lock_write(uaddr, val);
+	futex_wake(uaddr);
+}
+#endif
 #ifdef __linux__disabled__
 /**
 //I could try to rewrite all of this without pthread, but I'd rather not set up TLS stuff myself, that'd require replacing half of libc.
@@ -50,20 +81,6 @@ void thread_sleep(unsigned int usec)
 }
 
 
-//spurious wakeups are possible
-//return can tell if the wakeup is bogus, but I don't really need that
-static int futex_wait(int * uaddr, int val, const struct timespec * timeout = NULL)
-{
-	return syscall(__NR_futex, uaddr, FUTEX_WAIT_PRIVATE, val, timeout);
-}
-static int futex_wake(int * uaddr)
-{
-	return syscall(__NR_futex, uaddr, FUTEX_WAKE_PRIVATE, 1);
-}
-static int futex_wake_all(int * uaddr)
-{
-	return syscall(__NR_futex, uaddr, FUTEX_WAKE_PRIVATE, INT_MAX);
-}
 
 
 //futexes. complex threading code. fun

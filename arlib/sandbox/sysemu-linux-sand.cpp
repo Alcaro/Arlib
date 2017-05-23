@@ -631,13 +631,13 @@ static inline int rt_sigprocmask(int how, const sigset_t* nset, sigset_t* oset, 
 	return syscall4(__NR_rt_sigprocmask, how, (long)nset, (long)oset, sigsetsize);
 }
 
-static inline void set_sighand(int sig, void(*handler)(int, siginfo_t*, void*))
+static inline void set_sighand(int sig, void(*handler)(int, siginfo_t*, void*), int flags)
 {
 	struct sigaction act;
 	act.sa_sigaction = handler;
 	//sa_restorer is mandatory; judging by kernel source, this is to allow nonexecutable stack
 	//(should've put it in VDSO, but I guess this syscall is older than VDSO)
-	act.sa_flags = SA_SIGINFO | SA_RESTORER;
+	act.sa_flags = SA_SIGINFO | SA_RESTORER | flags;
 	//and for some reason, I get runtime relocations if I try accessing it from C++, so let's switch language
 	__asm__("lea %0, [%%rip+restore_rt]" : "=r"(act.sa_restorer));
 	memset(&act.sa_mask, 0, sizeof(act.sa_mask));
@@ -660,41 +660,9 @@ static void sa_sigsys(int signo, siginfo_t* info, void* context)
 	uctx->uc_mcontext.gregs[REG_RAX] = ret;
 }
 
-//no functions allowed, more inlines
-#define sigemptyset __sigemptyset // from sigset.h
-#define sigaddset __sigaddset // this one had to be copied
-#define __sigaddset __sigaddset_ // go away, extern function
-
-#define __SIGSETFN(NAME, BODY, CONST)					      \
-  static inline int							      \
-  NAME (CONST __sigset_t *__set, int __sig)				      \
-  {									      \
-    unsigned long int __mask = __sigmask (__sig);			      \
-    unsigned long int __word = __sigword (__sig);			      \
-    return BODY;							      \
-  }
-
-__SIGSETFN (__sigismember, (__set->__val[__word] & __mask) ? 1 : 0, const)
-__SIGSETFN (__sigaddset, ((__set->__val[__word] |= __mask), 0), )
-__SIGSETFN (__sigdelset, ((__set->__val[__word] &= ~__mask), 0), )
-
-static void unblock_signal(int signo)
-{
-	//if the child calls execveat, it does so in a SIGSYS handler
-	//that means SIGSYS is blocked, because recursion is evil and recursive signals are even worse
-	//but once we call execveat, we'll leave the SIGSYS handler - but kernel doesn't realize that
-	//let's just unblock it manually
-	//(strange how SIGSYS isn't beside SIGBUS, SIGFPE, SIGILL, SIGSEGV in the rt_sigprocmask(2) manpage)
-	sigset_t set;
-	sigemptyset(&set);
-	sigaddset(&set, SIGSYS);
-	rt_sigprocmask(SIG_UNBLOCK, &set, NULL, _NSIG/8);
-}
-
 extern "C" void preload_action(char** argv, char** envp)
 {
-	set_sighand(SIGSYS, sa_sigsys);
-	unblock_signal(SIGSYS);
+	set_sighand(SIGSYS, sa_sigsys, SA_NODEFER); // recursion is bad, but we won't get SIGSYS recursively
 	
 	progname = argv[1];
 	

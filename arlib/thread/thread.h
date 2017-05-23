@@ -135,7 +135,8 @@ class mutexlocker : nocopy {
 public:
 	mutexlocker(mutex* m) { this->m = m;  this->m->lock(); }
 	mutexlocker(mutex& m) { this->m = &m; this->m->lock(); }
-	~mutexlocker() { this->m->unlock(); }
+	void unlock() { if (this->m) this->m->unlock(); this->m = NULL; }
+	~mutexlocker() { unlock(); }
 };
 #define synchronized(mutex) using(mutexlocker LOCK(mutex))
 
@@ -214,6 +215,18 @@ void thread_split(unsigned int count, function<void(unsigned int id)> work);
 #endif
 #ifdef _MSC_VER
 #define THREAD_LOCAL(t) __declspec(thread) t
+#endif
+
+
+#ifdef __linux__
+//sleeps if *uaddr == val
+int futex_wait(int* uaddr, int val, const struct timespec * timeout = NULL);
+int futex_wake(int* uaddr);
+int futex_wake_all(int* uaddr);
+
+//convenience wrappers
+void futex_wait_while_eq(int* uaddr, int val);
+void futex_set_and_wake(int* uaddr, int val);
 #endif
 
 #else

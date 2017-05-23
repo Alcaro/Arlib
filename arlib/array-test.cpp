@@ -2,6 +2,17 @@
 #include "test.h"
 
 #ifdef ARLIB_TEST
+test("array")
+{
+	{
+		array<int> x = { 1, 2, 3 };
+		assert_eq(x[0], 1);
+		assert_eq(x[1], 2);
+		assert_eq(x[2], 3);
+	}
+}
+
+
 static string tostring(array<bool> b)
 {
 	string ret;

@@ -320,14 +320,14 @@ public:
 	
 	array()
 	{
-		this->items=NULL;
-		this->count=0;
+		this->items = NULL;
+		this->count = 0;
 	}
 	
 	array(null_t)
 	{
-		this->items=NULL;
-		this->count=0;
+		this->items = NULL;
+		this->count = 0;
 	}
 	
 	array(const array<T>& other)
@@ -343,6 +343,11 @@ public:
 	array(array<T>&& other)
 	{
 		swap(other);
+	}
+	
+	array(std::initializer_list<T> c)
+	{
+		clone(arrayview<T>(c.begin(), c.size()));
 	}
 	
 	array<T> operator=(array<T> other)

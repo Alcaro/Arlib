@@ -72,6 +72,8 @@
 
 LOCKD_LOCKS(uint32_t)
 LOCKD_LOCKS(int32_t)
+LOCKD_LOCKS(uint64_t)
+LOCKD_LOCKS(int64_t)
 LOCKD_LOCKS(void*)
 
 #elif defined(_WIN32)

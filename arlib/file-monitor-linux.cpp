@@ -46,7 +46,7 @@ class fd_mon_t : nocopy {
 		if (on_write) write_act.insert(fd, on_write);
 		else write_act.remove(fd);
 		
-		epoll_event ev;
+		epoll_event ev = {}; // shut up valgrind, I only need events and data.fd, the rest of data will just come back out unchanged
 		ev.events = (on_read ? RD_EV : 0) | (on_write ? WR_EV : 0);
 		ev.data.fd = fd;
 		if (ev.events)

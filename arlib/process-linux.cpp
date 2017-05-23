@@ -1,6 +1,7 @@
 #include "process.h"
 
 #ifdef __linux__
+#ifdef ARLIB_THREAD
 #include <spawn.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -8,11 +9,17 @@
 #include <sys/wait.h>
 #include <signal.h>
 #include <limits.h>
+#include "set.h"
+#include "file.h"
+
+//will set 'status' and futex(FUTEX_WAKE, status, INT_MAX) once child exits
+//'status' must be initialized to -1
+static void set_sigchld(pid_t pid, int* status);
 
 //atoi is locale-aware, not gonna trust that to not call malloc or otherwise be stupid
 static int atoi_simple(const char * text)
 {
-	int ret = 0;
+	int ret = 0; // ignore overflows, fds don't go higher than a couple thousand before the kernel gets angry at you
 	while (*text)
 	{
 		if (*text<'0' || *text>'9') return -1;
@@ -24,7 +31,6 @@ static int atoi_simple(const char * text)
 }
 
 //trusting everything to set O_CLOEXEC isn't enough, this is a sandbox
-//throws about fifty errors in Valgrind for fd 1024 - don't care
 bool process::closefrom(int lowfd)
 {
 	//getdents[64] is documented do-not-use and opendir should be used instead.
@@ -61,7 +67,7 @@ bool process::closefrom(int lowfd)
 #ifdef ARLIB_TEST_ARLIB
 				if (fd >= 1024) continue; // shut up Valgrind
 #endif
-				close(fd);
+				close(fd); // seems like close() can't fail, per https://lwn.net/Articles/576478/
 			}
 		}
 	}
@@ -69,13 +75,13 @@ bool process::closefrom(int lowfd)
 	return true;
 }
 
-bool process::set_fds(array<int> fds)
+bool process::set_fds(array<int>& fds)
 {
 	if (fds.size() > INT_MAX) return false;
 	
 	bool ok = true;
 	
-	//probably doable with fewer dups, but yawn, implausible.
+	//probably doable with fewer dups, but yawn, don't care.
 	for (size_t i=0;i<fds.size();i++)
 	{
 		while (fds[i] < (int)i && fds[i] >= 0)
@@ -104,77 +110,6 @@ bool process::set_fds(array<int> fds)
 }
 
 
-static void update_piperead(int& fd, array<byte>& out, size_t limit)
-{
-	while (true)
-	{
-		byte buf[4096];
-		ssize_t bytes = ::read(fd, buf, sizeof(buf));
-		if (bytes>0) out += arrayview<byte>(buf, bytes);
-		if (bytes==0) { close(fd); fd=-1; }
-		if (bytes<=0) break;
-		if (out.size() > limit) break;
-	}
-}
-void process::update(bool sleep)
-{
-	if (this->pid != -1)
-	{
-		//sometimes, I get EOF from the pipes (closed by process teardown), but waitpid() isn't ready to return anything
-		//any change to the timing, for example running it under strace, causes this issue to disappear
-		//feels like a kernel bug
-		//workaround: turn on blocking mode if I suspect that's happening
-		//TODO: this can hit if stdout/err are gone due to outlimit
-		bool block = (stdout_fd==-1 && stderr_fd==-1);
-		if (waitpid(this->pid, &this->exitcode, block ? 0 : WNOHANG) > 0)
-		{
-			this->pid = -1;
-		}
-	}
-	if (sleep && this->pid != -1)
-	{
-		fd_set rd;
-		fd_set wr;
-		FD_ZERO(&rd);
-		FD_ZERO(&wr);
-		if (stdout_fd != -1) FD_SET(stdout_fd, &rd);
-		if (stderr_fd != -1) FD_SET(stderr_fd, &rd);
-		if (stdin_fd != -1 && stdin_buf) FD_SET(stdin_fd, &wr);
-		select(FD_SETSIZE, &rd, &wr, NULL, NULL);
-	}
-	
-	if (stdin_fd != -1)
-	{
-		if (stdin_buf)
-		{
-			ssize_t bytes = ::write(stdin_fd, stdin_buf.ptr(), stdin_buf.size());
-			if (bytes == 0)
-			{
-				stdin_buf.reset();
-				close(stdin_fd);
-				stdin_fd = -1;
-			}
-			if (bytes > 0) stdin_buf = stdin_buf.slice(bytes, stdin_buf.size()-bytes);
-		}
-		if (!stdin_buf && !stdin_open)
-		{
-			close(stdin_fd);
-			stdin_fd = -1;
-		}
-	}
-	
-	if (stdout_fd != -1) update_piperead(stdout_fd, stdout_buf, outmax-stderr_buf.size());
-	if (stderr_fd != -1) update_piperead(stderr_fd, stderr_buf, outmax-stdout_buf.size());
-	
-	if (stdout_buf.size()+stderr_buf.size() > outmax)
-	{
-		if (stdout_fd != -1) close(stdout_fd);
-		if (stderr_fd != -1) close(stderr_fd);
-		stdout_fd = -1;
-		stderr_fd = -1;
-	}
-}
-
 pid_t process::launch_impl(array<const char*> argv, array<int> stdio_fd)
 {
 	pid_t ret = fork();
@@ -188,7 +123,7 @@ pid_t process::launch_impl(array<const char*> argv, array<int> stdio_fd)
 		//  async-signal-safe operations until such time as one of the exec functions is called.
 		//In particular, malloc must be avoided.
 		
-		set_fds(std::move(stdio_fd));
+		set_fds(stdio_fd);
 		for (int i=0;i<=2;i++) fcntl(i, F_SETFD, 0); // remove FD_CLOEXEC
 		execvp(argv[0], (char**)argv.ptr());
 		while (true) _exit(EXIT_FAILURE);
@@ -207,76 +142,263 @@ bool process::launch(cstring prog, arrayview<string> args)
 	}
 	argv.append(NULL);
 	
-	int stdinpair[2];
-	int stdoutpair[2];
-	int stderrpair[2];
-	//leaks a couple of fds if creation fails, but if that happens, process is probably screwed anyways.
-	if (pipe2(stdinpair,  O_CLOEXEC) < 0) return false; // cloexec is removed in launch_impl
-	if (pipe2(stdoutpair, O_CLOEXEC) < 0) return false;
-	if (pipe2(stderrpair, O_CLOEXEC) < 0) return false;
+	array<int> fds;
+	if (ch_stdin) fds[0] = ch_stdin->fd_read;
+	else fds[0] = open("/dev/null", O_RDONLY);
 	
-	int stdio_fd[3] = { stdinpair[0], stdoutpair[1], (this->stderr_split ? stderrpair[1] : stdoutpair[1]) };
-	//array<int> stdio_fd;
-	//stdio_fd.append(stdinpair[0]); // if stdin isn't desired, the other end is closed by the update() at the end
-	//stdio_fd.append(stdinpair[1]);
-	//stdio_fd.append(this->stderr_split ? stderrpair[1] : stdoutpair[1]);
-	this->pid = launch_impl(std::move(argv), arrayview<int>(stdio_fd));
+	if (ch_stdout) fds[1] = ch_stdout->fd_write;
+	else fds[1] = open("/dev/null", O_WRONLY);
 	
-	close(stdinpair[0]);
-	close(stdoutpair[1]);
-	close(stderrpair[1]);
-	this->stdin_fd = stdinpair[1];
-	this->stdout_fd = stdoutpair[0];
-	this->stderr_fd = stderrpair[0];
-	fcntl(this->stdin_fd, F_SETFL, fcntl(this->stdin_fd, F_GETFL)|O_NONBLOCK);
-	fcntl(this->stdout_fd, F_SETFL, fcntl(this->stdout_fd, F_GETFL)|O_NONBLOCK);
-	fcntl(this->stderr_fd, F_SETFL, fcntl(this->stderr_fd, F_GETFL)|O_NONBLOCK);
+	if (ch_stderr) fds[2] = ch_stderr->fd_write;
+	else fds[2] = open("/dev/null", O_WRONLY);
+	
+	this->pid = launch_impl(std::move(argv), fds);
+	
+	if (ch_stdin)
+	{
+		ch_stdin->started = true;
+		ch_stdin->update(0);
+	}
+	
+	close(fds[0]);
+	close(fds[1]);
+	close(fds[2]);
 	
 	if (this->pid < 0)
 	{
-		destruct();
+		this->exitcode = 1;
 		return false;
 	}
 	
-	update();
+	this->exitcode = -1;
+	set_sigchld(this->pid, &this->exitcode);
+	
 	return true;
 }
 
 bool process::running(int* exitcode)
 {
-	update();
-	if (exitcode && this->pid==-1) *exitcode = this->exitcode;
-	return (this->pid != -1);
+	int status = lock_read(&this->exitcode);
+	if (status==-1) return true;
+	
+	if (exitcode) *exitcode = status;
+	return false;
 }
 
 void process::wait(int* exitcode)
 {
-	this->stdin_open = false;
-	while (this->pid != -1) update(true);
+	futex_wait_while_eq(&this->exitcode, -1);
 	if (exitcode) *exitcode = this->exitcode;
+	if (ch_stdout) ch_stdout->update(0);
+	if (ch_stderr) ch_stderr->update(0);
 }
 
 void process::terminate()
 {
-	if (this->pid != -1)
+	if (lock_read(&this->exitcode) == -1)
 	{
 		kill(this->pid, SIGKILL);
-		waitpid(this->pid, NULL, 0);
-		this->exitcode = -1;
-		this->pid = -1;
+		wait(NULL);
 	}
-}
-
-void process::destruct()
-{
-	terminate();
-	if (stdin_fd!=-1) close(stdin_fd);
-	if (stdout_fd!=-1) close(stdout_fd);
-	if (stderr_fd!=-1) close(stderr_fd);
 }
 
 process::~process()
 {
-	destruct();
+	terminate();
+	delete ch_stdin;
+	delete ch_stdout;
+	delete ch_stderr;
 }
+
+
+
+void process::input::update(int fd)
+{
+	synchronized(mut)
+	{
+		if (fd_write == (uintptr_t)-1) return;
+		
+		if (buf.size() == 0)
+		{
+			if (started && do_close) goto do_terminate;
+			else goto do_unmonitor;
+		}
+		
+		ssize_t bytes = ::write(fd_write, buf.ptr(), buf.size());
+		if (bytes < 0 && errno == EAGAIN) goto do_monitor;
+		if (bytes <= 0) goto do_terminate;
+		buf = buf.slice(bytes, buf.size()-bytes);
+		
+		goto do_monitor;
+	}
+	
+do_monitor:
+	fd_monitor(fd_write, NULL, bind_this(&input::update));
+	return;
+	
+do_unmonitor:
+	fd_monitor(fd_write, NULL, NULL);
+	return;
+	
+do_terminate:
+	terminate();
+	return;
+}
+
+process::input& process::input::create_pipe(arrayview<byte> data)
+{
+	int fds[2];
+	pipe2(fds, O_CLOEXEC);
+	input* ret = new input();
+	ret->fd_read = fds[0];
+	ret->fd_write = fds[1];
+	fcntl(ret->fd_write, F_SETFL, fcntl(ret->fd_write, F_GETFL, 0) | O_NONBLOCK);
+	ret->buf = data;
+	ret->update(0);
+	return *ret;
+}
+process::input& process::input::create_buffer(arrayview<byte> data)
+{
+	input& ret = create_pipe(data);
+	ret.do_close = true;
+	return ret;
+}
+
+//process::input& process::input::create_file(cstring path)
+
+//dup because process::launch closes it
+process::input& process::input::create_stdin() { return *new input(fcntl(STDIN_FILENO, F_DUPFD_CLOEXEC)); }
+
+void process::input::terminate()
+{
+	//ignore fd_read, closed by process::launch
+	int fd = lock_xchg_loose(&fd_write, -1);
+	if (fd != -1)
+	{
+		fd_monitor(fd, NULL, NULL);
+		::close(fd);
+	}
+}
+process::input::~input() { terminate(); }
+
+
+
+void process::output::update(int fd)
+{
+	synchronized(mut)
+	{
+	again:
+		if (fd_read == (uintptr_t)-1) return;
+		
+		uint8_t tmp[4096];
+		ssize_t bytes = ::read(fd_read, tmp, sizeof(tmp));
+		if (bytes < 0 && errno == EAGAIN) return;
+		if (bytes <= 0) goto do_terminate;
+		buf += arrayview<byte>(tmp, bytes);
+		if (buf.size() >= maxbytes) goto do_terminate;
+		goto again;
+	}
+	
+do_terminate:
+	terminate();
+	return;
+}
+
+void process::output::terminate()
+{
+	//ignore fd_write, closed by process::launch
+	int fd = lock_xchg_loose(&fd_read, -1);
+	if (fd != -1)
+	{
+		fd_monitor(fd, NULL, NULL);
+		::close(fd);
+	}
+}
+
+process::output& process::output::create_buffer(size_t limit)
+{
+	int fds[2];
+	pipe2(fds, O_CLOEXEC);
+	output* ret = new output();
+	ret->fd_write = fds[1];
+	ret->fd_read = fds[0];
+	fcntl(ret->fd_read, F_SETFL, fcntl(ret->fd_read, F_GETFL, 0) | O_NONBLOCK);
+	ret->maxbytes = limit;
+	fd_monitor(ret->fd_read, bind_ptr(&output::update, ret), NULL);
+	return *ret;
+}
+
+//process::output& process::output::create_file(cstring path, bool append)
+
+process::output& process::output::create_stdout() { return *new output(fcntl(STDOUT_FILENO, F_DUPFD_CLOEXEC)); }
+process::output& process::output::create_stderr() { return *new output(fcntl(STDERR_FILENO, F_DUPFD_CLOEXEC)); }
+
+process::output::~output()
+{
+	terminate();
+}
+
+
+
+static bool sigchld_installed = false;
+static int sigchld_pipe;
+static mutex sigchld_mut;
+static map<pid_t, int*> sigchld_handlers;
+
+static void sigchld_handler_w(int signo, siginfo_t* info, void* context)
+{
+	write(sigchld_pipe, &info->si_pid, sizeof(pid_t));
+}
+
+static void sigchld_handler(int fd)
+{
+	synchronized(sigchld_mut)
+	{
+		pid_t pid;
+		read(fd, &pid, sizeof(pid_t));
+		int* futex = sigchld_handlers.get_or(pid, NULL);
+		if (!futex) return; // not our child (anymore)? ignore
+		
+		int status;
+		pid_t exited = waitpid(pid, &status, WNOHANG);
+		if (exited != pid) abort(); // shouldn't happen
+		
+		futex_set_and_wake(futex, status);
+		sigchld_handlers.remove(pid);
+	}
+}
+
+static void set_sigchld(pid_t pid, int* status)
+{
+	synchronized(sigchld_mut)
+	{
+		if (!sigchld_installed)
+		{
+			int pipefd[2];
+			pipe2(pipefd, O_CLOEXEC|O_NONBLOCK);
+			fd_monitor(pipefd[0], sigchld_handler, NULL);
+			sigchld_pipe = pipefd[1];
+			
+			struct sigaction act;
+			act.sa_sigaction = sigchld_handler_w;
+			sigemptyset(&act.sa_mask);
+			//recursion is bad, but the alternative is trying to waitpid every single child as soon as one dies
+			act.sa_flags = SA_NODEFER;
+			sigaction(SIGCHLD, &act, NULL);
+			
+			sigchld_installed = true;
+		}
+		
+		sigchld_handlers.insert(pid, status);
+		
+		int status;
+		pid_t exited = waitpid(pid, &status, WNOHANG);
+		if (exited == pid)
+		{
+			futex_set_and_wake(sigchld_handlers.get(pid), status);
+			sigchld_handlers.remove(pid);
+		}
+	}
+}
+#endif
 #endif

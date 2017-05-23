@@ -95,9 +95,9 @@ public:
 	//- May be expensive, prefer reusing allocations if needed (or use stdin/stdout)
 	//- Can't resize an allocation, you have to create a new one and copy the data
 	//- Can fail and return NULL, obviously (if parent fails, child will too; parent may succeed if child doesn't)
-	//- The returned memory is initially zero initialized (or whatever the parent has written)
+	//- The returned memory is initially zero initialized; can't resize, you have to copy the data manually
 	void* malloc(size_t bytes);
-	void free(void* data);
+	void free(void* data, size_t bytes); // must be same size as in malloc
 	
 	//Convenience function, just calls the above.
 	template<typename T> T* malloc(size_t count=1) { return (T*)this->malloc(sizeof(T)*count); }
@@ -107,6 +107,7 @@ public:
 
 //Convenience wrapper, launches the current process and calls a function in it.
 class sandfunc {
+	sandproc proc;
 public:
 	static void enter(); // Must be the first thing in main(), before window_init() or similar.
 	sandcomm* launch(void(*proc)(sandcomm* comm)); // Not the function<> template, userdata pointers can't be passed around like that.

@@ -209,6 +209,7 @@ public:
 //To unregister a callback, fd_monitor(fd, NULL, NULL). fd must be open at this point.
 //After fd_monitor returns, the previous callback is guaranteed to have returned for the last time.
 //Callbacks are called on a foreign thread. Use locks as appropriate.
+//Do not hold any locks needed by on_read or on_write while calling this.
 void fd_monitor(int fd, function<void(int)> on_read, function<void(int)> on_write);
 #endif
 #endif
