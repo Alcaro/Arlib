@@ -35,6 +35,7 @@ class sand_fs : nocopy {
 		};
 		int numwrites; // decreased every time a write is done on native, or a file is created on tmp
 	};
+	//TODO: use an ordered map instead, iterating like this can't be fast
 	map<string, mount> mounts;
 	map<string, int> tmpfiles;
 	
@@ -427,7 +428,6 @@ static sand_broker box;
 void sand_do_the_thing(int pid, int sock)
 {
 	box.init(pid, sock);
-	//TODO: use an ordered map instead
 	box.fs.grant_native_redir("/@CWD/", "./", 10);
 	box.fs.grant_native("/lib64/ld-linux-x86-64.so.2");
 	box.fs.grant_native("/usr/bin/make");

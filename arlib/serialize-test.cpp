@@ -187,7 +187,7 @@ test()
 		item.data.add("test");
 		item.data.add("C:/Users/Administrator/My Documents/!TOP SECRET!.docx");
 		//the set is unordered, this can give spurious failures
-		assert_eq(bmlserialize(item), "data=foo\ndata=\"C:/Users/Administrator/My Documents/!TOP SECRET!.docx\"\ndata=test");
+		assert_eq(bmlserialize(item), "data=test\ndata=\"C:/Users/Administrator/My Documents/!TOP SECRET!.docx\"\ndata=foo");
 	}
 	
 	{
@@ -196,9 +196,9 @@ test()
 		item.data.insert("test", "C:/Users/Administrator/My Documents/!TOP SECRET!.docx");
 		item.data.insert("C:/Users/Administrator/My Documents/!TOP SECRET!.docx", "test");
 		assert_eq(bmlserialize(item), "data"
-		                              " foo=bar"
+		                              " test=\"C:/Users/Administrator/My Documents/!TOP SECRET!.docx\""
 		                              " -C-3A-2FUsers-2FAdministrator-2FMy-20Documents-2F-21TOP-20SECRET-21.docx=test"
-		                              " test=\"C:/Users/Administrator/My Documents/!TOP SECRET!.docx\"");
+		                              " foo=bar");
 	}
 }
 

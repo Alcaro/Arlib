@@ -26,7 +26,7 @@ static inline size_t hash(const char * val)
 	return hash(val, strlen(val));
 }
 
-//these two are reversible, but there's no reversal because why should I
+//these two are reversible, but I never implemented the reversal because lazy.
 inline uint32_t hash_shuffle(uint32_t val)
 {
 	//https://code.google.com/p/smhasher/wiki/MurmurHash3

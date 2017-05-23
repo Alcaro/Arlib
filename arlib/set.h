@@ -88,16 +88,16 @@ class set {
 	template<typename T2>
 	size_t find_pos(const T2& item)
 	{
-		size_t hashv = hash(item);
+		size_t hashv = hash_shuffle(hash(item)) % m_data.size();
 		size_t i = 0;
 		
 		size_t emptyslot = -1;
 		
 		while (true)
 		{
-			//http://stackoverflow.com/a/15770445 says this is the optimal distribution function
-			//testing up to 65536 confirms this
-			size_t pos = (hashv + (i+1)*i/2) % m_data.size();
+			//I could use hashv + i+(i+1)/2 <http://stackoverflow.com/a/15770445>
+			//but due to hash_shuffle, it hurts as much as it helps.
+			size_t pos = (hashv + i) % m_data.size();
 			if (m_valid[pos] && m_data[pos].member()==item) return pos;
 			if (!m_valid[pos])
 			{
@@ -338,7 +338,7 @@ public:
 		return items.get(key)->value;
 	}
 	
-	//if nonexistent, returns the argument
+	//if nonexistent, returns 'def'
 	Tvalue& get_or(const Tkey& key, Tvalue& def)
 	{
 		node* ret = items.get(key);

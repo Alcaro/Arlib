@@ -29,7 +29,6 @@ class sandproc : public process {
 	sandcomm* conn;
 	
 	pid_t launch_impl(array<const char*> argv, array<int> stdio_fd) override;
-	//void waitpid_select(bool sleep) override;
 	
 public:
 	sandproc() : conn(NULL) {}
@@ -49,7 +48,7 @@ public:
 	//Allows access to a file, or a directory and all of its contents. Usable both before and after launch().
 	//Can not be undone, the process may already have opened the file; to be sure, destroy the process.
 	void permit(cstring path, bool writable) { permit_at(path, path, writable); }
-	//To allow moving the filesystem around. For example, /
+	//To allow moving the filesystem around. For example, /home/user/ can be mounted at /@CWD/.
 	void permit_at(cstring real, cstring mount_at, bool writable);
 	
 	~sandproc();

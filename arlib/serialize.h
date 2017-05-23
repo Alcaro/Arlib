@@ -16,16 +16,17 @@
 //	//- Any integral type ('char' doesn't count as integral)
 //	//- string (but not cstring)
 //	//- array, set, map (if their contents are serializable)
-//	//    map must use integer or string key, no complex classes
+//	//    map must use integer or string key, nothing funny
+//	//    no array<array<T>> or set<set<T>> allowed, though array<struct_with_array> is fine
 //	//- Any object with a serialize() function (see below)
 //	//The name can be any string.
 //	template<typename T> void item(cstring name, T& item);
 //	
-//	//Similar to item(), uses hex rather than decimal if output is human readable (otherwise, identical to item).
+//	//Similar to item(), but uses hex rather than decimal if output is human readable (otherwise, identical to item).
 //	//Valid types:
 //	//- Any unsigned integral type
-//	//- array<byte>, written as a hex string
-//	//- arrayvieww<byte>; like above, but can be an rvalue
+//	//- array<byte>
+//	//- arrayvieww<byte>
 //	template<typename T> void hex(cstring name, T& item);
 //	void hex(cstring name, arrayvieww<byte> item);
 //	
@@ -33,7 +34,7 @@
 //	void comment(cstring c);
 //	
 //	//Returns the next child name the structure expects to process. Valid only while unserializing.
-//	cstring next();
+//	cstring next() const;
 //};
 //
 //struct serializable {
@@ -45,7 +46,7 @@
 //	{
 //		//If unserializing, this function can be called multiple (or zero) times if the document is
 //		// corrupt. Don't change any state, only call the serializer functions.
-//		//For strange cases, check s.serializing.
+//		//For most items, .item() and .hex() are enough. For containers, use anything.
 //		s.item("a", a);
 //	}
 //	//or (expands to the above)
@@ -109,7 +110,7 @@ public:
 		w.node(bmlwriter::escape(name), tostringhex(item));
 	}
 	
-	cstring next() { abort(); } // illegal
+	cstring next() const { abort(); } // illegal
 };
 
 template<typename T> string bmlserialize(T& item)
@@ -240,8 +241,7 @@ public:
 		}
 	}
 	
-	cstring next() { return thisnode; }
-	cstring next_esc() { return thisnode; }
+	cstring next() const { return thisnode; }
 	
 	void comment(cstring c) {}
 };
