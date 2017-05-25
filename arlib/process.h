@@ -50,9 +50,8 @@ protected:
 	//Sets the file descriptor table to fds, closing all existing fds.
 	//If a fd is -1, it's closed. Duplicates in the input are allowed.
 	//Returns false on failure, but keeps doing its best anyways.
-	//Afterwards, all new fds have the cloexec flag set. If this is undesired, use fcntl(F_SETFD).
 	//Will mangle the input array. While suboptimal, it's the only way to avoid a post-fork malloc.
-	static bool set_fds(array<int>& fds);
+	static bool set_fds(array<int>& fds, bool cloexec = false);
 	
 	//Like execlp, this searches PATH for the given program.
 	static string find_prog(const char * prog);
@@ -79,6 +78,8 @@ public:
 	//Argument quoting is fairly screwy on Windows. Command line arguments at all are fairly screwy on Windows.
 	//You may get weird results if you use too many backslashes, quotes and spaces.
 	bool launch(cstring prog, arrayview<string> args);
+	bool launch(cstring prog, array<string> args) { return launch(prog, (arrayview<string>)args); }
+	bool launch(cstring prog, arrayvieww<string> args) { return launch(prog, (arrayview<string>)args); }
 	
 	template<typename... Args>
 	bool launch(cstring prog, Args... args)
@@ -176,8 +177,8 @@ public:
 	output* set_stderr(output& outp) { ch_stderr = &outp; return &outp; }
 	
 	
-	bool running(int* exitcode = NULL);
-	void wait(int* exitcode = NULL); // Remember to close stdin first.
+	bool running();
+	int wait(); // Returns exit code. Remember to close stdin first.
 	void terminate(); // The process is automatically terminated if the object is destroyed.
 	
 	~process();

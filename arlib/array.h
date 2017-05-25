@@ -4,6 +4,10 @@
 #include <string.h>
 #include <type_traits>
 
+template<typename T> class arrayview;
+template<typename T> class arrayvieww;
+template<typename T> class array;
+
 //size: two pointers
 //this object does not own its storage, it's just a pointer wrapper
 template<typename T> class arrayview {
@@ -90,6 +94,8 @@ public:
 		size_t newsize = this->count*sizeof(T)/sizeof(T2);
 		return arrayview<T2>((T2*)this->items, newsize);
 	}
+	
+	template<typename T2> array<T2> cast() const;
 	
 	bool contains(const T& other) const
 	{
@@ -638,7 +644,7 @@ private:
 	void construct(array&& other)
 	{
 		memcpy(this, &other, sizeof(*this));
-		other.construct();
+		other.nbits = 0;
 	}
 public:
 	
@@ -672,3 +678,11 @@ public:
 	//void remove(size_t index)
 	//array(null_t)
 };
+
+template<typename T> template<typename T2>
+array<T2> arrayview<T>::cast() const
+{
+	array<T2> ret;
+	for (const T& tmp : *this) ret.append(tmp);
+	return std::move(ret);
+}

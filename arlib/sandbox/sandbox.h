@@ -1,4 +1,5 @@
 #include "../process.h"
+#include "../set.h"
 
 //Allows safely executing untrusted code.
 //
@@ -18,21 +19,65 @@
 //Even Chrome couldn't find anything comprehensive; they use everything they can find (restricted token, job object, desktop,
 // SetProcessMitigationPolicy, firewall, etc), but some operations, such as accessing FAT32 volumes, still pass through.
 //It feels like the Windows sandboxing functions are designed for trusted code operating on untrusted data, rather than untrusted code,
-// or for memory safe languages, or some similar absurd constraint.
+// or for memory safe languages, or some similarly absurd constraint.
 //Since I can't create satisfactory results in such an environment, I won't even try.
 
 #ifdef __linux__
 //Currently, both parent and child must be x86_64.
 
 class sandcomm;
+struct broker_rsp;
 class sandproc : public process {
-	sandcomm* conn;
+	class filesystem : ::nocopy {
+		enum type_t { ty_error, ty_native, ty_tmp };
+		struct mount {
+			type_t type;
+			
+			union {
+				#define SAND_ERRNO_MASK 0xFFF
+				#define SAND_ERRNO_NOISY 0x1000
+				int e_error;
+				int n_fd;
+				//ty_tmp's fd is in tmpfiles, keyed by full path
+			};
+			int numwrites; // decreased every time a write is done on native, or a file is created on tmp
+		};
+		//TODO: use an ordered map instead, iterating like this can't be fast
+		map<string, mount> mounts;
+		map<string, int> tmpfiles;
+		mutex mut;
+		
+	public:
+		void grant_native_redir(string cpath, string ppath, int max_write = 0);
+		void grant_native(string path, int max_write = 0);
+		void grant_tmp(string cpath, int max_size);
+		void grant_errno(string cpath, int error, bool noisy);
+		
+		filesystem();
+		~filesystem();
+		
+		function<void(cstring path, bool write)> report_access_violation;
+		
+		//calls report_access_violation if needed
+		int child_file(cstring pathname, int /* broker_req_t */ op, int flags, mode_t mode);
+	};
+	filesystem fs;
 	
+	void watch_add(int sock);
+	void watch_del(int sock);
+	void send_rsp(int sock, broker_rsp* rsp, int fd);
+	void on_readable(int sock);
+	int mainsock;
+	set<int> socks;
+	
+	sandcomm* conn = NULL;
+	
+	mutex mut;
+	
+	static int preloader_fd();
 	pid_t launch_impl(array<const char*> argv, array<int> stdio_fd) override;
 	
 public:
-	sandproc() : conn(NULL) {}
-	
 	//If the child process uses Arlib, this allows convenient communication with it.
 	//Must be called before starting the child, and exactly once (or never).
 	//Like process, the object is not thread safe.
@@ -47,9 +92,19 @@ public:
 	
 	//Allows access to a file, or a directory and all of its contents. Usable both before and after launch().
 	//Can not be undone, the process may already have opened the file; to be sure, destroy the process.
-	void permit(cstring path, bool writable) { permit_at(path, path, writable); }
+	void fs_grant(cstring path, int max_write = 0) { fs_grant_at(path, path, max_write); }
+	
 	//To allow moving the filesystem around. For example, /home/user/ can be mounted at /@CWD/.
-	void permit_at(cstring real, cstring mount_at, bool writable);
+	void fs_grant_at(cstring real, cstring mount_at, int max_write = 0) { fs.grant_native_redir(mount_at, real, max_write); }
+	
+	void fs_grant_cwd(int max_write = 0) { fs_grant_cwd("./", max_write); }
+	void fs_grant_cwd(cstring real, int max_write = 0) { fs_grant_at(real, "/@CWD/", max_write); }
+	
+	void fs_hide(cstring path) { fs.grant_errno(path, ENOENT, false); }
+	
+	//Grants access to some system libraries present in default installations of the operating system.
+	//Some programs may require additional files.
+	void fs_grant_syslibs();
 	
 	~sandproc();
 };

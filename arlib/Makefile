@@ -25,8 +25,10 @@ else
     OS = linux
   else ifeq ($(UNAME_S),Darwin)
     OS = osx
+  else ifeq ($(UNAME_S),)
+    $(error couldn't execute uname -s)
   else
-    $(error what weird OS is this?)
+    $(error what weird OS is $(UNAME_S)?)
   endif
 endif
 

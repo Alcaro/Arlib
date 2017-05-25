@@ -182,6 +182,7 @@ extern "C" funcptr bootstrap_start(void** stack)
 	//this could call the syscall emulator directly, but if I don't, the preloader can run unsandboxed as well
 	//it means a SIGSYS penalty, but there's dozens of those already, another one makes no difference
 	int fd = open("/lib64/ld-linux-x86-64.so.2", O_RDONLY);
+	if (fd < 0) return NULL; // just segfault
 	uint8_t hbuf[832]; // FILEBUF_SIZE from glibc elf/dl-load.c
 	uint8_t* ld_base;  // ld-linux has 7 segments, 832 bytes fits 13 (plus ELF header)
 	Elf64_Ehdr* ld_ehdr = map_binary(fd, ld_base, hbuf, sizeof(hbuf));

@@ -15,6 +15,7 @@
 //will set 'status' and futex(FUTEX_WAKE, status, INT_MAX) once child exits
 //'status' must be initialized to -1
 static void set_sigchld(pid_t pid, int* status);
+static void sigchld_handler(int fd);
 
 //atoi is locale-aware, not gonna trust that to not call malloc or otherwise be stupid
 static int atoi_simple(const char * text)
@@ -75,7 +76,7 @@ bool process::closefrom(int lowfd)
 	return true;
 }
 
-bool process::set_fds(array<int>& fds)
+bool process::set_fds(array<int>& fds, bool cloexec)
 {
 	if (fds.size() > INT_MAX) return false;
 	
@@ -93,13 +94,17 @@ bool process::set_fds(array<int>& fds)
 	
 	for (size_t i=0;i<fds.size();i++)
 	{
-		if (fds[i] >= 0 && fds[i] != (int)i)
+		if (fds[i] >= 0)
 		{
-			if (dup3(fds[i], i, O_CLOEXEC) < 0)
+			if (fds[i] != (int)i)
 			{
-				ok = false;
-				close(i);
+				if (dup3(fds[i], i, O_CLOEXEC) < 0)
+				{
+					ok = false;
+					close(i);
+				}
 			}
+			fcntl(i, F_SETFD, cloexec ? FD_CLOEXEC : 0);
 		}
 		if (fds[i] < 0) close(i);
 	}
@@ -124,7 +129,6 @@ pid_t process::launch_impl(array<const char*> argv, array<int> stdio_fd)
 		//In particular, malloc must be avoided.
 		
 		set_fds(stdio_fd);
-		for (int i=0;i<=2;i++) fcntl(i, F_SETFD, 0); // remove FD_CLOEXEC
 		execvp(argv[0], (char**)argv.ptr());
 		while (true) _exit(EXIT_FAILURE);
 	}
@@ -176,21 +180,18 @@ bool process::launch(cstring prog, arrayview<string> args)
 	return true;
 }
 
-bool process::running(int* exitcode)
+bool process::running()
 {
 	int status = lock_read(&this->exitcode);
-	if (status==-1) return true;
-	
-	if (exitcode) *exitcode = status;
-	return false;
+	return (status==-1);
 }
 
-void process::wait(int* exitcode)
+int process::wait()
 {
 	futex_wait_while_eq(&this->exitcode, -1);
-	if (exitcode) *exitcode = this->exitcode;
 	if (ch_stdout) ch_stdout->update(0);
 	if (ch_stderr) ch_stderr->update(0);
+	return this->exitcode;
 }
 
 void process::terminate()
@@ -198,7 +199,12 @@ void process::terminate()
 	if (lock_read(&this->exitcode) == -1)
 	{
 		kill(this->pid, SIGKILL);
-		wait(NULL);
+		//can't just wait(), if we're in the fd monitor thread then that deadlocks
+		while (lock_read_loose(&this->exitcode)==-1)
+		{
+			sigchld_handler(0);
+		}
+		wait();
 	}
 }
 
@@ -248,7 +254,7 @@ do_terminate:
 process::input& process::input::create_pipe(arrayview<byte> data)
 {
 	int fds[2];
-	pipe2(fds, O_CLOEXEC);
+	if (pipe2(fds, O_CLOEXEC) < 0) abort();
 	input* ret = new input();
 	ret->fd_read = fds[0];
 	ret->fd_write = fds[1];
@@ -267,7 +273,7 @@ process::input& process::input::create_buffer(arrayview<byte> data)
 //process::input& process::input::create_file(cstring path)
 
 //dup because process::launch closes it
-process::input& process::input::create_stdin() { return *new input(fcntl(STDIN_FILENO, F_DUPFD_CLOEXEC)); }
+process::input& process::input::create_stdin() { return *new input(fcntl(STDIN_FILENO, F_DUPFD_CLOEXEC, 0)); }
 
 void process::input::terminate()
 {
@@ -318,7 +324,7 @@ void process::output::terminate()
 process::output& process::output::create_buffer(size_t limit)
 {
 	int fds[2];
-	pipe2(fds, O_CLOEXEC);
+	if (pipe2(fds, O_CLOEXEC) < 0) abort();
 	output* ret = new output();
 	ret->fd_write = fds[1];
 	ret->fd_read = fds[0];
@@ -330,8 +336,8 @@ process::output& process::output::create_buffer(size_t limit)
 
 //process::output& process::output::create_file(cstring path, bool append)
 
-process::output& process::output::create_stdout() { return *new output(fcntl(STDOUT_FILENO, F_DUPFD_CLOEXEC)); }
-process::output& process::output::create_stderr() { return *new output(fcntl(STDERR_FILENO, F_DUPFD_CLOEXEC)); }
+process::output& process::output::create_stdout() { return *new output(fcntl(STDOUT_FILENO, F_DUPFD_CLOEXEC, 0)); }
+process::output& process::output::create_stderr() { return *new output(fcntl(STDERR_FILENO, F_DUPFD_CLOEXEC, 0)); }
 
 process::output::~output()
 {
@@ -341,13 +347,14 @@ process::output::~output()
 
 
 static bool sigchld_installed = false;
-static int sigchld_pipe;
+static int sigchld_pipe[2];
 static mutex sigchld_mut;
 static map<pid_t, int*> sigchld_handlers;
 
 static void sigchld_handler_w(int signo, siginfo_t* info, void* context)
 {
-	write(sigchld_pipe, &info->si_pid, sizeof(pid_t));
+	int bytes = write(sigchld_pipe[1], &info->si_pid, sizeof(pid_t));
+	if (bytes != sizeof(pid_t)) abort();
 }
 
 static void sigchld_handler(int fd)
@@ -355,7 +362,9 @@ static void sigchld_handler(int fd)
 	synchronized(sigchld_mut)
 	{
 		pid_t pid;
-		read(fd, &pid, sizeof(pid_t));
+		int bytes = read(sigchld_pipe[0], &pid, sizeof(pid_t));
+		if (bytes < 0) return;
+		if (bytes != sizeof(pid_t)) abort();
 		int* futex = sigchld_handlers.get_or(pid, NULL);
 		if (!futex) return; // not our child (anymore)? ignore
 		
@@ -374,16 +383,15 @@ static void set_sigchld(pid_t pid, int* status)
 	{
 		if (!sigchld_installed)
 		{
-			int pipefd[2];
-			pipe2(pipefd, O_CLOEXEC|O_NONBLOCK);
-			fd_monitor(pipefd[0], sigchld_handler, NULL);
-			sigchld_pipe = pipefd[1];
+			int piperes = pipe2(sigchld_pipe, O_CLOEXEC|O_NONBLOCK);
+			if (piperes < 0) abort();
+			fd_monitor(sigchld_pipe[0], sigchld_handler, NULL);
 			
 			struct sigaction act;
 			act.sa_sigaction = sigchld_handler_w;
 			sigemptyset(&act.sa_mask);
 			//recursion is bad, but the alternative is trying to waitpid every single child as soon as one dies
-			act.sa_flags = SA_NODEFER;
+			act.sa_flags = SA_SIGINFO|SA_NODEFER|SA_NOCLDSTOP;
 			sigaction(SIGCHLD, &act, NULL);
 			
 			sigchld_installed = true;
@@ -391,6 +399,7 @@ static void set_sigchld(pid_t pid, int* status)
 		
 		sigchld_handlers.insert(pid, status);
 		
+		//in case of race conditions
 		int status;
 		pid_t exited = waitpid(pid, &status, WNOHANG);
 		if (exited == pid)

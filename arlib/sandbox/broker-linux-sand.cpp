@@ -21,452 +21,365 @@
 #include <linux/memfd.h>
 static inline int memfd_create(const char * name, unsigned int flags) { return syscall(__NR_memfd_create, name, flags); }
 
-class sand_fs : nocopy {
-	enum type_t { ty_error, ty_native, ty_tmp };
-	struct mount {
-		type_t type;
-		
-		union {
-			#define SAND_ERRNO_MASK 0xFFF
-			#define SAND_ERRNO_NOISY 0x1000
-			int e_error;
-			int n_fd;
-			//ty_tmp's fd is in tmpfiles, keyed by full path
-		};
-		int numwrites; // decreased every time a write is done on native, or a file is created on tmp
-	};
-	//TODO: use an ordered map instead, iterating like this can't be fast
-	map<string, mount> mounts;
-	map<string, int> tmpfiles;
+void sandproc::filesystem::grant_native_redir(string cpath, string ppath, int max_write)
+{
+	mutexlocker lock(mut);
 	
-public:
-	//child path (can be stuff like /@CWD/), parent path (must exist), max number of times files may be opened for writing
-	//NOTE: The filename component, if any, must be same between child/parent paths.
-	void grant_native_redir(string cpath, string ppath, int max_write = 0)
+	mount& m = mounts.insert(cpath);
+	
+	string cend = cpath.rsplit<1>("/")[1];
+	array<string> pp = ppath.rsplit<1>("/");
+	string pend = pp[1];
+	if (cend != pend) abort();
+	
+	m.type = ty_native;
+	m.n_fd = open(pp[0]+"/", O_DIRECTORY|O_PATH); // if ppath is "/", pp[0] is empty, so append a /
+	m.numwrites = max_write;
+	
+	if (m.n_fd < 0)
 	{
-		mount& m = mounts.insert(cpath);
-		
-		string cend = cpath.rsplit<1>("/")[1];
-		array<string> pp = ppath.rsplit<1>("/");
-		string pend = pp[1];
-		if (cend != pend) abort();
-		
-		m.type = ty_native;
-		m.n_fd = open(pp[0]+"/", O_DIRECTORY|O_PATH); // if ppath is "/", pp[0] is empty, so append a /
-		m.numwrites = max_write;
-		
-		if (m.n_fd < 0)
-		{
-			m.type = ty_error;
-			m.e_error = errno;
-		}
-	}
-	void grant_native(string path, int max_write = 0)
-	{
-		grant_native_redir(path, path, max_write);
-	}
-	void grant_tmp(string cpath, int max_size)
-	{
-		mount& m = mounts.insert(cpath);
-		
-		m.type = ty_tmp;
-		m.numwrites = max_size;
-	}
-	void grant_errno(string cpath, int error, bool noisy)
-	{
-		mount& m = mounts.insert(cpath);
-		
 		m.type = ty_error;
-		m.e_error = error | (noisy ? SAND_ERRNO_NOISY : 0);
+		m.e_error = errno;
 	}
+}
+void sandproc::filesystem::grant_native(string path, int max_write)
+{
+	grant_native_redir(path, path, max_write);
+}
+void sandproc::filesystem::grant_tmp(string cpath, int max_size)
+{
+	mutexlocker lock(mut);
 	
-	sand_fs()
-	{
-		grant_errno("/", EACCES, true);
-	}
+	mount& m = mounts.insert(cpath);
 	
-	~sand_fs()
-	{
-		for (auto& m : mounts)
-		{
-			if (m.value.type == ty_native) close(m.value.n_fd);
-		}
-		for (auto& m : tmpfiles)
-		{
-			close(m.value);
-		}
-	}
+	m.type = ty_tmp;
+	m.numwrites = max_size;
+}
+void sandproc::filesystem::grant_errno(string cpath, int error, bool noisy)
+{
+	mutexlocker lock(mut);
 	
-	//TODO
-	//function<void(const char * path, bool write)> report_access_violation;
-	void report_access_violation(cstring path, bool write)
-	{
+	mount& m = mounts.insert(cpath);
+	
+	m.type = ty_error;
+	m.e_error = error | (noisy ? SAND_ERRNO_NOISY : 0);
+}
+
+sandproc::filesystem::filesystem()
+{
+	grant_errno("/", EACCES, true);
+	report_access_violation = [](cstring path, bool write){
 		puts((cstring)"sandbox: denied " + (write?"writing":"reading") + " " + path);
-	}
-	
-	//calls report_access_violation if needed
-	int child_file(cstring pathname, broker_req_t op, int flags, mode_t mode)
+	};
+}
+
+sandproc::filesystem::~filesystem()
+{
+	for (auto& m : mounts)
 	{
-		bool is_write;
-		if (op == br_open)
-		{
-			//block unfamiliar or unusable flags
-			//intentionally rejected flags: O_DIRECT, O_DSYNC, O_PATH, O_SYNC, __O_TMPFILE
-			if (flags & ~(O_ACCMODE|O_APPEND|O_ASYNC|O_CLOEXEC|O_CREAT|O_DIRECTORY|O_EXCL|
-						  O_LARGEFILE|O_NOATIME|O_NOCTTY|O_NOFOLLOW|O_NONBLOCK|O_TRUNC))
-			{
-				errno = EINVAL;
-				return -1;
-			}
-			
-			if ((flags&O_ACCMODE) == O_ACCMODE)
-			{
-				errno = EINVAL;
-				return -1;
-			}
-			
-			is_write = ((flags&O_ACCMODE) != O_RDONLY) || (flags&O_CREAT) || (flags&O_TRUNC);
-		}
-		else if (op == br_unlink) is_write = true;
-		else if (op == br_access) is_write = false;
-		else
+		if (m.value.type == ty_native) close(m.value.n_fd);
+	}
+	for (auto& m : tmpfiles)
+	{
+		close(m.value);
+	}
+}
+
+//calls report_access_violation if needed
+int sandproc::filesystem::child_file(cstring pathname, int op_, int flags, mode_t mode)
+{
+	mutexlocker lock(mut);
+	
+	broker_req_t op = (broker_req_t)op_;
+	bool is_write;
+	if (op == br_open)
+	{
+		//block unfamiliar or unusable flags
+		//intentionally rejected flags: O_DIRECT, O_DSYNC, O_PATH, O_SYNC, __O_TMPFILE
+		if (flags & ~(O_ACCMODE|O_APPEND|O_ASYNC|O_CLOEXEC|O_CREAT|O_DIRECTORY|O_EXCL|
+					  O_LARGEFILE|O_NOATIME|O_NOCTTY|O_NOFOLLOW|O_NONBLOCK|O_TRUNC))
 		{
 			errno = EINVAL;
 			return -1;
 		}
 		
-		if (pathname[0]!='/' ||
-		    pathname.contains("/./") || pathname.contains("/../") ||
-		    pathname.endswith("/.") || pathname.endswith("/.."))
+		if ((flags&O_ACCMODE) == O_ACCMODE)
+		{
+			errno = EINVAL;
+			return -1;
+		}
+		
+		is_write = ((flags&O_ACCMODE) != O_RDONLY) || (flags&O_CREAT) || (flags&O_TRUNC);
+	}
+	else if (op == br_unlink) is_write = true;
+	else if (op == br_access) is_write = false;
+	else
+	{
+		errno = EINVAL;
+		return -1;
+	}
+	
+	if (pathname[0]!='/' ||
+		pathname.contains("/./") || pathname.contains("/../") ||
+		pathname.endswith("/.") || pathname.endswith("/.."))
+	{
+		report_access_violation(pathname, is_write);
+		errno = EACCES;
+		return -1;
+	}
+	while (pathname[~1]=='/') pathname = pathname.csubstr(0, ~1);
+	
+	bool exact_path = false;
+	
+//puts("open "+pathname);
+	mount m = {}; // there's always at least one match, but gcc doesn't know that
+	size_t mlen = 0;
+	for (auto& miter : mounts)
+	{
+		if (miter.key[0]!='/') abort();
+//puts("  mount "+miter.key);
+		if (miter.key.length() <= mlen) continue;
+		bool use;
+		if (miter.key.endswith("/"))
+		{
+			if ((pathname+"/")==miter.key)
+			{
+				exact_path = true;
+				use = true;
+			}
+			else use = (pathname.startswith(miter.key));
+		}
+		else
+		{
+			use = (pathname == miter.key); // file mount
+		}
+		if (use)
+		{
+//puts("    yes");
+			m = miter.value;
+			mlen = miter.key.length();
+			while (miter.key[mlen-1]!='/') mlen--;
+		}
+	}
+	if (!mlen) abort();
+//puts("  "+pathname+" "+tostring(mlen));
+	
+	
+	switch (m.type)
+	{
+	case ty_error:
+		if (m.e_error & SAND_ERRNO_NOISY)
 		{
 			report_access_violation(pathname, is_write);
-			errno = EACCES;
-			return -1;
 		}
-		while (pathname[~1]=='/') pathname = pathname.csubstr(0, ~1);
+		errno = m.e_error&SAND_ERRNO_MASK;
+		return -1;
 		
-		bool exact_path = false;
-		
-//puts("open "+pathname);
-		mount m = {}; // there's always at least one match, but gcc doesn't know that
-		size_t mlen = 0;
-		for (auto& miter : mounts)
+	case ty_native:
+	{
+		if (is_write)
 		{
-			if (miter.key[0]!='/') abort();
-//puts("  mount "+miter.key);
-			if (miter.key.length() <= mlen) continue;
-			bool use;
-			if (miter.key.endswith("/"))
+			if (m.numwrites == 0)
 			{
-				if ((pathname+"/")==miter.key)
-				{
-					exact_path = true;
-					use = true;
-				}
-				else use = (pathname.startswith(miter.key));
+				report_access_violation(pathname, true);
+				errno = EACCES;
+				return -1;
 			}
-			else
-			{
-				use = (pathname == miter.key); // file mount
-			}
-			if (use)
-			{
-//puts("    yes");
-				m = miter.value;
-				mlen = miter.key.length();
-				while (miter.key[mlen-1]!='/') mlen--;
-			}
+			m.numwrites--;
 		}
-		if (!mlen) abort();
-//puts("  "+pathname+" "+tostring(mlen));
 		
+		cstring relpath;
+		if (mlen > pathname.length()) relpath = "."; // open("/usr/include/") when that's a mountpoint
+		else relpath = pathname.csubstr(mlen, ~0);
 		
-		switch (m.type)
+		if (op == br_open) return openat(m.n_fd, relpath, flags|O_CLOEXEC|O_NOCTTY, mode);
+		if (op == br_unlink) return unlinkat(m.n_fd, relpath, 0);
+		if (op == br_access) return faccessat(m.n_fd, relpath, flags, 0);
+		abort();
+	}
+	case ty_tmp:
+		if (op == br_open)
 		{
-		case ty_error:
-			if (m.e_error & SAND_ERRNO_NOISY)
+			int fd = tmpfiles.get_or(pathname, -1);
+			if (fd < 0 && is_write)
 			{
-				report_access_violation(pathname, is_write);
-			}
-			errno = m.e_error&SAND_ERRNO_MASK;
-			return -1;
-			
-		case ty_native:
-		{
-			if (is_write)
-			{
+				//ignore mode, it gets 777
 				if (m.numwrites == 0)
 				{
 					report_access_violation(pathname, true);
-					errno = EACCES;
+					errno = ENOMEM;
 					return -1;
 				}
 				m.numwrites--;
+				
+				fd = memfd_create(pathname, MFD_CLOEXEC);
+				tmpfiles.insert(pathname, fd);
 			}
-			
-			cstring relpath;
-			if (mlen > pathname.length()) relpath = "."; // open("/usr/include/") when that's a mountpoint
-			else relpath = pathname.csubstr(mlen, ~0);
-			
-			if (op == br_open) return openat(m.n_fd, relpath, flags|O_CLOEXEC|O_NOCTTY, mode);
-			if (op == br_unlink) return unlinkat(m.n_fd, relpath, 0);
-			if (op == br_access) return faccessat(m.n_fd, relpath, flags, 0);
-			abort();
+			//unshare file position
+			return open("/proc/self/fd/"+tostring(fd), (flags|O_CLOEXEC|O_NOCTTY)&~(O_EXCL|O_CREAT));
 		}
-		case ty_tmp:
-			if (op == br_open)
-			{
-				int fd = tmpfiles.get_or(pathname, -1);
-				if (fd < 0 && is_write)
-				{
-					//ignore mode, it gets 777
-					if (m.numwrites == 0)
-					{
-						report_access_violation(pathname, true);
-						errno = ENOMEM;
-						return -1;
-					}
-					m.numwrites--;
-					
-					fd = memfd_create(pathname, MFD_CLOEXEC);
-					tmpfiles.insert(pathname, fd);
-				}
-				//unshare file position
-				return open("/proc/self/fd/"+tostring(fd), (flags|O_CLOEXEC|O_NOCTTY)&~(O_EXCL|O_CREAT));
-			}
-			if (op == br_unlink)
-			{
-				int fd = tmpfiles.get_or(pathname, -1);
-				if (fd >= 0)
-				{
-					tmpfiles.remove(pathname);
-					close(fd);
-					return 0;
-				}
-				else
-				{
-					errno = ENOENT;
-					return -1;
-				}
-			}
-			if (op == br_access)
-			{
-				if (tmpfiles.contains(pathname) || exact_path)
-				{
-					return 0;
-				}
-				else
-				{
-					errno = ENOENT;
-					return -1;
-				}
-			}
-			abort();
-		default: abort();
-		}
-	}
-};
-
-
-class sand_broker : nocopy {
-public:
-	pid_t pid;
-	set<int> socks;
-	int exitcode;
-	
-	sand_fs fs;
-	
-	void watch_add(int sock)
-	{
-		fd_monitor(sock, bind_this(&sand_broker::on_readable), NULL);
-		socks.add(sock);
-	}
-	
-	void watch_del(int sock)
-	{
-		fd_monitor(sock, NULL, NULL);
-		socks.remove(sock);
-	}
-	
-	void send_rsp(int sock, broker_rsp* rsp, int fd)
-	{
-		if (send_fd(sock, rsp, sizeof(*rsp), MSG_DONTWAIT|MSG_NOSIGNAL|MSG_EOR, fd) <= 0)
+		if (op == br_unlink)
 		{
-			//full buffer means misbehaving child or child exited
-			//none of which should happen, so kill it
-			//(okay, it could hit if a threaded child calls open() and exit() simultaneously)
-			//(but that's not noticable unless they've got a parent process and let's just assume no such thing is gonna happen.)
+			int fd = tmpfiles.get_or(pathname, -1);
+			if (fd >= 0)
+			{
+				tmpfiles.remove(pathname);
+				close(fd);
+				return 0;
+			}
+			else
+			{
+				errno = ENOENT;
+				return -1;
+			}
+		}
+		if (op == br_access)
+		{
+			if (tmpfiles.contains(pathname) || exact_path)
+			{
+				return 0;
+			}
+			else
+			{
+				errno = ENOENT;
+				return -1;
+			}
+		}
+		abort();
+	default: abort();
+	}
+}
+
+
+
+void sandproc::watch_add(int sock)
+{
+	fd_monitor(sock, bind_this(&sandproc::on_readable), NULL);
+	socks.add(sock);
+}
+
+void sandproc::watch_del(int sock)
+{
+	fd_monitor(sock, NULL, NULL);
+	socks.remove(sock);
+}
+
+void sandproc::send_rsp(int sock, broker_rsp* rsp, int fd)
+{
+	if (send_fd(sock, rsp, sizeof(*rsp), MSG_DONTWAIT|MSG_NOSIGNAL|MSG_EOR, fd) <= 0)
+	{
+		//full buffer means misbehaving child or child exited
+		//none of which should happen, so kill it
+		//(okay, it could hit if a threaded child calls open() and exit() simultaneously)
+		//(but that's not noticable unless they've got a parent process and let's just assume no such thing is gonna happen.)
+		terminate();
+	}
+}
+
+void sandproc::on_readable(int sock)
+{
+	struct broker_req req;
+	ssize_t req_sz = recv(sock, &req, sizeof(req), MSG_DONTWAIT);
+	if (req_sz==-1 && errno==EAGAIN) return;
+	else if (req_sz == 0)
+	{
+		//closed socket? child probably exited
+		watch_del(sock);
+		if (!socks.size())
+		{
+			//if that was the last one, either the entire child tree is terminated or it's misbehaving
+			//in both cases, kill it
 			terminate();
 		}
+		return;
+	}
+	else if (req_sz != sizeof(req) || req.path[sizeof(req.path)-1] != '\0')
+	{
+		terminate(); // no mis-sized messages allowed, nor unterminated strings
+		return;
 	}
 	
-	void on_readable(int sock)
+	broker_rsp rsp = { req.type };
+	int fd = -1;
+	bool close_fd = true;
+	
+	switch (req.type)
 	{
-		struct broker_req req;
-		ssize_t req_sz = recv(sock, &req, sizeof(req), MSG_DONTWAIT);
-		if (req_sz==-1 && errno==EAGAIN) return;
-		else if (req_sz == 0)
-		{
-			//closed socket? child probably exited
-			watch_del(sock);
-			if (!socks.size())
-			{
-				//if that was the last one, either the entire child tree is terminated or it's misbehaving
-				//in both cases, kill it
-				terminate();
-			}
-			return;
-		}
-		else if (req_sz != sizeof(req) || req.path[sizeof(req.path)-1] != '\0')
-		{
-			terminate(); // no mis-sized messages allowed, nor unterminated strings
-			return;
-		}
-		
-		broker_rsp rsp = { req.type };
-		int fd = -1;
-		bool close_fd = true;
-		
-		switch (req.type)
-		{
-		case br_nop:
-		{
-			return; // return so send_rsp doesn't run
-		}
-		case br_ping:
-		{
-			break; // pings return only { br_ping }, which we already have
-		}
-		case br_open:
-		case br_unlink:
-		case br_access:
-		{
-			close_fd = true;
-			fd = fs.child_file(req.path, req.type, req.flags[0], req.flags[1]);
+	case br_nop:
+	{
+		return; // return so send_rsp doesn't run
+	}
+	case br_ping:
+	{
+		break; // pings return only { br_ping }, which we already have
+	}
+	case br_open:
+	case br_unlink:
+	case br_access:
+	{
+		close_fd = true;
+		fd = fs.child_file(req.path, req.type, req.flags[0], req.flags[1]);
 //puts((string)req.path+" "+tostring(req.type)+": "+tostring(fd)+" "+tostring(errno));
-			if (fd<0) rsp.err = errno;
-			break;
-		}
-		case br_get_emul:
-		{
-			int preloader_fd();
-			fd = preloader_fd();
-			close_fd = false;
-			break;
-		}
-		case br_fork:
-		{
-			int socks[2];
-			if (socketpair(AF_UNIX, SOCK_SEQPACKET|SOCK_CLOEXEC, 0, socks)<0)
-			{
-				socks[0] = -1;
-				socks[1] = -1;
-			}
-			
-			fd = socks[1];
-			watch_add(socks[0]);
-			break;
-		}
-		default:
-			terminate(); // invalid request means child is doing something stupid
-			return;
-		}
-		send_rsp(sock, &rsp, fd>0 ? fd : -1);
-		if (fd>0 && close_fd) close(fd);
+		if (fd<0) rsp.err = errno;
+		break;
 	}
-	
-	void cleanup()
+	case br_get_emul:
 	{
-		for (int sock : socks)
-		{
-			fd_monitor(sock, NULL, NULL);
-			close(sock);
-		}
-		socks.reset();
+		fd = preloader_fd();
+		close_fd = false;
+		break;
 	}
-	
-	void terminate()
+	case br_fork:
 	{
-		if (pid<0) return; // do NOT call kill(-1, SIGKILL) under ANY circumstances, it reboots your session
+		int socks[2];
+		if (socketpair(AF_UNIX, SOCK_SEQPACKET|SOCK_CLOEXEC, 0, socks)<0)
+		{
+			socks[0] = -1;
+			socks[1] = -1;
+		}
 		
-		kill(pid, SIGKILL);
-		cleanup();
-		
-		waitpid(pid, &exitcode, 0);
-		lock_write_rel(&pid, -1);
+		fd = socks[1];
+		watch_add(socks[0]);
+		break;
 	}
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	//TODO
-	void init(int pid, int sock)
-	{
-		this->pid = pid;
-		watch_add(sock);
+	default:
+		terminate(); // invalid request means child is doing something stupid
+		return;
 	}
-	
-	void wait()
-	{
-		while (lock_read_acq(&pid) != -1)
-		{
-			usleep(1000);
-		}
-	}
-};
+	send_rsp(sock, &rsp, fd>0 ? fd : -1);
+	if (fd>0 && close_fd) close(fd);
+}
 
-static sand_broker box;
-void sand_do_the_thing(int pid, int sock)
+sandproc::~sandproc()
 {
-	box.init(pid, sock);
-	box.fs.grant_native_redir("/@CWD/", "./", 10);
-	box.fs.grant_native("/lib64/ld-linux-x86-64.so.2");
-	box.fs.grant_native("/usr/bin/make");
-	box.fs.grant_native("/usr/bin/gcc");
-	box.fs.grant_native("/usr/bin/g++");
-	box.fs.grant_native("/usr/bin/as");
-	box.fs.grant_native("/usr/bin/ld");
-	box.fs.grant_native("/bin/sh");
-	box.fs.grant_native("/usr/lib/"); // this is a bit too broad, the list of installed packages is considered private
-	//box.fs.grant_native("/usr/lib/gcc/"); // but -lfoobar kinda requires access to it
-	box.fs.grant_errno("/usr/gnu/", ENOENT, false);
-	box.fs.grant_native("/lib/");
-	box.fs.grant_native("/dev/urandom");
-	box.fs.grant_errno("/dev/", EACCES, false);
-	box.fs.grant_errno("/etc/ld.so.nohwcap", ENOENT, false);
-	box.fs.grant_errno("/etc/ld.so.preload", ENOENT, false);
-	box.fs.grant_errno("/usr/share/locale/", ENOENT, false);
-	box.fs.grant_errno("/usr/share/locale-langpack/", ENOENT, false);
-	box.fs.grant_native("/etc/ld.so.cache");
-	box.fs.grant_errno("/usr", ENOENT, false);
-	box.fs.grant_errno("/usr/local/include/", ENOENT, false);
-	box.fs.grant_native("/usr/include/");
-	box.fs.grant_errno("/usr/x86_64-linux-gnu/", ENOENT, false);
-	box.fs.grant_errno("/usr/bin/gnm", ENOENT, false);
-	box.fs.grant_errno("/bin/gnm", ENOENT, false);
-	box.fs.grant_native("/usr/bin/nm");
-	box.fs.grant_errno("/usr/bin/gstrip", ENOENT, false);
-	box.fs.grant_errno("/bin/gstrip", ENOENT, false);
-	box.fs.grant_native("/usr/bin/strip");
-	box.fs.grant_tmp("/tmp/", 10);
-	
-	//used by my makefile
-	box.fs.grant_errno("/usr/bin/uname", ENOENT, false);
-	box.fs.grant_native("/bin/uname");
-	box.fs.grant_native("/usr/bin/objdump");
-	box.fs.grant_errno("/usr/bin/grep", ENOENT, false);
-	box.fs.grant_native("/bin/grep");
-	
-	box.wait();
+	for (int sock : socks)
+	{
+		fd_monitor(sock, NULL, NULL);
+		close(sock);
+	}
+}
+
+void sandproc::fs_grant_syslibs()
+{
+	fs.grant_native("/lib64/ld-linux-x86-64.so.2");
+	fs.grant_native("/usr/lib/x86_64-linux-gnu/libstdc++.so.6");
+	fs.grant_native("/lib/x86_64-linux-gnu/libdl.so.2");
+	fs.grant_native("/lib/x86_64-linux-gnu/libpthread.so.0");
+	fs.grant_native("/lib/x86_64-linux-gnu/libc.so.6");
+	fs.grant_native("/lib/x86_64-linux-gnu/libm.so.6");
+	fs.grant_native("/lib/x86_64-linux-gnu/libgcc_s.so.1");
+	fs.grant_native("/lib/x86_64-linux-gnu/libselinux.so.1");
+	fs.grant_native("/lib/x86_64-linux-gnu/libpcre.so.3"); // kinda specialized, but part of the base install so it's fine
+	fs.grant_native("/bin/sh");
+	fs.grant_native("/dev/urandom");
+	fs.grant_errno("/dev/", EACCES, false);
+	fs.grant_errno("/etc/ld.so.nohwcap", ENOENT, false);
+	fs.grant_errno("/etc/ld.so.preload", ENOENT, false);
+	fs.grant_errno("/usr/share/locale/", ENOENT, false);
+	fs.grant_errno("/usr/share/locale-langpack/", ENOENT, false);
+	fs.grant_errno("/usr/lib/locale/", ENOENT, false);
+	fs.grant_native("/etc/ld.so.cache");
+	fs.grant_tmp("/tmp/", 10);
 }
 #endif
 #endif

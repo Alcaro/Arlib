@@ -32,17 +32,14 @@ test()
 	{
 		process p;
 		assert(p.launch(TRUE));
-		int status;
-		p.wait(&status);
-		assert_eq(status, 0);
+		assert_eq(p.wait(), 0);
 	}
 	
 	{
 		process p;
 		process::output* out = p.set_stdout(process::output::create_buffer());
 		assert(p.launch(ECHO, "foo"));
-		int status;
-		p.wait(&status);
+		int status = p.wait();
 		assert_eq(out->read(), "foo" ECHO_END);
 		assert_eq(status, 0);
 	}
@@ -138,6 +135,14 @@ test()
 		usleep(50*1000); // oddly enough, I need two usleeps to make sure it works
 		assert(!p.running());
 	}
+	
+	//no real way to test this
+	//{
+	//	process p;
+	//	p.set_stdout(process::output::create_stdout());
+	//	assert(p.launch(ECHO, "test"));
+	//	p.wait();
+	//}
 	
 	//{
 	//	string test_escape[] = {

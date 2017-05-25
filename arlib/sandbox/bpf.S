@@ -118,12 +118,18 @@ fcntl:
 ld [arg2h]
 jne #0, ENOTTY_S
 ld [arg2l]
-#used for O_CLOEXEC
+
+#sets only O_CLOEXEC
 jeq #F_GETFD, accept
 jeq #F_SETFD, accept
+
 #can't change writability flags, so harmless
 jeq #F_GETFL, accept
 jeq #F_SETFL, accept
+
+#the dup() syscall itself is fine, so this is too
+jeq #F_DUPFD, accept
+jeq #F_DUPFD_CLOEXEC, accept
 
 jmp EINVAL
 
