@@ -132,7 +132,7 @@ int sandproc::filesystem::child_file(cstring pathname, int op_, int flags, mode_
 	bool exact_path = false;
 	
 //puts("open "+pathname);
-	mount m = {}; // there's always at least one match, but gcc doesn't know that
+	mount* m = NULL;
 	size_t mlen = 0;
 	for (auto& miter : mounts)
 	{
@@ -156,7 +156,7 @@ int sandproc::filesystem::child_file(cstring pathname, int op_, int flags, mode_
 		if (use)
 		{
 //puts("    yes");
-			m = miter.value;
+			m = &miter.value;
 			mlen = miter.key.length();
 			while (miter.key[mlen-1]!='/') mlen--;
 		}
@@ -165,36 +165,36 @@ int sandproc::filesystem::child_file(cstring pathname, int op_, int flags, mode_
 //puts("  "+pathname+" "+tostring(mlen));
 	
 	
-	switch (m.type)
+	switch (m->type)
 	{
 	case ty_error:
-		if (m.e_error & SAND_ERRNO_NOISY)
+		if (m->e_error & SAND_ERRNO_NOISY)
 		{
 			report_access_violation(pathname, is_write);
 		}
-		errno = m.e_error&SAND_ERRNO_MASK;
+		errno = m->e_error&SAND_ERRNO_MASK;
 		return -1;
 		
 	case ty_native:
 	{
 		if (is_write)
 		{
-			if (m.numwrites == 0)
+			if (m->numwrites == 0)
 			{
 				report_access_violation(pathname, true);
 				errno = EACCES;
 				return -1;
 			}
-			m.numwrites--;
+			m->numwrites--;
 		}
 		
 		cstring relpath;
 		if (mlen > pathname.length()) relpath = "."; // open("/usr/include/") when that's a mountpoint
 		else relpath = pathname.csubstr(mlen, ~0);
 		
-		if (op == br_open) return openat(m.n_fd, relpath, flags|O_CLOEXEC|O_NOCTTY, mode);
-		if (op == br_unlink) return unlinkat(m.n_fd, relpath, 0);
-		if (op == br_access) return faccessat(m.n_fd, relpath, flags, 0);
+		if (op == br_open) return openat(m->n_fd, relpath, flags|O_CLOEXEC|O_NOCTTY, mode);
+		if (op == br_unlink) return unlinkat(m->n_fd, relpath, 0);
+		if (op == br_access) return faccessat(m->n_fd, relpath, flags, 0);
 		abort();
 	}
 	case ty_tmp:
@@ -204,13 +204,13 @@ int sandproc::filesystem::child_file(cstring pathname, int op_, int flags, mode_
 			if (fd < 0 && is_write)
 			{
 				//ignore mode, it gets 777
-				if (m.numwrites == 0)
+				if (m->numwrites == 0)
 				{
 					report_access_violation(pathname, true);
 					errno = ENOMEM;
 					return -1;
 				}
-				m.numwrites--;
+				m->numwrites--;
 				
 				fd = memfd_create(pathname, MFD_CLOEXEC);
 				tmpfiles.insert(pathname, fd);
@@ -379,7 +379,7 @@ void sandproc::fs_grant_syslibs()
 	fs.grant_errno("/usr/share/locale-langpack/", ENOENT, false);
 	fs.grant_errno("/usr/lib/locale/", ENOENT, false);
 	fs.grant_native("/etc/ld.so.cache");
-	fs.grant_tmp("/tmp/", 10);
+	fs.grant_tmp("/tmp/", 100);
 }
 #endif
 #endif
