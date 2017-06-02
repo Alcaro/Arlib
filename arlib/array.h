@@ -298,11 +298,12 @@ public:
 		else resize_grow(len);
 	}
 	
-	void insert(size_t index, const T& item)
+	T& insert(size_t index, const T& item)
 	{
-		resize_grow(this->count+1);
+		resize_grow_noinit(this->count+1);
 		memmove(this->items+index+1, this->items+index, sizeof(T)*(this->count-1-index));
 		new(&this->items[index]) T(item);
+		return this->items[index];
 	}
 	T& insert(size_t index)
 	{
@@ -313,8 +314,10 @@ public:
 	}
 	
 	void append(const arrayview<T>& item) = delete;
-	T& append(const T& item) { size_t pos = this->count; resize_grow(pos+1); this->items[pos] = item; return this->items[pos]; }
-	T& append() { size_t pos = this->count; resize_grow(pos+1); return this->items[pos]; }
+	T& append(const T& item) { return insert(this->count, item); }
+	T& append() { return insert(this->count); }
+	T& prepend(const T& item) { return insert(0, item); }
+	T& prepend() { return insert(0); }
 	void reset() { resize_shrink(0); }
 	
 	void remove(size_t index)

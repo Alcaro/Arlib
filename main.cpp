@@ -5,9 +5,8 @@ int main(int argc, char** argv)
 	sandproc ch;
 	ch.set_stdout(process::output::create_stdout());
 	ch.set_stderr(process::output::create_stderr());
-	ch.fs_grant_syslibs();
+	ch.fs_grant_syslibs(argv[1]);
 	ch.fs_grant_cwd(100);
-	ch.fs_grant(argv[1]);
 	
 	//for gcc
 	ch.fs_grant("/usr/bin/make");
@@ -34,6 +33,6 @@ int main(int argc, char** argv)
 	ch.fs_hide("/usr/bin/grep");
 	ch.fs_grant("/bin/grep");
 	
-	ch.launch(argv[1], arrayview<const char*>(argv+1, argc-1).cast<string>());
+	ch.launch(argv[1], arrayview<const char*>(argv+2, argc-2).cast<string>());
 	ch.wait();
 }

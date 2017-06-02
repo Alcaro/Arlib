@@ -54,7 +54,7 @@ protected:
 	static bool set_fds(array<int>& fds, bool cloexec = false);
 	
 	//Like execlp, this searches PATH for the given program.
-	static string find_prog(const char * prog);
+	static string find_prog(cstring prog);
 	
 	//stdio_fd is an array of { stdin, stdout, stderr } and should be sent to set_fds (possibly with a few additions) post-fork.
 	//Must return the child's pid, or -1 on failure.

@@ -165,6 +165,8 @@ static int execveat(int dirfd, const char * pathname, char * const argv[], char 
 
 pid_t sandproc::launch_impl(array<const char*> argv, array<int> stdio_fd)
 {
+	argv.prepend(argv[0]); // ld-linux thinks it's argv[0] and discards the real one
+	
 	//fcntl is banned by seccomp, so this goes early
 	//putting it before clone() allows sharing it between sandbox children
 	int preld_fd = preloader_fd();

@@ -367,7 +367,7 @@ sandproc::~sandproc()
 	}
 }
 
-void sandproc::fs_grant_syslibs()
+void sandproc::fs_grant_syslibs(cstring exe)
 {
 	fs.grant_native("/lib64/ld-linux-x86-64.so.2");
 	fs.grant_native("/usr/lib/x86_64-linux-gnu/libstdc++.so.6");
@@ -388,6 +388,12 @@ void sandproc::fs_grant_syslibs()
 	fs.grant_errno("/usr/lib/locale/", ENOENT, false);
 	fs.grant_native("/etc/ld.so.cache");
 	fs.grant_tmp("/tmp/", 100);
+	if (exe)
+	{
+		string exepath = process::find_prog(exe);
+		if (!exepath) abort();
+		fs.grant_native(exepath);
+	}
 }
 #endif
 #endif

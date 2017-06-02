@@ -101,11 +101,14 @@ public:
 	void fs_grant_cwd(int max_write = 0) { fs_grant_cwd("./", max_write); }
 	void fs_grant_cwd(cstring real, int max_write = 0) { fs_grant_at(real, "/@CWD/", max_write); }
 	
+	//WARNING: If the parent directory of a fs_hide() target is child-accessible, the hidden directory may be visible too.
+	//Do not use as a security mechanism. Use it only as a warning suppression mechanism.
 	void fs_hide(cstring path) { fs.grant_errno(path, ENOENT, false); }
 	
-	//Grants access to some system libraries present in default installations of the operating system.
+	//Grants access to some system libraries present in default installations of the operating system,
+	//needed to run simple programs.
 	//Some programs may require additional files.
-	void fs_grant_syslibs();
+	void fs_grant_syslibs(cstring exe = "");
 	
 	~sandproc();
 };

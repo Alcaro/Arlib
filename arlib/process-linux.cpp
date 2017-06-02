@@ -114,6 +114,18 @@ bool process::set_fds(array<int>& fds, bool cloexec)
 	return ok;
 }
 
+string process::find_prog(cstring prog)
+{
+	if (prog.contains("/")) return prog;
+	array<string> paths = string(getenv("PATH")).split(":");
+	for (string& path : paths)
+	{
+		string pathprog = path+"/"+prog;
+		if (access(pathprog, X_OK)==0) return pathprog;
+	}
+	return "";
+}
+
 
 pid_t process::launch_impl(array<const char*> argv, array<int> stdio_fd)
 {
@@ -139,7 +151,8 @@ pid_t process::launch_impl(array<const char*> argv, array<int> stdio_fd)
 bool process::launch(cstring prog, arrayview<string> args)
 {
 	array<const char*> argv;
-	argv.append((const char*)prog);
+	string progpath = find_prog(prog); // don't inline, it must be kept alive
+	argv.append((const char*)progpath);
 	for (size_t i=0;i<args.size();i++)
 	{
 		argv.append((const char*)args[i]);

@@ -662,7 +662,13 @@ static void sa_sigsys(int signo, siginfo_t* info, void* context)
 
 extern "C" void preload_action(char** argv, char** envp)
 {
-	set_sighand(SIGSYS, sa_sigsys, SA_NODEFER); // recursion is bad, but we won't get SIGSYS recursively
+	//what's this flag for?
+	//answer: kernel usually blocks the currently-executing signal, to avoid infinite recursion
+	// (for example, if the SIGSEGV handler segfaults, running it again probably won't help)
+	//a good idea most of the time, but not for us; we know this one doesn't recurse,
+	// and we don't always return from this signal handler, sometimes we execveat() instead
+	//so we pass SA_NODEFER to disable this self-blocking
+	set_sighand(SIGSYS, sa_sigsys, SA_NODEFER); 
 	
 	progname = argv[1];
 	
