@@ -32,14 +32,21 @@ void sandproc::filesystem::grant_native_redir(string cpath, string ppath, int ma
 	string pend = pp[1];
 	if (cend != pend) abort();
 	
+	cstring mntpath = pp[0]+"/"; // if ppath is "/", pp[0] is empty, so append a /
+	
 	m.type = ty_native;
-	m.n_fd = open(pp[0]+"/", O_DIRECTORY|O_PATH); // if ppath is "/", pp[0] is empty, so append a /
+	if (!mountfds.contains(mntpath))
+	{
+		mountfds.insert(mntpath, open(mntpath, O_DIRECTORY|O_PATH));
+	}
+	m.n_fd = mountfds.get(mntpath);
 	m.numwrites = max_write;
 	
 	if (m.n_fd < 0)
 	{
+		//TODO: report error to caller
 		m.type = ty_error;
-		m.e_error = errno;
+		m.e_error = ENOENT;
 	}
 }
 void sandproc::filesystem::grant_native(string path, int max_write)
@@ -75,13 +82,13 @@ sandproc::filesystem::filesystem()
 
 sandproc::filesystem::~filesystem()
 {
-	for (auto& m : mounts)
-	{
-		if (m.value.type == ty_native) close(m.value.n_fd);
-	}
 	for (auto& m : tmpfiles)
 	{
 		close(m.value);
+	}
+	for (auto& pair : mountfds)
+	{
+		close(pair.value);
 	}
 }
 
@@ -285,10 +292,11 @@ void sandproc::on_readable(int sock)
 	{
 		//closed socket? child probably exited
 		watch_del(sock);
+		close(sock);
 		if (!socks.size())
 		{
 			//if that was the last one, either the entire child tree is terminated or it's misbehaving
-			//in both cases, kill it
+			//in both cases, it won't do anything desirable anymore
 			terminate();
 		}
 		return;

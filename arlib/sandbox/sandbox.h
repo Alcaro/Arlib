@@ -45,6 +45,7 @@ class sandproc : public process {
 		//TODO: use an ordered map instead, iterating like this can't be fast
 		map<string, mount> mounts;
 		map<string, int> tmpfiles;
+		map<string, int> mountfds;
 		mutex mut;
 		
 	public:
