@@ -449,7 +449,7 @@ static inline int execve(const char * filename, char * const argv[], char * cons
 //don't bother giving it the real values, just give it something that looks tasty
 static inline int sysinfo_(struct sysinfo * info)
 {
-	memset(info, 0, sizeof(info));
+	memset(info, 0, sizeof(*info));
 	info->uptime = 0;
 	info->loads[0] = 0;
 	info->loads[1] = 0;
@@ -478,7 +478,7 @@ static inline int getrusage(int who, struct rusage * usage)
 static inline int uname(struct utsname * buf)
 {
 	//same as Ubuntu 16.04.0 live CD (despite 16.04 not being able to run the sandbox, CLONE_NEWCGROUP requires kernel 4.6)
-	//nodename is considered private information, the rest aren't really needed
+	//nodename is considered private information, and child doesn't really need the rest either, just emulate the entire thing
 	strcpy(buf->sysname, "Linux");
 	strcpy(buf->nodename, "ubuntu");
 	strcpy(buf->release, "4.4.0-21-generic");

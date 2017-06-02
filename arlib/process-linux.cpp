@@ -152,6 +152,7 @@ bool process::launch(cstring prog, arrayview<string> args)
 {
 	array<const char*> argv;
 	string progpath = find_prog(prog); // don't inline, it must be kept alive
+	if (!progpath) return false;
 	argv.append((const char*)progpath);
 	for (size_t i=0;i<args.size();i++)
 	{

@@ -391,8 +391,7 @@ void sandproc::fs_grant_syslibs(cstring exe)
 	if (exe)
 	{
 		string exepath = process::find_prog(exe);
-		if (!exepath) abort();
-		fs.grant_native(exepath);
+		if (exepath) fs.grant_native(exepath);
 	}
 }
 #endif
