@@ -203,13 +203,34 @@ public:
 };
 
 
-#ifdef ARLIB_THREAD
+#ifdef __unix__
+//Note that these may return false positives. Use nonblocking operations.
+class fd_mon : nocopy {
 #ifdef __linux__
-//Callback argument is the fd, to allow one object to track multiple fds.
+	int epoll_fd;
+#endif
+	
+public:
+	fd_mon();
+	void monitor(int fd, void* key, bool read = true, bool write = false);
+	void remove(int fd) { monitor(fd, NULL, false, false); }
+	//Returns whatever key is associated with this fd, or NULL for timeout.
+	//To detect timeout vs key==NULL, check can_read/can_write, they're both false on timeout.
+	void* select(int timeout_ms = -1) { bool x; return select(&x, NULL, timeout_ms); }
+	void* select(bool* can_read, bool* can_write, int timeout_ms = -1);
+	~fd_mon();
+};
+
+//Returns the array index.
+int fd_monitor_oneshot(arrayview<int> fds, bool* can_read, bool* can_write, int timeout_ms = -1);
+inline int fd_monitor_oneshot(arrayview<int> fds, int timeout_ms = -1) { bool x; return fd_monitor_oneshot(fds, &x, NULL, timeout_ms); }
+
+#ifdef ARLIB_THREAD
 //To unregister a callback, fd_monitor(fd, NULL, NULL). fd must be open at this point.
 //After fd_monitor returns, the previous callback is guaranteed to have returned for the last time.
 //Callbacks are called on a foreign thread. Use locks as appropriate.
 //Do not hold any locks needed by on_read or on_write while calling this.
-void fd_monitor(int fd, function<void(int)> on_read, function<void(int)> on_write);
+//Argument is the same fd, to allow one object to monitor multiple fds.
+void fd_mon_thread(int fd, function<void(int)> on_read, function<void(int)> on_write);
 #endif
 #endif

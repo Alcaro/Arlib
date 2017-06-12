@@ -59,6 +59,7 @@ public:
 	}
 	
 	arrayview<T> slice(size_t first, size_t count) { return arrayview<T>(this->items+first, count); }
+	arrayview<T> skip(size_t n) { return slice(n, count-n); }
 	
 	T join() const
 	{

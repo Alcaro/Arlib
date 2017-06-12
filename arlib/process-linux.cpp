@@ -247,17 +247,17 @@ void process::input::update(int fd)
 		ssize_t bytes = ::write(fd_write, buf.ptr(), buf.size());
 		if (bytes < 0 && errno == EAGAIN) goto do_monitor;
 		if (bytes <= 0) goto do_terminate;
-		buf = buf.slice(bytes, buf.size()-bytes);
+		buf = buf.skip(bytes);
 		
 		goto do_monitor;
 	}
 	
 do_monitor:
-	fd_monitor(fd_write, NULL, bind_this(&input::update));
+	fd_mon_thread(fd_write, NULL, bind_this(&input::update));
 	return;
 	
 do_unmonitor:
-	fd_monitor(fd_write, NULL, NULL);
+	fd_mon_thread(fd_write, NULL, NULL);
 	return;
 	
 do_terminate:
@@ -295,7 +295,7 @@ void process::input::terminate()
 	int fd = lock_xchg_loose(&fd_write, -1);
 	if (fd != -1)
 	{
-		fd_monitor(fd, NULL, NULL);
+		fd_mon_thread(fd, NULL, NULL);
 		::close(fd);
 	}
 }
@@ -330,7 +330,7 @@ void process::output::terminate()
 	int fd = lock_xchg_loose(&fd_read, -1);
 	if (fd != -1)
 	{
-		fd_monitor(fd, NULL, NULL);
+		fd_mon_thread(fd, NULL, NULL);
 		::close(fd);
 	}
 }
@@ -344,7 +344,7 @@ process::output& process::output::create_buffer(size_t limit)
 	ret->fd_read = fds[0];
 	fcntl(ret->fd_read, F_SETFL, fcntl(ret->fd_read, F_GETFL, 0) | O_NONBLOCK);
 	ret->maxbytes = limit;
-	fd_monitor(ret->fd_read, bind_ptr(&output::update, ret), NULL);
+	fd_mon_thread(ret->fd_read, bind_ptr(&output::update, ret), NULL);
 	return *ret;
 }
 
@@ -399,7 +399,7 @@ static void set_sigchld(pid_t pid, int* status)
 		{
 			int piperes = pipe2(sigchld_pipe, O_CLOEXEC|O_NONBLOCK);
 			if (piperes < 0) abort();
-			fd_monitor(sigchld_pipe[0], sigchld_handler, NULL);
+			fd_mon_thread(sigchld_pipe[0], sigchld_handler, NULL);
 			
 			struct sigaction act;
 			act.sa_sigaction = sigchld_handler_w;

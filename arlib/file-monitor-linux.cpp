@@ -1,39 +1,79 @@
 #include "global.h"
 
-#if defined(__linux__) && defined(ARLIB_THREAD)
+#ifdef __linux__
+#include "file.h"
 #include "array.h"
 #include "set.h"
 #include "thread.h"
 
 #include <sys/epoll.h>
 #include <unistd.h>
+
 #define RD_EV (EPOLLIN |EPOLLRDHUP|EPOLLHUP|EPOLLERR)
 #define WR_EV (EPOLLOUT|EPOLLRDHUP|EPOLLHUP|EPOLLERR)
 
-class fd_mon_t : nocopy {
+fd_mon::fd_mon() { epoll_fd = epoll_create1(EPOLL_CLOEXEC); }
+
+void fd_mon::monitor(int fd, void* key, bool read, bool write)
+{
+	epoll_event ev = {}; // shut up valgrind, I only need events and data.fd, the rest of data will just come back out unchanged
+	ev.events = (read ? RD_EV : 0) | (write ? WR_EV : 0);
+	ev.data.ptr = key;
+	if (ev.events)
+	{
+		epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd, &ev); // one of these two will fail (or do nothing), we'll ignore that
+		epoll_ctl(epoll_fd, EPOLL_CTL_MOD, fd, &ev);
+	}
+	else
+	{
+		epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, NULL);
+	}
+}
+
+void* fd_mon::select(bool* can_read, bool* can_write, int timeout_ms)
+{
+again: ;
+	epoll_event ev;
+	int nev = epoll_wait(epoll_fd, &ev, 1, timeout_ms);
+	if (nev == 1)
+	{
+		if (can_read) *can_read = (ev.events & RD_EV);
+		if (can_write) *can_write = (ev.events & WR_EV);
+		return ev.data.ptr;
+	}
+	if (nev == 0)
+	{
+		if (can_read) *can_read = false;
+		if (can_write) *can_write = false;
+		return NULL;
+	}
+	goto again; // probably EINTR, the other errors won't happen
+}
+
+fd_mon::~fd_mon() { close(epoll_fd); }
+
+
+#ifdef ARLIB_THREAD
+class fd_mon_thr : nocopy {
 	map<int, function<void(int)>> read_act;
 	map<int, function<void(int)>> write_act;
 	
-	int epoll_fd = -1;
+	bool initialized = false;
+	fd_mon sub;
 	mutex_rec mut;
 	
 	void process()
 	{
 		while (true)
 		{
-			epoll_event ev[16];
-			int nev = epoll_wait(epoll_fd, ev, 16, -1);
+			bool read;
+			bool write;
+			uintptr_t fd = (uintptr_t)sub.select(&read, &write);
 			
-			if (nev)
+			synchronized(mut)
 			{
-				synchronized(mut)
-				{
-					for (int i=0;i<nev;i++)
-					{
-						if (ev[i].events & RD_EV)  read_act.get_or(ev[i].data.fd, NULL)(ev[i].data.fd);
-						if (ev[i].events & WR_EV) write_act.get_or(ev[i].data.fd, NULL)(ev[i].data.fd);
-					}
-				}
+				if (read)   read_act.get_or(fd, NULL)(fd);
+				if (write) write_act.get_or(fd, NULL)(fd);
 			}
 		}
 	}
@@ -46,26 +86,14 @@ class fd_mon_t : nocopy {
 		if (on_write) write_act.insert(fd, on_write);
 		else write_act.remove(fd);
 		
-		epoll_event ev = {}; // shut up valgrind, I only need events and data.fd, the rest of data will just come back out unchanged
-		ev.events = (on_read ? RD_EV : 0) | (on_write ? WR_EV : 0);
-		ev.data.fd = fd;
-		if (ev.events)
-		{
-			epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd, &ev); // one of these two will fail (or do nothing), we'll ignore that
-			epoll_ctl(epoll_fd, EPOLL_CTL_MOD, fd, &ev);
-		}
-		else
-		{
-			epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, NULL);
-		}
+		sub.monitor(fd, (void*)(uintptr_t)fd, on_read, on_write);
 	}
 	
 	void initialize()
 	{
-		if (epoll_fd >= 0) return;
-		
-		epoll_fd = epoll_create1(EPOLL_CLOEXEC);
-		thread_create(bind_this(&fd_mon_t::process));
+		if (initialized) return;
+		initialized = true;
+		thread_create(bind_this(&fd_mon_thr::process));
 	}
 	
 public:
@@ -79,14 +107,12 @@ public:
 			monitor_raw(fd, on_read, on_write);
 		}
 	}
-	
-	~fd_mon_t() { if (epoll_fd != -1) close(epoll_fd); }
 };
 
-//there's no need for more than one of these
-static fd_mon_t fd_mon;
-void fd_monitor(int fd, function<void(int)> on_read, function<void(int)> on_write)
+static fd_mon_thr g_fd_mon_thr;
+void fd_mon_thread(int fd, function<void(int)> on_read, function<void(int)> on_write)
 {
-	fd_mon.monitor(fd, on_read, on_write);
+	g_fd_mon_thr.monitor(fd, on_read, on_write);
 }
+#endif
 #endif

@@ -98,7 +98,7 @@ MAYBE_UNUSED static void append_certs_pem_x509(arrayview<byte> certs_pem)
 	while (certs_pem)
 	{
 		size_t tlen = br_pem_decoder_push(&pc, certs_pem.ptr(), certs_pem.size());
-		certs_pem = certs_pem.slice(tlen, certs_pem.size()-tlen);
+		certs_pem = certs_pem.skip(tlen);
 		
 		//what a strange API, does it really need both event streaming and a callback?
 		switch (br_pem_decoder_event(&pc)) {

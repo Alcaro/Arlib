@@ -249,14 +249,22 @@ public:
 	//  maybe if I make cstring the parent class, like arrayview/array, but that's probably more effort than it's worth
 	//limit is maximum number of cuts
 	array<string> split(const string& sep, size_t limit) const;
-	
 	template<size_t limit = SIZE_MAX>
 	array<string> split(const string& sep) const { return split(sep, limit); }
 	
 	array<string> rsplit(const string& sep, size_t limit) const;
-	
 	template<size_t limit = SIZE_MAX>
 	array<string> rsplit(const string& sep) const { return rsplit(sep, limit); }
+	
+	//TODO: fill in once cstring works
+	//(actually, implement split() as csplit().cast<string>())
+	array<string> csplit(const string& sep, size_t limit) const { return split(sep, limit); }
+	template<size_t limit = SIZE_MAX>
+	array<string> csplit(const string& sep) const { return csplit(sep, limit); }
+	
+	array<string> crsplit(const string& sep, size_t limit) const { return rsplit(sep, limit); }
+	template<size_t limit = SIZE_MAX>
+	array<string> crsplit(const string& sep) const { return crsplit(sep, limit); }
 	
 private:
 	class noinit {};

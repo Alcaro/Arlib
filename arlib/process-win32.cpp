@@ -127,7 +127,7 @@ void process::update(bool sleep)
 //printf("(");
 		WriteFile(stdin_h, stdin_buf.ptr(), bytes, &bytes, NULL);
 //printf(")");
-		if (bytes > 0) stdin_buf = stdin_buf.slice(bytes, stdin_buf.size()-bytes);
+		if (bytes > 0) stdin_buf = stdin_buf.skip(bytes);
 		didsomething = true;
 	}
 	else if (!this->stdin_open && this->stdin_h)

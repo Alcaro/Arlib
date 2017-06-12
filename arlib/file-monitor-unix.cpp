@@ -1,10 +1,41 @@
-#include "global.h"
-#include "array.h"
-#include "set.h"
+#include "file.h"
 
-#if defined(__unix__) && !defined(__linux__) && defined(ARLIB_THREAD)
-#include "thread.h"
+#if defined(__unix__)
+#include <poll.h>
+#define RD_EV (POLLIN |POLLRDHUP|POLLHUP|POLLERR)
+#define WR_EV (POLLOUT|POLLRDHUP|POLLHUP|POLLERR)
 
+int fd_monitor_oneshot(arrayview<int> fds, bool* can_read, bool* can_write, int timeout_ms)
+{
+	short events = (can_read ? POLLIN : 0) | (can_write ? POLLOUT : 0);
+	
+	array<pollfd> pfd;
+	pfd.resize(fds.size());
+	
+	for (size_t i=0;i<fds.size();i++)
+	{
+		pfd[i].fd = fds[i];
+		pfd[i].events = events;
+	}
+	
+	poll(pfd.ptr(), pfd.size(), timeout_ms);
+	
+	for (size_t i=0;i<fds.size();i++)
+	{
+		if (pfd[i].revents & events)
+		{
+			if (can_read) *can_read = (pfd[i].revents & RD_EV);
+			if (can_write) *can_write = (pfd[i].revents & WR_EV);
+			return i;
+		}
+	}
+	
+	if (can_read) *can_read = false;
+	if (can_write) *can_write = false;
+	return -1;
+}
+
+/*
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -112,4 +143,5 @@ void fd_monitor(int fd, function<void(int)> on_read, function<void(int)> on_writ
 {
 	fd_mon.monitor(fd, on_read, on_write);
 }
+*/
 #endif

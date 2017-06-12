@@ -1,7 +1,9 @@
+#pragma once
 #include "../global.h"
 #include "../containers.h"
 #include "../function.h"
 #include "../string.h"
+#include "../file.h"
 #include <stdint.h>
 #include <string.h>
 
@@ -11,6 +13,7 @@
 class socket : nocopy {
 protected:
 	socket(){}
+	socket(int fd) : fd(fd) {}
 	int fd; // Used by select().
 	
 	//deallocates the socket, returning its fd, while letting the fd remain valid
@@ -21,8 +24,8 @@ protected:
 public:
 	//Returns NULL on connection failure.
 	static socket* create(cstring domain, int port);
-	//Always succeeds. If the server can't be contacted, returns failure on first write or read.
-	//NOTE: DNS lookup is still synchronous.
+	//Always succeeds. If the server can't be contacted (including DNS failure), returns failure on first write or read.
+	//WARNING: DNS lookup is currently synchronous.
 	static socket* create_async(cstring domain, int port);
 	//Always succeeds. If the server can't be contacted, may return e_broken at some point, or may just discard everything.
 	static socket* create_udp(cstring domain, int port);
@@ -43,8 +46,15 @@ public:
 	virtual int recv(arrayvieww<byte> data, bool block = false) = 0;
 	int recv(array<byte>& data, bool block = false)
 	{
-		if (data.size()==0) data.resize(4096);
-		return recv((arrayvieww<byte>)data, block);
+		if (data.size()==0)
+		{
+			data.resize(4096);
+			int bytes = recv((arrayvieww<byte>)data, block);
+			if (bytes >= 0) data.resize(bytes);
+			else data.resize(0);
+			return bytes;
+		}
+		else return recv((arrayvieww<byte>)data, block);
 	}
 	virtual int sendp(arrayview<byte> data, bool block = true) = 0;
 	
@@ -72,18 +82,41 @@ public:
 	int sendp(cstring data, bool block = true) { return this->sendp(data.bytes(), block); }
 	int send(cstring data) { return this->send(data.bytes()); }
 	
-	//Returns an index to the sockets array, or negative if timeout expires. Negative timeout mean wait forever.
-	//It's possible that an active socket returns zero bytes.
-	// However, this is rare; repeatedly select()ing and processing the data will eventually sleep.
-	//(It may be caused by packets with wrong checksum, SSL renegotiation, or whatever.)
-	//static int select(socket* * socks, unsigned int nsocks, int timeout_ms = -1);
-	
 	virtual ~socket() {}
 	
 	//Can be used to keep a socket alive across exec(). Don't use for an SSL socket, use serialize() instead.
 	static socket* create_from_fd(int fd);
 	int get_fd() { return fd; }
+	
+	//Causes send() to always accept everything immediately. Takes ownership of the socket.
+	static socket* bufwrap(socket* inner);
+	
+	//Note that these may return false positives. Use nonblocking operations.
+	class monitor {
+#ifdef __linux__
+		fd_mon mon;
+	public:
+		void add(socket* sock, void* key, bool read = true, bool write = false) { mon.monitor(sock->fd, key, read, write); }
+		void* select(int timeout_ms = -1) { bool x; return select(&x, NULL, timeout_ms); }
+		void* select(bool* can_read, bool* can_write, int timeout_ms = -1) { return mon.select(can_read, can_write, timeout_ms); }
+#else
+	public:
+		void add(socket* sock, bool read = true, bool write = false);
+		socket* select(int timeout_ms = -1);
+		socket* select(bool* can_read, bool* can_write, int timeout_ms = -1);
+#endif
+		
+		void remove(socket* sock) { add(sock, NULL, false, false); }
+	};
+	
+	//Simplified interfaces.
+	static size_t select(arrayview<socket*> socks, bool* can_read, bool* can_write, int timeout_ms = -1);
+	static size_t select(arrayview<socket*> socks, int timeout_ms = -1) { bool x; return select(socks, &x, NULL, timeout_ms); }
+	
+	bool select(int timeout_ms = -1); // Checks readability only.
+	bool select(bool* can_read, bool* can_write, int timeout_ms = -1);
 };
+
 
 //SSL feature matrix:
 //                      | OpenSSL | SChannel | GnuTLS | BearSSL | TLSe | Comments
@@ -120,8 +153,8 @@ public:
 	
 	//Can be used to keep a socket alive across exec().
 	//If successful, serialize() returns the the file descriptor needed to unserialize, and the socket is deleted.
-	//On failure, negative return and nothing happens.
-	//Only available under TLSe. Non-virtual, to fail in linker rather than runtime on other implementations.
+	//On failure, returns empty and nothing happens.
+	//Only available under some implementation. Non-virtual, to fail in linker rather than runtime.
 	array<byte> serialize(int* fd);
 	static socketssl* deserialize(int fd, arrayview<byte> data);
 };

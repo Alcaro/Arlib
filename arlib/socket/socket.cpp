@@ -10,7 +10,6 @@
 	#define MSG_DONTWAIT 0
 	#define SOCK_CLOEXEC 0
 	#define close closesocket
-	#define usleep(n) Sleep(n/1000)
 	#ifdef _MSC_VER
 		#pragma comment(lib, "ws2_32.lib")
 	#endif
@@ -182,10 +181,101 @@ socket* socket::create(cstring domain, int port)
 
 //static socket* socket::create_udp(const char * domain, int port);
 
-//int socket::select(socket* * socks, int nsocks, int timeout_ms)
-//{
-//	return -1;
-//}
+#ifdef __unix__
+size_t socket::select(arrayview<socket*> socks, bool* can_read, bool* can_write, int timeout_ms)
+{
+	array<int> fds;
+	fds.resize(socks.size());
+	for (size_t i=0;i<socks.size();i++) fds[i] = socks[i]->fd;
+	return fd_monitor_oneshot(fds, can_read, can_write, timeout_ms);
+}
+#endif
+
+
+#if defined(__unix__) && defined(ARLIB_THREAD)
+#include "../thread.h"
+#include "../file.h"
+
+class sockwrap : public socket {
+	socket* inner;
+	mutex mut;
+	array<byte> tosend;
+	
+public:
+	/*private*/ void process()
+	{
+		if (!tosend) return;
+		
+		int bytes = inner->sendp(tosend, false);
+		if (bytes > 0)
+		{
+			tosend = tosend.skip(bytes);
+		}
+		if (bytes < 0)
+		{
+			delete inner;
+			inner = NULL;
+			tosend.reset();
+		}
+		if (tosend.size()) fd_mon_thread(fd, NULL, bind_this(&sockwrap::activity));
+		else fd_mon_thread(fd, NULL, NULL);
+	}
+	/*private*/ void activity(int fd)
+	{
+		synchronized(mut)
+		{
+			process();
+		}
+	}
+	
+	int recv(arrayvieww<byte> data, bool block)
+	{
+		synchronized(mut)
+		{
+			if (!inner) return -1;
+			process();
+			if (!inner) return -1;
+			return inner->recv(data, block);
+		}
+		return -1; // unreachable
+	}
+	int sendp(arrayview<byte> data, bool block)
+	{
+		synchronized(mut)
+		{
+			if (!inner) return -1;
+			int bytes = 0;
+			if (!tosend)
+			{
+				bytes = inner->sendp(data, false);
+				if ((size_t)bytes == data.size()) return data.size();
+				if (bytes < 0) bytes = 0;
+			}
+			
+			tosend += data.skip(bytes);
+			process();
+			if (inner) return data.size();
+			else return -1;
+		}
+		return -1; // unreachable
+	}
+	~sockwrap()
+	{
+		synchronized(mut)
+		{
+			fd_mon_thread(fd, NULL, NULL);
+			delete inner;
+		}
+	}
+	sockwrap(socket* inner) : socket(inner->get_fd()), inner(inner) {}
+};
+
+socket* socket::bufwrap(socket* inner)
+{
+	if (!inner) return NULL;
+	return new sockwrap(inner);
+}
+#endif
 
 
 static MAYBE_UNUSED int socketlisten_create_ip4(int port)
