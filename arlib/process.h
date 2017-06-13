@@ -4,35 +4,12 @@
 #include "thread.h"
 
 #ifdef ARLIB_THREAD
-//Be careful about creating child processes through other functions. Make sure they don't fight over any process-global resources.
-//Said resources are waitpid(-1) and SIGCHLD. This one requires the latter, and requires that nothing uses the former.
+//On Linux, you must be careful about creating child processes through other functions. Make sure
+// they don't fight over any process-global resources.
+//Said resources are waitpid(-1) and SIGCHLD. This one requires the latter, and requires that
+// nothing uses the former.
 //g_spawn_*(), popen() and system() are safe. However, g_child_watch_*() is not.
 class process : nocopy {
-//Linux has none of these syscalls:
-//- Await any one of these processes, but not others (like select() awaits some, but not all, file descriptors)
-//- Await any child process, but don't close the process handle
-//- Await any child process, with timeout (WNOHANG doesn't count, it doesn't support nonzero timeouts)
-//so there's no real way to handle multiple children without hijacking something process-global.
-//clonefd would implement #1 and #3 (#2 isn't really needed), but only exists in Capsicum. And it seems incompatible with ptrace.
-//Strange how such an ancient limitation has lived so long. Windows has had WaitForMultipleObjects since approximately forever.
-//An alternative solution would be chaining SIGCHLD handlers, but no userspace supports that. Except, again, it works fine on Windows.
-
-//'Await child process, but not threads' seems to be __WNOTHREAD, or maybe that's the default? Thread/process/thread group confuses me.
-//__WNOTHREAD may be accepted only on wait4, not waitid?
-
-//We can't cooperate with glib, g_child_watch doesn't propagate ptrace events.
-//But we can ignore it. Only g_child_watch touches the SIGCHLD handler, so we can safely ignore that one and claim it for ourselves.
-
-//However, there is a workaround: Await the processes' IO handles, instead of the process itself.
-// They die with the process, can be bulk awaited, waiting changes no state, and there are timeouts.
-//Except there are still problems: Both the child and outlimit can close stdout.
-// But that can be solved too: Await some fourth file descriptor. Few processes care about unknown file descriptors.
-//  closefrom() variants do, but that's rare enough to ignore.
-//   And if the process is unexpectedly still alive when its control socket dies, easy fix.
-//  For the sandbox, this can be the SCM_RIGHTS pipe. For anything else, create a dummy pipe().
-//   Or use the three standard descriptors. Exceeding outlimit gives SIGPIPE, closing stdout prior to exit is a negligible probability,
-//     and we can add a timeout to select() and randomly waitpid them.
-//But the easiest solution remains: Claim SIGCHLD for ourselves.
 public:
 	class input;
 	class output;
@@ -48,7 +25,7 @@ protected:
 	
 	static bool closefrom(int lowfd);
 	//Sets the file descriptor table to fds, closing all existing fds.
-	//If a fd is -1, it's closed. Duplicates in the input are allowed.
+	//If an entry is -1, the corresponding fd is closed. Duplicates in the input are allowed.
 	//Returns false on failure, but keeps doing its best anyways.
 	//Will mangle the input array. While suboptimal, it's the only way to avoid a post-fork malloc.
 	static bool set_fds(array<int>& fds, bool cloexec = false);
@@ -58,7 +35,10 @@ protected:
 	
 	//stdio_fd is an array of { stdin, stdout, stderr } and should be sent to set_fds (possibly with a few additions) post-fork.
 	//Must return the child's pid, or -1 on failure.
-	virtual pid_t launch_impl(array<const char*> argv, array<int> stdio_fd);
+#ifdef ARLIB_SANDBOX
+	virtual
+#endif
+	pid_t launch_impl(array<const char*> argv, array<int> stdio_fd);
 #endif
 	
 #ifdef _WIN32
@@ -178,9 +158,14 @@ public:
 	
 	
 	bool running();
-	int wait(); // Returns exit code. Remember to close stdin first.
-	void terminate(); // The process is automatically terminated if the object is destroyed.
+	//Waits until the process exits, then returns exit code. Can be called multiple times.
+	//Remember to close stdin first, if it's from create_pipe.
+	int wait();
+	void terminate(); // The process is automatically terminated when the object is destroyed.
 	
+#ifdef ARLIB_SANDBOX
+	virtual
+#endif
 	~process();
 };
 #endif

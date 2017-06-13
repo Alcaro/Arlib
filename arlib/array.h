@@ -196,6 +196,31 @@ public:
 	
 	arrayvieww<T> slice(size_t first, size_t count) { return arrayvieww<T>(this->items+first, count); }
 	
+	//stable sort
+	void sort()
+	{
+		for (size_t a=0;a<this->count;a++)
+		{
+			size_t b;
+			for (b=0;b<a;b++)
+			{
+				if (this->items[a] < this->items[b]) break;
+			}
+			if (a == b) continue;
+			
+			char tmp[sizeof(T)];
+			memcpy(tmp, this->items+a, sizeof(T));
+			memmove(this->items+b+1, this->items+b, sizeof(T)*(a-b));
+			memcpy(this->items+b, tmp, sizeof(T));
+		}
+	}
+	
+	//unstable sort, not necessarily quicksort
+	void qsort()
+	{
+		sort(); // lazy...
+	}
+	
 	const T* begin() const { return this->items; }
 	const T* end() const { return this->items+this->count; }
 	T* begin() { return this->items; }

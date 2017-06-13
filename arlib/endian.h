@@ -47,25 +47,25 @@
 #if defined(__GNUC__)
 //This one is mostly useless (GCC detects the pattern and optimizes it).
 //However, MSVC doesn't, so I need the intrinsics. Might as well use both sets.
-static inline uint8_t end_swap(uint8_t n) { return n; }
-static inline uint16_t end_swap(uint16_t n) { return __builtin_bswap16(n); }
-static inline uint32_t end_swap(uint32_t n) { return __builtin_bswap32(n); }
-static inline uint64_t end_swap(uint64_t n) { return __builtin_bswap64(n); }
+static inline uint8_t  end_swap8 (uint8_t n) { return n; }
+static inline uint16_t end_swap16(uint16_t n) { return __builtin_bswap16(n); }
+static inline uint32_t end_swap32(uint32_t n) { return __builtin_bswap32(n); }
+static inline uint64_t end_swap64(uint64_t n) { return __builtin_bswap64(n); }
 #elif defined(_MSC_VER)
-static inline uint8_t end_swap(uint8_t n) { return n; }
-static inline uint16_t end_swap(uint16_t n) { return _byteswap_ushort(n); }
-static inline uint32_t end_swap(uint32_t n) { return _byteswap_ulong(n); }
-static inline uint64_t end_swap(uint64_t n) { return _byteswap_uint64(n); }
+static inline uint8_t  end_swap8 (uint8_t n) { return n; }
+static inline uint16_t end_swap16(uint16_t n) { return _byteswap_ushort(n); }
+static inline uint32_t end_swap32(uint32_t n) { return _byteswap_ulong(n); }
+static inline uint64_t end_swap64(uint64_t n) { return _byteswap_uint64(n); }
 #else
-static inline uint8_t end_swap(uint8_t n) { return n; }
-static inline uint16_t end_swap(uint16_t n) { return n>>8 | n<<8; }
-static inline uint32_t end_swap(uint32_t n)
+static inline uint8_t  end_swap8 (uint8_t n) { return n; }
+static inline uint16_t end_swap16(uint16_t n) { return n>>8 | n<<8; }
+static inline uint32_t end_swap32(uint32_t n)
 {
 	n = n>>16 | n<<16;
 	n = (n&0x00FF00FF)<<8 | (n&0xFF00FF00)>>8;
 	return n;
 }
-static inline uint64_t end_swap(uint64_t n)
+static inline uint64_t end_swap64(uint64_t n)
 {
 	n = n>>32 | n<<32;
 	n = (n&0x0000FFFF0000FFFF)<<16 | (n&0xFFFF0000FFFF0000)>>16;
@@ -73,7 +73,15 @@ static inline uint64_t end_swap(uint64_t n)
 	return n;
 }
 #endif
+static inline uint32_t end_swap24(uint32_t n)
+{
+	return end_swap32(n) >> 8;
+}
 
+static inline uint8_t  end_swap(uint8_t  n) { return end_swap8 (n); }
+static inline uint16_t end_swap(uint16_t n) { return end_swap16(n); }
+static inline uint32_t end_swap(uint32_t n) { return end_swap32(n); }
+static inline uint64_t end_swap(uint64_t n) { return end_swap64(n); }
 static inline int8_t  end_swap(int8_t  n) { return (int8_t )end_swap((uint8_t )n); }
 static inline int16_t end_swap(int16_t n) { return (int16_t)end_swap((uint16_t)n); }
 static inline int32_t end_swap(int32_t n) { return (int32_t)end_swap((uint32_t)n); }
@@ -85,11 +93,21 @@ template<typename T> static inline T end_nat_to_le(T val) { return val; }
 template<typename T> static inline T end_nat_to_be(T val) { return end_swap(val); }
 template<typename T> static inline T end_le_to_nat(T val) { return val; }
 template<typename T> static inline T end_be_to_nat(T val) { return end_swap(val); }
+//native 24 doesn't really exist, but...
+//others are absent because it'd be another 32 functions I'll never use.
+static inline uint32_t end_nat24_to_le(uint32_t val) { return val; }
+static inline uint32_t end_nat24_to_be(uint32_t val) { return end_swap24(val); }
+static inline uint32_t end_le24_to_nat(uint32_t val) { return val; }
+static inline uint32_t end_be24_to_nat(uint32_t val) { return end_swap24(val); }
 #elif ENDIAN == END_BIG
 template<typename T> static inline T end_nat_to_le(T val) { return end_swap(val); }
 template<typename T> static inline T end_nat_to_be(T val) { return val; }
 template<typename T> static inline T end_le_to_nat(T val) { return end_swap(val); }
 template<typename T> static inline T end_be_to_nat(T val) { return val; }
+static inline uint32_t end_nat24_to_le(uint32_t val) { return end_swap24(val); }
+static inline uint32_t end_nat24_to_be(uint32_t val) { return val; }
+static inline uint32_t end_le24_to_nat(uint32_t val) { return end_swap24(val); }
+static inline uint32_t end_be24_to_nat(uint32_t val) { return val; }
 #endif
 
 #ifdef _MSC_VER

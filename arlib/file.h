@@ -226,8 +226,10 @@ int fd_monitor_oneshot(arrayview<int> fds, bool* can_read, bool* can_write, int 
 inline int fd_monitor_oneshot(arrayview<int> fds, int timeout_ms = -1) { bool x; return fd_monitor_oneshot(fds, &x, NULL, timeout_ms); }
 
 #ifdef ARLIB_THREAD
-//To unregister a callback, fd_monitor(fd, NULL, NULL). fd must be open at this point.
-//After fd_monitor returns, the previous callback is guaranteed to have returned for the last time.
+//Monitors fds from a separate thread.
+//To unregister a callback, fd_mon_thread(fd, NULL, NULL). fd must be open at this point.
+//After fd_mon_thread returns, the previous callback is guaranteed to have returned for the last time.
+// (Exception: If fd_mon_thread is called from its own callbacks, it will be allowed to finish.)
 //Callbacks are called on a foreign thread. Use locks as appropriate.
 //Do not hold any locks needed by on_read or on_write while calling this.
 //Argument is the same fd, to allow one object to monitor multiple fds.

@@ -1,7 +1,6 @@
 //TODO:
 //- cool down on string.h refcounting
 //- SSO for array<>
-//- make strings and arrays nullable, so failure vs empty answer can be determined
 //- window.h: remove pointers
 //- window.h: remove varargs
 //- msvc compat: add some define that, if absent, enables every feature
@@ -10,8 +9,9 @@
 
 #pragma once
 #include "global.h"
-#include <utility> // std::move
+
 #include "bml.h"
+#include "bytestream.h"
 #include "containers.h"
 #include "crc32.h"
 #include "endian.h"
@@ -27,7 +27,7 @@
 #include "test.h"
 #include "zip.h"
 
-//no #ifdef, it contains some dummy implementations if threads are disabled
+//no ifdef on this one, it contains some dummy implementations if threads are disabled
 #include "thread/thread.h"
 
 #if !defined(ARGUI_NONE) && !defined(ARGUI_WINDOWS) && !defined(ARGUI_GTK3)
@@ -51,4 +51,5 @@
 
 #ifdef ARLIB_SOCKET
 #include "socket/socket.h"
+#include "http.h"
 #endif

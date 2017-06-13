@@ -7,7 +7,7 @@
 
 template<typename T>
 class set {
-	//this is a hashtable, using open addressing and quadratic probing
+	//this is a hashtable, using open addressing and linear probing
 	enum { i_empty, i_deleted };
 	struct alignas(T) maybe_T {
 	public:
@@ -44,6 +44,7 @@ class set {
 		}
 	};
 	
+	//TODO: just make this a plain T*, array<>'s services aren't needed.
 	array<maybe_T> m_data;
 	array<bool> m_valid;
 	size_t m_count;
