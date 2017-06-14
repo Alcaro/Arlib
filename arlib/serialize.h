@@ -17,7 +17,7 @@
 //	//- string (but not cstring)
 //	//- array, set, map (if their contents are serializable)
 //	//    map must use integer or string key, nothing funny
-//	//    no array<array<T>> or set<set<T>> allowed, though array<struct_with_array> is fine
+//	//    the serializer may ban array<array<T>> or set<set<T>>, though array<struct_with_array> is fine
 //	//- Any object with a serialize() function (see below)
 //	//The name can be any string.
 //	template<typename T> void item(cstring name, T& item);
@@ -45,8 +45,8 @@
 //	void serialize(T& s)
 //	{
 //		//If unserializing, this function can be called multiple (or zero) times if the document is
-//		// corrupt. Don't change any state, only call the serializer functions.
-//		//For most items, .item() and .hex() are enough. For containers, use anything.
+//		// corrupt. Be careful about changing any state, other than calling the serializer functions.
+//		//For most items, .item() and .hex() are enough. For containers, use everything.
 //		s.item("a", a);
 //	}
 //	//or (expands to the above)
@@ -180,7 +180,7 @@ class bmlunserialize_impl {
 		out.add(tmp);
 	}
 	
-	template<typename T> void read_item(cstring name, array<array<T>>& item) = delete;
+	template<typename T> void read_item(array<array<T>>& item) = delete;
 	
 	void to_next()
 	{

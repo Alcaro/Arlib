@@ -1,6 +1,7 @@
 #include "serialize.h"
 #include "set.h"
 #include "test.h"
+#include "json.h" // TODO
 
 #ifdef ARLIB_TEST
 struct ser1 {
@@ -106,7 +107,7 @@ struct ser12 {
 	SERIALIZE(data);
 };
 
-test()
+test("BML serialization")
 {
 	{
 		ser1 item;
@@ -202,7 +203,7 @@ test()
 	}
 }
 
-test()
+test("BML deserialization")
 {
 	{
 		ser1 item = bmlunserialize<ser1>("a=1\nb=2");
@@ -277,28 +278,6 @@ test()
 	}
 	
 	{
-		ser8 item = bmlunserialize<ser8>("f=AA\ng=AAAA\nh=AAAAAAAA\ni=AAAAAAAA\nj=AAAAAAAAAAAAAAAA");
-		assert_eq(item.f, 0xAA);
-		assert_eq(item.g, 0xAAAA);
-		assert_eq(item.h, 0xAAAAAAAA);
-		assert_eq(item.i, 0xAAAAAAAA);
-		assert_eq(item.j, 0xAAAAAAAAAAAAAAAA);
-	}
-	
-	{
-		ser9 item = bmlunserialize<ser9>("foo=12345678\nbar=12345678");
-		assert_eq(item.foo[0], 0x12);
-		assert_eq(item.foo[1], 0x34);
-		assert_eq(item.foo[2], 0x56);
-		assert_eq(item.foo[3], 0x78);
-		assert_eq(item.bar.size(), 4);
-		assert_eq(item.bar[0], 0x12);
-		assert_eq(item.bar[1], 0x34);
-		assert_eq(item.bar[2], 0x56);
-		assert_eq(item.bar[3], 0x78);
-	}
-	
-	{
 		ser9 item = bmlunserialize<ser9>("foo=12345678\nbar=12345678");
 		assert_eq(item.foo[0], 0x12);
 		assert_eq(item.foo[1], 0x34);
@@ -328,6 +307,122 @@ test()
 		                                   " foo=bar"
 		                                   " -C-3A-2FUsers-2FAdministrator-2FMy-20Documents-2F-21TOP-20SECRET-21.docx=test"
 		                                   " test=\"C:/Users/Administrator/My Documents/!TOP SECRET!.docx\"");
+		assert_eq(item.data.get("foo"), "bar");
+		assert_eq(item.data.get("test"), "C:/Users/Administrator/My Documents/!TOP SECRET!.docx");
+		assert_eq(item.data.get("C:/Users/Administrator/My Documents/!TOP SECRET!.docx"), "test");
+	}
+}
+
+test("JSON deserialization")
+{
+	{
+		int x = jsonunserialize<int>("42");
+		assert_eq(x, 42);
+	}
+	
+	{
+		ser1 item = jsonunserialize<ser1>("{\"a\":1,\"b\":2}");
+		assert_eq(item.a, 1);
+		assert_eq(item.b, 2);
+	}
+	
+	{
+		ser2 item = jsonunserialize<ser2>("{ \"c\": {\"a\":1,\"b\":2}, \"d\": {\"a\":3,\"b\":4} }");
+		assert_eq(item.c.a, 1);
+		assert_eq(item.c.b, 2);
+		assert_eq(item.d.a, 3);
+		assert_eq(item.d.b, 4);
+	}
+	
+	//the system should not be order-sensitive
+	{
+		ser2 item = jsonunserialize<ser2>("{ \"d\": {\"b\":4,\"a\":3}, \"c\": {\"a\":1,\"b\":2} }");
+		assert_eq(item.c.a, 1);
+		assert_eq(item.c.b, 2);
+		assert_eq(item.d.a, 3);
+		assert_eq(item.d.b, 4);
+	}
+	
+	//in case of dupes, last one should win; extraneous nodes should be cleanly ignored
+	{
+		ser1 item = jsonunserialize<ser1>("{ \"a\":1, \"b\":2, \"q\":0, \"a\":3, \"a\":4 }");
+		assert_eq(item.a, 4);
+		assert_eq(item.b, 2);
+	}
+	
+	//the system is allowed to loop, but only if there's bogus or extraneous nodes
+	//we want O(n) runtime for a clean document, so ensure no looping
+	//this includes missing and duplicate elements, both of which are possible for serialized arrays
+	{
+		ser4 item = jsonunserialize<ser4>("{ \"a\":1, \"b\":2, \"c\":3, \"d\":4, \"e\":5, \"f\":6 }");
+		assert_eq(item.count, 1);
+	}
+	
+	{
+		ser5 item = jsonunserialize<ser5>("{ \"data\": [ 1, 2, 3 ] }");
+		assert_eq(item.data.size(), 3);
+		assert_eq(item.data[0], 1);
+		assert_eq(item.data[1], 2);
+		assert_eq(item.data[2], 3);
+	}
+	
+	{
+		ser6 item = jsonunserialize<ser6>("{ \"data\": [ { \"a\":1,\"b\":2 }, { \"a\":3,\"b\":4 } ] }");
+		assert_eq(item.data.size(), 2);
+		assert_eq(item.data[0].a, 1);
+		assert_eq(item.data[0].b, 2);
+		assert_eq(item.data[1].a, 3);
+		assert_eq(item.data[1].b, 4);
+	}
+	
+	{
+		//some of these tests make no sense for json...
+		ser7 item = jsonunserialize<ser7>("{ \"par\": { \"data\": [ 1, 2, 3 ] } }");
+		assert_eq(item.par.data.size(), 3);
+		assert_eq(item.par.data[0], 1);
+		assert_eq(item.par.data[1], 2);
+		assert_eq(item.par.data[2], 3);
+	}
+	
+	{
+		ser8 item = jsonunserialize<ser8>("{ \"f\": 100, \"g\": 10000, \"h\": 1000000000, \"i\": 1000000000, \"j\": 1000000000000000000 } ");
+		assert_eq(item.f, 100);
+		assert_eq(item.g, 10000);
+		assert_eq(item.h, 1000000000);
+		assert_eq(item.i, 1000000000);
+		assert_eq(item.j, 1000000000000000000); // this is the hex test object, json doesn't support hex
+	}
+	
+	{
+		ser9 item = jsonunserialize<ser9>("{ \"foo\": \"12345678\", \"bar\": \"12345678\" }");
+		assert_eq(item.foo[0], 0x12);
+		assert_eq(item.foo[1], 0x34);
+		assert_eq(item.foo[2], 0x56);
+		assert_eq(item.foo[3], 0x78);
+		assert_eq(item.bar.size(), 4);
+		assert_eq(item.bar[0], 0x12);
+		assert_eq(item.bar[1], 0x34);
+		assert_eq(item.bar[2], 0x56);
+		assert_eq(item.bar[3], 0x78);
+	}
+	
+	{
+		ser10 item = jsonunserialize<ser10>("{ \"data\": \"test\" }");
+		assert_eq(item.data, "test");
+	}
+	
+	{
+		ser11 item = jsonunserialize<ser11>("{ \"data\": [ \"foo\", \"test\", \"C:/Users/Administrator/My Documents/!TOP SECRET!.docx\" ] }");
+		assert(item.data.contains("foo"));
+		assert(item.data.contains("test"));
+		assert(item.data.contains("C:/Users/Administrator/My Documents/!TOP SECRET!.docx"));
+	}
+	
+	{
+		ser12 item = jsonunserialize<ser12>(
+		    "{ \"data\": { \"foo\": \"bar\", "
+		                  "\"C:/Users/Administrator/My Documents/!TOP SECRET!.docx\": \"test\", "
+		                  "\"test\": \"C:/Users/Administrator/My Documents/!TOP SECRET!.docx\" } }");
 		assert_eq(item.data.get("foo"), "bar");
 		assert_eq(item.data.get("test"), "C:/Users/Administrator/My Documents/!TOP SECRET!.docx");
 		assert_eq(item.data.get("C:/Users/Administrator/My Documents/!TOP SECRET!.docx"), "test");

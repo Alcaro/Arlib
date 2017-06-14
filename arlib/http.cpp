@@ -6,8 +6,14 @@
 bool http::parseUrl(cstring url_, bool relative, location& out)
 {
 	string url = url_; // TODO: clean up once cstring acts sanely
-	if (url.startswith("http:")) { out.https = false; url = url.substr(5, ~0); }
-	else if (url.startswith("https:")) { out.https = true; url = url.substr(6, ~0); }
+	
+	int pos = 0;
+	while (islower(url[pos])) pos++;
+	if (url[pos]==':')
+	{
+		out.proto = url.substr(0, pos);
+		url = url.substr(pos+1, ~0);
+	}
 	else if (!relative) return false;
 	
 	if (url.startswith("//"))
@@ -26,8 +32,7 @@ bool http::parseUrl(cstring url_, bool relative, location& out)
 		}
 		else
 		{
-			if (!out.https) out.port = 80;
-			else out.port = 443;
+			out.port = 0;
 		}
 	}
 	else if (!relative) return false;
@@ -48,13 +53,12 @@ bool http::send(const req& r)
 	{
 		location loc;
 		if (!parseUrl(r.url, false, loc)) return error_f(rsp::e_bad_url);
-		if (loc.https != host.https || loc.domain != host.domain || loc.port != host.port)
+		if (loc.proto != host.proto || loc.domain != host.domain || loc.port != host.port)
 		{
 			return error_f(rsp::e_different_url);
 		}
 		host.loc = loc.loc;
 	}
-	
 	
 	cstring method = r.method;
 	if (!method) method = (r.postdata ? "POST" : "GET");
@@ -86,8 +90,9 @@ bool http::send(const req& r)
 	if (!sock)
 	{
 	newsock:
-		if (host.https) sock = socketssl::create(host.domain, host.port);
-		else sock = socket::create(host.domain, host.port);
+		if (host.proto == "https")  sock = socketssl::create(host.domain, host.port ? host.port : 443);
+		else if (host.proto == "http") sock = socket::create(host.domain, host.port ? host.port : 80);
+		else return error_f(rsp::e_bad_url);
 		if (!sock) return error_f(rsp::e_connect);
 		freshsock = true;
 	}

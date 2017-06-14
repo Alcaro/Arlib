@@ -1,6 +1,7 @@
 #pragma once
 #include "global.h"
 #include "intwrap.h"
+#include "array.h"
 #include <stdint.h>
 
 //This one defines:
@@ -118,6 +119,13 @@ template<typename T, bool little> class endian_core
 	T val;
 	
 public:
+	endian_core() : val(0) {}
+	endian_core(T val) : val(val) {}
+	endian_core(arrayview<byte> bytes)
+	{
+		memcpy(&val, bytes.ptr(), sizeof(val));
+	}
+	
 	operator T()
 	{
 		if (little == (ENDIAN==END_LITTLE)) return val;
@@ -129,6 +137,8 @@ public:
 		if (little == (ENDIAN==END_LITTLE)) val = newval;
 		else val = end_swap(newval);
 	}
+	
+	arrayvieww<byte> bytes() { return arrayvieww<byte>((byte*)&val, sizeof(val)); }
 }
 #ifdef __GNUC__
 __attribute__((__packed__))
@@ -143,7 +153,7 @@ __attribute__((__packed__))
 //This one doesn't optimize properly. While it does get unrolled, it remains as four byte loads, and some shift/or.
 template<typename T, bool little> class endian_core
 {
-	uint8_t bytes[sizeof(T)];
+	uint8_t m_bytes[sizeof(T)];
 	
 public:
 	operator T()
@@ -153,7 +163,7 @@ public:
 			T ret=0;
 			for (size_t i=0;i<sizeof(T);i++)
 			{
-				ret = (ret<<8) | bytes[i];
+				ret = (ret<<8) | m_bytes[i];
 			}
 			return ret;
 		}
@@ -162,7 +172,7 @@ public:
 			T ret=0;
 			for (size_t i=0;i<sizeof(T);i++)
 			{
-				ret = (ret<<8) | bytes[sizeof(T)-1-i];
+				ret = (ret<<8) | m_bytes[sizeof(T)-1-i];
 			}
 			return ret;
 		}
@@ -179,7 +189,7 @@ public:
 		{
 			for (size_t i=0;i<sizeof(T);i++)
 			{
-				bytes[sizeof(T)-1-i]=(newval&0xFF);
+				m_bytes[sizeof(T)-1-i]=(newval&0xFF);
 				newval>>=8;
 			}
 		}
@@ -187,11 +197,13 @@ public:
 		{
 			for (size_t i=0;i<sizeof(T);i++)
 			{
-				bytes[i]=(newval&0xFF);
+				m_bytes[i]=(newval&0xFF);
 				newval>>=8;
 			}
 		}
 	}
+	
+	arrayvieww<byte> bytes() { return m_bytes; }
 };
 #endif
 
@@ -199,10 +211,12 @@ template<typename T> class bigend : public intwrap<endian_core<T, false>, T> {
 public:
 	bigend() {}
 	bigend(T i) : intwrap<endian_core<T, false>, T>(i) {} // why does C++ need so much irritating cruft
+	bigend(arrayview<byte> b) : intwrap<endian_core<T, false>, T>(b) {}
 };
 
 template<typename T> class litend : public intwrap<endian_core<T, true>, T> {
 public:
 	litend() {}
 	litend(T i) : intwrap<endian_core<T, true>, T>(i) {}
+	litend(arrayview<byte> b) : intwrap<endian_core<T, true>, T>(b) {}
 };

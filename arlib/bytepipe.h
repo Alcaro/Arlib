@@ -1,5 +1,6 @@
 #pragma once
 #include "array.h"
+#include "string.h"
 
 //A bytepipe accepts an infinite amount of bytes, and returns them, first one first.
 class bytepipe {

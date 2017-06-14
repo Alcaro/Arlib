@@ -86,6 +86,16 @@ public:
 	//If this key is returned, call .ready(), then .monitor() again.
 	void monitor(socket::monitor& mon, void* key) { mon.add(sock, key, true, tosend.remaining() ? true : false); }
 	
+	
+	struct location {
+		string proto;
+		string domain;
+		int port;
+		string loc;
+	};
+	static bool parseUrl(cstring url_, bool relative, location& out);
+	
+	
 private:
 	array<rsp> done;
 	int n_unfinished = 0; // includes the one currently being processed
@@ -99,22 +109,12 @@ private:
 	void error_v(int err)
 	{
 		sock = NULL;
-		//if (err != rsp::e_broken || !close_ok)
-		//{
-			error = err;
-		//}
+		error = err;
 	}
 	bool error_f(int err) { error_v(err); return false; }
 	
 	size_t sizelimit;
 	time_t timelimit;
-	
-	struct location {
-		bool https;
-		string domain;
-		int port;
-		string loc;
-	};
 	location host; // used to verify the same socket can be reused
 	
 	autoptr<socket> sock;
@@ -133,10 +133,5 @@ private:
 	} state = st_status;
 	
 	void activity(bool block);
-	
-	static bool parseUrl(cstring url_, bool relative, location& out);
-};
-
-class websocket {
 };
 #endif

@@ -74,9 +74,7 @@ string tostringhex(arrayview<byte> val);
 bool fromstringhex(cstring s, arrayvieww<byte> val);
 bool fromstringhex(cstring s, array<byte>& val);
 
-#define ALLSTRINGABLE(x) \
-	x(string) \
-	x(cstring) \
+#define ALLINTS(x) \
 	x(signed char) \
 	x(unsigned char) \
 	x(signed short) \
@@ -86,7 +84,15 @@ bool fromstringhex(cstring s, array<byte>& val);
 	x(signed long) \
 	x(unsigned long) \
 	x(signed long long) \
-	x(unsigned long long) \
+	x(unsigned long long)
+
+#define ALLNUMS(x) \
+	ALLINTS(x) \
 	x(float) \
 	x(double) \
+
+#define ALLSTRINGABLE(x) \
+	ALLNUMS(x) \
+	x(string) \
+	x(cstring) \
 	x(bool)
