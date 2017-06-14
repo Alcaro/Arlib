@@ -398,7 +398,7 @@ bmlparser::event bmlparser::next()
 #define e_error bmlparser::error
 #define e_finish bmlparser::finish
 
-const char * test1 =
+static const char * test1 =
 "node\n"
 "node=foo\n"
 "node=\"foo bar\"\n"
@@ -427,7 +427,7 @@ const char * test1 =
 "  :\n"
 "node";
 
-bmlparser::event test1e[]={
+static bmlparser::event test1e[]={
 	{ e_enter, "node" },
 	{ e_exit },
 	{ e_enter, "node", "foo" },
@@ -479,12 +479,12 @@ bmlparser::event test1e[]={
 	{ e_finish }
 };
 
-const char * test2 =
+static const char * test2 =
 "parent\n"
 " node=123 child1=456 child2: 789 123\n"
 "  child3\n"
 ;
-bmlparser::event test2e[]={
+static bmlparser::event test2e[]={
 	{ e_enter, "parent" },
 		{ e_enter, "node", "123" },
 			{ e_enter, "child1", "456" },
@@ -498,14 +498,14 @@ bmlparser::event test2e[]={
 	{ e_finish }
 };
 
-const char * test3 =
+static const char * test3 =
 "a b=1 c=2 d: 3\n"
 " e=4 f=5\n"
 " g h=6\n"
 "  :7\n"
 "  :8\n"
 "i";
-bmlparser::event test3e[]={
+static bmlparser::event test3e[]={
 	{ e_enter, "a" },
 		{ e_enter, "b", "1" },
 		{ e_exit },
@@ -527,7 +527,7 @@ bmlparser::event test3e[]={
 	{ e_finish }
 };
 
-const char * test4 =
+static const char * test4 =
 "Parent-1.0=A-value child child=\"B value\" child:C:\"value\"\n"
 "  child:D:\"value\"\n"
 "    grandchild\n"
@@ -538,7 +538,7 @@ const char * test4 =
 "      foo=bar\n"
 "\n"
 "Parent-1.0";
-bmlparser::event test4e[]={
+static bmlparser::event test4e[]={
 	{ e_enter, "Parent-1.0", "A-value" },
 		{ e_enter, "child" },
 		{ e_exit },
@@ -571,7 +571,7 @@ bmlparser::event test4e[]={
 //I can't justify allowing only one of same-as-above and same-as-below,
 //and I can't justify allowing three different options but not all of them.
 //therefore, only one option remains.
-const char * test5 =
+static const char * test5 =
 "\n"
 "a\n"
 "  b\n"
@@ -583,7 +583,7 @@ const char * test5 =
 "      \n"
 "\t\n"
 "    c\n";
-bmlparser::event test5e[]={
+static bmlparser::event test5e[]={
 	{ e_enter, "a" },
 		{ e_enter, "b" },
 			{ e_enter, "c" },
@@ -594,7 +594,7 @@ bmlparser::event test5e[]={
 };
 
 //comments
-const char * test6 =
+static const char * test6 =
 "\n"
 "#test\n"
 " #test\n"
@@ -621,7 +621,7 @@ const char * test6 =
 "i=j//k\n"
 "\n"
 ;
-bmlparser::event test6e[]={
+static bmlparser::event test6e[]={
 	{ e_enter, "a" }, { e_exit },
 	{ e_enter, "b" }, { e_enter, "c" }, { e_exit }, { e_exit },
 	{ e_enter, "d", "#test" }, { e_exit },

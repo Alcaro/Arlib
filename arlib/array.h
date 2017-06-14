@@ -98,17 +98,17 @@ public:
 	
 	template<typename T2> array<T2> cast() const;
 	
-	size_t find(const T& other) const
+	size_t find(const T& item) const
 	{
 		for (size_t n=0;n<this->count;n++)
 		{
-			if (this->items[n] == other) return n;
+			if (this->items[n] == item) return n;
 		}
 		return -1;
 	}
-	bool contains(const T& other) const
+	bool contains(const T& item) const
 	{
-		return find(other) != (size_t)-1;
+		return find(item) != (size_t)-1;
 	}
 	
 	//arrayview(const arrayview<T>& other)
@@ -347,7 +347,7 @@ public:
 		return this->items[index];
 	}
 	
-	void append(const arrayview<T>& item) = delete;
+	void append(const arrayview<T>& item) = delete; // use += instead
 	T& append(const T& item) { return insert(this->count, item); }
 	T& append() { return insert(this->count); }
 	T& prepend(const T& item) { return insert(0, item); }
@@ -485,6 +485,14 @@ public:
 	}
 };
 
+template<typename T> template<typename T2>
+array<T2> arrayview<T>::cast() const
+{
+	array<T2> ret;
+	for (const T& tmp : *this) ret.append(tmp);
+	return std::move(ret);
+}
+
 
 template<> class array<bool> {
 protected:
@@ -534,6 +542,23 @@ protected:
 		uint8_t& byte = bits()[n/8];
 		byte &=~ (1<<(n&7));
 		byte |= (val<<(n&7));
+	}
+	
+	//does not resize
+	void set_slice(size_t start, size_t num, const array<bool>& other, size_t other_start)
+	{
+		if (&other == this)
+		{
+			//TODO
+			array<bool> copy = other;
+			set_slice(start, num, copy, other_start);
+			return;
+		}
+		//TODO
+		for (size_t i=0;i<num;i++)
+		{
+			set(start+i, other.get(other_start+i));
+		}
 	}
 	
 	void clear_unused(size_t nbytes)
@@ -704,22 +729,20 @@ public:
 		return *this;
 	}
 	
+	explicit operator bool() { return size(); }
+	
 	//missing maybe-useful features from the normal array:
-	//operator bool() { return count; }
-	//T join() const
-	//template<typename T2> decltype(T() + T2()) join(T2 between) const
-	//bool operator==(arrayview<T> other)
-	//bool operator!=(arrayview<T> other)
+	
+	//array<bool> skip(size_t n) { return slice(n, size()-n); }
+	//bool contains(bool item) const
+	//bool operator==(array other) const
+	//bool operator!=(array other) const
+	//void swap(array& other)
+	//void insert(size_t index, bool item)
+	//void prepend(bool item) { insert(0, item); }
+	//void remove(size_t index)
+	//array& operator+=(const array<bool>& other)
 	//const T* begin() { return this->items; }
 	//const T* end() { return this->items+this->count; }
-	//void remove(size_t index)
 	//array(null_t)
 };
-
-template<typename T> template<typename T2>
-array<T2> arrayview<T>::cast() const
-{
-	array<T2> ret;
-	for (const T& tmp : *this) ret.append(tmp);
-	return std::move(ret);
-}

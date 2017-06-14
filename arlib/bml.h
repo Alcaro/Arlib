@@ -78,7 +78,7 @@ public:
 	void exit();
 	void linebreak();
 	void comment(cstring text);
-	void node(cstring name, cstring val, mode m = ianon); // Equivalent to enter()+exit(), except supports inline nodes.
+	void node(cstring name, cstring val, mode m = ianon); // Equivalent to enter()+exit(), except it supports inline nodes.
 	
 	//TODO: inline nodes on multilines? They're ridiculously ugly, but there are a few cases where they're useful.
 	//I'll decide what to do once I actually need a multiline with children. Maybe add mode multiline_i or something.
