@@ -5,8 +5,8 @@
 #include "../stringconv.h"
 #include "../thread.h"
 //Possible BearSSL improvements (not all of it is worth the effort):
-//- extern "C" in header
 //- serialization that I didn't have to write myself
+//- extern "C" in header
 //- better AES-NI feature detection; either define BR_AES_X86NI to __AES__ rather than __GNUC__>=4.8,
 //    or define __AES__ (and __SSSE3__ and whatever) manually on GCC>=4.8 (and check that this works, I'm not sure if it does)
 //- a slightly easier way to disable cert validation than 50 lines of wrappers
@@ -25,7 +25,7 @@
 //    but it'd mean an extra if in there, wasting a few bytes; better put that in caller)
 
 extern "C" {
-#include "../deps/bearssl-0.3/inc/bearssl.h"
+#include "../deps/bearssl-0.4/inc/bearssl.h"
 
 //see bear-ser.c for docs
 typedef struct br_frozen_ssl_client_context_ {
@@ -353,52 +353,52 @@ public:
 	
 	
 	
-	struct state_fr {
-		br_frozen_ssl_client_context sc;
-		bool permissive;
-		byte iobuf[BR_SSL_BUFSIZE_BIDI];
-	};
-	
-	array<byte> serialize(int* fd)
-	{
-		array<byte> bytes;
-		bytes.resize(sizeof(state_fr));
-		state_fr& out = *(state_fr*)bytes.ptr();
-		
-		br_ssl_client_freeze(&out.sc, &s.sc, &s.xc);
-		out.permissive = (s.xwc.vtable != NULL);
-		memcpy(out.iobuf, s.iobuf, sizeof(out.iobuf));
-		
-		*fd = decompose(this->sock);
-		this->sock = NULL;
-		
-		delete this;
-		return bytes;
-	}
-	
-	//deserializing constructor
-	socketssl_impl(int fd, arrayview<byte> data)
-	{
-		this->sock = socket::create_from_fd(fd);
-		const state_fr& in = *(state_fr*)data.ptr();
-		
-		state ref;
-		
-		br_ssl_client_init_full(&s.sc, &s.xc, certs.ptr(), certs.size());
-		if (in.permissive)
-		{
-			s.xwc.vtable = &x509_noanchor_vtable;
-			s.xwc.inner = &s.xc.vtable;
-			br_ssl_engine_set_x509(&s.sc.eng, &s.xwc.vtable);
-		}
-		else s.xwc.vtable = NULL;
-		br_ssl_engine_set_buffer(&s.sc.eng, s.iobuf, sizeof(s.iobuf), true);
-		
-		br_frozen_ssl_client_context fr_sc;
-		memcpy(&fr_sc, &in.sc, sizeof(fr_sc));
-		br_ssl_client_unfreeze(&fr_sc, &s.sc, &s.xc);
-		memcpy(s.iobuf, in.iobuf, sizeof(s.iobuf));
-	}
+	//struct state_fr {
+	//	br_frozen_ssl_client_context sc;
+	//	bool permissive;
+	//	byte iobuf[BR_SSL_BUFSIZE_BIDI];
+	//};
+	//
+	//array<byte> serialize(int* fd)
+	//{
+	//	array<byte> bytes;
+	//	bytes.resize(sizeof(state_fr));
+	//	state_fr& out = *(state_fr*)bytes.ptr();
+	//	
+	//	br_ssl_client_freeze(&out.sc, &s.sc, &s.xc);
+	//	out.permissive = (s.xwc.vtable != NULL);
+	//	memcpy(out.iobuf, s.iobuf, sizeof(out.iobuf));
+	//	
+	//	*fd = decompose(this->sock);
+	//	this->sock = NULL;
+	//	
+	//	delete this;
+	//	return bytes;
+	//}
+	//
+	////deserializing constructor
+	//socketssl_impl(int fd, arrayview<byte> data)
+	//{
+	//	this->sock = socket::create_from_fd(fd);
+	//	const state_fr& in = *(state_fr*)data.ptr();
+	//	
+	//	state ref;
+	//	
+	//	br_ssl_client_init_full(&s.sc, &s.xc, certs.ptr(), certs.size());
+	//	if (in.permissive)
+	//	{
+	//		s.xwc.vtable = &x509_noanchor_vtable;
+	//		s.xwc.inner = &s.xc.vtable;
+	//		br_ssl_engine_set_x509(&s.sc.eng, &s.xwc.vtable);
+	//	}
+	//	else s.xwc.vtable = NULL;
+	//	br_ssl_engine_set_buffer(&s.sc.eng, s.iobuf, sizeof(s.iobuf), true);
+	//	
+	//	br_frozen_ssl_client_context fr_sc;
+	//	memcpy(&fr_sc, &in.sc, sizeof(fr_sc));
+	//	br_ssl_client_unfreeze(&fr_sc, &s.sc, &s.xc);
+	//	memcpy(s.iobuf, in.iobuf, sizeof(s.iobuf));
+	//}
 };
 
 socketssl* socketssl::create(socket* parent, cstring domain, bool permissive)
@@ -414,14 +414,14 @@ socketssl* socketssl::create(socket* parent, cstring domain, bool permissive)
 	return ret;
 }
 
-array<byte> socketssl::serialize(int* fd)
-{
-	return ((socketssl_impl*)this)->serialize(fd);
-}
-socketssl* socketssl::deserialize(int fd, arrayview<byte> data)
-{
-	if (sizeof(socketssl_impl::state_fr)!=data.size()) return NULL;
-	initialize();
-	return new socketssl_impl(fd, data);
-}
+//array<byte> socketssl::serialize(int* fd)
+//{
+//	return ((socketssl_impl*)this)->serialize(fd);
+//}
+//socketssl* socketssl::deserialize(int fd, arrayview<byte> data)
+//{
+//	if (sizeof(socketssl_impl::state_fr)!=data.size()) return NULL;
+//	initialize();
+//	return new socketssl_impl(fd, data);
+//}
 #endif

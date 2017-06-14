@@ -63,7 +63,7 @@ test("SSL permissiveness")
 	assert( (s=socketssl::create("172.217.18.142", 443, true))); // I'd use san.filippo.io, but that one is self-signed as well; I want only one failure at once
 }
 
-#ifdef ARLIB_SSL_BEARSSL
+#ifdef ARLIB_SSL_BEARSSL_x // TODO
 static void ser_test(autoptr<socketssl>& s)
 {
 	socketssl* sp = s.release();

@@ -1,3 +1,7 @@
+/*
+TODO: update for 0.4
+
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -273,3 +277,4 @@ void br_ssl_client_unfreeze(br_frozen_ssl_client_context* fr, br_ssl_client_cont
 #ifdef __cplusplus
 }
 #endif
+*/

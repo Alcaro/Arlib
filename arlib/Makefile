@@ -248,8 +248,8 @@ ifeq ($(ARSOCKET),1)
     ifeq ($(OS),windows)
       CONF_LFLAGS += -lcrypt32
     endif
-arlib/deps/bearssl-0.3/build/libbearssl.a:
-	$(MAKE) -C arlib/deps/bearssl-0.3/ CFLAGS='$(OPTFLAGS) -DBR_AES_X86NI=0' lib
+arlib/deps/bearssl-0.4/build/libbearssl.a:
+	$(MAKE) -C arlib/deps/bearssl-0.4/ CFLAGS='$(OPTFLAGS)' lib
   else ifeq ($(ARSOCKET_SSL),tlse)
     CFLAGS_ARLIB += ARLIB_SSL_TLSE
     SOURCES_NOWARN += arlib/deps/tlse.c
