@@ -126,7 +126,11 @@
 //}
 
 
-static long pagesize = sysconf(_SC_PAGESIZE);
+#if defined(__x86_64__) || defined(__i386__)
+static const long pagesize = 4096;
+#else
+static const long pagesize = sysconf(_SC_PAGESIZE);
+#endif
 
 namespace {
 	class file_unix : public file::impl {

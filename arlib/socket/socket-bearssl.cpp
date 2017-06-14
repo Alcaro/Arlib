@@ -41,6 +41,8 @@ void br_ssl_client_unfreeze(br_frozen_ssl_client_context* fr, br_ssl_client_cont
 
 //most of this is copied from bearssl-0.3/tools/certs.c and files.c, somewhat rewritten
 
+//these have destructors; they shouldn't
+//but GCC bug 19661 says I can't get them out.
 static array<array<byte>> certs_blobs;
 static array<br_x509_trust_anchor> certs;
 

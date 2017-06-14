@@ -8,6 +8,7 @@
 	bool fromstring(cstring s, t& out) \
 	{ \
 		out = 0; \
+		if (!s) return false; \
 		char * tmp; /* odd that this one isn't overloaded, like strchr */ \
 		frt ret = f(s, &tmp, 10); \
 		if (*tmp || (t)ret != (frt)ret) return false; \
@@ -31,7 +32,8 @@ static const char * drop0x(const char * in)
 	{ \
 		const char * in = drop0x(s); \
 		out = 0; \
-		char * tmp; /* odd that this one isn't overloaded, like strchr */ \
+		if (!s) return false; \
+		char * tmp; \
 		frt ret = f(in, &tmp, 16); \
 		if (*tmp || (t)ret != (frt)ret) return false; \
 		out = ret; \
@@ -52,6 +54,7 @@ FROMFUNCHEX(unsigned long long, unsigned long long, strtoull)
 bool fromstring(cstring s, double& out)
 {
 	out = 0;
+	if (!s) return false;
 	char * tmp;
 	double ret = strtod(s, &tmp);
 	if (*tmp || ret==HUGE_VAL || ret==-HUGE_VAL) return false;
@@ -154,4 +157,10 @@ test()
 	assert(!fromstringhex("123456", arrayvieww<byte>(foo))); // not 4 bytes
 	assert(!fromstringhex("1234567", bar)); // odd length
 	assert(!fromstringhex("0x123456", bar)); // invalid symbol
+	
+	uint32_t u;
+	float f;
+	assert(!fromstring("", u)); // this isn't an integer
+	assert(!fromstringhex("", u));
+	assert(!fromstring("", f));
 }

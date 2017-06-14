@@ -1,47 +1,49 @@
 #include "crc32.h"
 
-#define CRC32_FAST
+//#define CRC32_FAST
 
 #ifdef CRC32_FAST
-namespace {
-class crc_t {
-public:
-	uint32_t m[256];
-	crc_t()
+static uint32_t crctable[256];
+static void crc_init()
+{
+	if (crctable[255] != 0) return;
+	
+	for (int i=0;i<256;i++)
 	{
-		for (int i=0;i<256;i++)
+		uint32_t c = i;
+		for (int k=0;k<8;k++)
 		{
-			uint32_t c = i;
-			for (int k=0;k<8;k++)
-			{
-				uint32_t eor = (c&1) * 0xEDB88320;
-				c = eor ^ (c>>1);
-			}
-			m[i] = c;
+			uint32_t eor = -(c&1) & 0xEDB88320;
+			c = eor ^ (c>>1);
 		}
+#ifdef ARLIB_THREAD
+		if (i==255) lock_write(&crctable[i], c);
+#endif
+		crctable[i] = c;
 	}
-} crctable;
 }
 
 uint32_t crc32_update(arrayview<uint8_t> data, uint32_t crc)
 {
+	crc_init();
+	
 	const uint8_t* ptr = data.ptr();
 	size_t len = data.size();
 	crc = ~crc;
 	for (size_t i=0;i<(len&7);i++)
 	{
-		crc = crctable.m[(crc & 0xFF) ^ ptr[i]] ^ (crc>>8);
+		crc = crctable[(crc & 0xFF) ^ ptr[i]] ^ (crc>>8);
 	}
 	for (size_t i=len&7;i<len;i+=8)
 	{
-		crc = crctable.m[(crc & 0xFF) ^ ptr[i+0]] ^ (crc>>8);
-		crc = crctable.m[(crc & 0xFF) ^ ptr[i+1]] ^ (crc>>8);
-		crc = crctable.m[(crc & 0xFF) ^ ptr[i+2]] ^ (crc>>8);
-		crc = crctable.m[(crc & 0xFF) ^ ptr[i+3]] ^ (crc>>8);
-		crc = crctable.m[(crc & 0xFF) ^ ptr[i+4]] ^ (crc>>8);
-		crc = crctable.m[(crc & 0xFF) ^ ptr[i+5]] ^ (crc>>8);
-		crc = crctable.m[(crc & 0xFF) ^ ptr[i+6]] ^ (crc>>8);
-		crc = crctable.m[(crc & 0xFF) ^ ptr[i+7]] ^ (crc>>8);
+		crc = crctable[(crc & 0xFF) ^ ptr[i+0]] ^ (crc>>8);
+		crc = crctable[(crc & 0xFF) ^ ptr[i+1]] ^ (crc>>8);
+		crc = crctable[(crc & 0xFF) ^ ptr[i+2]] ^ (crc>>8);
+		crc = crctable[(crc & 0xFF) ^ ptr[i+3]] ^ (crc>>8);
+		crc = crctable[(crc & 0xFF) ^ ptr[i+4]] ^ (crc>>8);
+		crc = crctable[(crc & 0xFF) ^ ptr[i+5]] ^ (crc>>8);
+		crc = crctable[(crc & 0xFF) ^ ptr[i+6]] ^ (crc>>8);
+		crc = crctable[(crc & 0xFF) ^ ptr[i+7]] ^ (crc>>8);
 	}
 	
 	return ~crc;
@@ -71,6 +73,9 @@ uint32_t crc32_update(arrayview<uint8_t> data, uint32_t crc)
 #include "test.h"
 test()
 {
+	string test = "foobar";
+	assert_eq(crc32(test.bytes()), 0x9EF61F95);
+	
 #ifdef CRC32_FAST
 	static const uint32_t crctable_ref[256]={
 		0x00000000,0x77073096,0xEE0E612C,0x990951BA,0x076DC419,0x706AF48F,0xE963A535,0x9E6495A3,
@@ -108,7 +113,4 @@ test()
 	};
 	for (int i=0;i<256;i++) assert_eq(crctable.m[i], crctable_ref[i]);
 #endif
-	
-	string test = "foobar";
-	assert_eq(crc32(test.bytes()), 0x9EF61F95);
 }

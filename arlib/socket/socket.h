@@ -88,8 +88,13 @@ public:
 	static socket* create_from_fd(int fd);
 	int get_fd() { return fd; }
 	
-	//Causes send() to always accept everything immediately. Takes ownership of the socket.
-	static socket* bufwrap(socket* inner);
+	//Returns whether the object has buffers such that recv() or send() will return immediately, even if the fd doesn't claim it will.
+	//If select(2) will return this one, this function isn't needed.
+	virtual bool active(bool want_recv, bool want_send) { return false; }
+	
+	//TODO: this looks stupid
+	////Dispatches a thread to monitor the object. send() and recv() will only interact with local buffers. Takes ownership of the socket.
+	//static socket* bufwrap(socket* inner, size_t limit);
 	
 	//Note that these may return false positives. Use nonblocking operations.
 	class monitor {

@@ -59,7 +59,7 @@ public:
 	}
 	
 	arrayview<T> slice(size_t first, size_t count) { return arrayview<T>(this->items+first, count); }
-	arrayview<T> skip(size_t n) { return slice(n, count-n); }
+	arrayview<T> skip(size_t n) { return slice(n, this->count-n); }
 	
 	T join() const
 	{
@@ -98,13 +98,17 @@ public:
 	
 	template<typename T2> array<T2> cast() const;
 	
-	bool contains(const T& other) const
+	size_t find(const T& other) const
 	{
 		for (size_t n=0;n<this->count;n++)
 		{
-			if (this->items[n] == other) return true;
+			if (this->items[n] == other) return n;
 		}
-		return false;
+		return -1;
+	}
+	bool contains(const T& other) const
+	{
+		return find(other) != (size_t)-1;
 	}
 	
 	//arrayview(const arrayview<T>& other)
@@ -195,10 +199,12 @@ public:
 	}
 	
 	arrayvieww<T> slice(size_t first, size_t count) { return arrayvieww<T>(this->items+first, count); }
+	arrayvieww<T> skip(size_t n) { return slice(n, this->count-n); }
 	
 	//stable sort
 	void sort()
 	{
+		//insertion sort, without binary search optimization for finding the new position
 		for (size_t a=0;a<this->count;a++)
 		{
 			size_t b;
@@ -250,6 +256,7 @@ template<typename T> class array : public arrayvieww<T> {
 		}
 	}
 	
+public:
 	void swap(array<T>& other)
 	{
 		T* newitems = other.items;
@@ -260,6 +267,7 @@ template<typename T> class array : public arrayvieww<T> {
 		this->count = newcount;
 	}
 	
+private:
 	void resize_grow_noinit(size_t count)
 	{
 		if (this->count >= count) return;

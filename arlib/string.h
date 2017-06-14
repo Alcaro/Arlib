@@ -3,6 +3,7 @@
 #include "array.h"
 #include "hash.h"
 #include <string.h>
+#include <ctype.h>
 
 //A string is a mutable sequence of bytes. It usually represents UTF-8 text, but can be arbitrary binary data, including NULs.
 //All string:: functions taking or returning a char* assume/guarantee NUL termination. However, anything using uint8_t* does not.
@@ -320,6 +321,8 @@ public:
 	inline bool contains(cstring other) const;
 	inline bool startswith(cstring other) const;
 	inline bool endswith(cstring other) const;
+	inline bool istartswith(cstring other) const;
+	inline bool iendswith(cstring other) const;
 	
 	static string codepoint(uint32_t cp);
 	
@@ -393,6 +396,30 @@ inline bool string::endswith(cstring other) const
 {
 	if (other.length() > this->length()) return false;
 	return (!memcmp(this->ptr()+this->length()-other.length(), other.ptr(), other.length()));
+}
+
+inline bool string::istartswith(cstring other) const
+{
+	if (other.length() > this->length()) return false;
+	const char* a = (char*)this->ptr();
+	const char* b = (char*)other.ptr();
+	for (size_t i=0;i<other.length();i++)
+	{
+		if (tolower(a[i]) != tolower(b[i])) return false;
+	}
+	return true;
+}
+
+inline bool string::iendswith(cstring other) const
+{
+	if (other.length() > this->length()) return false;
+	const char* a = (char*)this->ptr()+this->length()-other.length();
+	const char* b = (char*)other.ptr();
+	for (size_t i=0;i<other.length();i++)
+	{
+		if (tolower(a[i]) != tolower(b[i])) return false;
+	}
+	return true;
 }
 
 //TODO
