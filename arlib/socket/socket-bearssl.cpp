@@ -199,7 +199,7 @@ static const br_x509_class x509_noanchor_vtable = {
 
 class socketssl_impl : public socketssl {
 public:
-	socket* sock;
+	autoptr<socket> sock;
 	
 	struct state {
 		br_ssl_client_context sc;
@@ -236,7 +236,6 @@ public:
 			int bytes = sock->sendp(arrayview<byte>(buf, buflen), block);
 			if (bytes < 0)
 			{
-				delete sock;
 				sock = NULL;
 				return true;
 			}
@@ -261,7 +260,6 @@ public:
 			int bytes = sock->recv(arrayvieww<byte>(buf, buflen), block);
 			if (bytes < 0)
 			{
-				delete sock;
 				sock = NULL;
 				return true;
 			}
@@ -279,7 +277,6 @@ public:
 		if (br_ssl_engine_current_state(&s.sc.eng) == BR_SSL_CLOSED)
 		{
 			//int err = br_ssl_engine_last_error(&s.sc.eng);
-			delete sock;
 			sock = NULL;
 		}
 		if (process_send(false)) block = false;
@@ -356,7 +353,11 @@ public:
 	
 	~socketssl_impl()
 	{
-		delete sock;
+		//gracefully tear this down, not really useful but why not
+		br_ssl_engine_close(&s.sc.eng);
+		br_ssl_engine_flush(&s.sc.eng, 0);
+		process(false);
+		//but don't worry about ensuring the remote gets our closure notification, no point
 	}
 	
 	

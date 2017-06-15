@@ -303,7 +303,7 @@ static void testjson_error(const char * json)
 	assert_eq(depth, 0);
 }
 
-test()
+test("JSON parser")
 {
 	testcall(testjson(test1, test1e));
 	testcall(testjson(test2, test2e));
@@ -326,5 +326,34 @@ test()
 	testcall(testjson_error("1e+"));
 	testcall(testjson_error("1e-"));
 	testcall(testjson_error("z"));
+}
+
+
+
+test("JSON container")
+{
+	{
+		json j("7");
+		assert_eq((int)j, 7);
+	}
+	
+	{
+		json j("\"42\"");
+		assert_eq((string)j, "42");
+	}
+	
+	{
+		json j("[1,2,3]");
+		assert_eq((int)j[0], 1);
+		assert_eq((int)j[1], 2);
+		assert_eq((int)j[2], 3);
+	}
+	
+	{
+		json j("{\"a\":null,\"b\":true,\"c\":false}");
+		assert_eq((bool)j["a"], false);
+		assert_eq((bool)j["b"], true);
+		assert_eq((bool)j["c"], false);
+	}
 }
 #endif

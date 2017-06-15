@@ -352,10 +352,14 @@ public:
 		if (ret) return ret->value;
 		else return def;
 	}
+	Tvalue& get_create(const Tkey& key)
+	{
+		return items.get_create(key).value;
+	}
 	
 	Tvalue& insert(const Tkey& key)
 	{
-		return items.get_create(key).value;
+		return get_create(key);
 	}
 	
 	bool contains(const Tkey& item)
@@ -366,6 +370,11 @@ public:
 	void remove(const Tkey& item)
 	{
 		items.remove(item);
+	}
+	
+	void reset()
+	{
+		items.reset();
 	}
 	
 	size_t size() { return items.size(); }
