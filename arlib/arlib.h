@@ -19,6 +19,7 @@
 #include "file.h"
 #include "function.h"
 #include "intwrap.h"
+#include "json.h"
 #include "os.h"
 #include "process.h"
 #include "safeint.h"
@@ -53,4 +54,5 @@
 #ifdef ARLIB_SOCKET
 #include "socket/socket.h"
 #include "http.h"
+#include "websocket.h"
 #endif

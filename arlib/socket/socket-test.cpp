@@ -39,10 +39,10 @@ static void clienttest(socket* rs)
 	assert(s->recv(discard) == 0);
 	
 	const char http_get[] =
-		"GET / HTTP/1.1\n"
-		"Host: example.com\n"
-		"Connection: close\n"
-		"\n";
+		"GET / HTTP/1.1\r\n"
+		"Host: example.com\r\n" // wrong host, but we don't care, all we care about is server returning a HTTP response
+		"Connection: close\r\n" // 400 Bad Request is the easiest to summon, so let's do that
+		"\r\n";
 	assert_eq(s->send(http_get), (int)strlen(http_get));
 	
 	array<byte> ret = recvall(s, 4);
@@ -53,6 +53,8 @@ static void clienttest(socket* rs)
 test("plaintext client") { test_skip("too slow"); clienttest(socket::create("google.com", 80)); }
 test("SSL client") { test_skip("too slow"); clienttest(socketssl::create("google.com", 443)); }
 test("SSL SNI") { test_skip("too slow"); clienttest(socketssl::create("git.io", 443)); } // this server throws an error unless SNI is enabled
+//reveals nothing
+//test("SSL client, funky server") { test_skip("too slow"); clienttest(socketssl::create("echo.websocket.org", 443)); }
 test("SSL permissiveness")
 {
 	test_skip("too slow");

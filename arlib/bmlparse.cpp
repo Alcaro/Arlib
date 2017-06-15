@@ -44,10 +44,10 @@ read "d e"
 set m_indent to ""
 m_indent_step.size(){2} > m_indent.length(){0}, so goto {b}
 
-read "d e"
+read "d e f"
 m_indent_step.size(){1} > m_indent.length(){0}, so goto {b}
 
-read "d e"
+read "d e f"
 m_indent_step.size(){0} <= m_indent.length(){0}
 set m_inlines = " e f" (or "e f", not sure and doesn't matter)
 goto {a}

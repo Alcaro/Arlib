@@ -21,6 +21,7 @@
 //    (tools/client.c:234 and test/test_x509.c:504 too, but those parts aren't size sensitive)
 //- fix typoed NULLs at src/hash/ghash_pclmul.c:241, src/hash/ghash_pclmul.c:250, tools/names.c:834
 //    (not sure if that's the only ones)
+//- tools/client.c: typo minium: "ERROR: duplicate minium ClientHello length"
 //(accepting and ignoring size 0 in br_ssl_engine_{recv,send}{app,rec}_ack would be useful,
 //    but it'd mean an extra if in there, wasting a few bytes; better put that in caller)
 
@@ -275,6 +276,12 @@ public:
 	
 	/*private*/ void process(bool block)
 	{
+		if (br_ssl_engine_current_state(&s.sc.eng) == BR_SSL_CLOSED)
+		{
+			//int err = br_ssl_engine_last_error(&s.sc.eng);
+			delete sock;
+			sock = NULL;
+		}
 		if (process_send(false)) block = false;
 		if (process_recv(block)) block = false;
 		if (process_send(block)) block = false;
@@ -290,7 +297,8 @@ public:
 		{
 			process(true);
 			if (!sock) return false;
-			if (br_ssl_engine_last_error(&s.sc.eng)!=BR_ERR_OK) return false;
+			if (br_ssl_engine_last_error(&s.sc.eng) != BR_ERR_OK) return false;
+			if (br_ssl_engine_current_state(&s.sc.eng) == BR_SSL_CLOSED) return false;
 		}
 		return true;
 	}

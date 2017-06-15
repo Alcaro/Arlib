@@ -171,7 +171,7 @@ test()
 	test_skip("kinda slow");
 	
 	websocket ws;
-	assert(ws.connect("ws://echo.websocket.org")); // neither OpenSSL nor BearSSL can successfully connect to echo.websocket.org:443
+	assert(ws.connect("wss://echo.websocket.org")); // neither OpenSSL nor BearSSL can successfully connect to echo.websocket.org:443
 	ws.send("hello");
 	assert_eq((string)ws.recv(true), "hello");
 	ws.send("hello");

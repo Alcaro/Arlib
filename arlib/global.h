@@ -248,7 +248,7 @@ template<typename T, typename... Args> static T max(const T& a, Args... args)
 class empty {
 	//MSVC says error C2503: base classes cannot contain zero-sized arrays
 	//GCC says error: flexible array member 'empty::__zero_size' not at end of 'class whatever'
-	//nonzero objects which will optimize the empty base class anyways
+	//this is only gonna be used on nonzero objects which anyways, and they'll optimize the empty base class
 	
 	//int __zero_size[];
 };
