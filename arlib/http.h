@@ -5,7 +5,7 @@
 #include "socket.h"
 #include "bytepipe.h"
 
-class http {
+class HTTP {
 public:
 	struct req {
 		//Every field except 'url' is safe to leave as default.
@@ -15,8 +15,9 @@ public:
 		//These headers are implied by other members and added automatically, if not already present:
 		//Connection: keep-alive
 		//Host: <from url>
-		//Content-Length: <from postdata>
-		//Content-Type: application/x-www-form-urlencoded;charset=UTF-8
+		//Content-Length: <from postdata> (if not GET)
+		//Content-Type: application/x-www-form-urlencoded
+		//           or application/json if postdata starts with [ or {
 		array<string> headers; // TODO: multimap
 		array<byte> postdata;
 		
@@ -55,7 +56,7 @@ public:
 		}
 		//operator string() { return body; } // throws ambiguity errors if enabled
 		
-		cstring header(cstring name)
+		cstring header(cstring name) const
 		{
 			for (cstring head : headers)
 			{
@@ -66,10 +67,12 @@ public:
 			}
 			return "";
 		}
+		
+		cstring text() const { return body; }
 	};
 	
 	static string request(string url) { return std::move(request((req)url).body); }
-	static rsp request(const req& r) { http obj; obj.send(r); return std::move(obj.recv()); }
+	static rsp request(const req& r) { HTTP http; http.send(r); return std::move(http.recv()); }
 	
 	//Multiple requests may be sent to the same object. This will make them use HTTP Keep-Alive.
 	//The requests must be to the same protocol-domain-port tuple.
@@ -83,6 +86,17 @@ public:
 	void await();
 	rsp recv(bool partial = false); // Calls await() if needed. Only works once per send().
 	
+	//Discards any unfinished requests, errors, and similar.
+	void reset()
+	{
+		done.reset();
+		n_unfinished = 0;
+		error = 0;
+		host = location();
+		sock = NULL;
+		tosend.reset();
+	}
+	
 	//If this key is returned, call .ready(), then .monitor() again.
 	void monitor(socket::monitor& mon, void* key) { mon.add(sock, key, true, tosend.remaining() ? true : false); }
 	
@@ -91,7 +105,7 @@ public:
 		string proto;
 		string domain;
 		int port;
-		string loc;
+		string path;
 	};
 	static bool parseUrl(cstring url_, bool relative, location& out);
 	

@@ -4,22 +4,22 @@
 #include "endian.h"
 #include "stringconv.h"
 
-bool websocket::connect(cstring target, arrayview<string> headers)
+bool WebSocket::connect(cstring target, arrayview<string> headers)
 {
-	http::location loc;
-	if (!http::parseUrl(target, false, loc)) return false;
+	HTTP::location loc;
+	if (!HTTP::parseUrl(target, false, loc)) return false;
 	if (loc.proto == "wss") sock = socketssl::create(loc.domain, loc.port ? loc.port : 443);
 	if (loc.proto == "ws")  sock =    socket::create(loc.domain, loc.port ? loc.port : 80);
 	if (!sock) return false;
 	
-	sock->send("GET "+loc.loc+" HTTP/1.1\r\n"
-						 "Host: "+loc.domain+"\r\n"
-						 "Connection: upgrade\r\n"
-						 "Upgrade: websocket\r\n"
-						 //"Origin: "+loc.domain+"\r\n"
-						 "Sec-WebSocket-Version: 13\r\n"
-						 "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n" // TODO: de-hardcode this
-						 );
+	sock->send("GET "+loc.path+" HTTP/1.1\r\n"
+	           "Host: "+loc.domain+"\r\n"
+	           "Connection: upgrade\r\n"
+	           "Upgrade: websocket\r\n"
+	           //"Origin: "+loc.domain+"\r\n"
+	           "Sec-WebSocket-Version: 13\r\n"
+	           "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n" // TODO: de-hardcode this
+	           );
 	
 	for (cstring s : headers)
 	{
@@ -61,12 +61,13 @@ bool websocket::connect(cstring target, arrayview<string> headers)
 	return true;
 }
 
-void websocket::fetch(bool block)
+void WebSocket::fetch(bool block)
 {
 	uint8_t bytes[4096];
 	int nbyte = sock->recv(bytes, block);
 	if (nbyte < 0)
 	{
+puts("SOCKDEAD");
 		sock = NULL;
 	}
 	if (nbyte > 0)
@@ -75,9 +76,10 @@ void websocket::fetch(bool block)
 	}
 }
 
-bool websocket::ready(bool block, size_t* start, size_t* size, uint8_t key[4])
+bool WebSocket::poll(bool block, array<byte>* ret)
 {
-	if (!sock) return NULL;
+again:
+	if (!sock) return false;
 	
 	if (msg.size() < 2) { fetch(block); block=false; }
 	if (msg.size() < 2) return false;
@@ -99,67 +101,77 @@ bool websocket::ready(bool block, size_t* start, size_t* size, uint8_t key[4])
 	if (msg.size() < msgsize) { fetch(block); block=false; }
 	if (msg.size() < msgsize) return false;
 	
-	if (start)
+	size_t bodysize = msgsize-headsize;
+	
+	if (msg[0]&0x08) // throw away control messages
 	{
-		*start = headsize;
-		*size = msgsize-headsize;
-		
-		key[0] = 0;
-		key[1] = 0;
-		key[2] = 0;
-		key[3] = 0;
+puts("RETURN:"+tostringhex(msg.slice(0,headsize))+" "+tostringhex(msg.skip(headsize)));
+		msg = msg.skip(msgsize);
+		goto again;
+	}
+	
+	if (ret)
+	{
+//puts("RETURN:"+tostringhex(msg.slice(0,headsize))+" "+tostringhex(msg.skip(headsize)));
+		array<byte>& out = *ret;
+		out = msg.slice(headsize, bodysize);
 		
 		if (msg[1] & 0x80)
 		{
+			uint8_t key[4];
 			key[0] = msg[headsize-4+0];
 			key[1] = msg[headsize-4+1];
 			key[2] = msg[headsize-4+2];
 			key[3] = msg[headsize-4+3];
+			for (size_t i=0;i<bodysize;i++)
+			{
+				out[i] ^= key[i&3];
+			}
 		}
+		
+		msg = msg.skip(msgsize);
 	}
 	return true;
 }
 
-array<byte> websocket::recv(bool block)
+array<byte> WebSocket::recv(bool block)
 {
-	if (block) await();
-	size_t start;
-	size_t size;
-	uint8_t key[4];
-	ready(false, &start, &size, key);
-	
-	array<byte> ret = msg.slice(start, size);
-	msg = msg.skip(start+size);
-	
-	if (key[0] || key[1] || key[2] || key[3])
-	{
-		for (size_t i=0;i<size;i++)
-		{
-			ret[i] ^= key[i&3];
-		}
-	}
-	
-	return ret;
+	array<byte> b;
+	bool received;
+	do {
+		received = poll(block, &b);
+	} while (sock && block && !received);
+	return b;
 }
 
-void websocket::send(arrayview<byte> message)
+void WebSocket::send(arrayview<byte> message, bool binary)
 {
+	if (!sock) return;
+	
 	array<byte> header;
-	header.append(0x80 | 0x02); // FIN, no masking, opcode 2 Binary
+	header.append(0x80 | (binary ? 0x2 : 0x1)); // frame-FIN, opcode
 	if (message.size() <= 125)
 	{
-		header.append(message.size());
+		//some websocket servers require masking, despite that being completely useless over https, and despite not doing masking themselves
+		//hypocrites
+		//TODO: actually mask, rather than doing nop encryption
+		header.append(message.size() | 0x80);
 	}
 	else if (message.size() <= 65535)
 	{
-		header.append(126);
+		header.append(126 | 0x80);
 		header += bigend<uint16_t>(message.size()).bytes();
 	}
 	else
 	{
-		header.append(127);
+		header.append(127 | 0x80);
 		header += bigend<uint64_t>(message.size()).bytes();
 	}
+	header.append(0);
+	header.append(0);
+	header.append(0);
+	header.append(0);
+//puts("SEND:"+tostringhex(header)+" "+tostringhex(message));
 	sock->send(header);
 	sock->send(message);
 }
@@ -170,16 +182,34 @@ test()
 {
 	test_skip("kinda slow");
 	
-	websocket ws;
-	assert(ws.connect("wss://echo.websocket.org")); // neither OpenSSL nor BearSSL can successfully connect to echo.websocket.org:443
-	ws.send("hello");
-	assert_eq((string)ws.recv(true), "hello");
-	ws.send("hello");
-	assert_eq((string)ws.recv(true), "hello");
-	ws.send("hello");
-	ws.send("hello");
-	assert_eq((string)ws.recv(true), "hello");
-	assert_eq((string)ws.recv(true), "hello");
+	{
+		WebSocket ws;
+		assert(ws.connect("wss://echo.websocket.org"));
+		ws.send("hello");
+		assert_eq(ws.recvstr(true), "hello");
+		ws.send("hello");
+		assert_eq(ws.recvstr(true), "hello");
+		ws.send("hello");
+		ws.send("hello");
+		assert_eq(ws.recvstr(true), "hello");
+		assert_eq(ws.recvstr(true), "hello");
+		
+#define msg128 "128bytes128bytes128bytes128bytes128bytes128bytes128bytes128bytes" \
+               "128bytes128bytes128bytes128bytes128bytes128bytes128bytes128bytes"
+		ws.send(msg128);
+		assert_eq(ws.recvstr(true), msg128);
+	}
+	
+	{
+		//this server requires masking for whatever strange reason
+		WebSocket ws;
+		assert(ws.connect("wss://wss.websocketstest.com/service"));
+		assert_eq(ws.recvstr(true), "connected,");
+		ws.send("version,");
+		assert_eq(ws.recvstr(true), "version,hybi-draft-13");
+		ws.send("echo,test message");
+		assert_eq(ws.recvstr(true), "echo,test message");
+	}
 }
 #endif
 #endif

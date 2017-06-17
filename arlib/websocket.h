@@ -2,45 +2,31 @@
 #pragma once
 #include "socket.h"
 
-class websocket : nocopy {
+class WebSocket : nocopy {
 	autoptr<socket> sock;
 	array<byte> msg;
+	
+	void fetch(bool block);
+	bool poll(bool block, array<byte>* ret);
+	
+	void send(arrayview<byte> message, bool binary);
 	
 public:
 	bool connect(cstring target, arrayview<string> headers = NULL);
 	
-private:
-	void fetch(bool block);
-	bool ready(bool block, size_t* start, size_t* size, uint8_t key[4]);
-public:
-	bool ready()
-	{
-		return ready(false, NULL, NULL, NULL);
-	}
-	void await()
-	{
-		while (!ready(true, NULL, NULL, NULL)) {}
-	}
+	bool ready() { return poll(false, NULL); }
+	void await() { while (!poll(true, NULL)) {} }
 	array<byte> recv(bool block = false);
-	string recvstr(bool block = false)
-	{
-		return (string)recv(block);
-	}
+	string recvstr(bool block = false) { return (string)recv(block); }
 	
-	void send(arrayview<byte> message);
-	void send(cstring message)
-	{
-		send(message.bytes());
-	}
+	void send(arrayview<byte> message) { send(message, true); }
+	void send(cstring message) { send(message.bytes(), false); }
 	
-	bool isOpen()
-	{
-		return sock;
-	}
-	void close()
-	{
-		sock = NULL;
-	}
+	bool isOpen() { return sock; }
+	void close() { sock = NULL; }
+	void reset() { close(); msg.reset(); }
+	
+	operator bool() { return isOpen(); }
 	
 	//If this key is returned, call .recv(). May not necessarily return anything.
 	void monitor(socket::monitor& mon, void* key) { mon.add(sock, key, true, false); }

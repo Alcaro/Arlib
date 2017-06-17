@@ -326,7 +326,7 @@ public:
 	
 	static string codepoint(uint32_t cp);
 	
-	size_t hash() { return ::hash((char*)ptr(), length()); }
+	size_t hash() const { return ::hash((char*)ptr(), length()); }
 };
 
 inline bool operator==(const string& left, const char * right ) { return left.bytes() == arrayview<byte>((uint8_t*)right,strlen(right)); }

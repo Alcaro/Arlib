@@ -1,23 +1,23 @@
 #include "json.h"
 #include "stringconv.h"
 
-char jsonparser::nextch()
+uint8_t jsonparser::nextch()
 {
 again: ;
-	char ret = m_data[m_pos++];
+	uint8_t ret = m_data[m_pos++];
 	if (ret >= 33) return ret;
 	if (isspace(ret)) goto again;
 	if (m_pos >= m_data.length()) m_pos--;
 	return '\0';
 }
 
-bool jsonparser::skipcomma()
+bool jsonparser::skipcomma(int depth)
 {
-	char ch = nextch();
+	uint8_t ch = nextch();
 	if (ch == ',' || ch == '\0')
 	{
-		if ((bool)m_nesting == (ch == '\0')) return false;
-		if (m_nesting && m_nesting[m_nesting.size()-1]==true)
+		if ((m_nesting.size() >= depth) == (ch == '\0')) return false;
+		if (m_nesting && m_nesting[m_nesting.size()-depth]==true)
 		{
 			m_want_key = true;
 		}
@@ -33,22 +33,28 @@ bool jsonparser::skipcomma()
 
 jsonparser::event jsonparser::next()
 {
-	char ch = nextch();
+	uint8_t ch = nextch();
 	if (m_want_key)
 	{
 		m_want_key = false;
 		if (ch == '"') goto parse_key;
-		else return { error };
+		else if (ch == '}') goto close_brace;
+		else return do_error();
 	}
 	
 	if (ch == '\0')
 	{
+		if (m_first)
+		{
+			m_first = false;
+			return do_error();
+		}
 		if (m_nesting)
 		{
 			if (!m_unexpected_end)
 			{
 				m_unexpected_end = true;
-				return { error };
+				return do_error();
 			}
 			bool map = (m_nesting[m_nesting.size()-1] == true);
 			m_nesting.resize(m_nesting.size()-1);
@@ -56,6 +62,8 @@ jsonparser::event jsonparser::next()
 		}
 		return { finish };
 	}
+	m_first = false;
+	
 	if (ch == '"')
 	{
 		bool is_key;
@@ -68,15 +76,39 @@ jsonparser::event jsonparser::next()
 		string val;
 		while (true)
 		{
-			char ch = m_data[m_pos++];
+			uint8_t ch = m_data[m_pos++];
 			if (ch < 32 && ch != '\t')
 			{
 				m_pos--;
-				return { error };
+				return do_error();
 			}
 			if (ch == '\\')
 			{
-				abort();
+				uint8_t esc = m_data[m_pos++];
+				switch (esc)
+				{
+				case '"': val += '"'; break;
+				case '\\': val += '\\'; break;
+				case '/': val += '/'; break;
+				case 'b': val += '\b'; break;
+				case 'f': val += '\f'; break;
+				case 'n': val += '\n'; break;
+				case 'r': val += '\r'; break;
+				case 't': val += '\t'; break;
+				case 'u':
+				{
+					cstring unichar;
+					unichar += m_data[m_pos++];
+					unichar += m_data[m_pos++];
+					unichar += m_data[m_pos++];
+					unichar += m_data[m_pos++];
+					uint16_t codepoint;
+					if (!fromstring(unichar, codepoint)) return do_error();
+					val += string::codepoint(codepoint);
+					break;
+				}
+				default: return do_error();
+				}
 				continue;
 			}
 			if (ch == '"') break;
@@ -84,12 +116,12 @@ jsonparser::event jsonparser::next()
 		}
 		if (is_key)
 		{
-			if (nextch() != ':') return { error };
+			if (nextch() != ':') return do_error();
 			return { map_key, val };
 		}
 		else
 		{
-			if (!skipcomma()) return { error };
+			if (!skipcomma()) return do_error();
 			return { str, val };
 		}
 	}
@@ -100,9 +132,9 @@ jsonparser::event jsonparser::next()
 	}
 	if (ch == ']')
 	{
-		if (!m_nesting || m_nesting[m_nesting.size()-1] != false) return { error };
+		if (!m_nesting || m_nesting[m_nesting.size()-1] != false) return do_error();
+		if (!skipcomma(2)) return do_error();
 		m_nesting.resize(m_nesting.size()-1);
-		if (!skipcomma()) return { error };
 		return { exit_list };
 	}
 	if (ch == '{')
@@ -113,9 +145,11 @@ jsonparser::event jsonparser::next()
 	}
 	if (ch == '}')
 	{
-		if (!m_nesting || m_nesting[m_nesting.size()-1] != true) return { error };
+	close_brace:
+		m_want_key = false;
+		if (!m_nesting || m_nesting[m_nesting.size()-1] != true) return do_error();
+		if (!skipcomma(2)) return do_error();
 		m_nesting.resize(m_nesting.size()-1);
-		if (!skipcomma()) return { error };
 		return { exit_map };
 	}
 	if (ch == '-' || isdigit(ch))
@@ -131,38 +165,38 @@ jsonparser::event jsonparser::next()
 		if (m_data[m_pos] == '.')
 		{
 			m_pos++;
-			if (!isdigit(m_data[m_pos])) return { error };
+			if (!isdigit(m_data[m_pos])) return do_error();
 			while (isdigit(m_data[m_pos])) m_pos++;
 		}
 		if (m_data[m_pos] == 'e' || m_data[m_pos] == 'E')
 		{
 			m_pos++;
 			if (m_data[m_pos] == '+' || m_data[m_pos] == '-') m_pos++;
-			if (!isdigit(m_data[m_pos])) return { error };
+			if (!isdigit(m_data[m_pos])) return do_error();
 			while (isdigit(m_data[m_pos])) m_pos++;
 		}
 		
 		double d;
-		if (!fromstring(m_data.csubstr(start, m_pos), d) || !skipcomma()) return { error };
+		if (!fromstring(m_data.csubstr(start, m_pos), d) || !skipcomma()) return do_error();
 		return { num, d };
 	}
 	if (ch == 't' && m_data[m_pos++]=='r' && m_data[m_pos++]=='u' && m_data[m_pos++]=='e')
 	{
-		if (!skipcomma()) return { error };
+		if (!skipcomma()) return do_error();
 		return { jtrue };
 	}
 	if (ch == 'f' && m_data[m_pos++]=='a' && m_data[m_pos++]=='l' && m_data[m_pos++]=='s' && m_data[m_pos++]=='e')
 	{
-		if (!skipcomma()) return { error };
+		if (!skipcomma()) return do_error();
 		return { jfalse };
 	}
 	if (ch == 'n' && m_data[m_pos++]=='u' && m_data[m_pos++]=='l' && m_data[m_pos++]=='l')
 	{
-		if (!skipcomma()) return { error };
+		if (!skipcomma()) return do_error();
 		return { jnull };
 	}
 	
-	return { error };
+	return do_error();
 }
 
 
@@ -221,7 +255,7 @@ static jsonparser::event test3e[]={
 
 static const char * test4 =
 "{ \"a\": [ { \"b\": [ 1, 2 ], \"c\": [ 3, 4 ] }, { \"d\": [ 5, 6 ], \"e\": [ 7, 8 ] } ],\n"
-"  \"f\": [ { \"g\": [ 9, 0 ], \"h\": [ 1, 2 ] }, { \"i\": [ 3, 4 ], \"j\": [ 5, 6 ] } ] }"
+"  \"f\": [ { \"g\": [ 9, 0 ], \"h\": [ 1, 2 ] }, { \"i\": [ 3, \"\xC3\xB8\" ], \"j\": [ {}, \"x\\nx\" ] } ] }"
 ;
 
 static jsonparser::event test4e[]={
@@ -251,9 +285,9 @@ static jsonparser::event test4e[]={
 			{ e_exit_map },
 			{ e_enter_map },
 				{ e_map_key, "i" },
-				{ e_enter_list }, { e_num, 3 }, { e_num, 4 }, { e_exit_list },
+				{ e_enter_list }, { e_num, 3 }, { e_str, "\xC3\xB8" }, { e_exit_list },
 				{ e_map_key, "j" },
-				{ e_enter_list }, { e_num, 5 }, { e_num, 6 }, { e_exit_list },
+				{ e_enter_list }, { e_enter_map }, { e_exit_map }, { e_str, "x\nx" }, { e_exit_list },
 			{ e_exit_map },
 		{ e_exit_list },
 	{ e_exit_map },
@@ -310,6 +344,7 @@ test("JSON parser")
 	testcall(testjson(test3, test3e));
 	testcall(testjson(test4, test4e));
 	
+	testcall(testjson_error(""));
 	testcall(testjson_error("{"));
 	testcall(testjson_error("{\"a\""));
 	testcall(testjson_error("{\"a\":"));
@@ -333,27 +368,35 @@ test("JSON parser")
 test("JSON container")
 {
 	{
-		json j("7");
-		assert_eq((int)j, 7);
+		JSON json("7");
+		assert_eq((int)json, 7);
 	}
 	
 	{
-		json j("\"42\"");
-		assert_eq((string)j, "42");
+		JSON json("\"42\"");
+		assert_eq((string)json, "42");
 	}
 	
 	{
-		json j("[1,2,3]");
-		assert_eq((int)j[0], 1);
-		assert_eq((int)j[1], 2);
-		assert_eq((int)j[2], 3);
+		JSON json("[1,2,3]");
+		assert_eq((int)json[0], 1);
+		assert_eq((int)json[1], 2);
+		assert_eq((int)json[2], 3);
 	}
 	
 	{
-		json j("{\"a\":null,\"b\":true,\"c\":false}");
-		assert_eq((bool)j["a"], false);
-		assert_eq((bool)j["b"], true);
-		assert_eq((bool)j["c"], false);
+		JSON json("{\"a\":null,\"b\":true,\"c\":false}");
+		assert_eq((bool)json["a"], false);
+		assert_eq((bool)json["b"], true);
+		assert_eq((bool)json["c"], false);
+	}
+	
+	{
+		JSON("["); // these pass if they do not yield infinite loops
+		JSON("[{}");
+		JSON("{");
+		JSON("{\"x\"");
+		JSON("{\"x\":");
 	}
 }
 #endif

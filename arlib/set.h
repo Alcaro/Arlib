@@ -305,7 +305,7 @@ class map {
 		
 		node_ref(const Tkey* key, const Tvalue* value) : key(key), value(value) {}
 		
-		size_t hash() { return ::hash(*key); }
+		size_t hash() const { return ::hash(*key); }
 	};
 public:
 	struct node {
@@ -318,7 +318,7 @@ public:
 		//allow nodes to be passed around by map users
 		node() : key(), value() {}
 		
-		size_t hash() { return ::hash(key); }
+		size_t hash() const { return ::hash(key); }
 		bool operator==(const Tkey& other) { return key == other; }
 		bool operator==(const node_ref& other) { return key == *other.key; }
 		bool operator==(const node& other) { return key == other.key; }
@@ -356,6 +356,7 @@ public:
 	{
 		return items.get_create(key).value;
 	}
+	Tvalue& operator[](const Tkey& key) { return get_create(key); } // C# does this better...
 	
 	Tvalue& insert(const Tkey& key)
 	{

@@ -121,8 +121,8 @@ test("set")
 			int x;
 		public:
 			unhashable(int x) : x(x) {}
-			size_t hash() { return 0; }
-			bool operator==(const unhashable& other) { return x==other.x; }
+			size_t hash() const { return 0; }
+			bool operator==(const unhashable& other) const { return x==other.x; }
 		};
 		
 		set<unhashable> item;

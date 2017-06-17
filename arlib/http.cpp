@@ -3,7 +3,7 @@
 #include "test.h"
 #include "stringconv.h"
 
-bool http::parseUrl(cstring url_, bool relative, location& out)
+bool HTTP::parseUrl(cstring url_, bool relative, location& out)
 {
 	string url = url_; // TODO: clean up once cstring acts sanely
 	
@@ -21,8 +21,15 @@ bool http::parseUrl(cstring url_, bool relative, location& out)
 		url = url.substr(2, ~0);
 		
 		array<string> host_loc = url.split<1>("/");
-		out.loc = "/"+host_loc[1];
-		if (!out.loc) out.loc = "/";
+		out.path = "/"+host_loc[1];
+		if (!host_loc[1])
+		{
+			host_loc = url.split<1>("?");
+			if (host_loc[1])
+			{
+				out.path = "/?"+host_loc[1];
+			}
+		}
 		array<string> domain_port = host_loc[0].split<1>(":");
 		out.domain = domain_port[0];
 		if (domain_port[1])
@@ -36,33 +43,39 @@ bool http::parseUrl(cstring url_, bool relative, location& out)
 		}
 	}
 	else if (!relative) return false;
-	else if (url[0]=='/') out.loc = url;
-	//TODO: ? #
-	else return false;
+	else if (url[0]=='/') out.path = url;
+	else if (url[0]=='?') out.path = out.path.split<1>("?")[0] + url;
+	else out.path = out.path.rsplit<1>("/")[0] + "/" + url;
 	
 	return true;
 }
 
-bool http::send(const req& r)
+bool HTTP::send(const req& r)
 {
+	//this allows changing hostname. probably shouldn't, but nobody's gonna rely on that
+	if (error == rsp::e_only_one && !n_unfinished) error = 0;
+	
 	if (!sock)
 	{
 		if (!parseUrl(r.url, false, this->host)) return error_f(rsp::e_bad_url);
 	}
 	else
 	{
+		activity(false); // check if socket's closed
+		
 		location loc;
 		if (!parseUrl(r.url, false, loc)) return error_f(rsp::e_bad_url);
 		if (loc.proto != host.proto || loc.domain != host.domain || loc.port != host.port)
 		{
 			return error_f(rsp::e_different_url);
 		}
-		host.loc = loc.loc;
+		host.path = loc.path;
 	}
+	if (error == rsp::e_only_one && !n_unfinished) error = 0;
 	
 	cstring method = r.method;
 	if (!method) method = (r.postdata ? "POST" : "GET");
-	tosend.push(method, " ", host.loc, " HTTP/1.1\r\n");
+	tosend.push(method, " ", host.path, " HTTP/1.1\r\n");
 	
 	bool httpHost = false;
 	bool httpContentLength = false;
@@ -78,8 +91,18 @@ bool http::send(const req& r)
 	}
 	
 	if (!httpHost) tosend.push("Host: ", host.domain, "\r\n");
-	if (method=="POST" && !httpContentLength) tosend.push("Content-Length: ", tostring(r.postdata.size()), "\r\n");
-	if (method=="POST" && !httpContentType) tosend.push("Content-Type: application/x-www-form-urlencoded;charset=UTF-8\r\n");
+	if (method!="GET" && !httpContentLength) tosend.push("Content-Length: ", tostring(r.postdata.size()), "\r\n");
+	if (method!="GET" && !httpContentType)
+	{
+		if (r.postdata[0] == '[' || r.postdata[0] == '{')
+		{
+			tosend.push("Content-Type: application/json\r\n");
+		}
+		else
+		{
+			tosend.push("Content-Type: application/x-www-form-urlencoded\r\n");
+		}
+	}
 	if (!httpConnection) tosend.push("Connection: keep-alive\r\n");
 	
 	tosend.push("\r\n");
@@ -94,7 +117,10 @@ bool http::send(const req& r)
 		else if (host.proto == "http") sock = socket::create(host.domain, host.port ? host.port : 80);
 		else return error_f(rsp::e_bad_url);
 		if (!sock) return error_f(rsp::e_connect);
+		
 		freshsock = true;
+		close_ok = false;
+		fragment = "";
 	}
 	
 	arrayview<byte> sendbuf = tosend.pull_buf();
@@ -104,13 +130,15 @@ bool http::send(const req& r)
 		if (!freshsock && !n_unfinished) goto newsock;
 		else return error_f(rsp::e_broken);
 	}
+	tosend.pull_done(bytes);
 	
 	n_unfinished++;
 	return true;
 }
 
-void http::activity(bool block)
+void HTTP::activity(bool block)
 {
+netagain:
 	if (!sock) return;
 	
 	array<byte> newrecv;
@@ -141,9 +169,11 @@ void http::activity(bool block)
 	}
 	
 	if (sock->recv(newrecv, block) < 0) return error_v(close_ok ? rsp::e_only_one : rsp::e_broken);
+	block = false;
+	if (!newrecv) return;
 	
 again:
-	if (!newrecv) return;
+	if (!newrecv) goto netagain;
 	switch (state)
 	{
 	case st_status:
@@ -204,16 +234,17 @@ again:
 			{
 				if (fragment)
 				{
-					fromstring(fragment, bytesleft);
+					fromstringhex(fragment, bytesleft);
 					if (bytesleft) state = st_body_chunk;
 					else goto req_finish;
 				}
 				//chunks are terminated by a \r\n, which looks like blank line to us; discard it
 			}
 			fragment = "";
+			goto again;
 		}
 		else fragment += (string)newrecv;
-		break;
+		goto netagain;
 		
 	case st_body:
 	case st_body_chunk:
@@ -231,11 +262,12 @@ again:
 			else
 			{
 				state = st_body_chunk_len;
+				goto again;
 			}
 		}
-		break;
+		goto netagain;
 	}
-	goto again;
+	abort(); // not allowed
 	
 req_finish:
 	state = st_status;
@@ -248,17 +280,18 @@ req_finish:
 	goto again;
 }
 
-void http::await()
+void HTTP::await()
 {
 	while (!i_ready()) activity(true);
 }
 
-http::rsp http::recv(bool partial)
+HTTP::rsp HTTP::recv(bool partial)
 {
 	await();
 	if (done)
 	{
 		rsp r = std::move(done[0]);
+		r.success = true;
 		done.remove(0);
 		return r;
 	}
@@ -271,74 +304,115 @@ http::rsp http::recv(bool partial)
 	}
 }
 
-//https://httpbin.org/stream-bytes/1024
-test()
+static void test_url(cstring url, cstring url2, cstring proto, cstring domain, int port, cstring path)
+{
+	HTTP::location loc;
+	assert(HTTP::parseUrl(url, false, loc));
+	if (url2) assert(HTTP::parseUrl(url2, true, loc));
+	assert_eq(loc.proto, proto);
+	assert_eq(loc.domain, domain);
+	assert_eq(loc.port, port);
+	assert_eq(loc.path, path);
+}
+static void test_url(cstring url, cstring proto, cstring domain, int port, cstring path)
+{
+	test_url(url, "", proto, domain, port, path);
+}
+test("URL parser")
+{
+	test_url("wss://gateway.discord.gg?v=5&encoding=json", "wss", "gateway.discord.gg", 0, "/?v=5&encoding=json");
+	test_url("wss://gateway.discord.gg", "?v=5&encoding=json", "wss", "gateway.discord.gg", 0, "/?v=5&encoding=json");
+	test_url("http://example.com/foo/bar.html?baz", "/bar/foo.html", "http", "example.com", 0, "/bar/foo.html");
+	test_url("http://example.com/foo/bar.html?baz", "foo.html", "http", "example.com", 0, "/foo/foo.html");
+	test_url("http://example.com/foo/bar.html?baz", "?quux", "http", "example.com", 0, "/foo/bar.html?quux");
+}
+
+test("HTTP")
 {
 	test_skip("too slow");
 #define URL "http://httpbin.org/user-agent"
 #define CONTENTS "{\n  \"user-agent\": null\n}\n"
 	{
-		string ret = http::request(URL);
+		string ret = HTTP::request(URL);
 		assert_eq(ret, CONTENTS);
 	}
 	
 	{
-		http h;
-		h.send(http::req(URL));
+		HTTP h;
+		h.send(HTTP::req(URL));
 		assert_eq(h.ready(), false);
 		assert_eq((string)h.recv(), CONTENTS);
 		h.send((string)URL);
 		assert_eq((string)h.recv(), CONTENTS);
-		assert_eq(h.recv().status, http::rsp::e_not_sent);
+		assert_eq(h.recv().status, HTTP::rsp::e_not_sent);
 	}
 	
 	{
-		http::req r;
+		HTTP::req r;
 		r.url = "http://httpbin.org/post";
 		r.headers.append("Host: httpbin.org");
 		r.postdata.append('x');
 		
-		http h;
+		HTTP h;
 		h.send(r);
 		h.send(r);
 		string data1 = (string)h.recv();
 		assert(data1.startswith("{\n"));
 		string data2 = (string)h.recv();
 		assert_eq(data2, data1);
-		assert_eq(h.recv().status, http::rsp::e_not_sent);
+		assert_eq(h.recv().status, HTTP::rsp::e_not_sent);
 	}
 	
 	{
-		http::req r;
+		HTTP::req r;
 		r.url = URL;
 		r.headers.append("Connection: close");
 		
-		http h;
+		HTTP h;
 		h.send(r);
 		h.send(r);
 		assert_eq(h.ready(), false);
 		assert_eq((string)h.recv(), CONTENTS);
 		assert_eq(h.ready(), true);
-		assert_eq(h.recv().status, http::rsp::e_only_one);
+		assert_eq(h.recv().status, HTTP::rsp::e_only_one);
 	}
 	
 	{
-		http::req r("https://httpbin.org/stream-bytes/32?chunk_size=3&seed=1");
-		http h;
+		HTTP::req r;
+		r.url = URL;
+		r.headers.append("Connection: close");
+		
+		HTTP h;
+		h.send(r);
+		assert_eq((string)h.recv(), CONTENTS);
+		h.send(r); // ensure it opens a new socket
+		assert_eq((string)h.recv(), CONTENTS);
+	}
+	
+	{
+		HTTP::req r("https://httpbin.org/stream-bytes/32?chunk_size=3&seed=1"); // throw in a https test too for no reason
+		HTTP h;
 		h.send(r);
 		h.send(r);
 		
-		http::rsp r1 = h.recv();
+		HTTP::rsp r1 = h.recv();
 		assert_eq(r1.status, 200);
 		assert_eq(r1.body.size(), 32);
 		
-		http::rsp r2 = h.recv();
+		HTTP::rsp r2 = h.recv();
 		assert_eq(r2.status, 200);
 		assert_eq(r2.body.size(), 32);
 		
 		assert_eq(tostringhex(r1.body), tostringhex(r2.body));
 	}
 	
-	//could mess with .ready, but it keeps giving race conditions
+	{
+		HTTP::rsp r = HTTP::request(HTTP::req("https://www.smwcentral.net/ajax.php?a=getdiscordusers"));
+		assert(r.success);
+		assert_eq(r.status, 200);
+		assert(r.body.size() > 20000);
+		assert_eq(r.body[0], '[');
+		assert_eq(r.body[r.body.size()-1], ']');
+	}
 }
 #endif

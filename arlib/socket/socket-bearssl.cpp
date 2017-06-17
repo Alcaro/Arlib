@@ -126,7 +126,7 @@ MAYBE_UNUSED static void append_certs_pem_x509(arrayview<byte> certs_pem)
 
 #ifdef _WIN32
 //seems to be no way to access the Windows cert store without crypt32.dll
-//but that's fine, the useful parts of Bear don't care whether certs are from a file or blackbox service
+//but that's fine, cert management is boring, the useful parts remain Bear
 #include <wincrypt.h>
 #endif
 
@@ -353,11 +353,11 @@ public:
 	
 	~socketssl_impl()
 	{
-		//gracefully tear this down, not really useful but why not
+		//gracefully tear this down, not really useful but not harmful either
 		br_ssl_engine_close(&s.sc.eng);
 		br_ssl_engine_flush(&s.sc.eng, 0);
 		process(false);
-		//but don't worry about ensuring the remote gets our closure notification, no point
+		//but don't worry too much about ensuring the remote gets our closure notification, no point
 	}
 	
 	

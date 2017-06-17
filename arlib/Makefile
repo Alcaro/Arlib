@@ -244,7 +244,7 @@ ifeq ($(ARSOCKET),1)
   else ifeq ($(ARSOCKET_SSL),bearssl)
     CFLAGS_ARLIB += -DARLIB_SSL_BEARSSL
     SOURCES_ARLIB += arlib/socket/bear-ser.c
-    OBJS_LATE += arlib/deps/bearssl-0.3/build/libbearssl.a
+    OBJS_LATE += arlib/deps/bearssl-0.4/build/libbearssl.a
     ifeq ($(OS),windows)
       CONF_LFLAGS += -lcrypt32
     endif
