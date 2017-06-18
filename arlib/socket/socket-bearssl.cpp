@@ -208,7 +208,7 @@ public:
 		byte iobuf[BR_SSL_BUFSIZE_BIDI];
 	} s;
 	
-	socketssl_impl(socket* parent, cstring domain, bool permissive)
+	socketssl_impl(socket* parent, cstring domain, bool permissive) : socketssl(parent->get_fd())
 	{
 		this->sock = parent;
 		
@@ -349,6 +349,14 @@ public:
 		br_ssl_engine_sendapp_ack(&s.sc.eng, buflen);
 		br_ssl_engine_flush(&s.sc.eng, false);
 		return buflen;
+	}
+	
+	bool active(bool want_recv, bool want_send)
+	{
+		int bearstate = br_ssl_engine_current_state(&s.sc.eng);
+		if (want_recv && (bearstate&BR_SSL_RECVAPP)) return true;
+		if (want_send && (bearstate&BR_SSL_SENDAPP)) return true;
+		return false;
 	}
 	
 	~socketssl_impl()

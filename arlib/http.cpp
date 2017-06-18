@@ -94,7 +94,7 @@ bool HTTP::send(const req& r)
 	if (method!="GET" && !httpContentLength) tosend.push("Content-Length: ", tostring(r.postdata.size()), "\r\n");
 	if (method!="GET" && !httpContentType)
 	{
-		if (r.postdata[0] == '[' || r.postdata[0] == '{')
+		if (r.postdata && (r.postdata[0] == '[' || r.postdata[0] == '{'))
 		{
 			tosend.push("Content-Type: application/json\r\n");
 		}
@@ -179,6 +179,8 @@ again:
 	case st_status:
 	case st_header:
 	case st_body_chunk_len:
+	case st_body_chunk_term:
+	case st_body_chunk_term_final:
 		if (newrecv.contains('\n'))
 		{
 			size_t n = newrecv.find('\n');
@@ -222,23 +224,30 @@ again:
 					}
 					else
 					{
-						if (!fromstring(next.header("Content-Length"), bytesleft))
+						cstring lengthstr = next.header("Content-Length");
+						if (!lengthstr && next.status == 204) bytesleft = 0; // 204 No Content
+						else if (!fromstring(next.header("Content-Length"), bytesleft))
 						{
 							bytesleft = -1;
 						}
 						state = st_body;
+						if (bytesleft == 0) goto req_finish;
 					}
 				}
 			}
-			else // st_body_chunk_len
+			else if (state == st_body_chunk_len)
 			{
-				if (fragment)
-				{
-					fromstringhex(fragment, bytesleft);
-					if (bytesleft) state = st_body_chunk;
-					else goto req_finish;
-				}
-				//chunks are terminated by a \r\n, which looks like blank line to us; discard it
+				fromstringhex(fragment, bytesleft);
+				if (bytesleft) state = st_body_chunk;
+				else goto req_finish;
+			}
+			else if (state == st_body_chunk_term)
+			{
+				state = st_body_chunk_len;
+			}
+			else // st_body_chunk_term_final
+			{
+				goto req_finish;
 			}
 			fragment = "";
 			goto again;
@@ -261,7 +270,7 @@ again:
 			}
 			else
 			{
-				state = st_body_chunk_len;
+				state = st_body_chunk_term;
 				goto again;
 			}
 		}
@@ -282,7 +291,7 @@ req_finish:
 
 void HTTP::await()
 {
-	while (!i_ready()) activity(true);
+	while (!i_ready() && n_unfinished && sock) activity(true);
 }
 
 HTTP::rsp HTTP::recv(bool partial)
@@ -390,18 +399,18 @@ test("HTTP")
 	}
 	
 	{
-		HTTP::req r("https://httpbin.org/stream-bytes/32?chunk_size=3&seed=1"); // throw in a https test too for no reason
+		HTTP::req r("https://httpbin.org/stream-bytes/128?chunk_size=30&seed=1"); // throw in a https test too for no reason
 		HTTP h;
 		h.send(r);
 		h.send(r);
 		
 		HTTP::rsp r1 = h.recv();
 		assert_eq(r1.status, 200);
-		assert_eq(r1.body.size(), 32);
+		assert_eq(r1.body.size(), 128);
 		
 		HTTP::rsp r2 = h.recv();
 		assert_eq(r2.status, 200);
-		assert_eq(r2.body.size(), 32);
+		assert_eq(r2.body.size(), 128);
 		
 		assert_eq(tostringhex(r1.body), tostringhex(r2.body));
 	}

@@ -64,7 +64,7 @@ private:
 	array<bool> m_nesting; // an entry is false for list, true for map; after [[{, this is false,false,true
 	
 	uint8_t nextch();
-	bool skipcomma(int depth = 1);
+	bool skipcomma(size_t depth = 1);
 	
 	string getstr();
 };

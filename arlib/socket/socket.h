@@ -4,6 +4,7 @@
 #include "../function.h"
 #include "../string.h"
 #include "../file.h"
+#include "../set.h"
 #include <stdint.h>
 #include <string.h>
 
@@ -12,7 +13,6 @@
 #define socket socket_t
 class socket : nocopy {
 protected:
-	socket(){}
 	socket(int fd) : fd(fd) {}
 	int fd; // Used by select().
 	
@@ -92,34 +92,22 @@ public:
 	//If select(2) will return this one, this function isn't needed.
 	virtual bool active(bool want_recv, bool want_send) { return false; }
 	
-	//TODO: this looks stupid
-	////Dispatches a thread to monitor the object. send() and recv() will only interact with local buffers. Takes ownership of the socket.
-	//static socket* bufwrap(socket* inner, size_t limit);
-	
 	//Note that these may return false positives. Use nonblocking operations.
+	//Resets after select().
 	class monitor {
-#ifdef __linux__
-		fd_mon mon;
+		struct item { void* key; bool read; bool write; };
+		map<uintptr_t,item> m_items;
 	public:
-		void add(socket* sock, void* key, bool read = true, bool write = false) { mon.monitor(sock->fd, key, read, write); }
-		void* select(int timeout_ms = -1) { bool x; return select(&x, NULL, timeout_ms); }
-		void* select(bool* can_read, bool* can_write, int timeout_ms = -1) { return mon.select(can_read, can_write, timeout_ms); }
-#else
-	public:
-		void add(socket* sock, bool read = true, bool write = false);
-		socket* select(int timeout_ms = -1);
-		socket* select(bool* can_read, bool* can_write, int timeout_ms = -1);
-#endif
-		
-		void remove(socket* sock) { add(sock, NULL, false, false); }
+		void add(socket* sock, void* key, bool read = true, bool write = false)
+		{
+			item i = { key, read, write };
+			m_items.insert((uintptr_t)sock, i);
+		}
+		void* select(int timeout_ms = -1);
 	};
 	
-	//Simplified interfaces.
 	static size_t select(arrayview<socket*> socks, bool* can_read, bool* can_write, int timeout_ms = -1);
 	static size_t select(arrayview<socket*> socks, int timeout_ms = -1) { bool x; return select(socks, &x, NULL, timeout_ms); }
-	
-	bool select(int timeout_ms = -1); // Checks readability only.
-	bool select(bool* can_read, bool* can_write, int timeout_ms = -1);
 };
 
 
@@ -137,7 +125,7 @@ public:
 //Binary size           | 4       | 2.5      | 4      | 80      | 169  | In kilobytes, estimated; DLLs not included
 class socketssl : public socket {
 protected:
-	socketssl(){}
+	socketssl(int fd) : socket(fd) {}
 public:
 	//If 'permissive' is false and the cert is untrusted (expired, bad root, wrong domain, etc), returns NULL.
 	static socketssl* create(cstring domain, int port, bool permissive=false)
@@ -166,7 +154,7 @@ public:
 
 //socket::select() works on these, but recv/send will fail
 class socketlisten : public socket {
-	socketlisten(int fd) { this->fd = fd; }
+	socketlisten(int fd) : socket(fd) { this->fd = fd; }
 public:
 	static socketlisten* create(int port);
 	socket* accept();

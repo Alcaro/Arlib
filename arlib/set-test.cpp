@@ -145,6 +145,22 @@ test("set")
 		//test passes if it does not enter an infinite loop of looking for a 'nothing more to see
 		// here' slot when all slots are 'there was something here, but keep looking'
 	}
+	
+	{
+		set<int> set1;
+		set1.add(1);
+		set1.add(2);
+		set1.add(3);
+		set<int> set2 = std::move(set1);
+		
+		assert(set2.contains(1));
+		assert(set2.contains(2));
+		assert(set2.contains(3));
+		
+		assert(!set1.contains(1));
+		assert(!set1.contains(2));
+		assert(!set1.contains(3));
+	}
 }
 
 test("map")
@@ -220,6 +236,22 @@ test("map")
 		assert(item.contains("bar"));
 		assert(!item.contains("baz"));
 		assert_eq(item.get("bar"), "Bar");
+	}
+	
+	{
+		map<int,int> map1;
+		map1.insert(1,2);
+		map1.insert(2,4);
+		map1.insert(3,6);
+		map<int,int> map2 = std::move(map1);
+		
+		assert(map2[1]==2);
+		assert(map2[2]==4);
+		assert(map2[3]==6);
+		
+		assert(!map1.contains(1));
+		assert(!map1.contains(2));
+		assert(!map1.contains(3));
 	}
 }
 #endif

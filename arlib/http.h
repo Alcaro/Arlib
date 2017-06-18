@@ -98,7 +98,7 @@ public:
 	}
 	
 	//If this key is returned, call .ready(), then .monitor() again.
-	void monitor(socket::monitor& mon, void* key) { mon.add(sock, key, true, tosend.remaining() ? true : false); }
+	void monitor(socket::monitor& mon, void* key) { if (sock) mon.add(sock, key, true, tosend.remaining() ? true : false); }
 	
 	
 	struct location {
@@ -116,7 +116,7 @@ private:
 	
 	bool i_ready() const
 	{
-		return (error || !n_unfinished || done.size());
+		return (error || done.size());
 	}
 	
 	int error = 0;
@@ -144,6 +144,8 @@ private:
 		st_body, // waiting for additional bytes, non-chunked
 		st_body_chunk_len, // waiting for chunk length
 		st_body_chunk, // waiting for chunk
+		st_body_chunk_term, // waiting for final \r\n in chunk
+		st_body_chunk_term_final, // waiting for final \r\n in terminating 0\r\n\r\n chunk
 	} state = st_status;
 	
 	void activity(bool block);

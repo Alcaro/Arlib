@@ -29,7 +29,7 @@ public:
 	operator bool() { return isOpen(); }
 	
 	//If this key is returned, call .recv(). May not necessarily return anything.
-	void monitor(socket::monitor& mon, void* key) { mon.add(sock, key, true, false); }
+	void monitor(socket::monitor& mon, void* key) { if (sock) mon.add(sock, key, true, false); }
 };
 
 

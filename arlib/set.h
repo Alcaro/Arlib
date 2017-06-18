@@ -9,72 +9,38 @@ template<typename T>
 class set {
 	//this is a hashtable, using open addressing and linear probing
 	enum { i_empty, i_deleted };
-	struct alignas(T) maybe_T {
-	public:
-		char bytes[sizeof(T)];
-		T* data() { return (T*)bytes; }
-		const T* data() const { return (T*)bytes; }
-		
-		template<typename... Args>
-		void enable(Args&&... args)
-		{
-			new(data()) T(std::forward<Args>(args)...);
-		}
-		
-		void disable(char tag)
-		{
-			data()->~T();
-			bytes[0] = tag;
-		}
-		
-		T& member()
-		{
-			return *data();
-		}
-		
-		const T& member() const
-		{
-			return *data();
-		}
-		
-		//set to i_empty (never used) or i_deleted (used)
-		char tag()
-		{
-			return bytes[0];
-		}
-	};
 	
-	//TODO: just make this a plain T*, array<>'s services aren't needed.
-	array<maybe_T> m_data;
+	T* m_data_;
+	uint8_t& tag(size_t id) { return *(uint8_t*)(m_data_+id); }
 	array<bool> m_valid;
 	size_t m_count;
 	
 	void rehash(size_t newsize)
 	{
 //debug("rehash pre");
-		array<maybe_T> prev_data = std::move(m_data);
+		T* prev_data = m_data_;
 		array<bool> prev_valid = std::move(m_valid);
 		
-		m_data.reset();
+		m_data_ = calloc(newsize, sizeof(T));
 		m_valid.reset();
-		m_data.resize(newsize);
 		m_valid.resize(newsize);
 		
-		for (size_t i=0;i<prev_data.size();i++)
+		for (size_t i=0;i<prev_valid.size();i++)
 		{
 			if (!prev_valid[i]) continue;
 			
-			size_t pos = find_pos(prev_data[i].member());
-			memcpy(m_data[pos].bytes, prev_data[i].bytes, sizeof(maybe_T::bytes));
+			size_t pos = find_pos(prev_data[i]);
+			memcpy(&m_data_[pos], &prev_data[i], sizeof(T));
 			m_valid[pos] = true;
 		}
+		free(prev_data);
 //debug("rehash post");
 	}
 	
 	void grow()
 	{
 		// half full -> rehash
-		if (m_count >= m_data.size()/2) rehash(m_data.size()*2);
+		if (m_count >= m_valid.size()/2) rehash(m_valid.size()*2);
 	}
 	
 	bool slot_empty(size_t pos)
@@ -83,13 +49,13 @@ class set {
 	}
 	bool slot_deleted(size_t pos)
 	{
-		return !m_valid[pos] && m_data[pos].invalid_kind==1;
+		return !m_valid[pos] && tag(pos)==i_deleted;
 	}
 	
 	template<typename T2>
 	size_t find_pos(const T2& item)
 	{
-		size_t hashv = hash_shuffle(hash(item)) % m_data.size();
+		size_t hashv = hash_shuffle(hash(item)) % m_valid.size();
 		size_t i = 0;
 		
 		size_t emptyslot = -1;
@@ -98,15 +64,15 @@ class set {
 		{
 			//I could use hashv + i+(i+1)/2 <http://stackoverflow.com/a/15770445>
 			//but due to hash_shuffle, it hurts as much as it helps.
-			size_t pos = (hashv + i) % m_data.size();
-			if (m_valid[pos] && m_data[pos].member()==item) return pos;
+			size_t pos = (hashv + i) % m_valid.size();
+			if (m_valid[pos] && m_data_[pos]==item) return pos;
 			if (!m_valid[pos])
 			{
 				if (emptyslot == (size_t)-1) emptyslot = pos;
-				if (m_data[pos].tag() == i_empty) return emptyslot;
+				if (tag(pos) == i_empty) return emptyslot;
 			}
 			i++;
-			if (i == m_data.size())
+			if (i == m_valid.size())
 			{
 				//happens if all slots contain 'something was here' placeholders
 				return emptyslot;
@@ -122,7 +88,7 @@ class set {
 	T* get(const T2& item)
 	{
 		size_t pos = find_pos(item);
-		if (m_valid[pos]) return &m_data[pos].member();
+		if (m_valid[pos]) return &m_data_[pos];
 		else return NULL;
 	}
 	//also used by map
@@ -135,64 +101,60 @@ class set {
 		
 		if (!m_valid[pos])
 		{
-			m_data[pos].enable(item);
+			new(&m_data_[pos]) T(item);
 			m_valid[pos] = true;
 			m_count++;
 		}
 		
-		return m_data[pos].member();
+		return m_data_[pos];
 	}
 	
 	void construct()
 	{
-		m_data.resize(8);
+		m_data_ = calloc(8, sizeof(T));
 		m_valid.resize(8);
 		m_count = 0;
 	}
 	void construct(const set& other)
 	{
-		m_data = other.m_data;
+		m_data_ = calloc(other.m_valid.size(), sizeof(T));
 		m_valid = other.m_valid;
 		m_count = other.m_count;
 		
-		for (size_t i=0;i<m_data.size();i++)
+		for (size_t i=0;i<m_valid.size();i++)
 		{
 			if (m_valid[i])
 			{
-				const array<maybe_T>& z = other.m_data;
-				const maybe_T& y = z[i];
-				const T& x = y.member();
-				m_data[i].enable(x);
-				//m_data[i].enable(other.m_data[i].member());
+				new(&m_data_[i]) T(other.m_data_[i]);
 			}
 		}
 	}
 	void construct(set&& other)
 	{
-		m_data = other.m_data;
-		m_valid = other.m_valid;
-		m_count = other.m_count;
+		m_data_ = std::move(other.m_data_);
+		m_valid = std::move(other.m_valid);
+		m_count = std::move(other.m_count);
 		
-		other.m_data.reset();
-		other.m_valid.reset();
+		other.construct();
 	}
 	
 	void destruct()
 	{
-		for (size_t i=0;i<m_data.size();i++)
+		for (size_t i=0;i<m_valid.size();i++)
 		{
-			if (m_valid[i]) m_data[i].disable(0);
+			if (m_valid[i]) m_data_[i].~T();
 			m_valid[i] = false;
 		}
+		free(m_data_);
 		m_count = 0;
 	}
 	
 public:
 	set() { construct(); }
 	set(const set& other) { construct(other); }
-	set(set&& other) { construct(other); }
+	set(set&& other) { construct(std::move(other)); }
 	set& operator=(const set& other) { destruct(); construct(other); }
-	set& operator=(set&& other) { destruct(); construct(other); }
+	set& operator=(set&& other) { destruct(); construct(std::move(other)); }
 	~set() { destruct(); }
 	
 	template<typename T2>
@@ -215,16 +177,17 @@ public:
 		
 		if (m_valid[pos])
 		{
-			m_data[pos].disable(1);
+			m_data_[pos].~T();
+			tag(pos) = i_deleted;
 			m_valid[pos] = false;
 			m_count--;
-			if (m_count < m_data.size()/4 && m_data.size() > 8) rehash(m_data.size()/2);
+			if (m_count < m_valid.size()/4 && m_valid.size() > 8) rehash(m_valid.size()/2);
 		}
 	}
 	
 	size_t size() { return m_count; }
 	
-	void reset() { destruct(); }
+	void reset() { destruct(); construct(); }
 	
 private:
 	class iterator {
@@ -256,7 +219,7 @@ private:
 		
 		const T& operator*()
 		{
-			return parent->m_data[pos].member();
+			return parent->m_data_[pos];
 		}
 		
 		iterator& operator++()
@@ -327,6 +290,13 @@ private:
 	set<node> items;
 	
 public:
+	//map() {}
+	//map(const map& other) : items(other.items) {}
+	//map(map&& other) : items(std::move(other.items)) {}
+	//map& operator=(const map& other) { items = other.items; }
+	//map& operator=(map&& other) { items = std::move(other.items); }
+	//~map() { destruct(); }
+	
 	//can't call it set(), conflict with set<>
 	void insert(const Tkey& key, const Tvalue& value)
 	{

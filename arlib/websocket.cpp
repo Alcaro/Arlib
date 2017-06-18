@@ -63,6 +63,7 @@ bool WebSocket::connect(cstring target, arrayview<string> headers)
 
 void WebSocket::fetch(bool block)
 {
+again: ;
 	uint8_t bytes[4096];
 	int nbyte = sock->recv(bytes, block);
 	if (nbyte < 0)
@@ -73,6 +74,8 @@ puts("SOCKDEAD");
 	if (nbyte > 0)
 	{
 		msg += arrayview<byte>(bytes, nbyte);
+		block = false;
+		goto again;
 	}
 }
 
@@ -93,8 +96,7 @@ again:
 	if (msg.size() < headsize) { fetch(block); block=false; }
 	if (msg.size() < headsize) return false;
 	
-	size_t msgsize;
-	if (headsizespec <= 125) msgsize = headsize + headsizespec;
+	size_t msgsize = headsize + headsizespec;
 	if (headsizespec == 126) msgsize = headsize + bigend<uint16_t>(msg.slice(2, 2));
 	if (headsizespec == 127) msgsize = headsize + bigend<uint64_t>(msg.slice(2, 8));
 	

@@ -113,8 +113,11 @@ ifneq ($(OPT),0)
   ifeq ($(OPT),spd)
     CONF_CFLAGS += -O3
   endif
+  LFLAGS += -Wl,--gc-sections -Wl,--build-id=none
   ifneq ($(DEBUG),1)
-    LFLAGS += -Wl,--gc-sections -s -Wl,--build-id=none
+    ifneq ($(STRIP),0)
+      LFLAGS += -s
+    endif
   endif
   OBJNAME := $(OBJNAME)-opt
 endif

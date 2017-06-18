@@ -144,6 +144,11 @@ public:
 		return ret;
 	}
 	
+	bool active(bool want_recv, bool want_send)
+	{
+#error fixme
+	}
+	
 	~socketssl_impl()
 	{
 		if (ssl && sock)

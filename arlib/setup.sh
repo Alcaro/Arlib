@@ -15,10 +15,10 @@ cat > Makefile <<-EOF
 	ARTHREAD = 0
 	ARWUTF = 0
 	ARSOCKET = 0
-	#valid values: openssl, gnutls, tlse, bearssl, no
-	#ignored on windows (other than 'no', which is obeyed), always uses schannel
-	#default openssl
+	#valid values: openssl (default), gnutls, tlse, bearssl, no
 	ARSOCKET_SSL = bearssl
+	#valid values: schannel (default), bearssl, no (others may work, not tested)
+	ARSOCKET_SSL_WINDOWS = schannel
 	ARSANDBOX = 0
 	
 	include arlib/Makefile

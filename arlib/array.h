@@ -341,7 +341,7 @@ public:
 	}
 	T& insert(size_t index)
 	{
-		resize_grow(this->count+1);
+		resize_grow_noinit(this->count+1);
 		memmove(this->items+index+1, this->items+index, sizeof(T)*(this->count-1-index));
 		new(&this->items[index]) T();
 		return this->items[index];

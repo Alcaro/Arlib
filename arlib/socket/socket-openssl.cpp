@@ -24,13 +24,13 @@ public:
 	socket* sock;
 	SSL* ssl;
 	
+	socketssl_impl(socket* parent) : socketssl(parent->get_fd()), sock(parent) {}
+	
 	static socketssl_impl* create(socket* parent, cstring domain, bool permissive)
 	{
 		if (!parent) return NULL;
 		
-		socketssl_impl* ret = new socketssl_impl();
-		ret->sock = parent;
-		ret->fd = parent->get_fd();
+		socketssl_impl* ret = new socketssl_impl(parent);
 		ret->ssl = SSL_new(ctx);
 		SSL_set_tlsext_host_name(ret->ssl, (const char*)domain);
 		SSL_set_fd(ret->ssl, ret->fd);
@@ -93,6 +93,12 @@ public:
 	{
 		setblock(fd, block);
 		return fixret(SSL_write(ssl, data.ptr(), data.size()));
+	}
+	
+	bool active(bool want_recv, bool want_send)
+	{
+		if (want_recv) return SSL_pending(ssl);
+		else return false; // don't care about write, assume it always succeeds
 	}
 	
 	~socketssl_impl()

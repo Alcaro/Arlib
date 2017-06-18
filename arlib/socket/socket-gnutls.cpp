@@ -133,6 +133,11 @@ public:
 		return fixretsend(gnutls_record_send(this->session, data.ptr(), data.size()));
 	}
 	
+	bool active(bool want_recv, bool want_send)
+	{
+#error fixme
+	}
+	
 	~socketssl_impl()
 	{
 		if (this->session)

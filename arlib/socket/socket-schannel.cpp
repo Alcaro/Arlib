@@ -318,6 +318,11 @@ public:
 		return len;
 	}
 	
+	bool active(bool want_recv, bool want_send)
+	{
+#error fixme
+	}
+	
 	~socketssl_impl()
 	{
 		error();

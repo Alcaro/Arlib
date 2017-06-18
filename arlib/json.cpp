@@ -11,7 +11,7 @@ again: ;
 	return '\0';
 }
 
-bool jsonparser::skipcomma(int depth)
+bool jsonparser::skipcomma(size_t depth)
 {
 	uint8_t ch = nextch();
 	if (ch == ',' || ch == '\0')
@@ -394,6 +394,7 @@ test("JSON container")
 	{
 		JSON("["); // these pass if they do not yield infinite loops
 		JSON("[{}");
+		JSON("[[]");
 		JSON("{");
 		JSON("{\"x\"");
 		JSON("{\"x\":");

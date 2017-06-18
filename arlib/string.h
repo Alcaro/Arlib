@@ -246,27 +246,6 @@ public:
 		return *this;
 	}
 	
-	//can't create csplit without a circular dependency
-	//  maybe if I make cstring the parent class, like arrayview/array, but that's probably more effort than it's worth
-	//limit is maximum number of cuts
-	array<string> split(const string& sep, size_t limit) const;
-	template<size_t limit = SIZE_MAX>
-	array<string> split(const string& sep) const { return split(sep, limit); }
-	
-	array<string> rsplit(const string& sep, size_t limit) const;
-	template<size_t limit = SIZE_MAX>
-	array<string> rsplit(const string& sep) const { return rsplit(sep, limit); }
-	
-	//TODO: fill in once cstring works
-	//(actually, implement split() as csplit().cast<string>())
-	array<string> csplit(const string& sep, size_t limit) const { return split(sep, limit); }
-	template<size_t limit = SIZE_MAX>
-	array<string> csplit(const string& sep) const { return csplit(sep, limit); }
-	
-	array<string> crsplit(const string& sep, size_t limit) const { return rsplit(sep, limit); }
-	template<size_t limit = SIZE_MAX>
-	array<string> crsplit(const string& sep) const { return crsplit(sep, limit); }
-	
 private:
 	class noinit {};
 	string(noinit) {}
@@ -323,6 +302,56 @@ public:
 	inline bool endswith(cstring other) const;
 	inline bool istartswith(cstring other) const;
 	inline bool iendswith(cstring other) const;
+	inline bool iequals(cstring other) const;
+	
+	//can't create csplit without a circular dependency
+	//  maybe if I make cstring the parent class, like arrayview/array, but that's probably more effort than it's worth
+	//limit is maximum number of cuts
+	array<string> split(const string& sep, size_t limit) const;
+	template<size_t limit = SIZE_MAX>
+	array<string> split(const string& sep) const { return split(sep, limit); }
+	
+	array<string> rsplit(const string& sep, size_t limit) const;
+	template<size_t limit = SIZE_MAX>
+	array<string> rsplit(const string& sep) const { return rsplit(sep, limit); }
+	
+	//TODO: fill in once cstring works
+	//(actually, implement split() as csplit().cast<string>())
+	array<string> csplit(const string& sep, size_t limit) const { return split(sep, limit); }
+	template<size_t limit = SIZE_MAX>
+	array<string> csplit(const string& sep) const { return csplit(sep, limit); }
+	
+	array<string> crsplit(const string& sep, size_t limit) const { return rsplit(sep, limit); }
+	template<size_t limit = SIZE_MAX>
+	array<string> crsplit(const string& sep) const { return crsplit(sep, limit); }
+		
+	string trim()
+	{
+		const uint8_t * chars = ptr();
+		int start = 0;
+		int end = length();
+		while (end > start && isspace(chars[end-1])) end--;
+		while (start < end && isspace(chars[start])) start++;
+		return substr(start, end);
+	}
+	
+	string lower()
+	{
+		string ret = *this;
+		ret.unshare();
+		uint8_t * chars = ret.ptr();
+		for (size_t i=0;i<length();i++) chars[i] = tolower(chars[i]);
+		return ret;
+	}
+	
+	string upper()
+	{
+		string ret = *this;
+		ret.unshare();
+		uint8_t * chars = ret.ptr();
+		for (size_t i=0;i<length();i++) chars[i] = toupper(chars[i]);
+		return ret;
+	}
 	
 	static string codepoint(uint32_t cp);
 	
@@ -420,6 +449,11 @@ inline bool string::iendswith(cstring other) const
 		if (tolower(a[i]) != tolower(b[i])) return false;
 	}
 	return true;
+}
+
+inline bool string::iequals(cstring other) const
+{
+	return (this->length() == other.length() && this->istartswith(other));
 }
 
 //TODO

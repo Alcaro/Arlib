@@ -124,7 +124,7 @@ namespace {
 
 class socket_impl : public socket {
 public:
-	socket_impl(int fd) { this->fd = fd; }
+	socket_impl(int fd) : socket(fd) {}
 	
 	/*private*/ int fixret(int ret)
 	{
@@ -182,111 +182,40 @@ socket* socket::create(cstring domain, int port)
 //static socket* socket::create_udp(const char * domain, int port);
 
 #ifdef __unix__
-size_t socket::select(arrayview<socket*> socks, bool* can_read, bool* can_write, int timeout_ms)
+#include <poll.h>
+#define RD_EV (POLLIN |POLLRDHUP|POLLHUP|POLLERR)
+#define WR_EV (POLLOUT|POLLRDHUP|POLLHUP|POLLERR)
+
+void* socket::monitor::select(int timeout_ms)
 {
-	array<int> fds;
-	fds.resize(socks.size());
-	for (size_t i=0;i<socks.size();i++) fds[i] = socks[i]->fd;
-	return fd_monitor_oneshot(fds, can_read, can_write, timeout_ms);
+	map<uintptr_t,item> items = std::move(m_items);
+	array<pollfd> pfds;
+	array<void*> pfds_keys;
+	
+	for (auto& pair : items)
+	{
+		socket* sock = (socket*)pair.key;
+		bool read = pair.value.read;
+		bool write = pair.value.write;
+		if (sock->active(read, write)) return pair.value.key;
+		
+		pollfd& pfd = pfds.append();
+		pfd.fd = sock->fd;
+		pfd.events = (read ? POLLIN : 0) | (write ? POLLOUT : 0);
+		pfd.revents = 0;
+		pfds_keys.append(pair.value.key);
+	}
+	
+	poll(pfds.ptr(), pfds.size(), timeout_ms);
+	
+	for (size_t i=0;i<pfds.size();i++)
+	{
+		if (pfds[i].revents != 0) return pfds_keys[i];
+	}
+	
+	return NULL;
 }
 #endif
-
-
-//#if defined(__unix__) && defined(ARLIB_THREAD)
-//#include "../thread.h"
-//#include "../file.h"
-//
-//class sockwrap : public socket {
-//	socket* inner;
-//	mutex mut;
-//	bytepipe tosend;
-//	bytepipe received;
-//	size_t limit;
-//	
-//public:
-//	/*private*/ void error()
-//	{
-//		delete inner;
-//		inner = NULL;
-//		fd_mon_thread(fd, NULL, NULL);
-//		tosend.reset();
-//	}
-//	
-//	/*private*/ void process()
-//	{
-//		arrayvieww<byte> rbuf = received.push_buf();
-//		int n_recv = inner->recv(rbuf, false);
-//		if (n_recv < 0) error();
-//		else received.push_done(n_recv);
-//		
-//		arrayview<byte> sbuf = tosend.pull_buf();
-//		if (sbuf)
-//		{
-//			int bytes = inner->sendp(sbuf, false);
-//			if (bytes < 0) error();
-//			else tosend.pull_done(bytes);
-//		}
-//		if (inner)
-//		{
-//			fd_mon_thread(fd,
-//			              received.remaining() < limit  ? bind_this(&sockwrap::activity) : NULL,
-//			              tosend.remaining() != 0       ? bind_this(&sockwrap::activity) : NULL);
-//		}
-//	}
-//	/*private*/ void activity(int fd)
-//	{
-//		synchronized(mut)
-//		{
-//			process();
-//		}
-//	}
-//	
-//	int recv(arrayvieww<byte> data, bool block)
-//	{
-//		synchronized(mut)
-//		{
-//			process();
-//			if (!inner) return -1;
-//			return inner->recv(data, block);
-//		}
-//		return -1; // unreachable
-//	}
-//	int sendp(arrayview<byte> data, bool block)
-//	{
-//		synchronized(mut)
-//		{
-//			if (!inner) return -1;
-//			int bytes = 0;
-//			if (!tosend)
-//			{
-//				bytes = inner->sendp(data, false);
-//				if ((size_t)bytes == data.size()) return data.size();
-//				if (bytes < 0) bytes = 0;
-//			}
-//			
-//			tosend += data.skip(bytes);
-//			process();
-//			if (inner) return data.size();
-//			else return -1;
-//		}
-//		return -1; // unreachable
-//	}
-//	~sockwrap()
-//	{
-//		synchronized(mut)
-//		{
-//			error();
-//		}
-//	}
-//	sockwrap(socket* inner, size_t limit) : socket(inner->get_fd()), inner(inner), limit(limit) {}
-//};
-//
-//socket* socket::bufwrap(socket* inner, size_t limit)
-//{
-//	if (!inner) return NULL;
-//	return new sockwrap(inner, limit);
-//}
-//#endif
 
 
 static MAYBE_UNUSED int socketlisten_create_ip4(int port)
