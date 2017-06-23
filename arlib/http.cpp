@@ -145,7 +145,10 @@ netagain:
 	
 	if (tosend.remaining())
 	{
-		if (sock->recv(newrecv, false) < 0) return error_v(close_ok ? rsp::e_only_one : rsp::e_broken);
+		if (sock->recv(newrecv, false) < 0)
+		{
+			return error_v(close_ok ? rsp::e_only_one : rsp::e_broken);
+		}
 		
 		if (!newrecv)
 		{
@@ -190,15 +193,16 @@ again:
 			
 			if (state == st_status)
 			{
-				if (!fragment) {} // chunked transfer ends with 0\r\n\r\n; this could be the second \r\n
-				else if (fragment.startswith("HTTP/"))
+				if (fragment.startswith("HTTP/"))
 				{
-					close_ok = false;
 					string status_i = fragment.split<2>(" ")[1];
 					fromstring(status_i, next.status);
 					state = st_header;
 				}
-				else return error_v(rsp::e_not_http);
+				else
+				{
+					return error_v(rsp::e_not_http);
+				}
 			}
 			else if (state == st_header)
 			{
@@ -239,7 +243,7 @@ again:
 			{
 				fromstringhex(fragment, bytesleft);
 				if (bytesleft) state = st_body_chunk;
-				else goto req_finish;
+				else state = st_body_chunk_term_final;
 			}
 			else if (state == st_body_chunk_term)
 			{
@@ -276,7 +280,7 @@ again:
 		}
 		goto netagain;
 	}
-	abort(); // not allowed
+	abort(); // shouldn't be reachable
 	
 req_finish:
 	state = st_status;

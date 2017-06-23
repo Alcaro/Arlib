@@ -4,26 +4,20 @@
 #include "../file.h"
 #include "../stringconv.h"
 #include "../thread.h"
-//Possible BearSSL improvements (not all of it is worth the effort):
-//- serialization that I didn't have to write myself
-//- extern "C" in header
-//- better AES-NI feature detection; either define BR_AES_X86NI to __AES__ rather than __GNUC__>=4.8,
-//    or define __AES__ (and __SSSE3__ and whatever) manually on GCC>=4.8 (and check that this works, I'm not sure if it does)
-//- a slightly easier way to disable cert validation than 50 lines of wrappers
-//    or maybe it's intentional, to discourage such shenanigans
-//- official sample code demonstrating how to load /etc/ssl/certs/ca-certificates.crt
+//Possible BearSSL improvements (not all of it is worth the effort; some may have been fixed since the version I tested):
+//- (0.4) serialization that I didn't have to write myself
+//- (0.3) extern "C" in header
+//- (0.3) official sample code demonstrating how to load /etc/ssl/certs/ca-certificates.crt
 //    preferably putting most of it in BearSSL itself, but seems hard to implement without malloc
-//- more bool and int8_t, less int and char
+//- (0.3) more bool and int8_t, less int and char
 //    it's fine if it's typedef br_bool=int rather than real bool, if needed to prevent compiler shenanigans
 //    <https://bearssl.org/constanttime.html#compiler-woes>, but just plain int is suboptimal
 //    (and most, if not all, booleans in the BearSSL API are constant and non-secret - no attacker cares if your iobuf is bidirectional)
-//- src/ec/ec_p256_m15.c:992 and :1001 don't seem to need to be u32, u16 works just as well
+//- (0.3) src/ec/ec_p256_m15.c:992 and :1001 don't seem to need to be u32, u16 works just as well
 //    (tools/client.c:234 and test/test_x509.c:504 too, but those parts aren't size sensitive)
-//- fix typoed NULLs at src/hash/ghash_pclmul.c:241, src/hash/ghash_pclmul.c:250, tools/names.c:834
+//- (0.3) fix typoed NULLs at src/hash/ghash_pclmul.c:241, src/hash/ghash_pclmul.c:250, tools/names.c:834
 //    (not sure if that's the only ones)
-//- tools/client.c: typo minium: "ERROR: duplicate minium ClientHello length"
-//(accepting and ignoring size 0 in br_ssl_engine_{recv,send}{app,rec}_ack would be useful,
-//    but it'd mean an extra if in there, wasting a few bytes; better put that in caller)
+//- (0.4) tools/client.c: typo minium: "ERROR: duplicate minium ClientHello length"
 
 extern "C" {
 #include "../deps/bearssl-0.4/inc/bearssl.h"

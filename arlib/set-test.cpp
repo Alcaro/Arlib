@@ -77,10 +77,15 @@ test("set")
 				for (int k=0;k<=j;k++)
 				{
 					item.add(j); // add the same thing multiple times for no reason
+					assert(item.contains(j));
 				}
+				for (int k=0;k<=j;k++)
+				{
+					assert(item.contains(j));
+				}
+				assert_eq(item.size(), j+1);
 			}
 			
-			assert_eq(item.size(), i);
 			
 			for (int j=0;j<32;j++)
 			{
@@ -252,6 +257,28 @@ test("map")
 		assert(!map1.contains(1));
 		assert(!map1.contains(2));
 		assert(!map1.contains(3));
+	}
+	
+	{
+		map<int,int> x;
+		for (int i=0;i<256;i++)
+		{
+			x[i] = i*2 + 3;
+			for (int j=0;j<i;j++)
+			{
+				assert_eq(x.get(j), j*2 + 3);
+			}
+		}
+	}
+	
+	{
+		map<int,int> x;
+		for (int i=0;i<256;i++)
+		{
+			int& y = x[i];
+			x.get_create(i); // make sure this does not invalidate existing references
+			y=42;
+		}
 	}
 }
 #endif

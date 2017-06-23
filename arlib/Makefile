@@ -5,6 +5,8 @@
 #PATH is the source filename, including extension, relative to project root, with slashes replaced with double underscore
 #example: obj/DEFAULT___linux___arlib__file-posix.cpp.o
 
+arlib-default: arlib-default2
+
 ifneq (,$(wildcard string.cpp))
   $(error wrong build directory, go up one level)
 endif
@@ -298,8 +300,8 @@ SOURCES_DEFAULT := $(SOURCES)
 OBJS += $(foreach domain,$(sort $(DOMAINS)),$(call OBJMANGLE,$(domain),$(wildcard $(SOURCES_$(domain)))))
 OBJS += $(OBJS_LATE)
 
-.DEFAULT_GOAL := all
 all: $(OUTNAME)
+arlib-default2: $(OUTNAME)
 $(OUTNAME): $(OBJS)
 	$(LD) $+ $(TRUE_LFLAGS) -o $@ -lm
 

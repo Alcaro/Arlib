@@ -12,7 +12,7 @@ public:
 		string url;
 		
 		string method;
-		//These headers are implied by other members and added automatically, if not already present:
+		//These headers are added automatically, if not already present:
 		//Connection: keep-alive
 		//Host: <from url>
 		//Content-Length: <from postdata> (if not GET)
@@ -40,7 +40,7 @@ public:
 			e_broken        = -4, // server unexpectedly closed connection, or timeout
 			                      // if partial=true in recv(), this may be a real status code instead; to detect this, look for success=false
 			e_not_http      = -5, // the server isn't speaking HTTP
-			e_only_one      = -6, // server used Connection: close or similar on a previous request
+			e_only_one      = -6, // server used Connection: close or similar on a previous request, or otherwise closed socket
 			//may also be a normal http status code (200, 302, 404, etc)
 		};
 		int status;
@@ -123,6 +123,7 @@ private:
 	void error_v(int err)
 	{
 		sock = NULL;
+		if (err==rsp::e_only_one && !n_unfinished) return; // this isn't an error
 		error = err;
 	}
 	bool error_f(int err) { error_v(err); return false; }

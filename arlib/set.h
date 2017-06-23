@@ -95,12 +95,14 @@ class set {
 	template<typename T2>
 	T& get_create(const T2& item)
 	{
-		grow();
-		
 		size_t pos = find_pos(item);
 		
 		if (!m_valid[pos])
 		{
+			grow();
+			pos = find_pos(item); // recalculate this, grow() may have moved it
+			//do not move earlier, grow() invalidates references and get_create(item_that_exists) is not allowed to do that
+			
 			new(&m_data_[pos]) T(item);
 			m_valid[pos] = true;
 			m_count++;
@@ -262,28 +264,18 @@ public:
 
 template<typename Tkey, typename Tvalue>
 class map {
-	struct node_ref {
-		const Tkey* key;
-		const Tvalue* value;
-		
-		node_ref(const Tkey* key, const Tvalue* value) : key(key), value(value) {}
-		
-		size_t hash() const { return ::hash(*key); }
-	};
 public:
 	struct node {
 		const Tkey key;
 		Tvalue value;
 		
-		node(Tkey other) : key(other), value() {}
-		node(node_ref other) : key(*other.key), value(*other.value) {}
-		
-		//allow nodes to be passed around by map users
 		node() : key(), value() {}
+		node(const Tkey& key) : key(key), value() {}
+		node(const Tkey& key, const Tvalue& value) : key(key), value(value) {}
+		//node(node other) : key(other.key), value(other.value) {}
 		
 		size_t hash() const { return ::hash(key); }
 		bool operator==(const Tkey& other) { return key == other; }
-		bool operator==(const node_ref& other) { return key == *other.key; }
 		bool operator==(const node& other) { return key == other.key; }
 	};
 private:
@@ -300,7 +292,7 @@ public:
 	//can't call it set(), conflict with set<>
 	void insert(const Tkey& key, const Tvalue& value)
 	{
-		items.add(node_ref(&key, &value)); // use node_ref rather than node, to avoid an unnecessary copy/move
+		items.add(node(key, value));
 	}
 	
 	//if nonexistent, undefined behavior
