@@ -1,13 +1,13 @@
 /*
 run (Unix only, only tested on Linux) with:
 
-gcc -std=c99 bear-ser.c bear-ser-test.c ../deps/bearssl-0.3/build/libbearssl.a -O0 -g -o bear-ser-a &&
-gcc -std=c99 bear-ser.c bear-ser-test.c ../deps/bearssl-0.3/build/libbearssl.a -O2 -g -o bear-ser-b &&
-gcc -std=c99 bear-ser.c bear-ser-test.c ../deps/bearssl-0.3/build/libbearssl.a -O3 -g -o bear-ser-c &&
+gcc -std=c99 bear-ser.c bear-ser-test.c ../deps/bearssl-0.4/build/libbearssl.a -O0 -g -o bear-ser-a &&
+gcc -std=c99 bear-ser.c bear-ser-test.c ../deps/bearssl-0.4/build/libbearssl.a -O2 -g -o bear-ser-b &&
+gcc -std=c99 bear-ser.c bear-ser-test.c ../deps/bearssl-0.4/build/libbearssl.a -O3 -g -o bear-ser-c &&
 ./bear-ser-a
 
 yes, compile thrice, this makes functions move around and tests that freeze/unfreeze handles this properly
-make sure to use exactly BearSSL version 0.3, any change in the headers or T0 initialization procedures will break it
+make sure to use exactly BearSSL version 0.4, any change in the headers or T0 initialization procedures will break it
 */
 
 #define _POSIX_SOURCE
@@ -15,7 +15,7 @@ make sure to use exactly BearSSL version 0.3, any change in the headers or T0 in
 #include <stdlib.h>
 #include <stdbool.h>
 #include <unistd.h>
-#include "../deps/bearssl-0.3/inc/bearssl.h"
+#include "../deps/bearssl-0.4/inc/bearssl.h"
 
 typedef struct br_frozen_ssl_client_context_ {
 	br_ssl_client_context cc;

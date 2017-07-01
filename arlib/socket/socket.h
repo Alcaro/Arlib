@@ -17,7 +17,8 @@ protected:
 	int fd; // Used by select().
 	
 	//deallocates the socket, returning its fd, while letting the fd remain valid
-	static int decompose(socket* sock) { int ret = sock->fd; sock->fd=-1; delete sock; return ret; }
+	static int decompose(socket* * sock) { int ret = (*sock)->fd; (*sock)->fd=-1; delete *sock; *sock = NULL; return ret; }
+	static int decompose(autoptr<socket> * sock) { int ret = (*sock)->fd; (*sock)->fd=-1; *sock = NULL; return ret; }
 	
 	static void setblock(int fd, bool newblock);
 	
@@ -36,7 +37,7 @@ public:
 		e_broken = -3, // Connection was forcibly torn down.
 		e_udp_too_big = -4, // Attempted to process an unacceptably large UDP packet.
 		e_ssl_failure = -5, // Certificate validation failed, no algorithms in common, or other SSL error.
-		e_not_supported = -6, // Attempted to read or write a listening socket, or other unsupported operation.
+		e_not_supported = -6, // Attempted to read or write on a listening socket, or other unsupported operation.
 	};
 	
 	//WARNING: Most socket APIs treat read/write of zero bytes as EOF. Not this one! 0 is EWOULDBLOCK; EOF is an error.
@@ -116,7 +117,7 @@ public:
 //Basic functionality   | Yes     | ?        | Yes    | Yes     | Yes* | TLSe doesn't support SNI
 //Nonblocking           | Yes     | ?        | Yes    | Yes     | Yes  | OpenSSL supports nonblocking, but not blocking
 //Permissive (expired)  | -       | -        | -      | -       | -    | Can't find a public server with expired key to test on
-//Permissive (unrooted) | Yes     | ?        | Yes    | Yes     | No
+//Permissive (bad root) | Yes     | ?        | Yes    | Yes     | No
 //Permissive (bad name) | Yes     | ?        | Yes    | No      | No   | Bad names are very rare outside testing
 //Serialize             | No      | No       | No     | Yes*    | No   | TLSe claims to support it, but I can't get it working
 //                                                                     | BearSSL is homemade and will need rewrites if upstream changes

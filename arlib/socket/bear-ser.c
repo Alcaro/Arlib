@@ -1,14 +1,10 @@
-/*
-TODO: update for 0.4
-
-
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#include "../deps/bearssl-0.3/inc/bearssl.h"
+#include "../deps/bearssl-0.4/inc/bearssl.h"
 
-//This file exports the following two functions:
+//This file exports the following two functions and struct:
 
 typedef struct br_frozen_ssl_client_context_ {
 	br_ssl_client_context cc;
@@ -277,4 +273,3 @@ void br_ssl_client_unfreeze(br_frozen_ssl_client_context* fr, br_ssl_client_cont
 #ifdef __cplusplus
 }
 #endif
-*/

@@ -55,19 +55,27 @@ test("SSL client") { test_skip("too slow"); clienttest(socketssl::create("google
 test("SSL SNI") { test_skip("too slow"); clienttest(socketssl::create("git.io", 443)); } // this server throws an error unless SNI is enabled
 //reveals nothing
 //test("SSL client, funky server") { test_skip("too slow"); clienttest(socketssl::create("echo.websocket.org", 443)); }
-test("SSL permissiveness")
+test("SSL permissiveness (bad root)")
 {
 	test_skip("too slow");
 	autoptr<socket> s;
-	assert(!(s=socketssl::create("badfish.filippo.io", 443))); // invalid cert root
+	assert(!(s=socketssl::create("badfish.filippo.io", 443)));
 	assert( (s=socketssl::create("badfish.filippo.io", 443, true)));
-	assert(!(s=socketssl::create("172.217.18.142", 443)));       // invalid subject name, IP addresses don't have certs (this is Google)
-	assert( (s=socketssl::create("172.217.18.142", 443, true))); // I'd use san.filippo.io, but that one is self-signed as well; I want only one failure at once
+}
+test("SSL permissiveness (bad name)")
+{
+	test_skip("too slow");
+	autoptr<socket> s;
+	assert(!(s=socketssl::create("172.217.18.142", 443))); // IP addresses don't have certs (this is Google)
+	assert( (s=socketssl::create("172.217.18.142", 443, true)));
 }
 
-#ifdef ARLIB_SSL_BEARSSL_x // TODO
+#ifdef ARLIB_SSL_BEARSSL
 static void ser_test(autoptr<socketssl>& s)
 {
+//int fd;
+//s->serialize(&fd);
+	
 	socketssl* sp = s.release();
 	assert(sp);
 	assert(!s);

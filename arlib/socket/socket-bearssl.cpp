@@ -355,67 +355,72 @@ public:
 	
 	~socketssl_impl()
 	{
+		if (!sock) return;
+		
 		//gracefully tear this down, not really useful but not harmful either
 		br_ssl_engine_close(&s.sc.eng);
 		br_ssl_engine_flush(&s.sc.eng, 0);
 		process(false);
-		//but don't worry too much about ensuring the remote gets our closure notification, no point
+		//but don't worry too much about ensuring the remote gets our closure notification, it's not really useful
 	}
 	
 	
 	
-	//struct state_fr {
-	//	br_frozen_ssl_client_context sc;
-	//	bool permissive;
-	//	byte iobuf[BR_SSL_BUFSIZE_BIDI];
-	//};
-	//
-	//array<byte> serialize(int* fd)
-	//{
-	//	array<byte> bytes;
-	//	bytes.resize(sizeof(state_fr));
-	//	state_fr& out = *(state_fr*)bytes.ptr();
-	//	
-	//	br_ssl_client_freeze(&out.sc, &s.sc, &s.xc);
-	//	out.permissive = (s.xwc.vtable != NULL);
-	//	memcpy(out.iobuf, s.iobuf, sizeof(out.iobuf));
-	//	
-	//	*fd = decompose(this->sock);
-	//	this->sock = NULL;
-	//	
-	//	delete this;
-	//	return bytes;
-	//}
-	//
-	////deserializing constructor
-	//socketssl_impl(int fd, arrayview<byte> data)
-	//{
-	//	this->sock = socket::create_from_fd(fd);
-	//	const state_fr& in = *(state_fr*)data.ptr();
-	//	
-	//	state ref;
-	//	
-	//	br_ssl_client_init_full(&s.sc, &s.xc, certs.ptr(), certs.size());
-	//	if (in.permissive)
-	//	{
-	//		s.xwc.vtable = &x509_noanchor_vtable;
-	//		s.xwc.inner = &s.xc.vtable;
-	//		br_ssl_engine_set_x509(&s.sc.eng, &s.xwc.vtable);
-	//	}
-	//	else s.xwc.vtable = NULL;
-	//	br_ssl_engine_set_buffer(&s.sc.eng, s.iobuf, sizeof(s.iobuf), true);
-	//	
-	//	br_frozen_ssl_client_context fr_sc;
-	//	memcpy(&fr_sc, &in.sc, sizeof(fr_sc));
-	//	br_ssl_client_unfreeze(&fr_sc, &s.sc, &s.xc);
-	//	memcpy(s.iobuf, in.iobuf, sizeof(s.iobuf));
-	//}
+	struct state_fr {
+		br_frozen_ssl_client_context sc;
+		bool permissive;
+		byte iobuf[BR_SSL_BUFSIZE_BIDI];
+	};
+	
+	array<byte> serialize(int* fd)
+	{
+		array<byte> bytes;
+		bytes.resize(sizeof(state_fr));
+		state_fr& out = *(state_fr*)bytes.ptr();
+		
+		br_ssl_client_freeze(&out.sc, &s.sc, &s.xc);
+		out.permissive = (s.xwc.vtable != NULL);
+		memcpy(out.iobuf, s.iobuf, sizeof(out.iobuf));
+		
+		*fd = decompose(&this->sock);
+		
+		delete this;
+		return bytes;
+	}
+	
+	//deserializing constructor
+	socketssl_impl(int fd, arrayview<byte> data) : socketssl(fd)
+	{
+		this->sock = socket::create_from_fd(fd);
+		const state_fr& in = *(state_fr*)data.ptr();
+		
+		state ref;
+		
+		br_ssl_client_init_full(&s.sc, &s.xc, certs.ptr(), certs.size());
+		if (in.permissive)
+		{
+			s.xwc.vtable = &x509_noanchor_vtable;
+			s.xwc.inner = &s.xc.vtable;
+			br_ssl_engine_set_x509(&s.sc.eng, &s.xwc.vtable);
+		}
+		else s.xwc.vtable = NULL;
+		br_ssl_engine_set_buffer(&s.sc.eng, s.iobuf, sizeof(s.iobuf), true);
+		br_ssl_client_reset(&s.sc, NULL, false);
+		
+		br_frozen_ssl_client_context fr_sc;
+		memcpy(&fr_sc, &in.sc, sizeof(fr_sc));
+		br_ssl_client_unfreeze(&fr_sc, &s.sc, &s.xc);
+		memcpy(s.iobuf, in.iobuf, sizeof(s.iobuf));
+	}
 };
 
 socketssl* socketssl::create(socket* parent, cstring domain, bool permissive)
 {
 	initialize();
-	if (!certs || !parent) return NULL;
+	if (!certs) return NULL;
+	
+	if (!parent) return NULL;
+	
 	socketssl_impl* ret = new socketssl_impl(parent, domain, permissive);
 	if (!ret->establish())
 	{
@@ -425,14 +430,16 @@ socketssl* socketssl::create(socket* parent, cstring domain, bool permissive)
 	return ret;
 }
 
-//array<byte> socketssl::serialize(int* fd)
-//{
-//	return ((socketssl_impl*)this)->serialize(fd);
-//}
-//socketssl* socketssl::deserialize(int fd, arrayview<byte> data)
-//{
-//	if (sizeof(socketssl_impl::state_fr)!=data.size()) return NULL;
-//	initialize();
-//	return new socketssl_impl(fd, data);
-//}
+array<byte> socketssl::serialize(int* fd)
+{
+	return ((socketssl_impl*)this)->serialize(fd);
+}
+socketssl* socketssl::deserialize(int fd, arrayview<byte> data)
+{
+	if (sizeof(socketssl_impl::state_fr) != data.size()) return NULL;
+	initialize();
+	if (!certs) return NULL;
+	
+	return new socketssl_impl(fd, data);
+}
 #endif
