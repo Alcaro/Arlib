@@ -28,8 +28,13 @@ public:
 	bool signature(cstring sig)
 	{
 		arrayview<uint8_t> expected = sig.bytes();
-		arrayview<uint8_t> actual = bytes(sig.length());
-		return actual == expected;
+		arrayview<uint8_t> actual = peekbytes(sig.length());
+		if (actual == expected)
+		{
+			bytes(sig.length());
+			return true;
+		}
+		else return false;
 	}
 	uint8_t u8()
 	{

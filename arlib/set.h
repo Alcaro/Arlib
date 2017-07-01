@@ -75,7 +75,10 @@ class set {
 			if (i == m_valid.size())
 			{
 				//happens if all slots contain 'something was here' placeholders
-				return emptyslot;
+				rehash(m_valid.size());
+				//can't use emptyslot, it may no longer be empty
+				//guaranteed to not be an infinite loop, there's always at least one empty slot
+				return find_pos(item);
 			}
 		}
 	}
@@ -144,11 +147,14 @@ class set {
 	{
 		for (size_t i=0;i<m_valid.size();i++)
 		{
-			if (m_valid[i]) m_data_[i].~T();
-			m_valid[i] = false;
+			if (m_valid[i])
+			{
+				m_data_[i].~T();
+			}
 		}
-		free(m_data_);
 		m_count = 0;
+		free(m_data_);
+		m_valid.reset();
 	}
 	
 public:
