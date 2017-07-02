@@ -17,7 +17,7 @@
 
 #include "internal-linux-sand.h"
 
-//TODO: when AT_BENEATH is merged, hand out fds to the mount points to the child and allow openat(O_RDONLY|AT_BENEATH)
+//TODO: when (if) AT_BENEATH is merged, hand out fds to the mount points to the child and allow openat(O_RDONLY|AT_BENEATH)
 //do not allow O_RDWR, max_write is mandatory
 //this will improve performance by not involving broker for the vast majority of open()s
 //it's still open/openat/sigreturn, but it's way better than open/sendto/recvfrom/openat/sendmsg/recvmsg/sigreturn
@@ -266,13 +266,13 @@ int sandproc::filesystem::child_file(cstring pathname, int op_, int flags, mode_
 
 void sandproc::watch_add(int sock)
 {
-	fd_monitor(sock, bind_this(&sandproc::on_readable), NULL);
+	fd_mon_thread(sock, bind_this(&sandproc::on_readable), NULL);
 	socks.add(sock);
 }
 
 void sandproc::watch_del(int sock)
 {
-	fd_monitor(sock, NULL, NULL);
+	fd_mon_thread(sock, NULL, NULL);
 	socks.remove(sock);
 }
 
@@ -280,10 +280,9 @@ void sandproc::send_rsp(int sock, broker_rsp* rsp, int fd)
 {
 	if (send_fd(sock, rsp, sizeof(*rsp), MSG_DONTWAIT|MSG_NOSIGNAL|MSG_EOR, fd) <= 0)
 	{
-		//full buffer means misbehaving child or child exited
-		//none of which should happen, so kill it
-		//(okay, it could hit if a threaded child calls open() and exit() simultaneously)
-		//(but that's not noticable unless they've got a parent process and let's just assume no such thing is gonna happen.)
+		//full buffer or otherwise failed send means misbehaving child or child exited
+		//in the former case, die; in the latter, killing what's dead is harmless
+		//(okay, it could hit if a threaded child calls open() and exit() simultaneously, but let's just assume they don't.)
 		terminate();
 	}
 }
@@ -367,7 +366,7 @@ sandproc::~sandproc()
 {
 	for (int sock : socks)
 	{
-		fd_monitor(sock, NULL, NULL);
+		fd_mon_thread(sock, NULL, NULL);
 		close(sock);
 	}
 }
