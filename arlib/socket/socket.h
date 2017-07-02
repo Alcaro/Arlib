@@ -116,7 +116,7 @@ public:
 //                      | OpenSSL | SChannel | GnuTLS | BearSSL | TLSe | Comments
 //Basic functionality   | Yes     | ?        | Yes    | Yes     | Yes* | TLSe doesn't support SNI
 //Nonblocking           | Yes     | ?        | Yes    | Yes     | Yes  | OpenSSL supports nonblocking, but not blocking
-//Permissive (expired)  | -       | -        | -      | -       | -    | Can't find a public server with expired key to test on
+//Permissive (expired)  | Yes     | ?        | Yes    | No      | No
 //Permissive (bad root) | Yes     | ?        | Yes    | Yes     | No
 //Permissive (bad name) | Yes     | ?        | Yes    | No      | No   | Bad names are very rare outside testing
 //Serialize             | No      | No       | No     | Yes*    | No   | TLSe claims to support it, but I can't get it working

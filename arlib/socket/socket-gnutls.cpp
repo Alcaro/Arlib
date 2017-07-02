@@ -60,12 +60,11 @@ public:
 	gnutls_session_t session;
 	bool block;
 	
+	socketssl_impl(socket* parent) : socketssl(parent->get_fd()), sock(parent) {}
 	
 	bool init(socket* parent, cstring domain, bool permissive)
 	{
 #define CHECK(x) if ((x)<0) return false;
-		this->sock = parent;
-		this->fd = parent->get_fd();
 		
 		this->session = NULL;
 		this->block = false;
@@ -135,7 +134,8 @@ public:
 	
 	bool active(bool want_recv, bool want_send)
 	{
-#error fixme
+		if (want_recv) return gnutls_record_check_pending(this->session);
+		else return false; // don't care about write, assume it always succeeds
 	}
 	
 	~socketssl_impl()
@@ -156,7 +156,7 @@ socketssl* socketssl::create(socket* parent, cstring domain, bool permissive)
 	initialize();
 	if (!init_ok) return NULL;
 	
-	socketssl_impl* ret = new socketssl_impl;
+	socketssl_impl* ret = new socketssl_impl(parent);
 	if (!ret->init(parent, domain, permissive))
 	{
 		delete ret;

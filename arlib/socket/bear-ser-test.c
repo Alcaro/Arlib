@@ -7,7 +7,7 @@ gcc -std=c99 bear-ser.c bear-ser-test.c ../deps/bearssl-0.4/build/libbearssl.a -
 ./bear-ser-a
 
 yes, compile thrice, this makes functions move around and tests that freeze/unfreeze handles this properly
-make sure to use exactly BearSSL version 0.4, any change in the headers or T0 initialization procedures will break it
+make sure to use exactly BearSSL version 0.4, any change in the headers is likely to break it
 */
 
 #define _POSIX_SOURCE
@@ -34,6 +34,7 @@ struct state_fr {
 	br_frozen_ssl_client_context sc;
 	uint8_t iobuf[BR_SSL_BUFSIZE_BIDI];
 };
+
 
 //this is /etc/ssl/certs/GlobalSign_Root_CA.pem, as used by xkcd.com
 static const unsigned char TA0_DN[] = {

@@ -92,13 +92,12 @@ public:
 		sock = NULL;
 	}
 	
+	socketssl_impl(socket* parent) : socketssl(parent->get_fd()), sock(parent) {}
 	static socketssl_impl* create(socket* parent, const char * domain, bool permissive)
 	{
 		if (!parent) return NULL;
 		
-		socketssl_impl* ret = new socketssl_impl();
-		ret->sock = parent;
-		ret->fd = parent->get_fd();
+		socketssl_impl* ret = new socketssl_impl(parent);
 		ret->permissive = permissive;
 		
 		ret->ssl = tls_create_context(false, TLS_V12);
@@ -146,7 +145,8 @@ public:
 	
 	bool active(bool want_recv, bool want_send)
 	{
-#error fixme
+		if (want_recv) return SSL_pending(ssl); // not available through the native interface...?
+		else return false;
 	}
 	
 	~socketssl_impl()
@@ -173,19 +173,17 @@ public:
 		tls_destroy_context(this->ssl);
 		this->ssl = NULL;
 		
-		*fd = decompose(this->sock);
-		this->sock = NULL;
+		*fd = decompose(&this->sock);
 		
 		delete this;
 		return bytes;
 	}
 	
-	bool deserialize(int fd, arrayview<byte> data)
+	//deserializing constructor
+	socketssl_impl(int fd, arrayview<byte> data) : socketssl(fd)
 	{
-		this->fd = fd;
 		this->sock = socket::create_from_fd(fd);
 		this->ssl = tls_import_context((byte*)data.ptr(), data.size());
-		return (this->ssl);
 	}
 };
 
@@ -202,9 +200,6 @@ array<byte> socketssl::serialize(int* fd)
 socketssl* socketssl::deserialize(int fd, arrayview<byte> data)
 {
 	initialize();
-	socketssl_impl* ret = new socketssl_impl();
-	if (ret->deserialize(fd, data)) return ret;
-	delete ret;
-	return NULL;
+	return new socketssl_impl(fd, data);
 }
 #endif

@@ -256,7 +256,7 @@ ifeq ($(ARSOCKET),1)
 arlib/deps/bearssl-0.4/build/libbearssl.a:
 	$(MAKE) -C arlib/deps/bearssl-0.4/ CFLAGS='$(OPTFLAGS)' lib
   else ifeq ($(ARSOCKET_SSL),tlse)
-    CFLAGS_ARLIB += ARLIB_SSL_TLSE
+    CFLAGS_ARLIB += -DARLIB_SSL_TLSE
     SOURCES_NOWARN += arlib/deps/tlse.c
   else
     $(error unknown SSL library)

@@ -116,7 +116,7 @@ puts("RETURNSKIP:"+tostringhex(msg.slice(0,headsize))+" "+tostringhex(msg.skip(h
 	{
 		array<byte>& out = *ret;
 		out = msg.slice(headsize, bodysize);
-puts("RETURN:"+tostringhex(msg.slice(0,headsize))+" "+tostringhex(out));
+//puts("RETURN:"+tostringhex(msg.slice(0,headsize))+" "+tostringhex(out));
 		
 		if (msg[1] & 0x80)
 		{
@@ -173,7 +173,7 @@ void WebSocket::send(arrayview<byte> message, bool binary)
 	header.append(0);
 	header.append(0);
 	header.append(0);
-puts("SEND:"+tostringhex(header)+" "+tostringhex(message));
+//puts("SEND:"+tostringhex(header)+" "+tostringhex(message));
 	sock->send(header);
 	sock->send(message);
 }

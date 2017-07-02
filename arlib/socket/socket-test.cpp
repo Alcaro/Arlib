@@ -52,9 +52,7 @@ static void clienttest(socket* rs)
 
 test("plaintext client") { test_skip("too slow"); clienttest(socket::create("google.com", 80)); }
 test("SSL client") { test_skip("too slow"); clienttest(socketssl::create("google.com", 443)); }
-test("SSL SNI") { test_skip("too slow"); clienttest(socketssl::create("git.io", 443)); } // this server throws an error unless SNI is enabled
-//reveals nothing
-//test("SSL client, funky server") { test_skip("too slow"); clienttest(socketssl::create("echo.websocket.org", 443)); }
+test("SSL SNI") { test_skip("too slow"); clienttest(socketssl::create("git.io", 443)); }
 test("SSL permissiveness (bad root)")
 {
 	test_skip("too slow");
@@ -68,6 +66,13 @@ test("SSL permissiveness (bad name)")
 	autoptr<socket> s;
 	assert(!(s=socketssl::create("172.217.18.142", 443))); // IP addresses don't have certs (this is Google)
 	assert( (s=socketssl::create("172.217.18.142", 443, true)));
+}
+test("SSL permissiveness (expired)")
+{
+	test_skip("too slow");
+	autoptr<socket> s;
+	assert(!(s=socketssl::create("irc.caffie.net", 6697))); // IP addresses don't have certs (this is Google)
+	assert( (s=socketssl::create("irc.caffie.net", 6697, true)));
 }
 
 #ifdef ARLIB_SSL_BEARSSL

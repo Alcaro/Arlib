@@ -13,8 +13,8 @@ typedef struct br_frozen_ssl_client_context_ {
 
 
 //A frozen context can safely be transferred between processes.
-//Don't use the context after freezing it, obviously. Deallocate it instead.
-// The context will be scrambled. This is a bug, but since cloning a SSL context is illegal anyways, it's considered acceptable.
+//Don't use the context after freezing it, obviously. Deallocate it.
+// The context will be scrambled. This is a bug, but since it's unusable post-freeze anyways, it's considered acceptable.
 void br_ssl_client_freeze(br_frozen_ssl_client_context* fr, br_ssl_client_context* cc, br_x509_minimal_context* xc);
 
 //cc/xc must be initialized in the same way as the original objects prior to calling this.
@@ -22,9 +22,10 @@ void br_ssl_client_freeze(br_frozen_ssl_client_context* fr, br_ssl_client_contex
 //- br_ssl_client_init_full
 //- br_ssl_engine_set_x509
 //- br_ssl_engine_set_buffer
-//- br_ssl_client_reset (the given domain name may be different, including empty)
+//- br_ssl_client_reset (other than the domain name, which may differ, or even be NULL)
 //- The list of trust anchors in the x509
 //Can not be used to upgrade BearSSL versions (not even tiny patches), due to T0-relative pointers.
+// Likely to break on BearSSL versions other than 0.4, it depends on lots of implementation details. May work, but don't test your luck.
 //The frozen context will be scrambled and may not be used afterwards.
 // This is a bug, but since cloning a SSL context is illegal anyways, it's considered acceptable.
 void br_ssl_client_unfreeze(br_frozen_ssl_client_context* fr, br_ssl_client_context* cc, br_x509_minimal_context* xc);
