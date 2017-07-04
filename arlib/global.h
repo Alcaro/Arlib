@@ -288,8 +288,11 @@ public:
 	T* release() { T* ret = ptr; ptr = NULL; return ret; }
 	T* operator->() { return ptr; }
 	T& operator*() { return *ptr; }
+	const T* operator->() const { return ptr; }
+	const T& operator*() const { return *ptr; }
 	operator T*() { return ptr; }
-	explicit operator bool() { return ptr; }
+	operator const T*() const { return ptr; }
+	explicit operator bool() const { return ptr; }
 	~autoptr() { delete ptr; }
 };
 

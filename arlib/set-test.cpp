@@ -152,10 +152,7 @@ test("set")
 	}
 	
 	{
-		set<int> set1;
-		set1.add(1);
-		set1.add(2);
-		set1.add(3);
+		set<int> set1 = { 1, 2, 3 };
 		set<int> set2 = std::move(set1);
 		
 		assert(set2.contains(1));

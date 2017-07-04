@@ -1,3 +1,4 @@
+#pragma once
 #include "global.h"
 #include "array.h"
 

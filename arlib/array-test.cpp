@@ -4,6 +4,8 @@
 #ifdef ARLIB_TEST
 test("array")
 {
+	assert_eq(sizeof(array<int>), sizeof(int*)+sizeof(size_t));
+	
 	{
 		array<int> x = { 1, 2, 3 };
 		assert_eq(x[0], 1);
@@ -11,16 +13,18 @@ test("array")
 		assert_eq(x[2], 3);
 	}
 	
-	//passes if it does not leak memory
-	class glutton {
-		array<byte> food;
-	public:
-		glutton() { food.resize(1000); }
-	};
-	array<glutton> x;
-	for (int i=0;i<1000;i++)
 	{
-		x.append();
+		//passes if it does not leak memory
+		class glutton {
+			array<byte> food;
+		public:
+			glutton() { food.resize(1000); }
+		};
+		array<glutton> x;
+		for (int i=0;i<1000;i++)
+		{
+			x.append();
+		}
 	}
 }
 

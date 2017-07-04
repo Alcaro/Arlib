@@ -3,8 +3,6 @@
 #include "array.h"
 #include "hash.h"
 
-//#include"stringconv.h"
-
 template<typename T>
 class set {
 	//this is a hashtable, using open addressing and linear probing
@@ -161,6 +159,11 @@ public:
 	set() { construct(); }
 	set(const set& other) { construct(other); }
 	set(set&& other) { construct(std::move(other)); }
+	set(std::initializer_list<T> c)
+	{
+		construct();
+		for (const T& item : c) add(item);
+	}
 	set& operator=(const set& other) { destruct(); construct(other); }
 	set& operator=(set&& other) { destruct(); construct(std::move(other)); }
 	~set() { destruct(); }
@@ -193,7 +196,7 @@ public:
 		}
 	}
 	
-	size_t size() { return m_count; }
+	size_t size() const { return m_count; }
 	
 	void reset() { destruct(); construct(); }
 	
@@ -201,7 +204,7 @@ private:
 	class iterator {
 		friend class set;
 		
-		set* parent;
+		const set* parent;
 		size_t pos;
 		
 		void to_valid()
@@ -218,7 +221,7 @@ private:
 			}
 		}
 		
-		iterator(set<T>* parent, size_t pos) : parent(parent), pos(pos)
+		iterator(const set<T>* parent, size_t pos) : parent(parent), pos(pos)
 		{
 			if (pos != (size_t)-1) to_valid();
 		}
@@ -248,8 +251,8 @@ public:
 	//a half-invalid iterator may return values you've already seen and may skip values, but will not crash or loop forever
 	//exception: you may not dereference a half-invalid iterator, use operator++ first
 	//as such, 'for (T i : my_set) {}' is safe, assuming caller accepts duplicates and skips; 'for (T& i : my_set)' is not
-	iterator begin() { return iterator(this, 0); }
-	iterator end() { return iterator(this, -1); }
+	iterator begin() const { return iterator(this, 0); }
+	iterator end() const { return iterator(this, -1); }
 
 //string debug_node(int n) { return tostring(n); }
 //string debug_node(string& n) { return n; }

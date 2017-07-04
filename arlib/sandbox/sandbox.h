@@ -1,3 +1,4 @@
+#pragma once
 #include "../process.h"
 #include "../set.h"
 
