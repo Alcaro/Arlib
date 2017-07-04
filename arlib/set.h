@@ -2,9 +2,10 @@
 #include "global.h"
 #include "array.h"
 #include "hash.h"
+#include "linqbase.h"
 
 template<typename T>
-class set {
+class set : public linqbase<T, set<T>> {
 	//this is a hashtable, using open addressing and linear probing
 	enum { i_empty, i_deleted };
 	
@@ -200,7 +201,6 @@ public:
 	
 	void reset() { destruct(); construct(); }
 	
-private:
 	class iterator {
 		friend class set;
 		
@@ -246,11 +246,10 @@ private:
 		}
 	};
 	
-public:
 	//messing with the set during iteration half-invalidates all iterators
 	//a half-invalid iterator may return values you've already seen and may skip values, but will not crash or loop forever
 	//exception: you may not dereference a half-invalid iterator, use operator++ first
-	//as such, 'for (T i : my_set) {}' is safe, assuming caller accepts duplicates and skips; 'for (T& i : my_set)' is not
+	//as such, 'for (T i : my_set) { my_set.remove(i); }' is safe (though may keep some instances)
 	iterator begin() const { return iterator(this, 0); }
 	iterator end() const { return iterator(this, -1); }
 

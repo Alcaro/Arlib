@@ -3,6 +3,7 @@
 #include <new>
 #include <string.h>
 #include <type_traits>
+#include "linqbase.h"
 
 template<typename T> class arrayview;
 template<typename T> class arrayvieww;
@@ -10,7 +11,7 @@ template<typename T> class array;
 
 //size: two pointers
 //this object does not own its storage, it's just a pointer wrapper
-template<typename T> class arrayview {
+template<typename T> class arrayview : public linqbase<T, arrayview<T>> {
 protected:
 	T * items; // not const, despite not necessarily being writable; this makes arrayvieww/array a lot simpler
 	size_t count;
