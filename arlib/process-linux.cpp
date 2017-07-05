@@ -76,7 +76,7 @@ bool process::closefrom(int lowfd)
 	return true;
 }
 
-bool process::set_fds(array<int>& fds, bool cloexec)
+bool process::set_fds(arrayvieww<int> fds, bool cloexec)
 {
 	if (fds.size() > INT_MAX) return false;
 	

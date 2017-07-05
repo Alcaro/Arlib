@@ -28,7 +28,7 @@ protected:
 	//If an entry is -1, the corresponding fd is closed. Duplicates in the input are allowed.
 	//Returns false on failure, but keeps doing its best anyways.
 	//Will mangle the input array. While suboptimal, it's the only way to avoid a post-fork malloc.
-	static bool set_fds(array<int>& fds, bool cloexec = false);
+	static bool set_fds(arrayvieww<int> fds, bool cloexec = false);
 	
 	//Like execlp, this searches PATH for the given program.
 	static string find_prog(cstring prog);

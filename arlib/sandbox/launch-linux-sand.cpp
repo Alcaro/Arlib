@@ -178,7 +178,7 @@ pid_t sandproc::launch_impl(array<const char*> argv, array<int> stdio_fd)
 		return false;
 	
 	stdio_fd.append(socks[1]);
-	stdio_fd.append(preld_fd);
+	stdio_fd.append(preld_fd); // we could request preld from parent, but this is easier
 	
 	int clone_flags = CLONE_NEWUSER | CLONE_NEWPID | CLONE_NEWNET | CLONE_NEWCGROUP | CLONE_NEWIPC | CLONE_NEWNS | CLONE_NEWUTS;
 	clone_flags |= SIGCHLD; // parent termination signal, must be SIGCHLD for waitpid to work properly
@@ -196,8 +196,7 @@ pid_t sandproc::launch_impl(array<const char*> argv, array<int> stdio_fd)
 	
 	//some of these steps depend on each other, don't swap them randomly
 	
-	//we could request preld from parent, but this is easier
-	set_fds(stdio_fd);
+	require_b(set_fds(stdio_fd));
 	
 	struct rlimit rlim_fsize = { 8*1024*1024, 8*1024*1024 };
 	require(setrlimit(RLIMIT_FSIZE, &rlim_fsize));
