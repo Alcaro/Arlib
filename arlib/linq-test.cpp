@@ -3,6 +3,27 @@
 #include "linq.h"
 #include "test.h"
 
+#ifndef ARLIB_OBJNAME
+//for checking that it optimizes properly
+int AAAAAAAAAAAAAAAAAAAAAAA()
+{
+	int w[] = { 1, 2, 3, 4, 5 };
+	int r = 0;
+	for (int n : arrayview<int>(w)
+		// { 1, 2, 3, 4, 5 }
+		.where([](int n) -> bool { return n & 1; })
+		// { 1, 3, 5 }
+		.select([&](int n) -> short { return n*2; })
+		// { 2, 6, 10 }
+		)
+	{
+		r += n;
+	}
+	// expected: r = 18
+	return r;
+}
+#endif
+
 #ifdef ARLIB_TEST
 test()
 {
@@ -33,6 +54,19 @@ test()
 			i++;
 		}
 		assert_eq(i, 4);
+	}
+	
+	{
+		array<int> x = { 1, 2, 3, 4, 5 };
+		array<short> y = x
+			// { 1, 2, 3, 4, 5 }
+			.where([](int n) -> bool { return n & 1; })
+			// { 1, 3, 5 }
+			.select([](int n) -> short { return n*2; })
+			// { 2, 6, 10 }
+			;
+		array<short> z = { 2, 6, 10 };
+		assert(y == z);
 	}
 }
 #endif

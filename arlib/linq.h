@@ -5,12 +5,13 @@
 
 namespace linq {
 template<typename T, typename Titer> class t_base;
-template<typename T, typename Titer, typename Tout, typename Tconv> class t_select;
+template<typename T, typename Tsrc, typename Tconv> class t_select;
+template<typename T, typename Tsrc, typename Tpred> class t_where;
+template<typename T, typename Tsrc> class t_linq;
 }
+
 //'T' is whatever the container contains.
 //'Tbase' is the base class with .begin() and .end(), including template argument.
-//'Titer' is the type of .begin().
-//'Titer2' is the type of .end(), if different from .begin().
 //For example: template<typename T> class arrayview : public linqbase<T, arrayview<T>, const T*>
 template<typename T, typename Tbase>
 class linqbase : empty {
@@ -25,19 +26,28 @@ class linqbase : empty {
 	class alias {
 	public:
 		typedef decltype(decltype_impl<_>().begin()) iter;
-		typedef linq::t_base<T, iter> linq_t;
+		typedef linq::t_base<T, iter> src;
+		typedef linq::t_linq<T, src> linq_t;
 	};
 	
 	template<typename _>
 	typename alias<_>::linq_t as_linq() const
 	{
-		return typename alias<_>::linq_t(impl().begin(), impl().end());
+		return typename alias<_>::linq_t(typename alias<_>::src(impl().begin(), impl().end()));
 	}
 public:
-	template<typename T3, typename T2 = typename std::result_of<T3(T)>::type>
-	auto select(T3 conv) const -> linq::t_base<T2, linq::t_select<T, typename alias<T2>::iter, T2, T3>>
+	template<typename Tconv, typename T2 = typename std::result_of<Tconv(T)>::type>
+	//TODO: use full-auto return type when switching to C++14
+	//TODO: move t_select into t_base when switching to full-auto return type, then kill namespace and rename them
+	auto select(Tconv conv) const -> linq::t_linq<T2, linq::t_select<T2, typename alias<Tconv>::src, Tconv>>
 	{
 		return as_linq<void>().select(conv);
+	}
+	
+	template<typename Tpred>
+	auto where(Tpred pred) const -> linq::t_linq<T, linq::t_where<T, typename alias<Tpred>::src, Tpred>>
+	{
+		return as_linq<void>().where(pred);
 	}
 };
 #endif
@@ -48,49 +58,90 @@ public:
 #include "array.h"
 #include "set.h"
 
-//This namespace is considered private. Do not store or create any instance, other than what the arrayview/set functions return.
+//This namespace is considered private. Do not store or create any instance, other than what the linqbase functions return.
 namespace linq {
-template<typename T, typename Titer, typename Tout, typename Tconv>
-class t_select {
-public:
-	Titer base;
-	Tconv conv;
-	
-	t_select(Titer base, Tconv conv) : base(base), conv(conv) {}
-	bool operator!=(const t_select& other) { return base != other.base; }
-	void operator++() { ++base; }
-	Tout operator*() { return conv(*base); }
-};
 
-template<typename T, typename Titer> class t_base : nocopy {
+template<typename T, typename Titer>
+class t_base : nocopy {
 public:
-	//TODO: split to two types when switching to c++17
 	Titer b;
 	Titer e;
 	
+	t_base(t_base&& other) : b(std::move(other.b)), e(std::move(other.e)) {}
 	t_base(Titer b, Titer e) : b(b), e(e) {}
+	bool hasValue() { return b != e; }
+	void moveNext() { ++b; }
+	T get() { return *b; }
+};
+
+template<typename T, typename Tsrc, typename Tconv>
+class t_select : nocopy {
+public:
+	Tsrc base;
+	Tconv conv;
 	
-	Titer begin() { return std::move(b); }
-	Titer end() { return std::move(e); }
+	t_select(Tsrc&& base, Tconv conv) : base(std::move(base)), conv(conv) {}
+	bool hasValue() { return base.hasValue(); }
+	void moveNext() { base.moveNext(); }
+	T get() { return conv(base.get()); }
+};
+
+template<typename T, typename Tsrc, typename Tpred>
+class t_where : nocopy {
+public:
+	Tsrc base;
+	Tpred pred;
 	
-	template<typename T3, typename T2 = typename std::result_of<T3(T)>::type>
-	auto select(T3 conv) -> t_base<T2, linq::t_select<T, Titer, T2, T3>>
+	t_where(Tsrc&& base, Tpred pred) : base(std::move(base)), pred(pred) {}
+	bool hasValue() { return base.hasValue(); }
+	void moveNext() { base.moveNext(); while (base.hasValue() && !pred(base.get())) base.moveNext(); }
+	T get() { return base.get(); }
+};
+
+template<typename T, typename Tsrc>
+class t_enum : nocopy {
+public:
+	Tsrc& base;
+	
+	t_enum(Tsrc& base) : base(base) {}
+	bool operator!=(const t_enum& other) { return base.hasValue(); }
+	void operator++() { base.moveNext(); }
+	T operator*() { return base.get(); }
+};
+
+template<typename T, typename Tsrc> class t_linq : nocopy {
+public:
+	//TODO: split to two types when switching to c++17
+	Tsrc base;
+	
+	t_linq(Tsrc&& base) : base(std::move(base)) {}
+	
+	t_enum<T, Tsrc> begin() { return base; }
+	t_enum<T, Tsrc> end() { return base; }
+	
+	template<typename Tconv, typename T2 = typename std::result_of<Tconv(T)>::type>
+	auto select(Tconv conv) -> t_linq<T2, linq::t_select<T2, Tsrc, Tconv>>
 	{
-		return t_base<T2, linq::t_select<T, Titer, T2, T3>>(t_select<T, Titer, T2, T3>(std::move(b), conv),
-		                                                    t_select<T, Titer, T2, T3>(std::move(e), conv));
+		return t_linq<T2, linq::t_select<T2, Tsrc, Tconv>>(t_select<T2, Tsrc, Tconv>(std::move(base), std::move(conv)));
+	}
+	
+	template<typename Tpred>
+	auto where(Tpred pred) -> t_linq<T, linq::t_where<T, Tsrc, Tpred>>
+	{
+		return t_linq<T, linq::t_where<T, Tsrc, Tpred>>(t_where<T, Tsrc, Tpred>(std::move(base), std::move(pred)));
 	}
 	
 	operator array<T>()
 	{
 		array<T> ret;
-		for (auto&& item : *this) ret.append(item);
+		for (T&& item : *this) ret.append(item);
 		return ret;
 	}
 	
 	operator set<T>()
 	{
 		set<T> ret;
-		for (auto&& item : *this) ret.add(item);
+		for (T&& item : *this) ret.add(item);
 		return ret;
 	}
 };

@@ -42,11 +42,23 @@ void _assert_eq(const T&  actual,   const char * actual_exp,
 
 //silence sign-comparison warning if lhs is size_t and rhs is integer constant
 template<typename T>
-void _assert_eq(const T&  actual,   const char * actual_exp,
-                int       expected, const char * expected_exp,
+void _assert_eq(const T& actual,   const char * actual_exp,
+                int      expected, const char * expected_exp,
                 int line)
 {
 	if ((std::is_unsigned<T>::value && expected<0) || (int)actual != expected || actual != (T)expected)
+	{
+		_testeqfail((string)actual_exp+" == "+expected_exp, line, tostring(expected), tostring(actual)); \
+	}
+}
+
+//likewise, but for huge constants
+template<typename T>
+void _assert_eq(const T&  actual,   const char * actual_exp,
+                long long expected, const char * expected_exp,
+                int line)
+{
+	if ((std::is_unsigned<T>::value && expected<0) || (long long)actual != expected || actual != (T)expected)
 	{
 		_testeqfail((string)actual_exp+" == "+expected_exp, line, tostring(expected), tostring(actual)); \
 	}
