@@ -30,18 +30,21 @@ public:
 //Don't try to use it more than once, either. If you want to store it, cast to array.
 template<typename T> class linqobj : nocopy {
 public:
-	//Acts roughly like a normal C++ iterator, but operator!= is replaced with valid(), and functions are named rather than operators.
 	class iterator : nocopy {
 	public:
-		virtual bool valid() = 0;
-		virtual void next() = 0;
-		virtual T get() = 0;
+		virtual bool operator!=(const iterator& other) = 0;
+		virtual void operator++() = 0;
+		virtual T operator*() = 0;
 		virtual ~iterator() {}
 	};
 	autoptr<iterator> it;
 	
 	linqobj(iterator* it) : it(it) {}
 	linqobj(autoptr<iterator> it) : it(it) {}
+	
+	virtual bool operator!=(const linqobj& other) { return *it != *it; }
+	virtual void operator++() { ++*it; }
+	virtual T operator*() { return **it; }
 	
 	
 	
@@ -50,9 +53,9 @@ public:
 		const T* it;
 		const T* end;
 		it_arrayview(arrayview<T> list) : it(list.begin()), end(list.end()) {}
-		bool valid() { return it != end; }
-		void next() { ++it; }
-		T get() { return *it; }
+		bool operator!=(const iterator& other) { return it != end; }
+		void operator++() { ++it; }
+		T operator*() { return *it; }
 	};
 	linqobj(arrayview<T> list)
 	{
@@ -65,9 +68,9 @@ public:
 		typename set<T>::iterator it;
 		typename set<T>::iterator end;
 		it_set(const set<T>& s) : it(s.begin()), end(s.end()) {}
-		bool valid() { return it != end; }
-		void next() { ++it; }
-		T get() { return *it; }
+		bool operator!=(const iterator& other) { return it != end; }
+		void operator++() { ++it; }
+		T operator*() { return *it; }
 	};
 	linqobj(const set<T>& list)
 	{
@@ -82,9 +85,9 @@ public:
 		Tconv conv;
 		
 		it_select(typename linqobj<Tin>::iterator* base, Tconv conv) : base(base), conv(conv) {}
-		bool valid() { return base->valid(); }
-		void next() { base->next(); }
-		T get() { return conv(base->get()); }
+		bool operator!=(const iterator& other) { return *base != *base; }
+		void operator++() { ++*base; }
+		T operator*() { return conv(**base); }
 	};
 	template<typename T3, typename T2 = typename std::result_of<T3(T)>::type>
 	linqobj<T2> select(T3 conv)
@@ -96,10 +99,10 @@ public:
 	operator array<T>()
 	{
 		array<T> ret;
-		while (it->valid())
+		while (*it != *it)
 		{
-			ret.append(it->get());
-			it->next();
+			ret.append(**it);
+			++*it;
 		}
 		return ret;
 	}
@@ -107,39 +110,17 @@ public:
 	operator set<T>()
 	{
 		set<T> ret;
-		while (it->valid())
+		while (*it != *it)
 		{
-			ret.add(it->get());
-			it->next();
+			ret.add(**it);
+			++*it;
 		}
 		return ret;
 	}
 	
 	
-	class cppiter {
-		autoptr<iterator> it;
-	public:
-		cppiter(iterator* it) : it(it) {}
-		
-		T operator*()
-		{
-			return it->get();
-		}
-		
-		cppiter& operator++()
-		{
-			it->next();
-			return *this;
-		}
-		
-		bool operator!=(const cppiter& other)
-		{
-			//not really a !=, it just makes foreach happy
-			return it->valid();
-		}
-	};
-	cppiter begin() { return cppiter(it.release()); }
-	cppiter end() { return cppiter(NULL); }
+	linqobj begin() { return linqobj(it.release()); }
+	linqobj end() { return linqobj(NULL); }
 };
 
 #endif
