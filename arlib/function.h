@@ -205,12 +205,13 @@ public:
     }
 };
 
-template<typename R C TYPENAMES>
-void operator==(const function<R (ARG_TYPES)>&,
-                const function<R (ARG_TYPES)>&);
-template<typename R C TYPENAMES>
-void operator!=(const function<R (ARG_TYPES)>&,
-                const function<R (ARG_TYPES)>&);
+//why do these exist, not defined and keep flooding my error log if I typo a ==
+//template<typename R C TYPENAMES>
+//void operator==(const function<R (ARG_TYPES)>&,
+//                const function<R (ARG_TYPES)>&);
+//template<typename R C TYPENAMES>
+//void operator!=(const function<R (ARG_TYPES)>&,
+//                const function<R (ARG_TYPES)>&);
 
 template<typename R C TYPENAMES>
 class FreeCallbackFactory
