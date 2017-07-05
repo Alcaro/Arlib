@@ -27,6 +27,7 @@ public:
 #include "set.h"
 
 //This entire class is private. Do not store or create any instance, other than what the LINQ functions return.
+//Don't try to use it more than once, either. If you want to store it, cast to array.
 template<typename T> class linqobj : nocopy {
 public:
 	//Acts roughly like a normal C++ iterator, but operator!= is replaced with valid(), and functions are named rather than operators.
@@ -42,6 +43,8 @@ public:
 	linqobj(iterator* it) : it(it) {}
 	linqobj(autoptr<iterator> it) : it(it) {}
 	
+	
+	
 	class it_arrayview : public iterator {
 	public:
 		const T* it;
@@ -55,6 +58,8 @@ public:
 	{
 		it = new it_arrayview(list);
 	}
+	
+	
 	class it_set : public iterator {
 	public:
 		typename set<T>::iterator it;
@@ -68,6 +73,7 @@ public:
 	{
 		it = new it_set(list);
 	}
+	
 	
 	template<typename Tin, typename Tconv>
 	class it_select : public iterator {
@@ -85,6 +91,7 @@ public:
 	{
 		return new typename linqobj<T2>::template it_select<T, T3>(it.release(), conv);
 	}
+	
 	
 	operator array<T>()
 	{
@@ -107,6 +114,32 @@ public:
 		}
 		return ret;
 	}
+	
+	
+	class cppiter {
+		autoptr<iterator> it;
+	public:
+		cppiter(iterator* it) : it(it) {}
+		
+		T operator*()
+		{
+			return it->get();
+		}
+		
+		cppiter& operator++()
+		{
+			it->next();
+			return *this;
+		}
+		
+		bool operator!=(const cppiter& other)
+		{
+			//not really a !=, it just makes foreach happy
+			return it->valid();
+		}
+	};
+	cppiter begin() { return cppiter(it.release()); }
+	cppiter end() { return cppiter(NULL); }
 };
 
 #endif

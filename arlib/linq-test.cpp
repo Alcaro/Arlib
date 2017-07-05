@@ -23,5 +23,16 @@ test()
 		assert(y.contains(5));
 		assert(y.contains(6));
 	}
+	
+	{
+		array<int> x = { 1, 2, 3 };
+		int i = 1;
+		for (int n : x.select([](int n) -> short { return n*2; }))
+		{
+			assert_eq(n, i*2);
+			i++;
+		}
+		assert_eq(i, 4);
+	}
 }
 #endif

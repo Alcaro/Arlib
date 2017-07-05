@@ -7,7 +7,7 @@
 
 arlib-default: arlib-default2
 
-ifneq (,$(wildcard string.cpp))
+ifeq (,$(wildcard arlib/string.cpp))
   $(error wrong build directory, go up one level)
 endif
 
