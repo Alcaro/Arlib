@@ -68,5 +68,13 @@ test()
 		array<short> z = { 2, 6, 10 };
 		assert(y == z);
 	}
+	
+	{
+		array<int> x = { 1, 4, 9, 16, 25 };
+		assert_eq(x.first([](int x) -> bool { return x>5; }), 9);
+		//passes if it does not read outside x
+		arrayview<int> y = arrayview<int>(x.ptr(), 100);
+		assert_eq(y.first([](int x) -> bool { return x>5; }), 9);
+	}
 }
 #endif

@@ -5,12 +5,13 @@
 #include "linqbase.h"
 
 template<typename T>
-class set : public linqbase<T, set<T>> {
+class set : public linqbase<set<T>> {
 	//this is a hashtable, using open addressing and linear probing
 	enum { i_empty, i_deleted };
 	
 	T* m_data_;
 	uint8_t& tag(size_t id) { return *(uint8_t*)(m_data_+id); }
+	uint8_t tag(size_t id) const { return *(uint8_t*)(m_data_+id); }
 	array<bool> m_valid;
 	size_t m_count;
 	
@@ -42,18 +43,20 @@ class set : public linqbase<T, set<T>> {
 		if (m_count >= m_valid.size()/2) rehash(m_valid.size()*2);
 	}
 	
-	bool slot_empty(size_t pos)
+	bool slot_empty(size_t pos) const
 	{
 		return !m_valid[pos];
 	}
-	bool slot_deleted(size_t pos)
+	bool slot_deleted(size_t pos) const
 	{
 		return !m_valid[pos] && tag(pos)==i_deleted;
 	}
 	
 	template<typename T2>
-	size_t find_pos(const T2& item)
+	size_t find_pos_const(const T2& item, bool* recommend_rehash = NULL) const
 	{
+		if (recommend_rehash) *recommend_rehash = false;
+		
 		size_t hashv = hash_shuffle(hash(item)) % m_valid.size();
 		size_t i = 0;
 		
@@ -74,12 +77,24 @@ class set : public linqbase<T, set<T>> {
 			if (i == m_valid.size())
 			{
 				//happens if all slots contain 'something was here' placeholders
-				rehash(m_valid.size());
-				//can't use emptyslot, it may no longer be empty
-				//guaranteed to not be an infinite loop, there's always at least one empty slot
-				return find_pos(item);
+				if (recommend_rehash) *recommend_rehash = true;
+				return emptyslot;
 			}
 		}
+	}
+	
+	template<typename T2>
+	size_t find_pos(const T2& item)
+	{
+		bool do_rehash;
+		size_t pos = find_pos_const(item, &do_rehash);
+		if (do_rehash)
+		{
+			rehash(m_valid.size());
+			if (slot_empty(pos)) return pos;
+			else return find_pos_const(item);
+		}
+		return pos;
 	}
 	
 	template<typename,typename>
@@ -87,9 +102,9 @@ class set : public linqbase<T, set<T>> {
 	//used by map
 	//if the item doesn't exist, NULL
 	template<typename T2>
-	T* get(const T2& item)
+	T* get(const T2& item) const
 	{
-		size_t pos = find_pos(item);
+		size_t pos = find_pos_const(item);
 		if (m_valid[pos]) return &m_data_[pos];
 		else return NULL;
 	}
@@ -176,10 +191,10 @@ public:
 	}
 	
 	template<typename T2>
-	bool contains(const T2& item)
+	bool contains(const T2& item) const
 	{
-		size_t pos = find_pos(item);
-		return m_valid[pos];
+		size_t pos = find_pos_const(item);
+		return !slot_empty(pos);
 	}
 	
 	template<typename T2>
@@ -271,7 +286,7 @@ public:
 
 
 template<typename Tkey, typename Tvalue>
-class map {
+class map : public linqbase<map<Tkey,Tvalue>> {
 public:
 	struct node {
 		const Tkey key;
@@ -374,6 +389,29 @@ private:
 		}
 	};
 	
+	class c_iterator {
+		typename set<node>::iterator it;
+	public:
+		
+		c_iterator(typename set<node>::iterator it) : it(it) {}
+		
+		const node& operator*()
+		{
+			return const_cast<node&>(*it);
+		}
+		
+		c_iterator& operator++()
+		{
+			++it;
+			return *this;
+		}
+		
+		bool operator!=(const c_iterator& other)
+		{
+			return it != other.it;
+		}
+	};
+	
 public:
 	//messing with the map during iteration half-invalidates all iterators
 	//a half-invalid iterator may return values you've already seen and may skip values, but will not crash or loop forever
@@ -381,6 +419,8 @@ public:
 	
 	iterator begin() { return items.begin(); }
 	iterator end() { return items.end(); }
+	c_iterator begin() const { return items.begin(); }
+	c_iterator end() const { return items.end(); }
 	
 	template<typename Ts>
 	void serialize(Ts& s)

@@ -11,7 +11,7 @@ template<typename T> class array;
 
 //size: two pointers
 //this object does not own its storage, it's just a pointer wrapper
-template<typename T> class arrayview : public linqbase<T, arrayview<T>> {
+template<typename T> class arrayview : public linqbase<arrayview<T>> {
 protected:
 	T * items; // not const, despite not necessarily being writable; this makes arrayvieww/array a lot simpler
 	size_t count;

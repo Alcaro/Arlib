@@ -10,14 +10,13 @@ template<typename T, typename Tsrc, typename Tpred> class t_where;
 template<typename T, typename Tsrc> class t_linq;
 }
 
-//'T' is whatever the container contains.
 //'Tbase' is the base class with .begin() and .end(), including template argument.
-//For example: template<typename T> class arrayview : public linqbase<T, arrayview<T>, const T*>
-template<typename T, typename Tbase>
+//For example: template<typename T> class arrayview : public linqbase<arrayview<T>>
+template<typename Tbase>
 class linqbase : empty {
 	//doesn't exist, only used because the real impl() needs a 'this' and decltype doesn't have that
 	//dummy template parameters are to ensure it doesn't refer to Tbase::begin() before Tbase is properly defined
-	template<typename _> static Tbase& decltype_impl();
+	template<typename _> static const Tbase& decltype_impl();
 	
 	Tbase& impl() { return *(Tbase*)this; }
 	const Tbase& impl() const { return *(Tbase*)this; }
@@ -26,6 +25,7 @@ class linqbase : empty {
 	class alias {
 	public:
 		typedef decltype(decltype_impl<_>().begin()) iter;
+		typedef typename std::decay<decltype(*decltype_impl<_>().begin())>::type T;
 		typedef linq::t_base<T, iter> src;
 		typedef linq::t_linq<T, src> linq_t;
 	};
@@ -36,7 +36,7 @@ class linqbase : empty {
 		return typename alias<_>::linq_t(typename alias<_>::src(impl().begin(), impl().end()));
 	}
 public:
-	template<typename Tconv, typename T2 = typename std::result_of<Tconv(T)>::type>
+	template<typename Tconv, typename T2 = typename std::result_of<Tconv(typename alias<Tconv>::T)>::type>
 	//TODO: use full-auto return type when switching to C++14
 	//TODO: move t_select into t_base when switching to full-auto return type, then kill namespace and rename them
 	auto select(Tconv conv) const -> linq::t_linq<T2, linq::t_select<T2, typename alias<Tconv>::src, Tconv>>
@@ -45,9 +45,16 @@ public:
 	}
 	
 	template<typename Tpred>
-	auto where(Tpred pred) const -> linq::t_linq<T, linq::t_where<T, typename alias<Tpred>::src, Tpred>>
+	auto where(Tpred pred) const ->
+		linq::t_linq<typename alias<Tpred>::T, linq::t_where<typename alias<Tpred>::T, typename alias<Tpred>::src, Tpred>>
 	{
 		return as_linq<void>().where(pred);
+	}
+	
+	template<typename Tpred>
+	typename alias<Tpred>::T first(Tpred pred, typename alias<Tpred>::T otherwise = typename alias<Tpred>::T()) const
+	{
+		return as_linq<void>().first(pred, otherwise);
 	}
 };
 #endif
@@ -129,6 +136,16 @@ public:
 	auto where(Tpred pred) -> t_linq<T, linq::t_where<T, Tsrc, Tpred>>
 	{
 		return t_linq<T, linq::t_where<T, Tsrc, Tpred>>(t_where<T, Tsrc, Tpred>(std::move(base), std::move(pred)));
+	}
+	
+	template<typename Tpred>
+	T first(Tpred pred, T otherwise = T())
+	{
+		for (T&& item : *this)
+		{
+			if (pred(item)) return item;
+		}
+		return otherwise;
 	}
 	
 	operator array<T>()

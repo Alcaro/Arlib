@@ -26,6 +26,17 @@ static inline size_t hash(const char * val)
 	return hash(val, strlen(val));
 }
 
+
+//implementation from https://stackoverflow.com/a/263416
+inline size_t hashall() { return 2166136261; }
+template<typename T, typename... Tnext> inline size_t hashall(T first, Tnext... next)
+{
+	size_t tail = hash(first);
+	size_t heads = hashall(next...);
+	return (heads*16777619) ^ tail;
+}
+
+
 //these two are reversible, but I never implemented the reversal because lazy.
 inline uint32_t hash_shuffle(uint32_t val)
 {

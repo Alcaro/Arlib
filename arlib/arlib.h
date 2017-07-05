@@ -19,6 +19,7 @@
 #include "function.h"
 #include "intwrap.h"
 #include "json.h"
+#include "linq.h"
 #include "os.h"
 #include "process.h"
 #include "safeint.h"
@@ -54,4 +55,5 @@
 #include "socket/socket.h"
 #include "http.h"
 #include "websocket.h"
+#include "discord.h"
 #endif
