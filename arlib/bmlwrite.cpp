@@ -111,7 +111,7 @@ string bmlwriter::unescape(cstring val)
 				i++;
 				out += '-';
 			}
-			else if (fromstringhex(val.csubstr(i+1, i+3), tmp))
+			else if (fromstringhex(val.substr(i+1, i+3), tmp))
 			{
 				i += 2;
 				out += tmp;

@@ -128,8 +128,8 @@ class bmlunserialize_impl {
 	int pdepth = 0;
 	
 	int thisdepth = 0;
-	cstring thisnode;
-	cstring thisval;
+	string thisnode;
+	string thisval;
 	bool matchagain;
 	
 	bmlparser::event event()
@@ -337,7 +337,8 @@ class jsonunserialize_impl {
 				out.serialize(*this);
 				if (!matchagain)
 				{
-					ev = p.next(); // TODO: not very robust against broken documents
+					ev = p.next();
+					if (ev.action == jsonparser::exit_map) break; // can happen if document is broken
 					//ev = enter_map or whatever
 					finish_item();
 					//ev = exit_map or whatever

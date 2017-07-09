@@ -48,7 +48,7 @@ static string stack(int top)
 
 static void _testfail(cstring why)
 {
-	if (!_test_result) puts(why); // discard multiple failures from same test, they're probably caused by same thing
+	if (!_test_result) puts(why.c_str()); // discard multiple failures from same test, they're probably caused by same thing
 	_test_result = 1;
 	debug_or_ignore();
 }

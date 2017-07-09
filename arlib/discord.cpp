@@ -171,7 +171,7 @@ void Discord::connect_cb(HTTP::rsp r)
 	connecting = false;
 	
 	guilds_to_join = -1;
-	puts(r.text());
+	puts(r.text().c_str());
 	
 	string ws_url = JSON(r.text())["url"];
 	if (!ws_url) return;

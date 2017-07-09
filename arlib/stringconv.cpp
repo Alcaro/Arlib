@@ -8,10 +8,13 @@
 	bool fromstring(cstring s, t& out) \
 	{ \
 		out = 0; \
-		if (!s) return false; \
-		char * tmp; /* odd that this one isn't overloaded, like strchr */ \
-		frt ret = f(s, &tmp, 10); \
-		if (*tmp || (t)ret != (frt)ret) return false; \
+		if (!s || isspace(s[0])) return false; \
+		string tmp_s = s; /* copy in case 's' isn't terminated */ \
+		const char * tmp_cp = tmp_s; \
+		char * tmp_cpo; \
+		frt ret = f(tmp_cp, &tmp_cpo, 10); \
+		if (tmp_cpo != tmp_cp + s.length()) return false; \
+		if ((t)ret != (frt)ret) return false; \
 		out = ret; \
 		return true; \
 	}
@@ -30,12 +33,14 @@ static const char * drop0x(const char * in)
 	\
 	bool fromstringhex(cstring s, t& out) \
 	{ \
-		const char * in = drop0x(s); \
 		out = 0; \
-		if (!s) return false; \
-		char * tmp; \
-		frt ret = f(in, &tmp, 16); \
-		if (*tmp || (t)ret != (frt)ret) return false; \
+		string tmp_s = s; \
+		const char * tmp_cp = tmp_s; \
+		if (!*tmp_cp || isspace(*tmp_cp)) return false; \
+		char * tmp_cpo; \
+		frt ret = f(drop0x(tmp_cp), &tmp_cpo, 16); \
+		if (tmp_cpo != tmp_cp + s.length()) return false; \
+		if ((t)ret != (frt)ret) return false; \
 		out = ret; \
 		return true; \
 	}
@@ -54,10 +59,14 @@ FROMFUNCHEX(unsigned long long, unsigned long long, strtoull)
 bool fromstring(cstring s, double& out)
 {
 	out = 0;
-	if (!s) return false;
-	char * tmp;
-	double ret = strtod(s, &tmp);
-	if (*tmp || ret==HUGE_VAL || ret==-HUGE_VAL) return false;
+	if (!s || isspace(s[0])) return false;
+	string tmp_s = s;
+	const char * tmp_cp = tmp_s;
+	//tmp_cp = drop0x(tmp_cp);
+	char * tmp_cpo;
+	double ret = strtod(drop0x(tmp_cp), &tmp_cpo);
+	if (tmp_cpo != tmp_cp + s.length()) return false;
+	if (ret==HUGE_VAL || ret==-HUGE_VAL) return false;
 	out = ret;
 	return true;
 }
@@ -109,7 +118,7 @@ bool fromstringhex(cstring s, arrayvieww<byte> val)
 	bool ok = true;
 	for (size_t i=0;i<val.size();i++)
 	{
-		ok &= fromstringhex(s.csubstr(i*2, i*2+2), val[i]);
+		ok &= fromstringhex(s.substr(i*2, i*2+2), val[i]);
 	}
 	return ok;
 }
@@ -126,6 +135,12 @@ template<typename T> void testunhex(const char * S, unsigned long long V)
 	assert_eq(fromstringhex(S, a), true);
 	assert_eq(a, V);
 }
+template<typename T> void testundec(const char * S, unsigned long long V)
+{
+	T a;
+	assert_eq(fromstring(S, a), true);
+	assert_eq(a, V);
+}
 test()
 {
 	testcall(testunhex<unsigned char     >("aa", 0xaa));
@@ -138,6 +153,17 @@ test()
 	testcall(testunhex<unsigned long     >("AAAAAAAA", 0xAAAAAAAA));
 	testcall(testunhex<unsigned long long>("aaaaaaaaaaaaaaaa", 0xaaaaaaaaaaaaaaaa));
 	testcall(testunhex<unsigned long long>("AAAAAAAAAAAAAAAA", 0xAAAAAAAAAAAAAAAA));
+	
+	testcall(testundec<int>("123", 123));
+	testcall(testundec<int>("0123", 123));
+	testcall(testundec<int>("00123", 123));
+	testcall(testundec<int>("000123", 123));
+	testcall(testundec<int>("0", 0));
+	testcall(testundec<double>("123", 123));
+	testcall(testundec<double>("0123", 123));
+	testcall(testundec<double>("00123", 123));
+	testcall(testundec<double>("000123", 123));
+	testcall(testundec<double>("0", 0));
 	
 	byte foo[4] = {0x12,0x34,0x56,0x78};
 	assert_eq(tostringhex(arrayview<byte>(foo)), "12345678");
@@ -156,11 +182,23 @@ test()
 	
 	assert(!fromstringhex("123456", arrayvieww<byte>(foo))); // not 4 bytes
 	assert(!fromstringhex("1234567", bar)); // odd length
-	assert(!fromstringhex("0x123456", bar)); // invalid symbol
+	assert(!fromstringhex("0x123456", bar)); // no 0x allowed
 	
 	uint32_t u;
 	float f;
 	assert(!fromstring("", u)); // this isn't an integer
 	assert(!fromstringhex("", u));
 	assert(!fromstring("", f));
+	
+	string s;
+	s[0] = '7';
+	s[1] = '\0';
+	assert(!fromstring(s, u)); // no nul allowed
+	assert(!fromstring(s, f));
+	assert(!fromstringhex(s, u));
+	
+	assert(!fromstring(" 42", u));
+	assert(!fromstringhex(" 42", u));
+	assert(!fromstring(" 42", f));
+	assert(!fromstring("0x42", f));
 }

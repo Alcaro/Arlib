@@ -234,8 +234,9 @@ public:
 	operator int() { return num(); }
 	operator size_t() { return num(); }
 	operator double() { return num(); }
-	operator string&() { return str(); }
-	operator cstring() { return str(); }
+	operator string() { return str(); }
+	//operator cstring() { return str(); }
+	//operator const char *() { return str(); }
 	
 	bool operator==(int right) { return num()==right; }
 	bool operator==(size_t right) { return num()==right; }

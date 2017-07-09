@@ -349,6 +349,11 @@ test("JSON deserialization")
 		assert_eq(item.b, 2);
 	}
 	
+	//make sure this one does not give an infinite loop
+	{
+		jsonunserialize<ser1>("{ \"a\":1, \"b\":2, \"q\":*, \"a\":3, \"a\":4 }");
+	}
+	
 	//the system is allowed to loop, but only if there's bogus or extraneous nodes
 	//we want O(n) runtime for a clean document, so ensure no looping
 	//this includes missing and duplicate elements, both of which are possible for serialized arrays

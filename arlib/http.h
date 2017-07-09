@@ -62,7 +62,7 @@ public:
 			{
 				if (head.istartswith(name) && head[name.length()]==':' && head[name.length()+1]==' ')
 				{
-					return head.csubstr(name.length()+2, ~0);
+					return head.substr(name.length()+2, ~0);
 				}
 			}
 			return "";

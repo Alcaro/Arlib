@@ -32,17 +32,19 @@ public:
 	//Remember the cstring rules: If this cstring doesn't hold a reference, don't touch its buffer until the object is disposed.
 	//If it's originally a string, don't worry about it.
 	//It is not allowed to try to stream data into this object.
-	bmlparser(cstring bml) : m_orig_data(bml), m_data(bml), m_exit(false) {}
+	bmlparser(cstring bml) : m_orig_data(bml), m_data(m_orig_data), m_exit(false) {}
 	event next();
 	
 private:
-	cstring m_orig_data; // keep a reference if we're passed in the only copy of a string object
+	string m_orig_data; // keep a reference if we're passed in the only copy of a string object
 	cstring m_data;
 	cstring m_thisline;
 	array<bool> m_indent_step;
-	cstring m_indent;
+	string m_indent;
 	cstring m_inlines;
 	bool m_exit;
+	
+	string m_tmp_value;
 	
 	inline bool getline(bool allow_empty);
 };

@@ -14,6 +14,43 @@ class Discord {
 	struct i_guild;
 	
 public:
+	struct msg {
+		static string raw_escape(cstring in)
+		{
+			string out;
+			for (size_t i=0;i<in.length();i++)
+			{
+				if (strchr("\\<_*~", in[i])) out+='\\';
+				out+=in[i];
+			}
+			return out;
+		}
+		static string raw_bold(     cstring in) { return "**"+in+"**"; }
+		static string raw_italic(   cstring in) { return  "*"+in+"*"; }
+		static string raw_underline(cstring in) { return "__"+in+"__"; }
+		static string raw_strike(   cstring in) { return "~~"+in+"~~"; }
+		
+		
+		string raw;
+		msg() {}
+		msg(string text) { raw = raw_escape(text); }
+		msg(cstring text) { raw = raw_escape(text); }
+		msg(const char * text) { raw = raw_escape(text); }
+		
+		static msg from_md(cstring in) { msg out; out.raw = in; return out; }
+		
+		msg bold()      { return from_md(     raw_bold(raw)); }
+		msg italic()    { return from_md(   raw_italic(raw)); }
+		msg underline() { return from_md(raw_underline(raw)); }
+		msg strike()    { return from_md(   raw_strike(raw)); }
+		
+		msg operator+(const msg& right) { return from_md(raw + right.raw); }
+		msg operator+(cstring right) { return from_md(raw + right); }
+		msg operator+(const char * right) { return from_md(raw + right); }
+	};
+	
+	
+	
 	void connect_bot(cstring token);
 	
 	//Discord is a complex protocol. On activity, or after a 1000 millisecond timeout, call process().
@@ -95,7 +132,7 @@ public:
 			else return impl().username;
 		}
 		cstring account() { return impl().username+"#"+impl().discriminator; }
-		cstring highlight() { return "<@"+m_id+">"; }
+		msg highlight() { return msg::from_md("<@"+m_id+">"); }
 		
 		array<Role> roles();
 		array<Role> roles(Guild guild);
@@ -138,12 +175,16 @@ public:
 		cstring name() { return impl().name; }
 		Guild guild() { return Guild(m_parent, impl().guild); }
 		
-		void message(cstring text)
+		void rawmsg(cstring text)
 		{
 			JSON json;
 			json["content"] = text;
 			m_parent->http("/channels/"+m_id+"/messages", json);
 		}
+		
+		void message(msg data) { rawmsg(data.raw); }
+		void operator()(msg data) { message(data); }
+		
 		void busy()
 		{
 			m_parent->http("POST", "/channels/"+m_id+"/typing");
@@ -208,6 +249,10 @@ public:
 	function<void(Channel chan, User user, cstring message)> on_msg;
 	function<void(Guild guild, User self)> on_guild_enter;
 	function<void(Guild guild, User user)> on_join;
+	
+	
+	
+	
 	
 private:
 	bool process(bool block);
@@ -322,3 +367,6 @@ private:
 public:
 void debug();
 };
+
+inline Discord::msg operator+(cstring left, Discord::msg right) { return Discord::msg::from_md(left + right.raw); }
+inline Discord::msg operator+(const char * left, Discord::msg right) { return Discord::msg::from_md((string)left + right.raw); }

@@ -141,8 +141,8 @@ if there is no line, return finish
 
 static cstring cut(cstring& input, int skipstart, int cut, int skipafter)
 {
-	cstring ret = input.csubstr(skipstart, cut);
-	input = input.csubstr(cut+skipafter, ~0);
+	cstring ret = input.substr(skipstart, cut);
+	input = input.substr(cut+skipafter, ~0);
 	return ret;
 }
 
@@ -175,7 +175,7 @@ static bool bml_parse_inline_node(cstring& data, cstring& node, bool& hasvalue, 
 	{
 		value = "Invalid node name";
 		while (data[nodelen]!='\n' && data[nodelen]!='\0') nodelen++;
-		data = data.csubstr(nodelen, ~0);
+		data = data.substr(nodelen, ~0);
 		return false;
 	}
 	node = cut(data, nodestart, nodelen, 0);
@@ -193,7 +193,7 @@ static bool bml_parse_inline_node(cstring& data, cstring& node, bool& hasvalue, 
 			hasvalue = true;
 			int valstart = 1;
 			while (data[valstart]==' ' || data[valstart]=='\t') valstart++;
-			value = data.csubstr(valstart, ~0);
+			value = data.substr(valstart, ~0);
 			data = "";
 			return true;
 		}
@@ -207,7 +207,7 @@ static bool bml_parse_inline_node(cstring& data, cstring& node, bool& hasvalue, 
 				if (data[valend]!='"' || !strchr(" \t", data[valend+1]))
 				{
 					while (data[valend]!='\0') valend++;
-					data = data.csubstr(valend, ~0);
+					data = data.substr(valend, ~0);
 					value = "Broken quoted value";
 					return false;
 				}
@@ -222,7 +222,7 @@ static bool bml_parse_inline_node(cstring& data, cstring& node, bool& hasvalue, 
 				if (data[valend]=='"')
 				{
 					while (data[valend]!='\0') valend++;
-					data = data.csubstr(valend, ~0);
+					data = data.substr(valend, ~0);
 					value = "Broken quoted value";
 					return false;
 				}
@@ -327,7 +327,7 @@ bmlparser::event bmlparser::next()
 			//this may throw random mix-tab-space errors that weren't present in the original,
 			// but only if the document contains mix-tab-space and this error already.
 			if (m_indent_step.size() > m_indent.length()) m_indent += m_indent[0];
-			else m_indent = m_indent.csubstr(0, ~1);
+			else m_indent = m_indent.substr(0, ~1);
 			return event(error, "", "Invalid indentation depth");
 		}
 		
@@ -364,12 +364,12 @@ bmlparser::event bmlparser::next()
 		if (m_thisline[0] == ':')
 		{
 			size_t inner_indent = m_indent.length();
-			value = m_thisline.csubstr(1, ~0);
+			m_tmp_value = m_thisline.substr(1, ~0);
 			if (!getline(false)) return event(error, "", "Mixed tabs and spaces");
 			while (m_thisline[0] == ':')
 			{
 				if (inner_indent != m_indent.length()) return event(error, "", "Multi-line values must have constant indentation");
-				value += "\n" + m_thisline.csubstr(1, ~0);
+				m_tmp_value += "\n" + m_thisline.substr(1, ~0);
 				if (!getline(false)) return event(error, "", "Mixed tabs and spaces");
 			}
 			
@@ -384,6 +384,8 @@ bmlparser::event bmlparser::next()
 					return event(error, "", "Invalid indentation depth");
 				}
 			}
+			
+			value = m_tmp_value;
 		}
 	}
 	

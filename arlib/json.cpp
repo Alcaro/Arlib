@@ -97,7 +97,7 @@ jsonparser::event jsonparser::next()
 				case 't': val += '\t'; break;
 				case 'u':
 				{
-					cstring unichar;
+					string unichar;
 					unichar += m_data[m_pos++];
 					unichar += m_data[m_pos++];
 					unichar += m_data[m_pos++];
@@ -177,7 +177,7 @@ jsonparser::event jsonparser::next()
 		}
 		
 		double d;
-		if (!fromstring(m_data.csubstr(start, m_pos), d) || !skipcomma()) return do_error();
+		if (!fromstring(m_data.substr(start, m_pos), d) || !skipcomma()) return do_error();
 		return { num, d };
 	}
 	if (ch == 't' && m_data[m_pos++]=='r' && m_data[m_pos++]=='u' && m_data[m_pos++]=='e')
@@ -301,8 +301,8 @@ static void testjson(const char * json, jsonparser::event* expected)
 	{
 		jsonparser::event actual = parser.next();
 		
-//printf("e=%i [%s] [%s]\n", expected->action, (const char*)expected->name, (const char*)expected->value);
-//printf("a=%i [%s] [%s]\n\n", actual.action,  (const char*)actual.name,    (const char*)actual.value);
+//printf("e=%i [%s] [%lf]\n", expected->action, (const char*)expected->str.c_str(), (expected->action==e_num ? expected->num : -1));
+//printf("a=%i [%s] [%lf]\n\n", actual.action,  (const char*)actual.str.c_str(),    (actual.action==e_num ? actual.num : -1));
 		assert_eq(actual.action, expected->action);
 		assert_eq(actual.str, expected->str);
 		if (expected->action == e_num) assert_eq(actual.num, expected->num);
@@ -361,6 +361,7 @@ test("JSON parser")
 	testcall(testjson_error("1e+"));
 	testcall(testjson_error("1e-"));
 	testcall(testjson_error("z"));
+	testcall(testjson_error("{ \"a\":1, \"b\":2, \"q\":*, \"a\":3, \"a\":4 }"));
 }
 
 

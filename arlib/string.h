@@ -8,10 +8,7 @@
 //A string is a mutable sequence of bytes. It usually represents UTF-8 text, but can be arbitrary binary data, including NULs.
 //All string:: functions taking or returning a char* assume/guarantee NUL termination. However, anything using uint8_t* does not.
 
-//cstring is a special case of string that's not guaranteed to own its storage; it lives and dies by
-// whatever string or array it was created from.
-//Creating a cstring from another cstring leaves no dependency on this cstring; they're both bound to their source.
-//Modifying a cstring disconnects it from its source and allows the original string to be deleted.
+//cstring is an immutable sequence of bytes that does not own its storage. It can also be called stringview.
 
 //If the string contains no NULs (not even at the end), it's considered 'weak proper'.
 //If the string contains no control characters other than \t\r\n, and is valid UTF-8, it's considered 'proper'.
@@ -28,9 +25,10 @@
 //cstring members can return string if 'class string;' exists and the function bodies are after 'class string {}'
 
 class string;
-class cstring;
 
-class string {
+class cstring {
+	friend class string;
+	
 	static const int obj_size = 16; // maximum 120, or the inline length overflows
 	                                // (127 would fit, but that requires an extra alignment byte, which throws the sizeof assert)
 	                                // minimum 16 (pointer + various members + alignment)
@@ -47,17 +45,16 @@ class string {
 			uint8_t m_inline_len;
 		};
 		struct {
-			mutable uint8_t* m_data; // if owning, there's also a int refcount before this pointer; if not owning, no such thing
+			uint8_t* m_data; // if owning, there's also a int refcount before this pointer; if not owning, no such thing
 			uint32_t m_len;
-			mutable bool m_owning;
-			mutable bool m_nul; // whether the string is properly terminated (always true if owning)
+			bool m_nul; // whether the string is properly terminated (always true if owning)
 			uint8_t reserved; // matches the last byte of the inline data; never ever access this
 		};
 	};
 	
 	bool inlined() const
 	{
-		static_assert(sizeof(string)==obj_size);
+		static_assert(sizeof(cstring)==obj_size);
 		
 		return m_inline_len != (uint8_t)-1;
 	}
@@ -66,37 +63,6 @@ class string {
 	{
 		if (inlined()) return m_inline;
 		else return m_data;
-	}
-	
-	uint8_t * ptr()
-	{
-		if (inlined()) return m_inline;
-		else return m_data;
-	}
-	
-	
-	static size_t bytes_for(uint32_t len)
-	{
-		return bitround(sizeof(int)+len+1);
-	}
-	
-	//the sizes can be 0 if you want to
-	//sizes are how many characters fit in the string, excluding the NUL
-	//always allocates, doesn't try to inline
-	static uint8_t* alloc(uint8_t* prev, uint32_t prevsize, uint32_t newsize);
-	
-	void unshare() const;
-	
-	//does not initialize the new data
-	void resize(uint32_t newlen);
-	
-	const char * ptr_withnul() const
-	{
-		if (!inlined() && !m_nul)
-		{
-			unshare();
-		}
-		return (char*)ptr();
 	}
 	
 public:
@@ -117,54 +83,34 @@ public:
 	}
 	
 private:
-	//cstring uses the nocopy constructors
-	friend class cstring;
-	
-	void init_from(const char * str)
-	{
-		init_from(arrayview<byte>((uint8_t*)str, strlen(str)));
-	}
-	void init_from(arrayview<byte> data);
-	void init_from(const string& other)
-	{
-		memcpy(this, &other, sizeof(*this));
-		if (!inlined())
-		{
-			if (m_owning) ++*(int*)(m_data-sizeof(int));
-			else unshare();
-		}
-	}
-	void init_from(string&& other)
-	{
-		memcpy(this, &other, sizeof(*this));
-		other.m_inline_len = 0;
-		if (!inlined() && !m_owning) unshare();
-	}
 	void init_from_nocopy(const char * str)
 	{
 		init_from_nocopy(arrayview<byte>((uint8_t*)str, strlen(str)));
 		if (!inlined()) m_nul = true;
 	}
-	void init_from_nocopy(arrayview<byte> data);
-	void init_from_nocopy(const string& other)
+	void init_from_nocopy(arrayview<byte> data)
 	{
-		memcpy(this, &other, sizeof(*this));
-		if (!inlined() && m_owning)
+		const uint8_t * str = data.ptr();
+		uint32_t len = data.size();
+		
+		if (len <= max_inline)
 		{
-			++*(int*)(m_data-sizeof(int));
+			memcpy(m_inline, str, len);
+			m_inline[len] = '\0';
+			m_inline_len = max_inline-len;
+		}
+		else
+		{
+			m_inline_len = -1;
+			
+			m_data = (uint8_t*)str; // if m_owning is false, we know to not modify this
+			m_len = len;
+			m_nul = false;
 		}
 	}
-	void init_from_nocopy(string&& other)
+	void init_from_nocopy(const cstring& other)
 	{
 		memcpy(this, &other, sizeof(*this));
-		other.m_inline_len = 0;
-	}
-	void release()
-	{
-		if (!inlined() && m_owning)
-		{
-			alloc(m_data,m_len, 0);
-		}
 	}
 	
 	//constant for all string implementations, but used by the implementation, so let's keep it here
@@ -186,9 +132,182 @@ private:
 		
 		return getchar(realpos(index));
 	}
+	
+public:
+	string replace(cstring in, cstring out);
+	
+private:
+	class noinit {};
+	cstring(noinit) {}
+	
+public:
+	cstring() { init_from_nocopy(""); }
+	cstring(const cstring& other) { init_from_nocopy(other); }
+	cstring(const char * str) { init_from_nocopy(str); }
+	//cstring(const uint8_t * str, uint32_t len) { init_from(str, len); }
+	cstring(arrayview<uint8_t> bytes) { init_from_nocopy(bytes); }
+	cstring(arrayview<char> chars) { init_from_nocopy(chars.reinterpret<uint8_t>()); }
+	cstring& operator=(const cstring& other) { init_from_nocopy(other); return *this; }
+	cstring& operator=(const char * str) { init_from_nocopy(str); return *this; }
+	
+	explicit operator bool() const { return length() != 0; }
+	//operator const char * () const { return ptr_withnul(); }
+	
+	char operator[](int index) const { return getchar(index); }
+	
+	//static string create(arrayview<uint8_t> data) { string ret=noinit(); ret.init_from(data.ptr(), data.size()); return ret; }
+	
+	cstring substr(int32_t start, int32_t end) const
+	{
+		start = realpos(start);
+		end = realpos(end);
+		return cstring(arrayview<byte>(ptr()+start, end-start));
+	}
+	
+	bool contains(cstring other) const
+	{
+		return memmem(this->ptr(), this->length(), other.ptr(), other.length()) != NULL;
+	}
+	bool startswith(cstring other) const
+	{
+		if (other.length() > this->length()) return false;
+		return (!memcmp(this->ptr(), other.ptr(), other.length()));
+	}
+	bool endswith(cstring other) const
+	{
+		if (other.length() > this->length()) return false;
+		return (!memcmp(this->ptr()+this->length()-other.length(), other.ptr(), other.length()));
+	}
+	bool istartswith(cstring other) const
+	{
+		if (other.length() > this->length()) return false;
+		const char* a = (char*)this->ptr();
+		const char* b = (char*)other.ptr();
+		for (size_t i=0;i<other.length();i++)
+		{
+			if (tolower(a[i]) != tolower(b[i])) return false;
+		}
+		return true;
+	}
+	bool iendswith(cstring other) const
+	{
+		if (other.length() > this->length()) return false;
+		const char* a = (char*)this->ptr()+this->length()-other.length();
+		const char* b = (char*)other.ptr();
+		for (size_t i=0;i<other.length();i++)
+		{
+			if (tolower(a[i]) != tolower(b[i])) return false;
+		}
+		return true;
+	}
+	bool iequals(cstring other) const
+	{
+		return (this->length() == other.length() && this->istartswith(other));
+	}
+	
+	array<cstring> csplit(cstring sep, size_t limit) const;
+	template<size_t limit = SIZE_MAX>
+	array<cstring> csplit(cstring sep) const { return csplit(sep, limit); }
+	
+	array<cstring> crsplit(cstring sep, size_t limit) const;
+	template<size_t limit = SIZE_MAX>
+	array<cstring> crsplit(cstring sep) const { return crsplit(sep, limit); }
+	
+	array<string> split(cstring sep, size_t limit) const { return csplit(sep, limit).cast<string>(); }
+	template<size_t limit = SIZE_MAX>
+	array<string> split(cstring sep) const { return split(sep, limit); }
+	
+	array<string> rsplit(cstring sep, size_t limit) const { return crsplit(sep, limit).cast<string>(); }
+	template<size_t limit = SIZE_MAX>
+	array<string> rsplit(cstring sep) const { return rsplit(sep, limit); }
+	
+	cstring trim() const
+	{
+		const uint8_t * chars = ptr();
+		int start = 0;
+		int end = length();
+		while (end > start && isspace(chars[end-1])) end--;
+		while (start < end && isspace(chars[start])) start++;
+		return substr(start, end);
+	}
+	
+	inline string lower() const;
+	inline string upper() const;
+	
+	size_t hash() const { return ::hash((char*)ptr(), length()); }
+	
+private:
+	class c_string {
+		char* ptr;
+		bool do_free;
+	public:
+		
+		c_string(arrayview<byte> data, bool has_term)
+		{
+			if (has_term)
+			{
+				ptr = (char*)data.ptr();
+				do_free = false;
+			}
+			else
+			{
+				ptr = (char*)malloc(data.size()+1);
+				memcpy(ptr, data.ptr(), data.size());
+				ptr[data.size()] = '\0';
+				do_free = true;
+			}
+		}
+		operator const char *() const { return ptr; }
+		~c_string() { if (do_free) free(ptr); }
+	};
+public:
+	c_string c_str() const { return c_string(bytes(), bytes_hasterm()); }
+};
+
+class string : public cstring {
+	friend class cstring;
+	
+	static size_t bytes_for(uint32_t len)
+	{
+		return bitround(len+1);
+	}
+	//static uint8_t* alloc(uint8_t* prev, uint32_t prevsize, uint32_t newsize);
+	
+	uint8_t * ptr()
+	{
+		return (uint8_t*)cstring::ptr();
+	}
+	const uint8_t * ptr() const
+	{
+		return (uint8_t*)cstring::ptr();
+	}
+	
+	void resize(uint32_t newlen);
+	
+	const char * ptr_withnul() const { return (char*)ptr(); }
+	
+	void init_from(const char * str)
+	{
+		init_from(arrayview<byte>((uint8_t*)str, strlen(str)));
+	}
+	void init_from(arrayview<byte> data);
+	void init_from(cstring other)
+	{
+		init_from(other.bytes());
+	}
+	void init_from(string&& other)
+	{
+		memcpy(this, &other, sizeof(*this));
+		other.m_inline_len = 0;
+	}
+	
+	void release()
+	{
+		if (!inlined()) free(m_data);
+	}
+	
 	void setchar(int32_t index_, char val)
 	{
-		unshare();
 		uint32_t index = realpos(index_);
 		if (index == length())
 		{
@@ -197,6 +316,7 @@ private:
 		ptr()[index] = val;
 	}
 	
+	//TODO: arrayview
 	void append(const uint8_t * newdat, uint32_t newlength)
 	{
 		if (newdat >= (uint8_t*)ptr() && newdat < (uint8_t*)ptr()+length())
@@ -214,6 +334,8 @@ private:
 		}
 	}
 	
+	void replace_set(int32_t pos, int32_t len, cstring newdat);
+	
 public:
 	//Resizes the string to a suitable size, then allows the caller to fill it in with whatever. Initial contents are undefined.
 	//The returned pointer may only be used until the first subsequent use of the string, including read-only operations.
@@ -223,17 +345,13 @@ public:
 		return arrayvieww<byte>(ptr(), len);
 	}
 	
-	void replace(int32_t pos, int32_t len, const string& newdat); // const string& is ugly, but cstring isn't declared yet
-	
-	string replace(const string& in, const string& out);
-	
 	string& operator+=(const char * right)
 	{
 		append((uint8_t*)right, strlen(right));
 		return *this;
 	}
 	
-	string& operator+=(const string& right)
+	string& operator+=(cstring right)
 	{
 		append(right.ptr(), right.length());
 		return *this;
@@ -246,22 +364,19 @@ public:
 		return *this;
 	}
 	
-private:
-	class noinit {};
-	string(noinit) {}
-	
-public:
-	string() { init_from(""); }
-	string(const string& other) { init_from(other); }
-	string(string&& other) { init_from(std::move(other)); }
-	string(const char * str) { init_from(str); }
+	string() : cstring(noinit()) { init_from(""); }
+	string(const string& other) : cstring(noinit()) { init_from(other); }
+	string(string&& other) : cstring(noinit()) { init_from(std::move(other)); }
+	string(const char * str) : cstring(noinit()) { init_from(str); }
+	string(cstring other) : cstring(noinit()) { init_from(other); }
 	//string(const uint8_t * str, uint32_t len) { init_from(str, len); }
-	string(arrayview<uint8_t> bytes) { init_from(bytes); }
-	string(arrayview<char> chars)
+	string(arrayview<uint8_t> bytes) : cstring(noinit()) { init_from(bytes); }
+	string(arrayview<char> chars) : cstring(noinit())
 	{
-		init_from_nocopy(arrayview<uint8_t>((uint8_t*)chars.ptr(), chars.size()));
+		init_from(chars.reinterpret<uint8_t>());
 	}
 	string& operator=(const string& other) { release(); init_from(other); return *this; }
+	string& operator=(string&& other) { release(); init_from(std::move(other)); return *this; }
 	string& operator=(const char * str) { release(); init_from(str); return *this; }
 	~string() { release(); }
 	
@@ -290,51 +405,7 @@ public:
 	
 	//static string create(arrayview<uint8_t> data) { string ret=noinit(); ret.init_from(data.ptr(), data.size()); return ret; }
 	
-	string substr(int32_t start, int32_t end) const
-	{
-		start = realpos(start);
-		end = realpos(end);
-		return string(arrayview<byte>(ptr()+start, end-start));
-	}
-	inline cstring csubstr(int32_t start, int32_t end) const;
-	inline bool contains(cstring other) const;
-	inline bool startswith(cstring other) const;
-	inline bool endswith(cstring other) const;
-	inline bool istartswith(cstring other) const;
-	inline bool iendswith(cstring other) const;
-	inline bool iequals(cstring other) const;
-	
-	//can't create csplit without a circular dependency
-	//  maybe if I make cstring the parent class, like arrayview/array, but that's probably more effort than it's worth
-	//limit is maximum number of cuts
-	array<string> split(const string& sep, size_t limit) const;
-	template<size_t limit = SIZE_MAX>
-	array<string> split(const string& sep) const { return split(sep, limit); }
-	
-	array<string> rsplit(const string& sep, size_t limit) const;
-	template<size_t limit = SIZE_MAX>
-	array<string> rsplit(const string& sep) const { return rsplit(sep, limit); }
-	
-	//TODO: fill in once cstring works
-	//(actually, implement split() as csplit().cast<string>())
-	array<string> csplit(const string& sep, size_t limit) const { return split(sep, limit); }
-	template<size_t limit = SIZE_MAX>
-	array<string> csplit(const string& sep) const { return csplit(sep, limit); }
-	
-	array<string> crsplit(const string& sep, size_t limit) const { return rsplit(sep, limit); }
-	template<size_t limit = SIZE_MAX>
-	array<string> crsplit(const string& sep) const { return crsplit(sep, limit); }
-		
-	string trim()
-	{
-		const uint8_t * chars = ptr();
-		int start = 0;
-		int end = length();
-		while (end > start && isspace(chars[end-1])) end--;
-		while (start < end && isspace(chars[start])) start++;
-		return substr(start, end);
-	}
-	
+	/*
 	string lower()
 	{
 		string ret = *this;
@@ -352,191 +423,40 @@ public:
 		for (size_t i=0;i<length();i++) chars[i] = toupper(chars[i]);
 		return ret;
 	}
+	*/
 	
 	static string codepoint(uint32_t cp);
-	
-	size_t hash() const { return ::hash((char*)ptr(), length()); }
 };
 
-inline bool operator==(const string& left, const char * right ) { return left.bytes() == arrayview<byte>((uint8_t*)right,strlen(right)); }
-inline bool operator==(const string& left, const string& right) { return left.bytes() == right.bytes(); }
-inline bool operator==(const char * left,  const string& right) { return operator==(right, left); }
-inline bool operator!=(const string& left, const char * right ) { return !operator==(left, right); }
-inline bool operator!=(const string& left, const string& right) { return !operator==(left, right); }
-inline bool operator!=(const char * left,  const string& right) { return !operator==(left, right); }
+inline bool operator==(cstring left,      const char * right) { return left.bytes() == arrayview<byte>((uint8_t*)right,strlen(right)); }
+inline bool operator==(cstring left,      cstring right     ) { return left.bytes() == right.bytes(); }
+inline bool operator==(const char * left, cstring right     ) { return operator==(right, left); }
+inline bool operator!=(cstring left,      const char * right) { return !operator==(left, right); }
+inline bool operator!=(cstring left,      cstring right     ) { return !operator==(left, right); }
+inline bool operator!=(const char * left, cstring right     ) { return !operator==(left, right); }
 
-inline string operator+(const string& left, const string& right) { string ret=left; ret+=right; return ret; }
-inline string operator+(string&& left, const char * right) { left+=right; return left; }
-inline string operator+(const string& left, const char * right) { string ret=left; ret+=right; return ret; }
-inline string operator+(string&& left, const string& right) { left+=right; return left; }
-inline string operator+(const char * left, const string& right) { string ret=left; ret+=right; return ret; }
+inline string operator+(cstring left,      cstring right     ) { string ret=left; ret+=right; return ret; }
+inline string operator+(string&& left,     const char * right) { left+=right; return left; }
+inline string operator+(cstring left,      const char * right) { string ret=left; ret+=right; return ret; }
+inline string operator+(string&& left,     cstring right     ) { left+=right; return left; }
+inline string operator+(const char * left, cstring right     ) { string ret=left; ret+=right; return ret; }
 
 inline string operator+(string&& left, char right) { left+=right; return left; }
-inline string operator+(const string& left, char right) { string ret=left; ret+=right; return ret; }
-inline string operator+(char left, const string& right) { string ret; ret[0]=left; ret+=right; return ret; }
+inline string operator+(cstring left, char right) { string ret=left; ret+=right; return ret; }
+inline string operator+(char left, cstring right) { string ret; ret[0]=left; ret+=right; return ret; }
 
-class cstring : public string {
-	friend class string;
-public:
-	cstring() : string() {}
-	cstring(const string& other) : string(noinit()) { init_from_nocopy(other); }
-	cstring(const cstring& other) : string(noinit()) { init_from_nocopy(other); }
-	cstring(string&& other) : string(noinit()) { init_from_nocopy(std::move(other)); }
-	cstring(cstring&& other) : string(noinit()) { init_from_nocopy(std::move(other)); }
-	cstring(const char * str) : string(noinit()) { init_from_nocopy(str); }
-	//cstring(const uint8_t * str, uint32_t len) : string(noinit()) { init_from_nocopy(str, len); }
-	cstring(arrayview<uint8_t> bytes) : string(noinit()) { init_from_nocopy(bytes); }
-	cstring(arrayview<char> chars) : string(noinit())
-	{
-		init_from_nocopy(arrayview<uint8_t>((uint8_t*)chars.ptr(), chars.size()));
-	}
-private:
-	//don't use arrayview, if (nul) then it uses len+1 bytes
-	cstring(const uint8_t * str, uint32_t len, bool nul) : string(noinit())
-	{
-		init_from_nocopy(arrayview<byte>(str, len));
-		if (!inlined()) m_nul=nul;
-	}
-public:
-	
-	cstring& operator=(const cstring& other) { release(); init_from_nocopy(other); return *this; }
-};
-
-inline cstring string::csubstr(int32_t start, int32_t end) const
+inline string cstring::lower() const
 {
-	start = realpos(start);
-	end = realpos(end);
-	if (inlined()) return cstring(arrayview<byte>(ptr()+start, end-start));
-	else return cstring(ptr()+start, end-start, (m_nul && (uint32_t)end == m_len));
+	string ret = *this;
+	uint8_t * chars = ret.ptr();
+	for (size_t i=0;i<length();i++) chars[i] = tolower(chars[i]);
+	return ret;
 }
 
-inline bool string::contains(cstring other) const
+inline string cstring::upper() const
 {
-	return memmem(this->ptr(), this->length(), other.ptr(), other.length()) != NULL;
+	string ret = *this;
+	uint8_t * chars = ret.ptr();
+	for (size_t i=0;i<length();i++) chars[i] = toupper(chars[i]);
+	return ret;
 }
-
-inline bool string::startswith(cstring other) const
-{
-	if (other.length() > this->length()) return false;
-	return (!memcmp(this->ptr(), other.ptr(), other.length()));
-}
-
-inline bool string::endswith(cstring other) const
-{
-	if (other.length() > this->length()) return false;
-	return (!memcmp(this->ptr()+this->length()-other.length(), other.ptr(), other.length()));
-}
-
-inline bool string::istartswith(cstring other) const
-{
-	if (other.length() > this->length()) return false;
-	const char* a = (char*)this->ptr();
-	const char* b = (char*)other.ptr();
-	for (size_t i=0;i<other.length();i++)
-	{
-		if (tolower(a[i]) != tolower(b[i])) return false;
-	}
-	return true;
-}
-
-inline bool string::iendswith(cstring other) const
-{
-	if (other.length() > this->length()) return false;
-	const char* a = (char*)this->ptr()+this->length()-other.length();
-	const char* b = (char*)other.ptr();
-	for (size_t i=0;i<other.length();i++)
-	{
-		if (tolower(a[i]) != tolower(b[i])) return false;
-	}
-	return true;
-}
-
-inline bool string::iequals(cstring other) const
-{
-	return (this->length() == other.length() && this->istartswith(other));
-}
-
-//TODO
-//class wstring : public string {
-//	mutable uint32_t pos_bytes;
-//	mutable uint32_t pos_chars;
-//	mutable uint32_t wsize;
-//	char pad[4];
-//	const uint32_t WSIZE_UNKNOWN = -1;
-//	
-//	void clearcache() const
-//	{
-//		pos_bytes = 0;
-//		pos_chars = 0;
-//		wsize = WSIZE_UNKNOWN;
-//		wcache(true);
-//	}
-//	
-//	void checkcache() const
-//	{
-//		if (!wcache()) clearcache();
-//	}
-//	
-//	uint32_t findcp(int32_t index) const
-//	{
-//		checkcache();
-//		
-//		if (pos_chars > (uint32_t)index)
-//		{
-//			pos_bytes=0;
-//			pos_chars=0;
-//		}
-//		
-//		uint8_t* scan = (uint8_t*)data() + pos_bytes;
-//		uint32_t chars = pos_chars;
-//		while (chars != (uint32_t)index)
-//		{
-//			if ((*scan&0xC0) != 0x80) chars++;
-//			scan++;
-//		}
-//		pos_bytes = scan - (uint8_t*)data();
-//		pos_chars = index;
-//		
-//		return pos_bytes;
-//	}
-//	
-//	uint32_t getcp(int32_t index) const { return 42; }
-//	void setcp(int32_t index, uint32_t val) { }
-//	
-//	class charref {
-//		wstring* parent;
-//		int32_t index;
-//		
-//	public:
-//		charref& operator=(char ch) { parent->setcp(index, ch); return *this; }
-//		operator uint32_t() { return parent->getcp(index); }
-//		
-//		charref(wstring* parent, int32_t index) : parent(parent), index(index) {}
-//	};
-//	friend class charref;
-//	
-//public:
-//	wstring() : string() { clearcache(); }
-//	wstring(const string& other) : string(other) { clearcache(); }
-//	wstring(const char * str) : string(str) { clearcache(); }
-//	
-//	charref operator[](int32_t index) { return charref(this, index); }
-//	uint32_t operator[](int32_t index) const { return getcp(index); }
-//	
-//	uint32_t size() const
-//	{
-//		checkcache();
-//		if (wsize == WSIZE_UNKNOWN)
-//		{
-//			uint8_t* scan = (uint8_t*)data() + pos_bytes;
-//			uint32_t chars = pos_chars;
-//			while (*scan)
-//			{
-//				if ((*scan&0xC0) != 0x80) chars++;
-//				scan++;
-//			}
-//			wsize = chars;
-//		}
-//		return wsize;
-//	}
-//};

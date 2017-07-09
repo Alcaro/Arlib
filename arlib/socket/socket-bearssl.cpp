@@ -215,7 +215,7 @@ public:
 		}
 		else s.xwc.vtable = NULL;
 		br_ssl_engine_set_buffer(&s.sc.eng, s.iobuf, sizeof(s.iobuf), true);
-		br_ssl_client_reset(&s.sc, domain, false);
+		br_ssl_client_reset(&s.sc, domain.c_str(), false);
 	}
 	
 	//returns whether anything happened

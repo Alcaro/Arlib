@@ -50,7 +50,7 @@ static int setsockopt(int socket, int level, int option_name, int option_value)
 	return setsockopt(socket, level, option_name, &option_value, sizeof(option_value));
 }
 
-static int connect(const char * domain, int port)
+static int connect(cstring domain, int port)
 {
 	initialize();
 	
@@ -64,7 +64,7 @@ static int connect(const char * domain, int port)
 	hints.ai_flags = 0;
 	
 	addrinfo * addr = NULL;
-	getaddrinfo(domain, portstr, &hints, &addr);
+	getaddrinfo(domain.c_str(), portstr, &hints, &addr);
 	if (!addr) return -1;
 	
 	int fd = mksocket(addr->ai_family, addr->ai_socktype, addr->ai_protocol);

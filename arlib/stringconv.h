@@ -51,24 +51,24 @@ inline string tostring(const char * s) { return s; } // only exists as tostring,
 
 inline bool fromstring(cstring s, string& out) { out=s; return true; }
 inline bool fromstring(cstring s, cstring& out) { out=s; return true; }
-bool fromstring(cstring s, signed char & out);
-bool fromstring(cstring s, unsigned char & out);
+bool fromstring(   cstring s,   signed char & out);
+bool fromstring(   cstring s, unsigned char & out);
 bool fromstringhex(cstring s, unsigned char & out);
-bool fromstring(cstring s, signed short & out);
-bool fromstring(cstring s, unsigned short & out);
+bool fromstring(   cstring s,   signed short & out);
+bool fromstring(   cstring s, unsigned short & out);
 bool fromstringhex(cstring s, unsigned short & out);
-bool fromstring(cstring s, signed int & out);
-bool fromstring(cstring s, unsigned int & out);
+bool fromstring(   cstring s,   signed int & out);
+bool fromstring(   cstring s, unsigned int & out);
 bool fromstringhex(cstring s, unsigned int & out);
-bool fromstring(cstring s, signed long & out);
-bool fromstring(cstring s, unsigned long & out);
+bool fromstring(   cstring s,   signed long & out);
+bool fromstring(   cstring s, unsigned long & out);
 bool fromstringhex(cstring s, unsigned long & out);
-bool fromstring(cstring s, signed long long & out);
-bool fromstring(cstring s, unsigned long long & out);
+bool fromstring(   cstring s,   signed long long & out);
+bool fromstring(   cstring s, unsigned long long & out);
 bool fromstringhex(cstring s, unsigned long long & out);
-bool fromstring(cstring s, float& out);
-bool fromstring(cstring s, double& out);
-bool fromstring(cstring s, bool& out);
+bool fromstring(   cstring s, float& out);
+bool fromstring(   cstring s, double& out);
+bool fromstring(   cstring s, bool& out);
 
 string tostringhex(arrayview<byte> val);
 bool fromstringhex(cstring s, arrayvieww<byte> val);
