@@ -1,12 +1,24 @@
 #include "file.h"
 
 #if defined(__unix__)
+#include <unistd.h>
 #include <poll.h>
 #define RD_EV (POLLIN |POLLRDHUP|POLLHUP|POLLERR)
 #define WR_EV (POLLOUT|POLLRDHUP|POLLHUP|POLLERR)
 
 int fd_monitor_oneshot(arrayview<int> fds, bool* can_read, bool* can_write, int timeout_ms)
 {
+	if (can_read) *can_read = false;
+	if (can_write) *can_write = false;
+	
+	if (!fds.size())
+	{
+		//this is gonna screw up if timeout is infinite and there are no sockets
+		//but in that case, you deserve a screwup
+		usleep(timeout_ms*1000);
+		return -1;
+	}
+	
 	short events = (can_read ? POLLIN : 0) | (can_write ? POLLOUT : 0);
 	
 	array<pollfd> pfd;
@@ -30,8 +42,6 @@ int fd_monitor_oneshot(arrayview<int> fds, bool* can_read, bool* can_write, int 
 		}
 	}
 	
-	if (can_read) *can_read = false;
-	if (can_write) *can_write = false;
 	return -1;
 }
 

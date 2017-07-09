@@ -29,7 +29,7 @@ bool WebSocket::connect(cstring target, arrayview<string> headers)
 	
 	msg.resize(4096);
 	int bytesdone = 0;
-	while (true)
+	while (true) // TODO: make nonblocking
 	{
 		int bytes = sock->recv(msg.skip(bytesdone), true);
 		if (bytes<0) return false;

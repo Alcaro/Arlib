@@ -1,15 +1,12 @@
 #include "discord.h"
 #include <time.h>
 
-#define DISCORD_BASE_URL "https://discordapp.com/api"
-
 void Discord::headers(array<string>& h)
 {
 	if (bot)
 	{
 		h.append("Authorization: Bot "+token);
-		h.append("User-Agent: DiscordBot "
-						 "(https://www.smwcentral.net/?p=pm&do=compose&user=1686 or floating@muncher.se, "
+		h.append("User-Agent: DiscordBot (https://github.com/Alcaro/Arlib/blob/master/arlib/discord.cpp, "
 						 __DATE__ " " __TIME__ ")");
 	}
 	else
@@ -30,9 +27,10 @@ void Discord::http(HTTP::req r, function<void(HTTP::rsp)> callback)
 	}
 	else ratelimit = 0;
 	
-	r.url = DISCORD_BASE_URL + r.url;
+	r.url = "https://discordapp.com/api" + r.url;
 	headers(r.headers);
 	//if (r.method == "POST" && !r.postdata) r.postdata = "{}";
+	puts("request "+r.url);
 	m_http.send(r);
 	m_http_reqs.append(callback);
 }
@@ -150,31 +148,33 @@ void Discord::debug()
 	}
 }
 
-bool Discord::connect_bot(cstring token)
+void Discord::connect_bot(cstring token)
 {
 	this->bot = true;
 	this->token = token;
-	return connect();
+	connect();
 }
 
-bool Discord::connect()
+void Discord::connect()
 {
 puts("DOCONNECT");
+	connecting = true;
+	keepalive_sent = false;
 	keepalive_next = 0;
 	
-	if (bot) http(HTTP::req(DISCORD_BASE_URL "/gateway/bot"), bind_this(&Discord::connect_cb));
+	if (bot) http(HTTP::req("/gateway/bot"), bind_this(&Discord::connect_cb));
 	else *(char*)0=0;
-	http_await();
-	
-	while (m_ws && guilds_to_join) process(true);
-	return m_ws;
 }
 
 void Discord::connect_cb(HTTP::rsp r)
 {
+	connecting = false;
+	
 	guilds_to_join = -1;
+	puts(r.text());
 	
 	string ws_url = JSON(r.text())["url"];
+	if (!ws_url) return;
 	ws_url += "?v=5&encoding=json";
 puts("DOCONNECT:"+ws_url);
 	array<string> heads;
@@ -185,7 +185,11 @@ puts("DOCONNECT:"+ws_url);
 bool Discord::process(bool block)
 {
 	http_process();
-	if (!m_ws) connect();
+	if (!m_ws)
+	{
+		if (!connecting) connect();
+		return false;
+	}
 	
 	if (keepalive_next && time(NULL) >= keepalive_next)
 	{
@@ -195,6 +199,13 @@ bool Discord::process(bool block)
 		json["op"] = 1;
 		json["d"] = sequence;
 		send(json);
+		
+		if (keepalive_sent)
+		{
+			m_ws.reset();
+			return false;
+		}
+		keepalive_sent = true;
 	}
 	
 	string msg = m_ws.recvstr(block);
@@ -283,7 +294,8 @@ bool Discord::process(bool block)
 			set_user(guild_id, json["d"]);
 			on_join(Guild(this, guild_id), User(this, json["d"]["user"]["id"], guild_id));
 		}
-		if (json["t"] == "GUILD_MEMBER_UPDATE")
+		if (json["t"] == "GUILD_MEMBER_UPDATE" ||
+		    json["t"] == "PRESENCE_UPDATE") // used for tag changes, don't like how it's documented partial/unreliable but apparently I need it
 		{
 			set_user(json["d"]["guild_id"], json["d"]);
 		}
@@ -291,9 +303,6 @@ bool Discord::process(bool block)
 		{
 			del_user(json["d"]["guild_id"], json["d"]["user"]["id"]);
 		}
-		//object is documented as sometimes partial and not validated. probably means it can contain fake data.
-		//useless
-		//if (json["t"]=="PRESENCE_UPDATE")
 		if (json["t"] == "MESSAGE_CREATE")
 		{
 			string chan = json["d"]["channel_id"];
@@ -350,7 +359,10 @@ bool Discord::process(bool block)
 			send(json);
 		}
 	}
-	//if (json["op"]==11) // Heartbeat ACK (don't care, we detect failure on the TCP stream)
+	if (json["op"]==11) // Heartbeat ACK
+	{
+		keepalive_sent = false;
+	}
 	
 	return true;
 }

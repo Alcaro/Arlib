@@ -14,7 +14,7 @@ class Discord {
 	struct i_guild;
 	
 public:
-	bool connect_bot(cstring token);
+	void connect_bot(cstring token);
 	
 	//Discord is a complex protocol. On activity, or after a 1000 millisecond timeout, call process().
 	void monitor(socket::monitor& mon, void* key)
@@ -48,6 +48,7 @@ public:
 		
 	public:
 		Role() : m_parent(NULL) {}
+		Role(nullptr_t) : m_parent(NULL) {}
 		Role(const Role& other) : m_parent(other.m_parent), m_id(other.m_id) {}
 		
 		string id() { return m_id; }
@@ -83,6 +84,7 @@ public:
 		
 	public:
 		User() : m_parent(NULL) {}
+		User(nullptr_t) : m_parent(NULL) {}
 		User(const User& other) : m_parent(other.m_parent), m_id(other.m_id) {}
 		
 		cstring id() { return m_id; }
@@ -129,6 +131,7 @@ public:
 		
 	public:
 		Channel() : m_parent(NULL) {}
+		Channel(nullptr_t) : m_parent(NULL) {}
 		Channel(const Channel& other) : m_parent(other.m_parent), m_id(other.m_id) {}
 		
 		cstring id() { return m_id; }
@@ -165,6 +168,7 @@ public:
 		
 	public:
 		Guild() : m_parent(NULL) {}
+		Guild(nullptr_t) : m_parent(NULL) {}
 		Guild(const Guild& other) : m_parent(other.m_parent), m_id(other.m_id) {}
 		
 		cstring id() { return m_id; }
@@ -194,6 +198,13 @@ public:
 	
 	User self() { return User(this, my_user, ""); }
 	
+	void self_rename(cstring newname)
+	{
+		JSON json;
+		json["username"] = newname;
+		http("PATCH", "/users/@me", json);
+	}
+	
 	function<void(Channel chan, User user, cstring message)> on_msg;
 	function<void(Guild guild, User self)> on_guild_enter;
 	function<void(Guild guild, User user)> on_join;
@@ -201,11 +212,12 @@ public:
 private:
 	bool process(bool block);
 	
-	WebSocket m_ws; // don't use these directly, dangerous!
+	bool connecting = false;
+	WebSocket m_ws; // be careful about using these directly, dangerous!
 	HTTP m_http;
 	array<function<void(HTTP::rsp)>> m_http_reqs; // TODO: kinda annoying, do I make it all synchronous?
 	
-	bool connect();
+	void connect();
 	void connect_cb(HTTP::rsp r);
 	
 	bool bot;
@@ -215,6 +227,7 @@ private:
 	
 	time_t keepalive_next = 0;
 	int keepalive_ms;
+	bool keepalive_sent;
 	
 	int guilds_to_join;
 	
