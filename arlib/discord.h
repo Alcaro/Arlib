@@ -60,7 +60,7 @@ public:
 		m_http.monitor(mon, key);
 	}
 	//Only nonblocking is available.
-	void process() { while (process(false)) {} }
+	void process() { process(false); }
 	
 	class Role;
 	class User;
@@ -73,7 +73,7 @@ public:
 	
 	class Role {
 		Discord* m_parent;
-		cstring m_id;
+		string m_id;
 		friend class Discord;
 		//friend class Role;
 		friend class User;
@@ -107,8 +107,8 @@ public:
 	};
 	class User {
 		Discord* m_parent;
-		cstring m_id;
-		cstring m_guild_id; // for fetching nick
+		string m_id;
+		string m_guild_id; // for fetching nick
 		
 		friend class Discord;
 		friend class Role;
@@ -131,7 +131,7 @@ public:
 			if (guild_nick) return guild_nick;
 			else return impl().username;
 		}
-		cstring account() { return impl().username+"#"+impl().discriminator; }
+		string account() { return impl().username+"#"+impl().discriminator; }
 		msg highlight() { return msg::from_md("<@"+m_id+">"); }
 		
 		array<Role> roles();
@@ -145,8 +145,6 @@ public:
 			m_parent->http(present ? "PUT" : "DELETE", "/guilds/"+role.impl().guild+"/members/"+m_id+"/roles/"+role.m_id);
 		}
 		
-		bool partial() { return !impl().discriminator; }
-		
 		void send(cstring text);
 		
 		operator bool() { return m_parent; }
@@ -156,7 +154,7 @@ public:
 	};
 	class Channel {
 		Discord* m_parent;
-		cstring m_id;
+		string m_id;
 		friend class Discord;
 		friend class Role;
 		friend class User;
@@ -172,7 +170,7 @@ public:
 		Channel(const Channel& other) : m_parent(other.m_parent), m_id(other.m_id) {}
 		
 		cstring id() { return m_id; }
-		cstring name() { return impl().name; }
+		cstring name() { return impl().name; } // without #
 		Guild guild() { return Guild(m_parent, impl().guild); }
 		
 		void rawmsg(cstring text)
@@ -197,7 +195,7 @@ public:
 	};
 	class Guild { // apparently Guild is to the API what Server is to the end user
 		Discord* m_parent;
-		cstring m_id;
+		string m_id;
 		friend class Discord;
 		friend class Role;
 		friend class User;
@@ -220,13 +218,13 @@ public:
 		
 		Role role(cstring name)
 		{
-			cstring id = impl().roles.first([&](cstring r)->bool { return m_parent->roles[r].name == name; });
+			string id = impl().roles.first([&](cstring r)->bool { return m_parent->roles[r].name == name; });
 			if (id) return Role(m_parent, id);
 			else return Role();
 		}
 		Channel channel(cstring name)
 		{
-			cstring id = impl().channels.first([&](cstring c)->bool { return m_parent->channels[c].name == name; });
+			string id = impl().channels.first([&](cstring c)->bool { return m_parent->channels[c].name == name; });
 			if (id) return Channel(m_parent, id);
 			else return Channel();
 		}
@@ -246,16 +244,19 @@ public:
 		http("PATCH", "/users/@me", json);
 	}
 	
-	function<void(Channel chan, User user, cstring message)> on_msg;
-	function<void(Guild guild, User self)> on_guild_enter;
-	function<void(Guild guild, User user)> on_join;
-	
-	
-	
-	
+	class callbacks {
+	public:
+		virtual void on_connect(Guild guild, User self) {}
+		
+		virtual void on_msg(Channel chan, User user, cstring message) {}
+		
+		virtual void on_guild_join(Guild guild, User user) {}
+		virtual void on_guild_leave(Guild guild, User user) {}
+	};
+	callbacks* cb;
 	
 private:
-	bool process(bool block);
+	void process(bool block);
 	
 	bool connecting = false;
 	WebSocket m_ws; // be careful about using these directly, dangerous!
@@ -276,7 +277,7 @@ private:
 	
 	int guilds_to_join;
 	
-	string resume;
+	//string resume;
 	uint64_t sequence;
 	
 	struct i_role {
@@ -362,10 +363,16 @@ private:
 	
 	void del_user(cstring guild_id, cstring user_id);
 	
+	static string getdate();
 	void datelog(cstring text);
+	
 	
 public:
 void debug();
+string debug_connect;
+time_t debug_next = 0;
+Channel debug_target;
+void debug_reset() { m_ws.reset(); }
 };
 
 inline Discord::msg operator+(cstring left, Discord::msg right) { return Discord::msg::from_md(left + right.raw); }

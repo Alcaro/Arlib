@@ -17,6 +17,7 @@
 #include "endian.h"
 #include "file.h"
 #include "function.h"
+#include "html.h"
 #include "intwrap.h"
 #include "json.h"
 #include "linq.h"
@@ -57,3 +58,7 @@
 #include "websocket.h"
 #include "discord.h"
 #endif
+
+extern const char * BUILD_DATE;
+extern const char * BUILD_TIME;
+extern const char * BUILD_DATETIME;

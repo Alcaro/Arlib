@@ -233,6 +233,8 @@ public:
 	
 	inline string lower() const;
 	inline string upper() const;
+	string fromlatin1() const;
+	string fromwindows1252() const;
 	
 	size_t hash() const { return ::hash((char*)ptr(), length()); }
 	

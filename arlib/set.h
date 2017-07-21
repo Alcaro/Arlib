@@ -319,19 +319,22 @@ public:
 	}
 	
 	//if nonexistent, undefined behavior
-	Tvalue& get(const Tkey& key)
+	template<typename Tk2>
+	Tvalue& get(const Tk2& key)
 	{
 		return items.get(key)->value;
 	}
 	
 	//if nonexistent, returns 'def'
-	Tvalue& get_or(const Tkey& key, Tvalue& def)
+	template<typename Tk2>
+	Tvalue& get_or(const Tk2& key, Tvalue& def)
 	{
 		node* ret = items.get(key);
 		if (ret) return ret->value;
 		else return def;
 	}
-	Tvalue get_or(const Tkey& key, Tvalue def)
+	template<typename Tk2>
+	Tvalue get_or(const Tk2& key, Tvalue def)
 	{
 		node* ret = items.get(key);
 		if (ret) return ret->value;
@@ -348,12 +351,14 @@ public:
 		return get_create(key);
 	}
 	
-	bool contains(const Tkey& item)
+	template<typename Tk2>
+	bool contains(const Tk2& item) const
 	{
 		return items.contains(item);
 	}
 	
-	void remove(const Tkey& item)
+	template<typename Tk2>
+	void remove(const Tk2& item)
 	{
 		items.remove(item);
 	}
@@ -363,7 +368,7 @@ public:
 		items.reset();
 	}
 	
-	size_t size() { return items.size(); }
+	size_t size() const { return items.size(); }
 	
 private:
 	class iterator {

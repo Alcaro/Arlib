@@ -103,7 +103,7 @@ jsonparser::event jsonparser::next()
 					unichar += m_data[m_pos++];
 					unichar += m_data[m_pos++];
 					uint16_t codepoint;
-					if (!fromstring(unichar, codepoint)) return do_error();
+					if (!fromstringhex(unichar, codepoint)) return do_error();
 					val += string::codepoint(codepoint);
 					break;
 				}
@@ -294,6 +294,18 @@ static jsonparser::event test4e[]={
 	{ e_finish }
 };
 
+static const char * test5 =
+"{ \"foo\": \"\x80\\u0080\" }\n"
+;
+
+static jsonparser::event test5e[]={
+	{ e_enter_map },
+		{ e_map_key, "foo" },
+		{ e_str, "\x80\xC2\x80" },
+	{ e_exit_map },
+	{ e_finish }
+};
+
 static void testjson(const char * json, jsonparser::event* expected)
 {
 	jsonparser parser(json);
@@ -343,6 +355,7 @@ test("JSON parser")
 	testcall(testjson(test2, test2e));
 	testcall(testjson(test3, test3e));
 	testcall(testjson(test4, test4e));
+	testcall(testjson(test5, test5e));
 	
 	testcall(testjson_error(""));
 	testcall(testjson_error("{"));
@@ -375,7 +388,7 @@ test("JSON container")
 	
 	{
 		JSON json("\"42\"");
-		assert_eq((string)json, "42");
+		assert_eq(json.str(), "42");
 	}
 	
 	{
@@ -399,6 +412,15 @@ test("JSON container")
 		JSON("{");
 		JSON("{\"x\"");
 		JSON("{\"x\":");
+	}
+	
+	{
+		//more a test that the cstring remains bound to the json
+		JSON json("{\"a\":{\"b\":\"cccccccccccccccccccccccc\"}}");
+		string str = json["a"]["b"];
+		assert_eq(str, "cccccccccccccccccccccccc");
+		cstring cstr = json["a"]["b"];
+		assert_eq(cstr, "cccccccccccccccccccccccc");
 	}
 }
 #endif

@@ -273,6 +273,12 @@ ifeq ($(OS),windows)
   TRUE_LFLAGS += -static-libgcc 
 endif
 
+.force:
+
+obj/build.o: .force | obj
+	$(CC) $(TRUE_CFLAGS) -c arlib/build.c -o $@
+OBJS += obj/build.o
+
 #On Windows, cleaning up the object directory is expected to be done with 'del /q obj\*' in a batch script.
 clean:
 	rm -f obj/*

@@ -129,13 +129,13 @@ bool fromstringhex(cstring s, array<byte>& val)
 }
 
 
-template<typename T> void testunhex(const char * S, unsigned long long V)
+template<typename T> void testunhex(const char * S, T V)
 {
 	T a;
 	assert_eq(fromstringhex(S, a), true);
 	assert_eq(a, V);
 }
-template<typename T> void testundec(const char * S, unsigned long long V)
+template<typename T> void testundec(const char * S, T V)
 {
 	T a;
 	assert_eq(fromstring(S, a), true);

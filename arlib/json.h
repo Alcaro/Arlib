@@ -215,7 +215,7 @@ public:
 	array<JSON>& list() { ev.action = jsonparser::enter_list; return chld_list; }
 	map<string,JSON>& assoc() { ev.action = jsonparser::enter_map; return chld_map; } // 'map' is taken
 	
-	operator bool()
+	bool boolean() const
 	{
 		switch (ev.action)
 		{
@@ -231,12 +231,21 @@ public:
 		default: abort(); // unreachable
 		}
 	}
+	
+	operator bool() const { return boolean(); }
+	operator int() const { return ev.num; }
+	operator size_t() const { return ev.num; }
+	operator double() const { return ev.num; }
+	//operator string&() const { return ev.str; }
+	operator cstring() const { return ev.str; }
+	//operator const char *() { return str(); }
+	
+	operator bool() { return boolean(); }
 	operator int() { return num(); }
 	operator size_t() { return num(); }
 	operator double() { return num(); }
-	operator string() { return str(); }
-	//operator cstring() { return str(); }
-	//operator const char *() { return str(); }
+	operator string&() { return str(); }
+	operator cstring() { return str(); }
 	
 	bool operator==(int right) { return num()==right; }
 	bool operator==(size_t right) { return num()==right; }
