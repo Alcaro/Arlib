@@ -5,7 +5,7 @@
 #include "socket.h"
 #include "bytepipe.h"
 
-class HTTP {
+class HTTP : nocopy {
 public:
 	struct req {
 		//Every field except 'url' is safe to leave as default.
@@ -21,9 +21,7 @@ public:
 		array<string> headers; // TODO: multimap
 		array<byte> postdata;
 		
-		//Applies to the entire HTTP object, not just this request. Must be same for all.
-		size_t maxsize = 1000000; // Limits number of bytes sent by server. Actual data received will be less.
-		uint32_t timeout = 5; // In seconds.
+		uintptr_t userdata; // Not used by the HTTP object.
 		
 		req() {}
 		req(string url) : url(url) {}
@@ -40,14 +38,16 @@ public:
 			e_broken        = -4, // server unexpectedly closed connection, or timeout
 			                      // if partial=true in recv(), this may be a real status code instead; to detect this, look for success=false
 			e_not_http      = -5, // the server isn't speaking HTTP
-			e_only_one      = -6, // server used Connection: close or similar on a previous request, or otherwise closed socket
 			//may also be a normal http status code (200, 302, 404, etc)
 		};
 		int status;
 		//string status_str; // useless
 		
-		array<string> headers; // TODO: multimap
+		array<string> headers; // TODO: switch to multimap once it exists
 		array<byte> body;
+		
+		uintptr_t userdata; // Same as in the request object.
+		
 		
 		operator arrayvieww<byte>()
 		{
@@ -72,33 +72,41 @@ public:
 	};
 	
 	static string request(string url) { return std::move(request((req)url).body); }
-	static rsp request(const req& r) { HTTP http; http.send(r); return std::move(http.recv()); }
+	static rsp request(const req& q) { HTTP http; http.send(q); return std::move(http.recv()); }
 	
 	//Multiple requests may be sent to the same object. This will make them use HTTP Keep-Alive.
 	//The requests must be to the same protocol-domain-port tuple.
-	//They will be returned in the same order as they're sent.
-	//Returns false if the request is invalid or the host can't be reached. This does not affect the object.
-	//If the server doesn't support Keep-Alive, remaining requests are cancelled.
-	bool send(const req& r);
+	//Always succeeds, failures are reported in recv(). Failures may be reported in arbitrary order.
+	//They will be returned in an arbitrary order. Use the userdata to keep them apart.
+	void send(req q)
+	{
+		req_rsp& qr = requests.append();
+		qr.r.userdata = q.userdata;
+		qr.q = std::move(q);
+		activity(false);
+	}
 	bool ready() { activity(false); return i_ready(); }
-	void progress(size_t& done, size_t& total); // Both are 0 if unknown, or if empty. Do not use for checking if it's done.
-	//Returns immediately if there's anything unfinished going on, or if nothing more is expected to be returned (including error in send()).
-	void await();
-	rsp recv(bool partial = false); // Calls await() if needed. Only works once per send().
+	//void progress(size_t& done, size_t& total); // Both are 0 if unknown, or if empty. Do not use for checking if it's done, use ready().
+	
+	// Waits until a response object is ready to be returned. If no request was made, returns status=e_not_sent, userdata=0.
+	rsp recv();
+	void await(); // Waits until recv() would return immediately.
 	
 	//Discards any unfinished requests, errors, and similar.
 	void reset()
 	{
-		done.reset();
-		n_unfinished = 0;
-		error = 0;
 		host = location();
-		sock = NULL;
+		requests.reset();
+		active_req = 0;
+		active_rsp = 0;
 		tosend.reset();
+		sock = NULL;
+		state = st_boundary;
 	}
 	
 	//If this key is returned, call .ready(), then .monitor() again.
-	void monitor(socket::monitor& mon, void* key) { if (sock) mon.add(sock, key, true, tosend.remaining() ? true : false); }
+	//This object may be returned even if no request is pending. In this case, call .ready() anyways; it will return false.
+	void monitor(socket::monitor& mon, void* key) { if (sock) mon.add(sock, key, true, tosend.remaining()); }
 	
 	
 	struct location {
@@ -107,39 +115,48 @@ public:
 		int port;
 		string path;
 	};
-	static bool parseUrl(cstring url_, bool relative, location& out);
+	static bool parseUrl(cstring url, bool relative, location& out);
 	
 	
 private:
-	array<rsp> done;
-	int n_unfinished = 0; // includes the one currently being processed
+	bool i_ready() const;
 	
-	bool i_ready() const
+	void error_v(size_t id, int err)
 	{
-		return (error || done.size());
+		requests[id].finished = true;
+		requests[id].r.success = false;
+		requests[id].r.status = err;
 	}
+	bool error_f(size_t id, int err) { error_v(id, err); return false; }
 	
-	int error = 0;
-	void error_v(int err)
-	{
-		sock = NULL;
-		if (err==rsp::e_only_one && !n_unfinished) return; // this isn't an error
-		error = err;
-	}
-	bool error_f(int err) { error_v(err); return false; }
+	void sock_cancel() { sock = NULL; }
 	
-	size_t sizelimit;
-	time_t timelimit;
-	location host; // used to verify the same socket can be reused
+	//if tosend is empty, adds requests[active_req] to tosend, then increments active_req; if not empty, does nothing
+	//also sets this->location, if not set already
+	void try_compile_req();
+	
+	void create_sock();
+	void activity(bool block);
+	
+	struct req_rsp {
+		req q; // for query
+		rsp r;
+		bool finished = false;
+	};
+	
+	
+	location host; // used to verify that the requests aren't sent anywhere they don't belong
+	array<req_rsp> requests;
+	size_t active_req = 0; // index to requests[] next to be added to tosend, or requests.size() if all done / in tosend
+	size_t active_rsp = 0; // index to requests[] currently being returned; if state is st_boundary, this is the next one to be returned
 	
 	autoptr<socket> sock;
 	bytepipe tosend;
-	bool close_ok = false;
 	
-	rsp next;
-	string fragment;
-	size_t bytesleft;
 	enum {
+		st_boundary, // between requests; if socket closes, make a new one
+		st_boundary_retried, // between requests; if socket closes, abort request
+		
 		st_status, // waiting for HTTP/1.1 200 OK
 		st_header, // waiting for header, or \r\n\r\n
 		st_body, // waiting for additional bytes, non-chunked
@@ -147,8 +164,8 @@ private:
 		st_body_chunk, // waiting for chunk
 		st_body_chunk_term, // waiting for final \r\n in chunk
 		st_body_chunk_term_final, // waiting for final \r\n in terminating 0\r\n\r\n chunk
-	} state = st_status;
-	
-	void activity(bool block);
+	} state = st_boundary;
+	string fragment;
+	size_t bytesleft;
 };
 #endif

@@ -2,7 +2,8 @@
 #include "array.h"
 #include "string.h"
 
-//A bytepipe accepts an infinite amount of bytes, and returns them, first one first.
+//A bytepipe accepts an infinite amount of bytes and returns them, first one first.
+//Guaranteed amortized O(n) no matter how many bytes are pushed at the time.
 class bytepipe {
 	array<byte> buf1;
 	size_t buf1st;
@@ -41,7 +42,7 @@ public:
 		reset();
 	}
 	
-	//Will return a buffer of at least 'bytes' bytes. Can return more.
+	//Will return a buffer of at least 'bytes' bytes. Can be bigger. Use push_done afterwards.
 	arrayvieww<byte> push_buf(size_t bytes = 512)
 	{
 		if (buf2end + bytes > buf2.size())
@@ -102,6 +103,32 @@ public:
 		buf2end = 0;
 		
 		return buf1.slice(buf1st, buf1end-buf1st);
+	}
+	//Returns the entire thing, and immediately acknowledges it. Other than the return value, it's equivalent to reset().
+	array<byte> pull_buf_full_drain()
+	{
+		if (buf1st != 0)
+		{
+			memmove(buf1.skip(buf1st).ptr(), buf1.ptr(), buf1end-buf1st);
+			buf1end -= buf1st;
+		}
+		if (buf2end != 0)
+		{
+			if (buf1end+buf2end > buf1.size())
+			{
+				size_t newsize = buf1.size();
+				while (buf1end+buf2end > newsize) newsize *= 2;
+				buf1.resize(newsize);
+			}
+			memcpy(buf1.skip(buf1end).ptr(), buf2.ptr(), buf2end);
+			buf1end += buf2end;
+		}
+		
+		array<byte> ret = std::move(buf1);
+		ret.resize(buf1end);
+		
+		reset();
+		return ret;
 	}
 	
 	size_t remaining() { return buf1end-buf1st+buf2end; }

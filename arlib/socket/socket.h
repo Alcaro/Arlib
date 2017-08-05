@@ -10,6 +10,9 @@
 
 //TODO: fiddle with https://github.com/ckennelly/hole-punch
 
+//TODO: http, websocket and async socket should have pointer to fd monitor, which they auto update
+//maybe all sockets should, probably easier. no point saving memory, sockets have fds which are expensive
+
 #define socket socket_t
 class socket : nocopy {
 protected:

@@ -99,10 +99,10 @@ static uint16_t cp437[256]={
 	0x03B1,0x00DF,0x0393,0x03C0,0x03A3,0x03C3,0x00B5,0x03C4,0x03A6,0x0398,0x03A9,0x03B4,0x221E,0x03C6,0x03B5,0x2229,
 	0x2261,0x00B1,0x2265,0x2264,0x2320,0x2321,0x00F7,0x2248,0x00B0,0x2219,0x00B7,0x221A,0x207F,0x00B2,0x25A0,0x00A0,
 };
-static string fromcp437(arrayview<byte> bytes)
+static string fromcp437(string in)
 {
 	string out;
-	for (byte b : bytes)
+	for (byte b : in.bytes())
 	{
 		out += string::codepoint(cp437[b]);
 	}
@@ -217,17 +217,19 @@ arrayview<byte> zip::fh_fname(arrayview<byte> data, locfhead* fh)
 	return data.slice(start+sizeof(locfhead), fh->len_fname);
 }
 
-arrayview<byte> zip::fh_data(arrayview<byte> data, locfhead* fh)
+arrayview<byte> zip::fh_data(arrayview<byte> data, locfhead* fh, centdirrec* cdr)
 {
 	size_t start = (uint8_t*)fh - data.ptr();
-	size_t len = sizeof(locfhead) + fh->len_fname + fh->len_exfield;
-	if (start+len+sizeof(locfhead) > data.size()) return NULL;
+	size_t headlen = sizeof(locfhead) + fh->len_fname + fh->len_exfield;
+	if (start+headlen > data.size()) return NULL;
 	
-	return data.slice(start+len, fh->size_comp);
+	return data.slice(start+headlen, cdr->size_comp);
 }
 
 bool zip::init(arrayview<byte> data)
 {
+	corrupt = false;
+	
 	filenames.reset();
 	filedat.reset();
 	
@@ -240,10 +242,12 @@ bool zip::init(arrayview<byte> data)
 		locfhead* fh = geth(data, cdr);
 		if (!fh) return false;
 		
-		filenames.append(fromcp437(fh_fname(data, fh)));
-		// some Apple zipper keeps zeroing half the fields in fh
-		// and its Deflate is broken as well, tinfl returns failure
-		file f = { fh->size_decomp, fh->compmethod, fh_data(data, fh), fh->crc32, fh->moddate };
+		string fname = fh_fname(data, fh);
+		if (!(cdr->bitflags & (1 << 11))) fname = fromcp437(fname);
+		filenames.append(fname);
+		//the OSX default zipper keeps zeroing half the fields in fh, use cdr
+		if (fh->size_decomp != cdr->size_decomp) corrupt = true;
+		file f = { cdr->size_decomp, cdr->compmethod, fh_data(data, fh, cdr), cdr->crc32, cdr->moddate };
 		filedat.append(f);
 		
 		cdr = nextcdr(data, cdr);
@@ -251,12 +255,6 @@ bool zip::init(arrayview<byte> data)
 	
 	return true;
 }
-
-////Invalidated whenever the file list changes.
-//arrayview<string> files()
-//{
-//	return filenames;
-//}
 
 size_t zip::find_file(cstring name)
 {
@@ -267,42 +265,49 @@ size_t zip::find_file(cstring name)
 	return (size_t)-1;
 }
 
-array<byte> zip::unpackfiledat(file& f)
+bool zip::read(cstring name, array<byte>& out, bool permissive, string* error, time_t * time)
 {
-	switch (f.method)
 	{
-		case 0:
+		string discard;
+		if (!error) error = &discard;
+		else *error = "";
+		
+		out.reset();
+		size_t i = find_file(name);
+		if (i==(size_t)-1) { *error = "file not found"; goto fail; }
+		
+		zip::file& f = filedat[i];
+		switch (f.method)
 		{
-			return f.data;
+			case 0:
+			{
+				out = f.data;
+				break;
+			}
+			case 8:
+			{
+				out.resize(f.decomplen);
+				size_t actualsize = tinfl_decompress_mem_to_mem(out.ptr(), out.size(), f.data.ptr(), f.data.size(), 0);
+				if (actualsize != f.decomplen) { *error = "corrupt DEFLATE data"; goto fail; }
+				break;
+			}
+			default:
+			{
+				*error = "unknown method 0x"+tostringhex(f.method);
+				goto fail;
+			}
 		}
-		case 8:
-		{
-			array<byte> ret;
-			ret.resize(f.decomplen);
-			size_t actualsize = tinfl_decompress_mem_to_mem(ret.ptr(), ret.size(), f.data.ptr(), f.data.size(), 0);
-			if (actualsize != f.decomplen) return NULL;
-			return ret;
-		}
-		default:
-		{
-			return NULL;
-		}
+		
+		//APPNOTE.TXT specifies some bizarre generator constant, 0xdebb20e3
+		//no idea how to use that, the normal crc32 (0xedb88320) works fine
+		if (crc32(out) != f.crc32) { *error = "bad crc32"; goto fail; }
+		if (time) *time = fromdosdate(f.dosdate);
+		return true;
 	}
-}
-
-array<byte> zip::read(cstring name, time_t * time)
-{
-	size_t i = find_file(name);
-	if (i==(size_t)-1) return NULL;
 	
-	file& f = filedat[i];
-	array<byte> ret = unpackfiledat(f);
-	
-	//APPNOTE.TXT specifies some bizarre generator constant, 0xdebb20e3
-	//no idea how to use that, the normal crc32 (0xedb88320) works fine
-	if (crc32(ret) != f.crc32) return NULL;
-	if (time) *time = fromdosdate(f.dosdate);
-	return ret;
+fail:
+	if (!permissive) out.reset();
+	return false;
 }
 
 void zip::write(cstring name, arrayview<byte> data, time_t date)
@@ -358,6 +363,22 @@ bool zip::strascii(cstring s)
 		if (s[i]>=128 || s[i]<0) return false;
 	}
 	return true;
+}
+
+bool zip::clean()
+{
+	bool any = false;
+	for (size_t i=0;i<filenames.size();i++)
+	{
+		if (filenames[i].startswith("__MACOSX/"))
+		{
+			filenames.remove(i);
+			filedat.remove(i);
+			i--;
+			any = true;
+		}
+	}
+	return any;
 }
 
 array<byte> zip::pack()

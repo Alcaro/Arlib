@@ -209,7 +209,7 @@ string string::codepoint(uint32_t cp)
 }
 
 #define X 0xFFFD
-static const uint16_t windows1252tab[32]={
+const uint16_t string::windows1252tab[32]={
 	//00 to 7F map to themselves
 	0x20AC, X,      0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021,
 	0x02C6, 0x2030, 0x0160, 0x2039, 0x0152, X,      0x017D, X,     
@@ -226,7 +226,7 @@ static string fromlatin1(cstring in, bool windows1252)
 	{
 		uint8_t ch = in[i];
 		if (ch < 0x80) out += ch;
-		else if (ch < 0xA0 && windows1252) out += string::codepoint(windows1252tab[ch-0x80]);
+		else if (ch < 0xA0 && windows1252) out += string::codepoint(string::cpfromwindows1252(ch));
 		else if (ch < 0xA0) out+="\xEF\xBF\xBD";
 		else out += string::codepoint(ch);
 	}

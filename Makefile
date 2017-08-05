@@ -8,7 +8,7 @@ ARSOCKET = 1
 ARSOCKET_SSL = bearssl
 #valid values: schannel (default), bearssl, no (others may work, not tested)
 ARSOCKET_SSL_WINDOWS = schannel
-ARSANDBOX = 1
+ARSANDBOX = 0
 
 #honored variables, in addition to the ones listed here:
 #OPT, DEBUG, PROFILE (CLI)

@@ -32,5 +32,4 @@ public:
 	void monitor(socket::monitor& mon, void* key) { if (sock) mon.add(sock, key, true, false); }
 };
 
-
 #endif

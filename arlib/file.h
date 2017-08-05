@@ -102,6 +102,11 @@ public:
 	bool replace(arrayview<byte> data) { return core->replace(data); }
 	bool replace(cstring data) { return replace(data.bytes()); }
 	bool write(cstring data) { return write(data.bytes()); }
+	static bool write(cstring path, arrayview<byte> data)
+	{
+		file f(path, m_replace);
+		return f.write(data);
+	}
 	
 	//Mappings must be deallocated before deleting the file object.
 	//If the underlying file is changed, it's undefined whether the mappings update. To force an update, delete and recreate the mapping.

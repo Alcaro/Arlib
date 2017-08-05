@@ -14,6 +14,13 @@ test("array")
 	}
 	
 	{
+		array<int> x = { 1, 2, 3 };
+		assert_eq(x.pop(1), 2);
+		assert_eq(x[0], 1);
+		assert_eq(x[1], 3);
+	}
+	
+	{
 		//passes if it does not leak memory
 		class glutton {
 			array<byte> food;

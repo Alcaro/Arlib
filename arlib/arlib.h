@@ -1,5 +1,4 @@
 //TODO:
-//- cool down on string.h refcounting
 //- window.h: remove pointers
 //- window.h: remove varargs
 //- msvc compat: add some define that, if absent, enables every feature

@@ -31,13 +31,14 @@ void Discord::http(HTTP::req r, function<void(HTTP::rsp)> callback)
 	headers(r.headers);
 	//if (r.method == "POST" && !r.postdata) r.postdata = "{}";
 	puts("request "+r.url);
+	r.userdata = ++m_http_index;
 	m_http.send(r);
-	m_http_reqs.append(callback);
+	if (callback) m_http_callbacks.insert(r.userdata, callback);
 }
 
 void Discord::http_process()
 {
-if(m_http_reqs)puts("HTTPACTIVE:"+tostring(m_http_reqs.size()));
+//if(m_http_reqs)puts("HTTPACTIVE:"+tostring(m_http_reqs.size()));
 	//if (!m_http_reqs) return;
 	if (m_http.ready())
 	{
@@ -45,6 +46,7 @@ if(m_http_reqs)puts("HTTPACTIVE:"+tostring(m_http_reqs.size()));
 puts("remove this once rate limit behavior has been found");
 puts(tostring(r.status));
 for(string& h : r.headers)puts(h);
+puts(r.text().c_str());
 		if (r.status == 429)
 		{
 			size_t timer;
@@ -52,9 +54,10 @@ for(string& h : r.headers)puts(h);
 			if (timer < 1000) timer = 1000;
 			ratelimit = time(NULL) + (timer+999)/1000;
 		}
-if (!m_http_reqs) *(char*)0=0; // should never happen
-		m_http_reqs[0](std::move(r));
-		m_http_reqs.remove(0);
+		
+		function<void(HTTP::rsp)> callback = m_http_callbacks.get_or(r.userdata, NULL);
+		m_http_callbacks.remove(r.userdata);
+		if (callback) callback(std::move(r));
 	}
 }
 
@@ -87,7 +90,7 @@ void Discord::connect_cb(HTTP::rsp r)
 	
 	string ws_url = JSON(r.text())["url"];
 	if (!ws_url) return;
-	ws_url += "?v=5&encoding=json";
+	ws_url += "?v=6&encoding=json";
 puts("DOCONNECT:"+ws_url);
 	array<string> heads;
 	headers(heads);
@@ -96,6 +99,32 @@ puts("DOCONNECT:"+ws_url);
 
 void Discord::process(bool block)
 {
+//static time_t t = 0;
+//static int n;
+//if (t != time(NULL))
+//{
+//t = time(NULL);
+//n = 0;
+//}
+//else
+//{
+//n++;
+//if (n >= 50)
+//{
+//socket::monitor mon;
+//m_ws.monitor(mon, (void*)1);
+//m_http.monitor(mon, (void*)2);
+//int x = (uintptr_t)mon.select(0);
+//puts("misbehaving: "+tostring(x));
+//if (n >= 100)
+//{
+//puts("ded");
+//freopen("/dev/null", "w", stdout);
+////usleep(50*1000);
+//}
+//}
+//}
+
 	http_process();
 	if (!m_ws)
 	{
@@ -122,6 +151,8 @@ void Discord::process(bool block)
 			json["d"] = sequence;
 			send(json);
 		}
+		else debug_target.message("con="+debug_connect+"; ping@"+tostring(keepalive_next - time(NULL))+
+		                          "; sent="+tostring(keepalive_sent)+"; gtj="+tostring(guilds_to_join));
 		
 		if (keepalive_sent)
 		{
@@ -155,8 +186,14 @@ again:
 			for (JSON& g : json["d"]["guilds"].list())
 			{
 				guilds.get_create(g["id"]);
+puts("GUILDCREATE="+g["id"].str());
 			}
 			guilds_to_join = guilds.size();
+puts("GTJ="+tostring(guilds_to_join));
+for (auto& g : guilds)
+{
+puts("GUILD="+g.key);
+}
 			//resume = json["d"]["session_id"];
 		}
 		if (json["t"] == "GUILD_CREATE")
@@ -203,6 +240,7 @@ again:
 			
 			guilds_to_join--;
 			cb->on_connect(Guild(this, id), User(this, my_user, id));
+puts("GTJ="+tostring(guilds_to_join));
 		}
 		if (json["t"] == "GUILD_MEMBERS_CHUNK")
 		{

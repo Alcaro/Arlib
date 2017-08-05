@@ -20,7 +20,7 @@ public:
 			string out;
 			for (size_t i=0;i<in.length();i++)
 			{
-				if (strchr("\\<_*~", in[i])) out+='\\';
+				if (strchr("\\<_*~:", in[i])) out+='\\';
 				out+=in[i];
 			}
 			return out;
@@ -43,6 +43,12 @@ public:
 		msg italic()    { return from_md(   raw_italic(raw)); }
 		msg underline() { return from_md(raw_underline(raw)); }
 		msg strike()    { return from_md(   raw_strike(raw)); }
+		static msg bold(     cstring in) { return from_md(     raw_bold(raw_escape(in))); }
+		static msg italic(   cstring in) { return from_md(   raw_italic(raw_escape(in))); }
+		static msg underline(cstring in) { return from_md(raw_underline(raw_escape(in))); }
+		static msg strike(   cstring in) { return from_md(   raw_strike(raw_escape(in))); }
+		
+		static msg url(cstring in) { return from_md(in); }
 		
 		msg operator+(const msg& right) { return from_md(raw + right.raw); }
 		msg operator+(cstring right) { return from_md(raw + right); }
@@ -229,6 +235,22 @@ public:
 			else return Channel();
 		}
 		
+		void change_nick(User user, string newnick)
+		{
+			if (!user || user.id()==m_parent->my_user)
+			{
+				JSON json;
+				json["nick"] = newnick;
+				m_parent->http("PATCH", "/guilds/"+id()+"/members/@me/nick", json);
+			}
+			else
+			{
+				JSON json;
+				json["nick"] = newnick;
+				m_parent->http("PATCH", "/guilds/"+id()+"/members/"+user.id(), json);
+			}
+		}
+		
 		operator bool() { return m_parent; }
 		bool operator==(const Guild& other) { return m_parent==other.m_parent && m_id==other.m_id; }
 		
@@ -261,7 +283,8 @@ private:
 	bool connecting = false;
 	WebSocket m_ws; // be careful about using these directly, dangerous!
 	HTTP m_http;
-	array<function<void(HTTP::rsp)>> m_http_reqs; // TODO: kinda annoying, do I make it all synchronous?
+	map<uintptr_t, function<void(HTTP::rsp)>> m_http_callbacks; // TODO: kinda annoying, do I make it all synchronous?
+	size_t m_http_index;
 	
 	void connect();
 	void connect_cb(HTTP::rsp r);
@@ -339,15 +362,6 @@ private:
 	}
 	
 	void http_process();
-	
-	void http_await()
-	{
-		while (m_http_reqs)
-		{
-			m_http.await();
-			http_process();
-		}
-	}
 	
 	void send(JSON& json)
 	{

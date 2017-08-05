@@ -15,15 +15,6 @@
 //Many string users expect some level of properity.
 
 
-//TODO: rewrite to new data structure:
-//cstring is the base, like arrayview; it acts like const string&, except not necessarily bound to a lvalue-string
-//string doesn't have the refcounter, cstring covers 99% of the cases and the refcount overhead is pointless
-//instead, string gains create_usurp, like array
-//there is no arrayvieww equivalent
-//the inline/pointer union tricks remain
-//cstring becoming a normal string if modified is powerful, but complex to reason about and rarely useful
-//cstring members can return string if 'class string;' exists and the function bodies are after 'class string {}'
-
 class string;
 
 class cstring {
@@ -319,20 +310,20 @@ class string : public cstring {
 	}
 	
 	//TODO: arrayview
-	void append(const uint8_t * newdat, uint32_t newlength)
+	void append(arrayview<uint8_t> newdat)
 	{
-		if (newdat >= (uint8_t*)ptr() && newdat < (uint8_t*)ptr()+length())
+		if (newdat.ptr() >= (uint8_t*)ptr() && newdat.ptr() < (uint8_t*)ptr()+length())
 		{
-			uint32_t offset = newdat-ptr();
+			uint32_t offset = newdat.ptr() - ptr();
 			uint32_t oldlength = length();
-			resize(oldlength+newlength);
-			memcpy(ptr()+oldlength, ptr()+offset, newlength);
+			resize(oldlength + newdat.size());
+			memcpy(ptr() + oldlength, ptr() + offset, newdat.size());
 		}
 		else
 		{
 			uint32_t oldlength = length();
-			resize(oldlength+newlength);
-			memcpy(ptr()+oldlength, newdat, newlength);
+			resize(oldlength + newdat.size());
+			memcpy(ptr() + oldlength, newdat.ptr(), newdat.size());
 		}
 	}
 	
@@ -349,20 +340,20 @@ public:
 	
 	string& operator+=(const char * right)
 	{
-		append((uint8_t*)right, strlen(right));
+		append(arrayview<uint8_t>((uint8_t*)right, strlen(right)));
 		return *this;
 	}
 	
 	string& operator+=(cstring right)
 	{
-		append(right.ptr(), right.length());
+		append(right.bytes());
 		return *this;
 	}
 	
 	string& operator+=(char right)
 	{
 		uint8_t tmp = right;
-		append(&tmp, 1);
+		append(arrayview<uint8_t>(&tmp, 1));
 		return *this;
 	}
 	
@@ -428,6 +419,15 @@ public:
 	*/
 	
 	static string codepoint(uint32_t cp);
+private:
+	static const uint16_t windows1252tab[32];
+public:
+	//Input must be in the range 80-9F, or undefined behavior.
+	static uint32_t cpfromwindows1252(uint8_t byte)
+	{
+		if (byte >= 0x80 && byte <= 0x9F) return windows1252tab[byte-0x80];
+		else return byte;
+	}
 };
 
 inline bool operator==(cstring left,      const char * right) { return left.bytes() == arrayview<byte>((uint8_t*)right,strlen(right)); }

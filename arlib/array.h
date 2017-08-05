@@ -225,7 +225,7 @@ public:
 	//unstable sort, not necessarily quicksort
 	void qsort()
 	{
-		sort(); // lazy...
+		sort(); // TODO: less lazy
 	}
 	
 	const T* begin() const { return this->items; }
@@ -360,6 +360,13 @@ public:
 		this->items[index].~T();
 		memmove(this->items+index, this->items+index+1, sizeof(T)*(this->count-1-index));
 		resize_shrink_noinit(this->count-1);
+	}
+	
+	T pop(size_t index = 0)
+	{
+		T ret(std::move(this->items[index]));
+		remove(index);
+		return std::move(ret);
 	}
 	
 	array()
@@ -550,12 +557,12 @@ protected:
 	{
 		if (&other == this)
 		{
-			//TODO
+			//TODO: optimize
 			array<bool> copy = other;
 			set_slice(start, num, copy, other_start);
 			return;
 		}
-		//TODO
+		//TODO: optimize
 		for (size_t i=0;i<num;i++)
 		{
 			set(start+i, other.get(other_start+i));

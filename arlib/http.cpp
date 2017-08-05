@@ -3,10 +3,8 @@
 #include "test.h"
 #include "stringconv.h"
 
-bool HTTP::parseUrl(cstring url_, bool relative, location& out)
+bool HTTP::parseUrl(cstring url, bool relative, location& out)
 {
-	string url = url_; // TODO: clean up once cstring acts sanely
-	
 	int pos = 0;
 	while (islower(url[pos])) pos++;
 	if (url[pos]==':')
@@ -50,38 +48,36 @@ bool HTTP::parseUrl(cstring url_, bool relative, location& out)
 	return true;
 }
 
-bool HTTP::send(const req& r)
+void HTTP::try_compile_req()
 {
-	//this allows changing hostname. probably shouldn't, but nobody's gonna rely on that
-	if (error == rsp::e_only_one && !n_unfinished) error = 0;
+	if (tosend.remaining()) return;
+	if (active_req == requests.size()) return;
 	
-	if (!sock)
+	const req& q = requests[active_req].q;
+	if (!host.proto)
 	{
-		if (!parseUrl(r.url, false, this->host)) return error_f(rsp::e_bad_url);
+		if (!parseUrl(q.url, false, this->host)) return error_v(active_req, rsp::e_bad_url);
 	}
 	else
 	{
-		activity(false); // check if socket's closed
-		
 		location loc;
-		if (!parseUrl(r.url, false, loc)) return error_f(rsp::e_bad_url);
+		if (!parseUrl(q.url, false, loc)) return error_v(active_req, rsp::e_bad_url);
 		if (loc.proto != host.proto || loc.domain != host.domain || loc.port != host.port)
 		{
-			return error_f(rsp::e_different_url);
+			return error_v(active_req, rsp::e_different_url);
 		}
 		host.path = loc.path;
 	}
-	if (error == rsp::e_only_one && !n_unfinished) error = 0;
 	
-	cstring method = r.method;
-	if (!method) method = (r.postdata ? "POST" : "GET");
+	cstring method = q.method;
+	if (!method) method = (q.postdata ? "POST" : "GET");
 	tosend.push(method, " ", host.path, " HTTP/1.1\r\n");
 	
 	bool httpHost = false;
 	bool httpContentLength = false;
 	bool httpContentType = false;
 	bool httpConnection = false;
-	for (cstring head : r.headers)
+	for (cstring head : q.headers)
 	{
 		if (head.startswith("Host:")) httpHost = true;
 		if (head.startswith("Content-Length:")) httpContentLength = true;
@@ -91,10 +87,10 @@ bool HTTP::send(const req& r)
 	}
 	
 	if (!httpHost) tosend.push("Host: ", host.domain, "\r\n");
-	if (method!="GET" && !httpContentLength) tosend.push("Content-Length: ", tostring(r.postdata.size()), "\r\n");
+	if (method!="GET" && !httpContentLength) tosend.push("Content-Length: ", tostring(q.postdata.size()), "\r\n");
 	if (method!="GET" && !httpContentType)
 	{
-		if (r.postdata && (r.postdata[0] == '[' || r.postdata[0] == '{'))
+		if (q.postdata && (q.postdata[0] == '[' || q.postdata[0] == '{'))
 		{
 			tosend.push("Content-Type: application/json\r\n");
 		}
@@ -107,48 +103,47 @@ bool HTTP::send(const req& r)
 	
 	tosend.push("\r\n");
 	
-	tosend.push(r.postdata);
+	tosend.push(q.postdata);
 	
-	bool freshsock = false;
-	if (!sock)
-	{
-	newsock:
-		if (host.proto == "https")  sock = socketssl::create(host.domain, host.port ? host.port : 443);
-		else if (host.proto == "http") sock = socket::create(host.domain, host.port ? host.port : 80);
-		else return error_f(rsp::e_bad_url);
-		if (!sock) return error_f(rsp::e_connect);
-		
-		freshsock = true;
-		close_ok = false;
-		fragment = "";
-	}
-	
-	arrayview<byte> sendbuf = tosend.pull_buf();
-	int bytes = sock->sendp(sendbuf, false);
-	if (bytes < 0)
-	{
-		if (!freshsock && !n_unfinished) goto newsock;
-		else return error_f(rsp::e_broken);
-	}
-	tosend.pull_done(bytes);
-	
-	n_unfinished++;
-	return true;
+	active_req++;
 }
 
 void HTTP::activity(bool block)
 {
 netagain:
-	if (!sock) return;
+	if (active_rsp == requests.size())
+	{
+		if (!sock) return;
+		
+		array<byte> ignore;
+		if (sock->recv(ignore, false) < 0) return sock_cancel();
+		return;
+	}
+	
+	try_compile_req();
+	
+	if (!sock)
+	{
+		if (state == st_boundary)
+		{
+			if (host.proto == "https")  sock = socketssl::create(host.domain, host.port ? host.port : 443);
+			else if (host.proto == "http") sock = socket::create(host.domain, host.port ? host.port : 80);
+			else return error_v(active_rsp, rsp::e_bad_url);
+		}
+		if (!sock) return error_v(active_rsp, rsp::e_connect);
+		
+		state = st_boundary_retried;
+		tosend.reset();
+		active_req = active_rsp;
+		
+		try_compile_req();
+	}
 	
 	array<byte> newrecv;
 	
 	if (tosend.remaining())
 	{
-		if (sock->recv(newrecv, false) < 0)
-		{
-			return error_v(close_ok ? rsp::e_only_one : rsp::e_broken);
-		}
+		if (sock->recv(newrecv, false) < 0) return sock_cancel();
 		
 		if (!newrecv)
 		{
@@ -159,10 +154,10 @@ netagain:
 			//- the server does not infinitely buffer written data, but insists I read stuff on my end
 			//- the network is jittery, so sock->recv() above returns empty
 			//- and this is called from await(), not ready()
-			//which is so unlikely I ignore it.
+			//which is so unlikely I'll ignore it.
 			//and it'll eventually exit, anyways; server will close the connection, breaking the send().
 			int bytes = sock->sendp(sendbuf, block);
-			if (bytes < 0) return error_v(close_ok ? rsp::e_only_one : rsp::e_broken);
+			if (bytes < 0) return sock_cancel();
 			if (bytes > 0)
 			{
 				block = false;
@@ -171,14 +166,23 @@ netagain:
 		}
 	}
 	
-	if (sock->recv(newrecv, block) < 0) return error_v(close_ok ? rsp::e_only_one : rsp::e_broken);
+	try_compile_req(); // to ensure tosend is never empty when there's stuff to do
+	
+	if (!newrecv && sock->recv(newrecv, block) < 0) return sock_cancel();
 	block = false;
+again:
 	if (!newrecv) return;
 	
-again:
-	if (!newrecv) goto netagain;
+	rsp& r = requests[active_rsp].r;
+	
 	switch (state)
 	{
+	case st_boundary:
+	case st_boundary_retried:
+		fragment = "";
+		state = st_status;
+		goto again;
+	
 	case st_status:
 	case st_header:
 	case st_body_chunk_len:
@@ -196,23 +200,23 @@ again:
 				if (fragment.startswith("HTTP/"))
 				{
 					string status_i = fragment.split<2>(" ")[1];
-					fromstring(status_i, next.status);
+					fromstring(status_i, r.status);
 					state = st_header;
 				}
 				else
 				{
-					return error_v(rsp::e_not_http);
+					return error_v(active_rsp, rsp::e_not_http);
 				}
 			}
 			else if (state == st_header)
 			{
 				if (fragment != "")
 				{
-					next.headers.append(fragment);
+					r.headers.append(fragment);
 				}
 				else
 				{
-					string transferEncoding = next.header("Transfer-Encoding");
+					string transferEncoding = r.header("Transfer-Encoding");
 					if (transferEncoding)
 					{
 						if (transferEncoding == "chunked")
@@ -228,9 +232,9 @@ again:
 					}
 					else
 					{
-						cstring lengthstr = next.header("Content-Length");
-						if (!lengthstr && next.status == 204) bytesleft = 0; // 204 No Content
-						else if (!fromstring(next.header("Content-Length"), bytesleft))
+						cstring lengthstr = r.header("Content-Length");
+						if (!lengthstr && r.status == 204) bytesleft = 0; // 204 No Content
+						else if (!fromstring(r.header("Content-Length"), bytesleft))
 						{
 							bytesleft = -1;
 						}
@@ -258,11 +262,11 @@ again:
 		}
 		else fragment += (string)newrecv;
 		goto netagain;
-		
+	
 	case st_body:
 	case st_body_chunk:
 		size_t bytes = min(newrecv.size(), bytesleft);
-		next.body += newrecv.slice(0, bytes);
+		r.body += newrecv.slice(0, bytes);
 		if (bytesleft != (size_t)-1) bytesleft -= bytes;
 		
 		if (!bytesleft)
@@ -283,38 +287,49 @@ again:
 	abort(); // shouldn't be reachable
 	
 req_finish:
-	state = st_status;
-	if (error && error != rsp::e_only_one) next.status = error;
-	done.append(std::move(next));
-	next = rsp();
-	n_unfinished--;
-	close_ok = true;
-	fragment = "";
+	state = st_boundary;
+	r.success = true;
+	requests[active_rsp].finished = true;
+	active_rsp++;
 	goto again;
+}
+
+bool HTTP::i_ready() const
+{
+	for (size_t i=0;i<requests.size();i++)
+	{
+		if (requests[i].finished) return true;
+	}
+	return false;
+}
+
+HTTP::rsp HTTP::recv()
+{
+	if (!requests.size())
+	{
+		rsp r;
+		r.success = false;
+		r.status = rsp::e_not_sent;
+		r.userdata = 0;
+		return r;
+	}
+	await();
+	for (size_t i=0;i<requests.size();i++)
+	{
+		if (requests[i].finished)
+		{
+			//equal should be impossible
+			if (active_req > i) active_req--;
+			if (active_rsp > i) active_rsp--;
+			return requests.pop(i).r;
+		}
+	}
+	abort();
 }
 
 void HTTP::await()
 {
-	while (!i_ready() && n_unfinished && sock) activity(true);
-}
-
-HTTP::rsp HTTP::recv(bool partial)
-{
-	await();
-	if (done)
-	{
-		rsp r = std::move(done[0]);
-		r.success = true;
-		done.remove(0);
-		return r;
-	}
-	else
-	{
-		rsp r;
-		r.success = false;
-		r.status = (error ? error : rsp::e_not_sent);
-		return r;
-	}
+	while (requests.size() && !i_ready()) activity(true);
 }
 
 static void test_url(cstring url, cstring url2, cstring proto, cstring domain, int port, cstring path)
@@ -352,11 +367,14 @@ test("HTTP")
 	
 	{
 		HTTP h;
+		assert_eq(h.ready(), false);
+		
 		h.send(HTTP::req(URL));
 		assert_eq(h.ready(), false);
 		assert_eq((string)h.recv(), CONTENTS);
+		assert_eq(h.recv().status, HTTP::rsp::e_not_sent);
 		h.send((string)URL);
-		assert_eq((string)h.recv(), CONTENTS);
+		assert_eq(h.recv().text(), CONTENTS);
 		assert_eq(h.recv().status, HTTP::rsp::e_not_sent);
 	}
 	
@@ -373,7 +391,6 @@ test("HTTP")
 		assert(data1.startswith("{\n"));
 		string data2 = (string)h.recv();
 		assert_eq(data2, data1);
-		assert_eq(h.recv().status, HTTP::rsp::e_not_sent);
 	}
 	
 	{
@@ -386,8 +403,7 @@ test("HTTP")
 		h.send(r);
 		assert_eq(h.ready(), false);
 		assert_eq((string)h.recv(), CONTENTS);
-		assert_eq(h.ready(), true);
-		assert_eq(h.recv().status, HTTP::rsp::e_only_one);
+		assert_eq((string)h.recv(), CONTENTS); // ensure it tries again
 	}
 	
 	{
@@ -400,10 +416,21 @@ test("HTTP")
 		assert_eq((string)h.recv(), CONTENTS);
 		h.send(r); // ensure it opens a new socket
 		assert_eq((string)h.recv(), CONTENTS);
+		
+		int readies = 0;
+		for (int i=0;i<1000;i++)
+		{
+			socket::monitor mon;
+			h.monitor(mon, (void*)42);
+			if (mon.select(0) == (void*)42) readies++;
+			assert_eq(h.ready(), false);
+		}
+		assert(readies < 10);
 	}
 	
 	{
 		HTTP::req r("https://httpbin.org/stream-bytes/128?chunk_size=30&seed=1"); // throw in a https test too for no reason
+		r.userdata = 42;
 		HTTP h;
 		h.send(r);
 		h.send(r);
@@ -411,10 +438,12 @@ test("HTTP")
 		HTTP::rsp r1 = h.recv();
 		assert_eq(r1.status, 200);
 		assert_eq(r1.body.size(), 128);
+		assert_eq(r1.userdata, 42);
 		
 		HTTP::rsp r2 = h.recv();
 		assert_eq(r2.status, 200);
 		assert_eq(r2.body.size(), 128);
+		assert_eq(r1.userdata, 42);
 		
 		assert_eq(tostringhex(r1.body), tostringhex(r2.body));
 	}
