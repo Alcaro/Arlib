@@ -10,6 +10,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+//TODO: check if https://developer.gnome.org/gtk3/stable/GtkListBox.html or https://github.com/baedert/listbox-c is useful
+
 #if GTK_MINOR_VERSION > 10 // supported versions: 3.10.8 (Ubuntu 14.04), 3.20.9 (Ubuntu 16.10)
 #define gtk_adjustment_changed(x) // turns out it does do this by itself
 #define gtk_adjustment_value_changed(x)

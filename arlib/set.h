@@ -76,7 +76,7 @@ class set : public linqbase<set<T>> {
 			i++;
 			if (i == m_valid.size())
 			{
-				//happens if all slots contain 'something was here' placeholders
+				//happens if all empty slots are i_deleted, no i_empty
 				if (recommend_rehash) *recommend_rehash = true;
 				return emptyslot;
 			}

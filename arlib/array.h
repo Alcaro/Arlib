@@ -228,6 +228,14 @@ public:
 		sort(); // TODO: less lazy
 	}
 	
+	//void shuffle()
+	//{
+	//	for (int i=count;i>0;i--)
+	//	{
+	//		swap(i-1, rand()%i);
+	//	}
+	//}
+	
 	const T* begin() const { return this->items; }
 	const T* end() const { return this->items+this->count; }
 	T* begin() { return this->items; }
@@ -274,17 +282,20 @@ private:
 		if (this->count >= count) return;
 		size_t bufsize_pre = bitround(this->count);
 		size_t bufsize_post = bitround(count);
-		if (bufsize_pre != bufsize_post) this->items=realloc(this->items, sizeof(T)*bufsize_post);
-		this->count=count;
+		if (bufsize_pre != bufsize_post) this->items = realloc(this->items, sizeof(T)*bufsize_post);
+		this->count = count;
 	}
 	
+	//it would be better if this thing didn't reallocate until it's a quarter of the original size
+	//but there's nowhere to store the allocated size
+	//there is malloc_usable_size (and similar), but it may or may not exist depending on the libc used
 	void resize_shrink_noinit(size_t count)
 	{
 		if (this->count <= count) return;
 		size_t bufsize_pre = bitround(this->count);
 		size_t bufsize_post = bitround(count);
-		if (bufsize_pre != bufsize_post) this->items=realloc(this->items, sizeof(T)*bufsize_post);
-		this->count=count;
+		if (bufsize_pre != bufsize_post) this->items = realloc(this->items, sizeof(T)*bufsize_post);
+		this->count = count;
 	}
 	
 	void resize_grow(size_t count)

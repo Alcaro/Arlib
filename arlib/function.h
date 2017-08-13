@@ -137,9 +137,8 @@ public:
     //- it is sensitive to hostile callers, but if you call bind_ptr(func, (void*)func), you're asking for bugs.
     function()                    : func(EmptyHandler), obj((void*)EmptyHandler) {}
     function(const function& rhs) : func(rhs.func), obj(rhs.obj) {}
-    ~function() {}
 
-    function(const null_only*)    : func(EmptyHandler), obj((void*)EmptyHandler) {}
+    function(nullptr_t)           : func(EmptyHandler), obj((void*)EmptyHandler) {}
 
     function& operator=(const function& rhs)
         { obj = rhs.obj; func = rhs.func; return *this; }
@@ -192,16 +191,22 @@ public:
     function(T func_raw_ref,
              typename std::enable_if<std::is_convertible<T, FuncTypeNp>::value, PrivateType>::type ignore = PrivateType())
     {
-        FuncTypeNp func_raw = func_raw_ref;
-        obj = (void*)func_raw;
-        func = FreeWrapper;
+        operator=(func_raw_ref);
     }
     template<typename T>
     function& operator=(typename std::enable_if<std::is_convertible<T, FuncTypeNp>::value, T>::type func_raw_ref)
     {
         FuncTypeNp func_raw = func_raw_ref;
-        obj = (void*)func_raw;
-        func = FreeWrapper;
+        if (func_raw)
+        {
+            obj = (void*)func_raw;
+            func = FreeWrapper;
+        }
+        else
+        {
+            func = EmptyHandler;
+            obj = (void*)EmptyHandler;
+        }
     }
 };
 

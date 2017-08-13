@@ -31,7 +31,7 @@ struct broker_rsp;
 class sandproc : public process {
 	class filesystem : ::nocopy {
 		enum type_t { ty_error, ty_native, ty_tmp };
-		struct mount {
+		struct mount : ::nocopy {
 			type_t type;
 			
 			union {

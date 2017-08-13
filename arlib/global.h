@@ -72,6 +72,12 @@ typedef uint8_t byte;
 #define __GNUC__ 0
 #endif
 
+//have to include these too, they include <stddef.h> and define NULL to __null, which doesn't resolve overloads properly
+#include <string.h>
+#include <stdlib.h>
+#undef NULL
+#define NULL nullptr
+
 //some magic stolen from http://blogs.msdn.com/b/the1/archive/2004/05/07/128242.aspx
 //C++ can be so messy sometimes...
 template<typename T, size_t N> char(&ARRAY_SIZE_CORE(T(&x)[N]))[N];
@@ -248,7 +254,7 @@ template<typename T, typename... Args> static T max(const T& a, Args... args)
 class empty {
 	//MSVC says error C2503: base classes cannot contain zero-sized arrays
 	//GCC says error: flexible array member 'empty::__zero_size' not at end of 'class whatever'
-	//this is only gonna be used on nonzero objects which anyways, and they'll optimize the empty base class
+	//this is only gonna be used on nonzero objects anyways, and they'll optimize the empty base class
 	
 	//int __zero_size[];
 };

@@ -33,6 +33,8 @@ void Discord::http(HTTP::req r, function<void(HTTP::rsp)> callback)
 	puts("request "+r.url);
 	r.userdata = ++m_http_index;
 	m_http.send(r);
+printf("CALLBACK:%lu:%p:%p\n",r.userdata,0[(void**)&callback],1[(void**)&callback]);
+//if (r.userdata == 3) abort();
 	if (callback) m_http_callbacks.insert(r.userdata, callback);
 }
 
@@ -99,6 +101,12 @@ puts("DOCONNECT:"+ws_url);
 
 void Discord::process(bool block)
 {
+if (guilds.contains("") || guilds.contains("0"))
+{
+debug_target.message("ERROR: In anonymous guild");
+guilds.remove("");
+guilds.remove("0");
+}
 //static time_t t = 0;
 //static int n;
 //if (t != time(NULL))
@@ -149,7 +157,7 @@ void Discord::process(bool block)
 			JSON json;
 			json["op"] = 1;
 			json["d"] = sequence;
-			send(json);
+			send_ws(json);
 		}
 		else debug_target.message("con="+debug_connect+"; ping@"+tostring(keepalive_next - time(NULL))+
 		                          "; sent="+tostring(keepalive_sent)+"; gtj="+tostring(guilds_to_join));
@@ -235,7 +243,7 @@ puts("GUILD="+g.key);
 					"workaround for what appears to be a bug on your end, "
 					"sometimes I get ID-only user objects without having seen that user anywhere else; "
 					"are events disappearing?";
-				send(reqfull);
+				send_ws(reqfull);
 			}
 			
 			guilds_to_join--;
@@ -273,12 +281,13 @@ puts("GTJ="+tostring(guilds_to_join));
 			string chan = json["d"]["channel_id"];
 			string user = json["d"]["author"]["id"];
 			string text = json["d"]["content"];
+			string guild = channels.contains(chan) ? channels[chan].guild : "0";
 			
-			set_user(channels[chan].guild, json["d"]);
+			set_user(guild, json["d"]);
 			
 			if (user != my_user && users[user].discriminator) // ignore partial users, probably timing issue
 			{
-				cb->on_msg(Channel(this, chan), User(this, user, channels[chan].guild), text);
+				cb->on_msg(Channel(this, chan), User(this, user, guild), text);
 			}
 		}
 		//if (json["t"] == "RESUMED")
@@ -288,7 +297,7 @@ puts("GTJ="+tostring(guilds_to_join));
 	}
 	//if (json["op"]==1) // Heartbeat (client only)
 	//if (json["op"]==2) // Identify (client only)
-	//if (json["op"]==3) // Status Update (only idle/in-game, not interesting)
+	//if (json["op"]==3) // Status Update (client only)
 	//if (json["op"]==4) // Voice State Update (voice unsupported)
 	//if (json["op"]==5) // Voice Server Ping (voice unsupported)
 	//if (json["op"]==6) // Resume (client only)
@@ -328,7 +337,7 @@ puts("GTJ="+tostring(guilds_to_join));
 			json["d"]["properties"]["referrer"] = "";
 			json["d"]["properties"]["referring_domain"] = "";
 			json["d"]["large_threshold"] = 250;
-			send(json);
+			send_ws(json);
 		}
 	}
 	if (json["op"]==11) // Heartbeat ACK
@@ -354,10 +363,12 @@ void Discord::set_user_inner(JSON& json)
 //takes a Guild Member object, with ["user"] and ["roles"]
 void Discord::set_user(cstring guild_id, JSON& json)
 {
+	set_user_inner(json["user"]);
+	
+	if (guild_id == "0") return;
+	
 	cstring uid = json["user"]["id"];
 	i_user& user = users[uid];
-	
-	set_user_inner(json["user"]);
 	
 	i_guild& guild = guilds[guild_id];
 	guild.users.add(uid);
@@ -390,6 +401,25 @@ void Discord::del_user(cstring guild_id, cstring user_id)
 		if (otherguild.value.users.contains(user_id)) return;
 	}
 	users.remove(user_id);
+}
+
+void Discord::User::fetch(function<void(User)> callback)
+{
+	class x {
+		Discord* m_parent;
+		function<void(User)> callback;
+	public:
+		x(Discord* m_parent, function<void(User)> callback) : m_parent(m_parent), callback(callback) {}
+		void cb_fn(HTTP::rsp r)
+		{
+			JSON json(r.text());
+			m_parent->set_user_inner(json);
+			callback(m_parent->user_from_id(json["id"]));
+			delete this;
+		}
+	};
+	
+	m_parent->http("GET", "/users/"+m_id, bind_ptr(&x::cb_fn, new x(m_parent, callback)));
 }
 
 string Discord::getdate()

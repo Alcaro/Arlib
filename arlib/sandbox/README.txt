@@ -52,7 +52,7 @@ but does not include:
     sandbox can't use its permissions without knowing them
 - Anything symlinked from an authorized path
     symlinks from authorized paths are considered to grant access to the target too
-    (though obviously the sandbox isn't allowed to do anything unexpected with said symlinks)
+    (though obviously the sandbox isn't allowed to do anything funny with said symlinks)
 - Anything preinstalled in /bin, /lib or /usr/{bin,lib}
     distros and their packages are public already
     for Gentoo, build flags are considered public as well
@@ -330,7 +330,7 @@ Its job is to establish a SIGSYS handler, then hand over control to /lib64/ld-li
  another dynamic linker on other architectures, but I've only implemented x86_64.)
 
 As soon as the SIGSYS handler is entered, it must emulate the intended syscall. A few are described
- below; others are either always allowed, always rejected, or handled similarly to stat().
+ below; most others are either always allowed, always rejected, or handled similarly to stat().
 
 A minor issue is that it must be fully self-contained, no libc. But the useful parts of libc are
  easily recreated (syscall wrappers - easy to clone; printf - make my own on top of write(), using
@@ -353,8 +353,8 @@ Except it's not that easy; open() can take a relative path. To handle this, the 
  of the current working directory (by intercepting chdir, and getting the initial value from an
  environment variable) and turns relative paths into absolute ones.
 
-This means the sandbox can't handle its current working directory being moved, but I can't think of
- any usecase where this would matter.
+This means the sandbox behaves funnily if its current working directory is moved, but I can't think
+ of any usecase where this would matter.
 
 There are, of course, other file-handling functions, such as stat(). The obvious implementation
  would be teaching the broker about them too, but I want to minimize the attack surface, so it's
@@ -394,7 +394,7 @@ There are many, but they all have drawbacks:
 - Ask broker to readlink it for us
     if broker checks /proc/child/fd/123, how does broker get child PID? how does broker verify child PID? is it a TOCTTOU?
     if broker gets fd, child needs sendmsg, which may be a security hole <https://bugzilla.mozilla.org/show_bug.cgi?id=1066750>
-    in both cases, risks leaking the real path of something redirected, potentially leaking the username
+    in both cases, risks leaking the real path of something redirected, potentially leaking the username or other secret data
 - A second broker, less privileged than the real one but still able to readlink()
     either it's hackable, in which case its sandbox better be fully secure too, so why not just put that in the child
     or it's not, in which case putting it in main is easier
@@ -403,6 +403,7 @@ There are many, but they all have drawbacks:
     also way too complex
 
 Chosen solution: Ignore it, leave it unimplemented. Only a few programs need this function family.
+(This admittedly includes this one, but nested sandboxes ... let's not.)
 
 
 fork
@@ -418,7 +419,8 @@ Answer: fork() itself is fine, but another resource needs cloning: The broker co
 To reissue the syscall without seccomp intercepting it, the emulator passes a nonsensical flag
  combination: CLONE_PARENT_SETTID && ptid==NULL, requesting that the child's TID is stored at
  address NULL in the parent. NULL isn't mapped, so how could the kernel do that? Answer: It doesn't,
- NULL internally means 'PARENT_SETTID wasn't set'. I'm surprised it's not rejected with EINVAL.
+ NULL internally means 'PARENT_SETTID wasn't set'. I'm surprised, but happy, it's not rejected with
+ EINVAL. (Though I don't know if it'd break in the future.)
 
 There are other possible implementations, such as an always-allowed syscall gate (hard to do with
  ASLR - can't have the sandbox reduce security, can we?) or !CLONE_PARENT_SETTID && ptid==<unlikely
@@ -451,8 +453,8 @@ Instead, execveat() can be employed. Like other *at() functions, it takes a fd a
 To ensure the path is empty, the path address must be the last mappable byte in the address space,
  0x00007FFF'FFFFEFFF; either it's "", or it's not a NUL-terminated string and the kernel returns
  EFAULT. This check isn't necessary security-wise, but violating it shows that the child isn't
- sandbox aware, so like fork(), we're intercepting it for its own sake. (Unfortunately, per openat
- above, execveat is left unimplemented.)
+ sandbox aware, so like fork(), we're intercepting it for its own sake. (The child can't call
+ execveat itself, for the same reasons as openat, but it's a rare syscall.)
 
 Either way, when execve or execveat is intercepted, the emulator asks the broker for an fd
  containing said emulator and executes that, passing the intended program to the child. After that,
@@ -480,8 +482,8 @@ O_BENEATH would solve most symlink-related issues (other than restricted directo
  ones, which can be "solved" by adding "don't do that" to the docs), but it was never merged.
 
 AT_BENEATH/etc <https://lwn.net/Articles/723057/> seem similar; they're not intended for sandboxes,
- but may be close enough. I'll take a look once it's merged and my distro updates. Perhaps it could
- even obsolete the entire broker.
+ but may be close enough. I'll take a look once it's merged and my distro updates. The broker is
+ still needed (to count the number of writes), but it would get a lot less requests.
 
 
 Results
@@ -523,7 +525,9 @@ Everything contains bugs. The following is a list of possible vulnerabilities th
 - launch_impl: failure in process::set_fds was ignored
     exploitability: extremely hard, requires resource exhaustion and then some luck
     maximum impact: child can access (including write) some or all fds open in parent
-      with the default parent, this does nothing whatsoever
+      with the default parent, this does nothing whatsoever, unless called in strange ways where it
+        inherits some fds from the shell (extremely rare, and 90% of shell-inherited fds are lock
+        files)
       with other parents, it can be data leak, data loss, or even a full jailbreak
 
 
@@ -565,7 +569,7 @@ Obviously, the child can't be allowed access to the entire internet, only a whit
  to solve this; perhaps the broker should use a thread, perhaps it should create DNS packets
  manually.
 
-We also need a way to ensure the child can't fill the buffer and disrupt everything else trying to
+We also need a way to ensure the child can't saturate the pipe and disrupt everything else trying to
  use the network. I believe this is best solved by wrapping the connection in a AF_LOCAL socketpair
  and letting the broker add a rate limit.
 
@@ -614,7 +618,8 @@ cloexec is, in theory, easy; just iterate over the file descriptors, fcntl(F_GET
 However, there is one possibility: Place a process in the sandbox PID namespace, but otherwise
  unrestricted, and ask it for /proc/getpid()/fd/. Since it's in the sandbox namespace, it can't see
  processes it shouldn't; it can return data about other processes in the sandbox, but that's fine.
- (Making this the namespace init, PID 1, would also allow it to reap zombies.)
+ (Making this the namespace init, PID 1, would be the easiest solution; this would also allow it to
+ reap zombies.)
 
 Killing the other threads is also tricky. There's no syscall to list them, nor is there any obvious
  way to terminate them - sending SIGKILL terminates the entire process.
@@ -640,7 +645,8 @@ Unfortunately, ld-linux itself needs the emulator, so I'd still need an emulator
  glibc-less operation. And since I can't force my LD_PRELOAD to run before other libraries'
  constructors, this one would have to support pretty much every syscall, and I'd rather not
  implement that twice. LD_AUDIT could help, but that would load two copies of glibc in the same
- process, and I don't trust that to play nicely with threads and brk().
+ process, and I don't trust that to play nicely with threads and malloc() (it calls brk(), a
+ process-global resource).
 
 It would be nice, but again, not worth it.
 

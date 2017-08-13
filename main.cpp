@@ -1,37 +1,22 @@
-#include "arlib.h"
+#include <stddef.h>
+
+void walrus(int x);
+
+class x {
+public:
+void operator=(nullptr_t)      { walrus(1); }
+void operator=(const char * s) { walrus(6); }
+void operator=(long n)         { walrus(7); }
+};
+
+void y()
+{
+	x z;
+	z = NULL;
+}
 
 int main(int argc, char** argv)
 {
-	zip z;
-	{
-		array<byte> map = file::read(argv[1]);
-		if (!map)
-		{
-			puts("fread");
-			return 0;
-		}
-		if (!z.init(map))
-		{
-			puts("zipopen");
-			return 0;
-		}
-	}
-	
-	puts(z.repaired() ? "CORRUPT:YES" : "CORRUPT:NO");
-	array<string> fnames = z.files();
-	for (string fname : fnames)
-	{
-		array<byte> data;
-		string error;
-		z.read(fname, data, &error);
-		puts(fname+" "+tostring(data.size())+" "+error+" "+tostringhex(crc32(data)));
-	}
-	
-	if (argv[2])
-	{
-		z.clean();
-		file::write(argv[2], z.pack());
-	}
 /*
 	sandproc ch;
 	ch.set_stdout(process::output::create_stdout());

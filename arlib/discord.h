@@ -153,11 +153,16 @@ public:
 		
 		void send(cstring text);
 		
+		//Fetches account data about this user.
+		void fetch(function<void(User)> callback);
+		
 		operator bool() { return m_parent; }
 		bool operator==(const User& other) { return m_parent==other.m_parent && m_id==other.m_id; }
 		
 		size_t hash() const { return m_id.hash(); }
 	};
+	User user_from_id(cstring id) { return User(this, id, ""); }
+	
 	class Channel {
 		Discord* m_parent;
 		string m_id;
@@ -179,10 +184,10 @@ public:
 		cstring name() { return impl().name; } // without #
 		Guild guild() { return Guild(m_parent, impl().guild); }
 		
-		void rawmsg(cstring text)
+		void rawmsg(cstring markdown)
 		{
 			JSON json;
-			json["content"] = text;
+			json["content"] = markdown;
 			m_parent->http("/channels/"+m_id+"/messages", json);
 		}
 		
@@ -266,6 +271,17 @@ public:
 		http("PATCH", "/users/@me", json);
 	}
 	
+	void self_game(cstring game)
+	{
+		JSON json;
+		json["op"] = 3;
+		json["d"]["game"]["name"] = game;
+		json["d"]["since"] = NULL; // some of these hardcoded entries are mandatory; if absent, gateway throws 'unknown opcode'
+		json["d"]["status"] = "online"; // probably discord bug
+		json["d"]["afk"] = false;
+		send_ws(json);
+	}
+	
 	class callbacks {
 	public:
 		virtual void on_connect(Guild guild, User self) {}
@@ -284,7 +300,7 @@ private:
 	WebSocket m_ws; // be careful about using these directly, dangerous!
 	HTTP m_http;
 	map<uintptr_t, function<void(HTTP::rsp)>> m_http_callbacks; // TODO: kinda annoying, do I make it all synchronous?
-	size_t m_http_index;
+	size_t m_http_index = 1;
 	
 	void connect();
 	void connect_cb(HTTP::rsp r);
@@ -347,6 +363,12 @@ private:
 		r.postdata = post.serialize().bytes();
 		http(r, callback);
 	}
+	void http(cstring method, cstring url, function<void(HTTP::rsp)> callback = NULL)
+	{
+		HTTP::req r(url);
+		r.method = method;
+		http(r, callback);
+	}
 	void http(cstring method, cstring url, JSON& post, function<void(HTTP::rsp)> callback = NULL)
 	{
 		HTTP::req r(url);
@@ -354,16 +376,10 @@ private:
 		r.postdata = post.serialize().bytes();
 		http(r, callback);
 	}
-	void http(cstring method, cstring url, function<void(HTTP::rsp)> callback = NULL)
-	{
-		HTTP::req r(url);
-		r.method = method;
-		http(r, callback);
-	}
 	
 	void http_process();
 	
-	void send(JSON& json)
+	void send_ws(JSON& json)
 	{
 		string msg = json.serialize();
 		datelog("<< "+msg);
