@@ -32,7 +32,7 @@ public:
 		
 		socketssl_impl* ret = new socketssl_impl(parent);
 		ret->ssl = SSL_new(ctx);
-		SSL_set_tlsext_host_name(ret->ssl, (const char*)domain);
+		SSL_set_tlsext_host_name(ret->ssl, (const char*)domain.c_str());
 		SSL_set_fd(ret->ssl, ret->fd);
 		
 		if (!permissive)
@@ -57,7 +57,7 @@ public:
 		
 #if OPENSSL_VERSION_NUMBER < 0x10002000 // < 1.0.2
 		X509* cert = SSL_get_peer_certificate(ret->ssl);
-		if (ok && !permissive && !validate_hostname(domain, cert))
+		if (ok && !permissive && !validate_hostname(domain.c_str(), cert))
 		{
 			ok=false;
 		}

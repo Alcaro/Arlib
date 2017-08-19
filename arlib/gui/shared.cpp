@@ -239,6 +239,7 @@ void widget_layout::place(void* resizeinf, unsigned int x, unsigned int y, unsig
 
 
 
+/*
 //varargs are irritating; no point reimplementing them for all platforms.
 windowmenu_radio* windowmenu_radio::create(function<void(unsigned int state)> onactivate, const char * firsttext, ...)
 {
@@ -445,6 +446,7 @@ widget_layout* widget_create_layout_grid(unsigned int width, unsigned int height
 	
 	return widget_create_layout(width*height, children,  width, NULL, uniformsizes,  height, NULL, uniformsizes);
 }
+*/
 
 
 

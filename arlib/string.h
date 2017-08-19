@@ -254,6 +254,7 @@ private:
 		~c_string() { if (do_free) free(ptr); }
 	};
 public:
+	//no operator const char *, a cstring doesn't necessarily have a NUL terminator
 	c_string c_str() const { return c_string(bytes(), bytes_hasterm()); }
 };
 

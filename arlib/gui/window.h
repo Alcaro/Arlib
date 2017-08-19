@@ -131,15 +131,17 @@ window* window_create(widget_base* contents);
 //Any pointers given during widget creation must be valid until the widget is placed inside a window.
 //Most functions return the object it's called on, so object state can be set while creating the object.
 class widget_base : nocopy {
+protected:
+	widget_base() {} // TODO: make this one take a widget if not MANUAL_LAYOUT?
 public:
 #ifdef ARGUI_MANUAL_LAYOUT
 	//measure() returns no value, but sets the width and height. The sizes are undefined if the last
-	// function call on the widget was not measure(); widgets may choose to update their sizes in
-	// response to anything that resizes them, and leave measure() blank.
+	// function call on the widget was not measure().
+	//Widgets may choose to update their sizes in response to anything that resizes them (including init()), and leave measure() blank.
 	//If multiple widgets want the space equally much, they get equal fractions, in addition to their base demand.
 	//If a widget gets extra space and doesn't want it, it should add some padding in any direction.
 	//The widget should, if needed by the window manager, forward all plausible events to its parent window,
-	// unless the widget wants the events. (For example, a button will want mouse events, but not file drop events.)
+	// unless the widget wants the events. For example, a button will want mouse click events, but not file drop events.
 	//The window handles passed around are implementation defined.
 	//The return value from init() is the number of child windows involved, from the window manager's point of view.
 	virtual unsigned int init(window * parent, uintptr_t parenthandle) = 0;
@@ -148,14 +150,13 @@ public:
 	unsigned int height;
 	virtual void place(void* resizeinf, unsigned int x, unsigned int y, unsigned int width, unsigned int height) = 0;
 	
-	//this one acts roughly like Q_OBJECT
 #define WIDGET_BASE \
 		unsigned int init(window * parent, uintptr_t parenthandle); \
 		void measure(); \
 		void place(void* resizeinf, unsigned int x, unsigned int y, unsigned int width, unsigned int height);
 #else
 	void * widget;
-	#define WIDGET_BASE /* */
+	#define WIDGET_BASE /* not needed, all needed virtual functions are in widget */
 #endif
 	//The priorities mean:
 	//0 - Widget has been assigned a certain size; it must get exactly that. (Canvas, viewport)
@@ -190,8 +191,16 @@ protected:
 	widget_layout() {}
 	
 public:
-//The lists are terminated with a NULL. It shouldn't be empty.
-	widget_layout(bool vertical, bool uniform, widget_base* firstchild, ...);
+	template<typename... Args>
+	widget_layout(bool vertical, bool uniform, Args... children)
+	{
+		size_t numchildren = sizeof...(children);
+		widget_base* children_up[] = { children... };
+		construct(sizeof...(children), children_up,
+		          vertical ? 1 : numchildren, NULL, uniform,
+		          vertical ? numchildren : 1, NULL, uniform);
+	}
+	
 #define widget_create_layout_horz(...) (new widget_layout(false, false, __VA_ARGS__))
 #define widget_create_layout_vert(...) (new widget_layout(true,  false, __VA_ARGS__))
 	
@@ -472,7 +481,7 @@ public:
 	
 	//This is the size on the screen. The height is how many items show up below the header;
 	// the widths are the longest string that should comfortably fit (or the column header, whichever is wider).
-	//0 in height means "use some sensible default"; NULL in widths means "only check the column".
+	//0 in height means "use some sensible default"; NULL in widths means "only check the column header".
 	//'expand' is which column should get all extra size, if the widget is given more space than it asked for; -1 for even distribution.
 	//Defaults to 10, column headers, and -1.
 	//TODO: do this on Windows.
@@ -494,7 +503,7 @@ public:
 
 
 //Easier to use than the virtual listbox, but slower. Should be preferred for most usecases.
-class widget_listbox : public widget_listbox_virtual
+class widget_listbox : public widget_listbox_virtual // no WIDGET_BASE, it comes from _virtual
 {
 	size_t numcols;
 	size_t numrows;
@@ -610,7 +619,7 @@ public:
 	}
 	
 private:
-	//Calling these will screw up the internal state. Yes, you can do it, but it'll break if you try.
+	//Calling these will screw up the internal state. Yes, you can do it by casting to widget_listbox_virtual*, don't do that.
 	
 	widget_listbox_virtual* set_contents(function<const char * (size_t row, int column)> get_cell,
 	                             function<size_t(const char * prefix, size_t start, bool up)> search);
@@ -621,7 +630,8 @@ private:
 #define widget_create_listbox(...) (new widget_listbox(__VA_ARGS__))
 
 
-//A decorative frame around a widget, to group them together. The widget can be a layout (and probably should, otherwise you're adding a box to a single widget).
+//A decorative frame around a widget, to group them together.
+//The widget can be a layout (and probably should, otherwise you're adding a box to a single widget).
 class widget_frame : public widget_base { WIDGET_BASE
 public:
 	widget_frame(const char * text, widget_base* contents);
@@ -635,6 +645,11 @@ public:
 	impl * m;
 };
 #define widget_create_frame(...) (new widget_frame(__VA_ARGS__))
+
+
+//If Arlib doesn't support the features you want, it is allowed (but not really recommended) to implement your own widget class.
+//Check widget_base to see what you need to implement, and use #ifdef ARGUI_GTK3 or ARGUI_WINDOWS.
+//Don't use widget_base directly, you want WIDGET_BASE.
 
 
 
