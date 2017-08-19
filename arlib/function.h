@@ -47,8 +47,10 @@ template<typename FuncSignature> class function;
 
 #define ARG_TYPES_I(n) JOIN(P,n)
 #define ARG_TYPES LOOP(ARG_TYPES_I)
-#define ARG_NAMES_I(n) JOIN(a,n)
-#define ARG_NAMES LOOP(ARG_NAMES_I)
+//#define ARG_NAMES_I(n) JOIN(a,n)
+//#define ARG_NAMES LOOP(ARG_NAMES_I)
+#define ARG_NAMES_MOVE_I(n) std::move(JOIN(a,n))
+#define ARG_NAMES_MOVE LOOP(ARG_NAMES_MOVE_I)
 #define ARG_TYPES_AND_NAMES_I(n) JOIN(P,n) JOIN(a,n)
 #define ARG_TYPES_AND_NAMES LOOP(ARG_TYPES_AND_NAMES_I)
 #define TYPENAMES_I(n) typename JOIN(P,n)
@@ -97,8 +99,10 @@ template<typename FuncSignature> class function;
 #undef BoundCallbackFactory
 #undef ARG_TYPES_I
 #undef ARG_TYPES
-#undef ARG_NAMES_I
-#undef ARG_NAMES
+//#undef ARG_NAMES_I
+//#undef ARG_NAMES
+#undef ARG_NAMES_MOVE_I
+#undef ARG_NAMES_MOVE
 #undef ARG_TYPES_AND_NAMES_I
 #undef ARG_TYPES_AND_NAMES
 #undef TYPENAMES_I
@@ -145,10 +149,8 @@ public:
 
     inline R operator()(ARG_TYPES_AND_NAMES) const
     {
-        //TODO: should find some way to forward these arguments rather than copying
-        //except nearly everything here is integers and arrayviews
-        //TODO: find a way to std::move the return if nonnull
-        return (*func)(obj C ARG_NAMES);
+        //return value isn't moved, it'd error if void. but compiler is allowed to perform copy elision, and most likely does
+        return (*func)(obj C ARG_NAMES_MOVE);
     }
 
 private:
@@ -180,9 +182,23 @@ private:
     static R FreeWrapper(const void* arg C ARG_TYPES_AND_NAMES)
     {
         FuncTypeNp func = (FuncTypeNp)arg;
-        return func(ARG_NAMES);
+        return func(ARG_NAMES_MOVE);
     }
     class PrivateType {};
+    
+    void set_to_free(FuncTypeNp func_raw)
+    {
+        if (func_raw)
+        {
+            func = FreeWrapper;
+            obj = (void*)func_raw;
+        }
+        else
+        {
+            func = EmptyHandler;
+            obj = (void*)EmptyHandler;
+        }
+    }
 public:
     //strange how operator= can deduce T without this default argument, but constructor can't
     //this shouldn't match if there's two constructor arguments, nothing is convertible to PrivateType
@@ -191,22 +207,12 @@ public:
     function(T func_raw_ref,
              typename std::enable_if<std::is_convertible<T, FuncTypeNp>::value, PrivateType>::type ignore = PrivateType())
     {
-        operator=(func_raw_ref);
+        set_to_free(func_raw_ref);
     }
     template<typename T>
     function& operator=(typename std::enable_if<std::is_convertible<T, FuncTypeNp>::value, T>::type func_raw_ref)
     {
-        FuncTypeNp func_raw = func_raw_ref;
-        if (func_raw)
-        {
-            obj = (void*)func_raw;
-            func = FreeWrapper;
-        }
-        else
-        {
-            func = EmptyHandler;
-            obj = (void*)EmptyHandler;
-        }
+        set_to_free(func_raw_ref);
     }
 };
 
@@ -225,7 +231,7 @@ private:
     template<R (*Func)(ARG_TYPES)>
     static R Wrapper(const void* C ARG_TYPES_AND_NAMES)
     {
-        return (*Func)(ARG_NAMES);
+        return (*Func)(ARG_NAMES_MOVE);
     }
 
 public:
@@ -252,7 +258,7 @@ private:
     static R Wrapper(const void* o C ARG_TYPES_AND_NAMES)
     {
         T* obj = const_cast<T*>(static_cast<const T*>(o));
-        return (obj->*Func)(ARG_NAMES);
+        return (obj->*Func)(ARG_NAMES_MOVE);
     }
 
 public:
@@ -280,7 +286,7 @@ private:
     static R Wrapper(const void* o C ARG_TYPES_AND_NAMES)
     {
         const T* obj = static_cast<const T*>(o);
-        return (obj->*Func)(ARG_NAMES);
+        return (obj->*Func)(ARG_NAMES_MOVE);
     }
 
 public:
@@ -307,7 +313,7 @@ private:
     template<R (*Func)(PTR* C ARG_TYPES)>
     static R Wrapper(const void* o C ARG_TYPES_AND_NAMES)
     {
-        return (*Func)((PTR*)o C ARG_NAMES);
+        return (*Func)((PTR*)o C ARG_NAMES_MOVE);
     }
 
 public:

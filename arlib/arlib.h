@@ -22,6 +22,7 @@
 #include "linq.h"
 #include "os.h"
 #include "process.h"
+#include "runloop.h"
 #include "safeint.h"
 #include "serialize.h"
 #include "stringconv.h"

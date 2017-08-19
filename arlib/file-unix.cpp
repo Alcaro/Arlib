@@ -206,7 +206,7 @@ string file::basename(cstring path)
 	return path.rsplit<1>("/")[1];
 }
 
-//#ifdef ARGUI_NONE
+#ifdef ARGUI_NONE
 file::impl* file::open_impl(cstring filename, mode m)
 {
 	return open_impl_fs(filename, m);
@@ -216,5 +216,5 @@ bool file::unlink(cstring filename)
 {
 	return unlink_fs(filename);
 }
-//#endif
+#endif
 #endif

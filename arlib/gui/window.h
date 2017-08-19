@@ -1,6 +1,7 @@
 #pragma once
 #include "../global.h"
 #include "../string.h"
+#include "../runloop.h"
 #include <string.h>
 
 class window;
@@ -35,7 +36,7 @@ string window_config_path();
 
 //window toolkit is not choosable at runtime
 //It is safe to interact with this window while inside its callbacks, with the exception that you may not free it.
-//You may also not use window_run_*().
+//You may also not use runloop::enter or runloop::step.
 class window {
 public:
 	//Marks the window as a popup dialog. This makes it act differently in some ways.
@@ -72,6 +73,8 @@ public:
 	//It is safe to free this structure from within this callback; if you do this, return true for close.
 	virtual void set_onclose(function<bool()> onclose) = 0;
 	
+	static bool exit_runloop() { runloop::global()->exit(); return true; }
+	
 	//Appends a menu bar to the top of the window. If the window has a menu already, it's replaced. NULL removes the menu.
 	//But there's no real reason to replace it. Just change it.
 	//Must be created by windowmenu_menu::create_top.
@@ -98,6 +101,7 @@ public:
 	//Setting a window visible while it already is will do nothing.
 	virtual void set_visible(bool visible) = 0;
 	virtual bool is_visible() = 0;
+	void show() { set_visible(true); }
 	
 	//Call only after making the window visible.
 	virtual void focus() = 0;
@@ -336,11 +340,13 @@ public:
 	widget_textbox* set_enabled(bool enable);
 	widget_textbox* focus();
 	
-	//The return value is guaranteed valid until the next call to any function
-	// on this object, or the next window_run[_iter], whichever comes first.
-	const char * get_text();
-	widget_textbox* set_text(const char * text);
-	//If the length is 0, it's unlimited.
+	//TODO: use string or cstring
+	////The return value is guaranteed valid until the next call to any function
+	//// on this object, or the next window_run[_iter], whichever comes first.
+	//const char * get_text();
+	//widget_textbox* set_text(const char * text);
+	//Length is the maximum amount of text entered, in units of either
+	// UTF-8 bytes, Unicode grapheme clusters, or something in between (implementation defined).
 	widget_textbox* set_length(unsigned int maxlen);
 	//How many instances of the letter 'X' should fit in the textbox without scrolling. Defaults to 5.
 	widget_textbox* set_width(unsigned int xs);
@@ -734,14 +740,18 @@ public:
 
 
 
-//Tells the window manager to handle recent events and fire whatever callbacks are relevant.
-//Neither of them are allowed while inside any callback of any kind.
-//Some other functions may call these two.
-void window_run_iter();//Returns as soon as possible. Use if, for example, you're displaying an animation.
-void window_run_wait();//Returns only after doing something. Use while idling. It will return if any
-                       // state (other than the time) has changed or if any callback has fired.
-                       //It may also return due to uninteresting events, as often as it wants;
-                       // however, repeatedly calling it will leave the CPU mostly idle.
+//Minimal example:
+/*
+int main(int argc, char * argv[])
+{
+	window_init(&argc, &argv);
+	window* wnd = window_create(widget_create_label("Hello"));
+	wnd->set_onclose(&window::exit_runloop);
+	
+	wnd->show();
+	runloop::global()->enter();
+}
+*/
 
 ////Shows a message box. You can do that by creating a label and some buttons, but it gives inferior results.
 ////Returns true for OK and Yes, and false for Cancel/No/close window.

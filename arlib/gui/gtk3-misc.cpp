@@ -1,7 +1,8 @@
 #include "window.h"
+#ifdef ARGUI_GTK3
 #include "../file.h"
 #include "../os.h"
-#ifdef ARGUI_GTK3
+#include "../set.h"
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>
@@ -228,18 +229,83 @@ puts(g_get_user_config_dir());
 //	return (const char * const *)ret;
 //}
 
-void window_run_iter()
-{
-	gtk_main_iteration_do(false);
-	
-	//Workaround for GTK thinking we're processing events slower than they come in. We're busy waiting
-	// for the AV drivers, and waiting less costs us nothing.
-	gtk_main_iteration_do(false);
-}
 
-void window_run_wait()
+
+//for windows support, https://developer.gnome.org/glib/stable/glib-IO-Channels.html#g-io-channel-win32-new-socket
+#include <glib-unix.h>
+class runloop_gtk : public runloop
 {
-	gtk_main_iteration_do(true);
+	struct fd_cbs {
+		guint source_id;
+		
+		function<void(uintptr_t)> cb_read;
+		function<void(uintptr_t)> cb_write;
+	};
+	map<uintptr_t,fd_cbs> fdinfo;
+	
+	static const GIOCondition cond_rd = (GIOCondition)(G_IO_IN |G_IO_HUP|G_IO_ERR);
+	static const GIOCondition cond_wr = (GIOCondition)(G_IO_OUT|G_IO_HUP|G_IO_ERR);
+	
+	gboolean fd_cb(gint fd, GIOCondition condition)
+	{
+		fd_cbs& cbs = fdinfo.get(fd);
+		     if (cbs.cb_read  && (condition & cond_rd)) cbs.cb_read(fd);
+		else if (cbs.cb_write && (condition & cond_wr)) cbs.cb_write(fd);
+		return G_SOURCE_CONTINUE;
+	}
+	static gboolean fd_cb_s(gint fd, GIOCondition condition, gpointer user_data)
+	{
+		return ((runloop_gtk*)user_data)->fd_cb(fd, condition);
+	}
+	
+	void set_fd(uintptr_t fd, function<void(uintptr_t)> cb_read, function<void(uintptr_t)> cb_write)
+	{
+		fd_cbs& cbs = fdinfo.get_create(fd);
+		if (cbs.source_id) g_source_remove(cbs.source_id);
+		
+		guint conds = 0;
+		if (cb_read)  conds |= cond_rd;
+		if (cb_write) conds |= cond_wr;
+		
+		if (!conds)
+		{
+			fdinfo.remove(fd);
+			return;
+		}
+		
+		cbs.source_id = g_unix_fd_add(fd, (GIOCondition)conds, &runloop_gtk::fd_cb_s, this);
+		cbs.cb_read = cb_read;
+		cbs.cb_write = cb_write;
+	}
+	
+	
+	void set_timer_oneshot(time_t when, function<void()> callback)
+	{
+		abort();
+	}
+	void set_timer_interval(unsigned ms, function<void()> callback)
+	{
+		abort();
+	}
+	
+	
+	void enter() { gtk_main(); }
+	void exit() { gtk_main_quit(); }
+	void step()
+	{
+		gtk_main_iteration_do(false);
+		
+		//workaround for GTK thinking the program is lagging, we only call this every 16ms
+		//we're busy waiting in non-gtk syscalls, waiting less costs us nothing
+		gtk_main_iteration_do(false);
+	}
+};
+
+runloop* runloop::global()
+{
+	static runloop* ret;
+	if (!ret) ret = new runloop_gtk();
+	return ret;
 }
 
 
