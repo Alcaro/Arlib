@@ -7,6 +7,7 @@
 #include "json.h"
 #include "linq.h"
 
+#define Discord Xdiscord
 class Discord {
 	struct i_role;
 	struct i_user;
@@ -276,6 +277,7 @@ public:
 		JSON json;
 		json["op"] = 3;
 		json["d"]["game"]["name"] = game;
+		json["d"]["game"]["type"] = 0;
 		json["d"]["since"] = NULL; // some of these hardcoded entries are mandatory; if absent, gateway throws 'unknown opcode'
 		json["d"]["status"] = "online"; // probably discord bug
 		json["d"]["afk"] = false;

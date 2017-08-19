@@ -55,7 +55,6 @@
 #include "socket/socket.h"
 #include "http.h"
 #include "websocket.h"
-#include "discord.h"
 #endif
 
 extern const char * BUILD_DATE;

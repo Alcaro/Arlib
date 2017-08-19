@@ -173,7 +173,7 @@ netagain:
 again:
 	if (!newrecv) return;
 	
-	rsp& r = requests[active_rsp].r;
+	rsp& r = requests[active_rsp];
 	
 	switch (state)
 	{
@@ -310,7 +310,7 @@ HTTP::rsp HTTP::recv()
 		rsp r;
 		r.success = false;
 		r.status = rsp::e_not_sent;
-		r.userdata = 0;
+		r.q.userdata = 0;
 		return r;
 	}
 	await();
@@ -321,7 +321,7 @@ HTTP::rsp HTTP::recv()
 			//equal should be impossible
 			if (active_req > i) active_req--;
 			if (active_rsp > i) active_rsp--;
-			return requests.pop(i).r;
+			return requests.pop(i);
 		}
 	}
 	abort();
@@ -357,7 +357,7 @@ test("URL parser")
 
 test("HTTP")
 {
-	test_skip("too slow");
+	//test_skip("too slow");
 #define URL "http://httpbin.org/user-agent"
 #define CONTENTS "{\n  \"user-agent\": null\n}\n"
 	{
@@ -438,12 +438,12 @@ test("HTTP")
 		HTTP::rsp r1 = h.recv();
 		assert_eq(r1.status, 200);
 		assert_eq(r1.body.size(), 128);
-		assert_eq(r1.userdata, 42);
+		assert_eq(r1.q.userdata, 42);
 		
 		HTTP::rsp r2 = h.recv();
 		assert_eq(r2.status, 200);
 		assert_eq(r2.body.size(), 128);
-		assert_eq(r1.userdata, 42);
+		assert_eq(r2.q.userdata, 42);
 		
 		assert_eq(tostringhex(r1.body), tostringhex(r2.body));
 	}

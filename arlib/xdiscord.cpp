@@ -1,7 +1,7 @@
-#include "discord.h"
+#include "xdiscord.h"
 #include <time.h>
 
-#define USER_AGENT "DiscordBot (https://github.com/Alcaro/Arlib/blob/master/arlib/discord.cpp, " __DATE__ " " __TIME__ ")"
+#define USER_AGENT "DiscordBot (https://github.com/Alcaro/Arlib/blob/master/arlib/xdiscord.cpp, " __DATE__ " " __TIME__ ")"
 void Discord::headers(array<string>& h)
 {
 	if (bot)
@@ -57,8 +57,8 @@ puts(r.text().c_str());
 			ratelimit = time(NULL) + (timer+999)/1000;
 		}
 		
-		function<void(HTTP::rsp)> callback = m_http_callbacks.get_or(r.userdata, NULL);
-		m_http_callbacks.remove(r.userdata);
+		function<void(HTTP::rsp)> callback = m_http_callbacks.get_or(r.q.userdata, NULL);
+		m_http_callbacks.remove(r.q.userdata);
 		if (callback) callback(std::move(r));
 	}
 }

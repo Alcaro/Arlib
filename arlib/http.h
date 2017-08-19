@@ -28,6 +28,9 @@ public:
 	};
 	
 	struct rsp {
+		req q;
+		
+		bool finished; // Always true for anything returned by the HTTP object, 
 		bool success;
 		
 		enum {
@@ -45,8 +48,6 @@ public:
 		
 		array<string> headers; // TODO: switch to multimap once it exists
 		array<byte> body;
-		
-		uintptr_t userdata; // Same as in the request object.
 		
 		
 		operator arrayvieww<byte>()
@@ -80,9 +81,8 @@ public:
 	//They will be returned in an arbitrary order. Use the userdata to keep them apart.
 	void send(req q)
 	{
-		req_rsp& qr = requests.append();
-		qr.r.userdata = q.userdata;
-		qr.q = std::move(q);
+		rsp& r = requests.append();
+		r.q = std::move(q);
 		activity(false);
 	}
 	bool ready() { activity(false); return i_ready(); }
@@ -124,8 +124,8 @@ private:
 	void error_v(size_t id, int err)
 	{
 		requests[id].finished = true;
-		requests[id].r.success = false;
-		requests[id].r.status = err;
+		requests[id].success = false;
+		requests[id].status = err;
 	}
 	bool error_f(size_t id, int err) { error_v(id, err); return false; }
 	
@@ -138,15 +138,9 @@ private:
 	void create_sock();
 	void activity(bool block);
 	
-	struct req_rsp {
-		req q; // for query
-		rsp r;
-		bool finished = false;
-	};
-	
 	
 	location host; // used to verify that the requests aren't sent anywhere they don't belong
-	array<req_rsp> requests;
+	array<rsp> requests;
 	size_t active_req = 0; // index to requests[] next to be added to tosend, or requests.size() if all done / in tosend
 	size_t active_rsp = 0; // index to requests[] currently being returned; if state is st_boundary, this is the next one to be returned
 	
