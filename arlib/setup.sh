@@ -8,6 +8,11 @@ echo '#include "arlib/arlib.h"' > arlib.h
 
 mkdir obj
 
+cat > .gitignore <<-EOF
+	obj/
+	$program
+EOF
+
 cat > Makefile <<-EOF
 	PROGRAM = $program
 	ARGUI = 0

@@ -1,5 +1,5 @@
 PROGRAM = arlibtest
-ARGUI = 0
+ARGUI = 1
 AROPENGL = 0
 ARTHREAD = 1
 ARWUTF = 0
