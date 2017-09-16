@@ -183,6 +183,11 @@ ifeq ($(ARGUI),1)
     DEFINES += ARGUI_GTK3 ARGUIPROT_X11
     CONF_CFLAGS += $(shell pkg-config --cflags gtk+-3.0)
     CONF_LFLAGS += -ldl -lX11 $(shell pkg-config --libs gtk+-3.0)
+    ifneq ($(OPT),0)
+      # don't know if this has ever caught anything except NULLs, but they do no harm on debug
+      # but they do waste space on release builds.
+      CONF_CFLAGS += -DG_DISABLE_CAST_CHECKS
+    endif
   endif
 else
   DEFINES += ARGUI_NONE
