@@ -345,9 +345,13 @@ file::impl* file::open_impl(cstring filename, mode m)
 bool file::unlink(cstring filename)
 {
 	//native isn't needed here, removing a file doesn't need mmap
+	//but on the other hand, it's absurdly slow, so let's use native anyways
+	if (g_path_is_absolute(filename.c_str())) return unlink_fs(filename);
+	
 	GFile* file = g_file_new_for_commandline_arg(filename.c_str());
 	GError* err = NULL;
 	bool ok = g_file_delete(file, NULL, &err);
+	g_object_unref(file);
 	if (ok) return true;
 	ok = (g_error_matches(err, G_IO_ERROR, G_IO_ERROR_NOT_FOUND));
 	g_error_free(err);
@@ -368,6 +372,14 @@ class runloop_gtk : public runloop
 		function<void(uintptr_t)> cb_write;
 	};
 	map<uintptr_t,fd_cbs> fdinfo;
+	
+	struct timer_cb {
+		guint source_id;
+		runloop_gtk* parent;
+		function<bool()> callback;
+	};
+	refarray<timer_cb> timerinfo;
+	
 	bool need_exit_sync = true;
 	
 	static const GIOCondition cond_rd = (GIOCondition)(G_IO_IN |G_IO_HUP|G_IO_ERR);
@@ -380,13 +392,13 @@ class runloop_gtk : public runloop
 		else if (cbs.cb_write && (condition & cond_wr)) cbs.cb_write(fd);
 		return G_SOURCE_CONTINUE;
 	}
-	//TODO: should autogenerate this from fd_cb using same methods as function.h
+	//TODO: should autogenerate this from fd_cb using same methods as function.h probably
 	/*private*/ static gboolean fd_cb_s(gint fd, GIOCondition condition, gpointer user_data)
 	{
 		return ((runloop_gtk*)user_data)->fd_cb(fd, condition);
 	}
 	
-	void set_fd(uintptr_t fd, function<void(uintptr_t)> cb_read, function<void(uintptr_t)> cb_write)
+	uintptr_t set_fd(uintptr_t fd, function<void(uintptr_t)> cb_read, function<void(uintptr_t)> cb_write)
 	{
 		fd_cbs& cbs = fdinfo.get_create(fd);
 		if (cbs.source_id) g_source_remove(cbs.source_id);
@@ -398,18 +410,63 @@ class runloop_gtk : public runloop
 		if (!conds)
 		{
 			fdinfo.remove(fd);
-			return;
+			return 0;
 		}
 		
 		cbs.source_id = g_unix_fd_add(fd, (GIOCondition)conds, &runloop_gtk::fd_cb_s, this);
 		cbs.cb_read = cb_read;
 		cbs.cb_write = cb_write;
+		
+		return cbs.source_id;
 	}
 	
 	
-	void set_timer_rel(unsigned ms, function<bool()> callback)
+	/*private*/ static gboolean timer_cb_s(gpointer user_data)
 	{
-		abort();
+		timer_cb* cb = (timer_cb*)user_data;
+		bool ret = cb->callback();
+		
+		if (ret) return G_SOURCE_CONTINUE;
+		cb->parent->remove_full(cb->source_id, false);
+		return G_SOURCE_REMOVE;
+	}
+	uintptr_t set_timer_rel(unsigned ms, function<bool()> callback)
+	{
+		timer_cb& cb = timerinfo.append();
+		cb.callback = callback;
+		cb.parent = this;
+		if (ms < 2000) cb.source_id = g_timeout_add(ms, timer_cb_s, &cb);
+		else cb.source_id = g_timeout_add_seconds((ms+750)/1000, timer_cb_s, &cb);
+		return cb.source_id;
+	}
+	
+	
+	/*private*/ void remove_full(uintptr_t id, bool remove_source)
+	{
+		if (!id) return;
+		for (auto pair : fdinfo)
+		{
+			if (pair.value.source_id == id)
+			{
+				if (remove_source) g_source_remove(pair.value.source_id);
+				fdinfo.remove(pair.key);
+				return;
+			}
+		}
+		for (size_t i=0;i<timerinfo.size();i++)
+		{
+			if (timerinfo[i].source_id == id)
+			{
+				if (remove_source) g_source_remove(timerinfo[i].source_id);
+				timerinfo.remove(i);
+				return;
+			}
+		}
+		abort(); // removing nonexistent events is bad news
+	}
+	void remove(uintptr_t id)
+	{
+		remove_full(id, true);
 	}
 	
 	
@@ -419,7 +476,7 @@ class runloop_gtk : public runloop
 	{
 		gtk_main_iteration_do(false);
 		
-		//workaround for GTK thinking the program is lagging if, we only call this every 16ms
+		//workaround for GTK thinking the program is lagging if we only call this every 16ms
 		//we're busy waiting in non-gtk syscalls, waiting less costs us nothing
 		gtk_main_iteration_do(false);
 		

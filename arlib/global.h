@@ -1,5 +1,20 @@
 #pragma once
 
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE //strdup, realpath, asprintf
+#endif
+#define _strdup strdup //and windows is being windows as usual
+#define __STDC_LIMIT_MACROS //how many of these stupid things exist
+#define __STDC_FORMAT_MACROS//if I include a header, it's because I want to use its contents
+#define __STDC_CONSTANT_MACROS
+#include <stdint.h>
+#include <stddef.h>
+#include <stdio.h>
+#include <limits.h>
+#include <inttypes.h>
+#include "function.h"
+#include <utility>
+
 #ifdef _WIN32
 #  ifndef _WIN32_WINNT
 #    define _WIN32_WINNT 0x0600
@@ -34,20 +49,6 @@
 #ifndef __has_include
 #define __has_include(x) false
 #endif
-
-#ifndef _GNU_SOURCE
-#define _GNU_SOURCE //strdup, realpath, asprintf
-#endif
-#define _strdup strdup //and windows is being windows as usual
-#define __STDC_LIMIT_MACROS //how many of these stupid things exist
-#define __STDC_FORMAT_MACROS//if I include a header, it's because I want to use its contents
-#define __STDC_CONSTANT_MACROS
-#include <stdint.h>
-#include <stddef.h>
-#include <stdio.h>
-#include <inttypes.h>
-#include "function.h"
-#include <utility>
 
 typedef void(*funcptr)();
 typedef uint8_t byte;

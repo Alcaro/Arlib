@@ -110,6 +110,87 @@ template<typename FuncSignature> class function;
 
 #undef UTIL_CALLBACK_HPP_INSIDE
 
+
+#if __cplusplus >= 201103L
+#include <type_traits>
+
+template<typename Tl, typename Tptr>
+class LambdaBinderP {
+	Tl l;
+	Tptr p;
+public:
+	LambdaBinderP(Tl l, Tptr p) : l(std::move(l)), p(p) {}
+	
+	//destructor usage not available if there's an explicit pointer
+	template<typename Tf> operator function<Tf>()
+	{
+		typedef typename function<Tf>::template FuncTypeWith<Tptr>::type fpSrcT;
+		typedef typename function<Tf>::FuncType                          fpDstT;
+		
+		fpSrcT fpSrc = l;
+		fpDstT fpDst = (fpDstT)fpSrc;
+		
+		return function<Tf>(fpDst, p);
+	}
+};
+template<typename Tl, typename Tptr> inline LambdaBinderP<Tl, Tptr> bind_lambda(Tl l, Tptr p)
+{
+	return LambdaBinderP<Tl, Tptr>(l, p);
+}
+
+template<typename Tl>
+class LambdaBinder {
+	Tl l;
+	
+	template<typename T> class holder;
+	template<typename Ret, typename... Args>
+	class holder<Ret(Args...)> {
+		Tl l;
+	public:
+		holder(Tl l) : l(std::move(l)) {}
+		
+		static Ret
+		call(const void * ph, Args... args)
+		{
+			holder* h = (holder*)ph;
+			return h->l(std::forward<Args>(args)...);
+		}
+		
+		static void destruct(const void * ph)
+		{
+			holder* h = (holder*)ph;
+			delete h;
+		}
+	};
+public:
+	LambdaBinder(Tl l) : l(std::move(l)) {}
+	
+	template<typename Tf>
+	typename std::enable_if< std::is_convertible<Tl, typename function<Tf>::FuncTypeNp>::value, function<Tf>>::type
+	doIt()
+	{
+		typename function<Tf>::FuncTypeNp tmp = l;
+		return function<Tf>(tmp);
+	}
+	
+	template<typename Tf>
+	typename std::enable_if<!std::is_convertible<Tl, typename function<Tf>::FuncTypeNp>::value, function<Tf>>::type
+	doIt()
+	{
+		return function<Tf>(&holder<Tf>::call, &holder<Tf>::destruct, new holder<Tf>(l));
+	}
+	
+	template<typename Tf> operator function<Tf>()
+	{
+		return doIt<Tf>();
+	}
+};
+template<typename Tl> inline LambdaBinder<Tl> bind_lambda(Tl l)
+{
+	return LambdaBinder<Tl>(l);
+}
+#endif
+
 #endif
 
 #ifdef UTIL_CALLBACK_HPP_INSIDE
@@ -119,8 +200,15 @@ class function<R (ARG_TYPES)>
 private:
     class null_only;
 
+public:
     typedef R (*FuncType)(const void* C ARG_TYPES);
     typedef R (*FuncTypeNp)(ARG_TYPES);
+    template<typename Tp> class FuncTypeWith {
+    public:
+        typedef R (*type)(Tp C ARG_TYPES);
+    };
+
+private:
     typedef void (*DestructorType)(const void*);
 
     struct refcount
@@ -133,6 +221,7 @@ private:
     const void* obj;
     refcount* ref;
 
+public:
     function(FuncType f, const void* o) : func(f), obj(o), ref(NULL) {}
     function(FuncType f, DestructorType d, const void* o) : func(f), obj(o)
     {
@@ -141,6 +230,7 @@ private:
         ref->destruct = d;
     }
 
+private:
     void unref()
     {
         if (ref)
@@ -174,7 +264,7 @@ public:
     function(const function& rhs) : func(rhs.func), obj(rhs.obj), ref(rhs.ref)
         { add_ref(); }
 #if __cplusplus >= 201103L
-    function(function&& rhs) : func(rhs.func), obj(rhs.obj), ref(rhs.ref)
+    function(function&& rhs)      : func(rhs.func), obj(rhs.obj), ref(rhs.ref)
         { rhs.ref = NULL; } // elide poking the refcount if not needed
 #endif
 

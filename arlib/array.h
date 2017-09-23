@@ -344,6 +344,13 @@ public:
 		else resize_grow(len);
 	}
 	
+	T& insert(size_t index, T&& item)
+	{
+		resize_grow_noinit(this->count+1);
+		memmove(this->items+index+1, this->items+index, sizeof(T)*(this->count-1-index));
+		new(&this->items[index]) T(std::move(item));
+		return this->items[index];
+	}
 	T& insert(size_t index, const T& item)
 	{
 		resize_grow_noinit(this->count+1);
@@ -360,8 +367,10 @@ public:
 	}
 	
 	void append(const arrayview<T>& item) = delete; // use += instead
+	T& append(T&& item) { return insert(this->count, std::move(item)); }
 	T& append(const T& item) { return insert(this->count, item); }
 	T& append() { return insert(this->count); }
+	T& prepend(T&& item) { return insert(0, std::move(item)); }
 	T& prepend(const T& item) { return insert(0, item); }
 	T& prepend() { return insert(0); }
 	void reset() { resize_shrink(0); }
@@ -776,8 +785,16 @@ public:
 	{
 		while (n >= items.size())
 		{
-			items.append();
+			items.append(new T());
 		}
 		return *items[n];
 	}
+	T& append()
+	{
+		T* ret = new T();
+		items.append(ret);
+		return *ret;
+	}
+	void remove(size_t index) { items.remove(index); }
+	size_t size() { return items.size(); }
 };

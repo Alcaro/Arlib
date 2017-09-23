@@ -327,4 +327,6 @@ test: obj/arlibtest$(EXESUFFIX)
 check: test
 test-all: obj/arlibtest$(EXESUFFIX)
 	$(TESTRUNNER) obj/arlibtest$(EXESUFFIX) +
+test-all-twice: obj/arlibtest$(EXESUFFIX)
+	$(TESTRUNNER) obj/arlibtest$(EXESUFFIX) + +
 endif

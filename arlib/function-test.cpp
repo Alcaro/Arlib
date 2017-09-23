@@ -47,4 +47,29 @@ test()
 		assert_eq(adder::n_adders, 1);
 	}
 	assert_eq(adder::n_adders, 0);
+	
+	{
+		function<int(int)> a42w = bind_lambda([](int x)->int { return x+42; });
+		assert_eq(a42w(10), 52);
+	}
+	
+	{
+		int n = 42;
+		function<int(int)> a42w = bind_lambda([=](int x)->int { return x+n; });
+		n = -42;
+		assert_eq(a42w(10), 52);
+	}
+	
+	{
+		int n = -42;
+		function<int(int)> a42w = bind_lambda([&](int x)->int { return x+n; });
+		n = 42;
+		assert_eq(a42w(10), 52);
+	}
+	
+	{
+		int n = 42;
+		function<int(int)> a42w = bind_lambda([](int* xp, int x)->int { return x+*xp; }, &n);
+		assert_eq(a42w(10), 52);
+	}
 }
