@@ -274,7 +274,8 @@ protected:
 	nocopy(const nocopy&) = delete;
 	const nocopy& operator=(const nocopy&) = delete;
 #if !defined(_MSC_VER) || _MSC_VER >= 1900 // error C2610: is not a special member function which can be defaulted
-                                           // defaulting the copies deletes the moves on gcc, but does nothing on msvc2013; known bug
+                                           // deleting the copies deletes the moves on gcc, but does nothing on msvc2013; known bug
+                                           // luckily those two bugs cancel out pretty well, so we can do this
 	nocopy(nocopy&&) = default;
 	nocopy& operator=(nocopy&&) = default;
 #endif

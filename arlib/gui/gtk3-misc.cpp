@@ -373,14 +373,15 @@ class runloop_gtk : public runloop
 	static const GIOCondition cond_rd = (GIOCondition)(G_IO_IN |G_IO_HUP|G_IO_ERR);
 	static const GIOCondition cond_wr = (GIOCondition)(G_IO_OUT|G_IO_HUP|G_IO_ERR);
 	
-	gboolean fd_cb(gint fd, GIOCondition condition)
+	/*private*/ gboolean fd_cb(gint fd, GIOCondition condition)
 	{
 		fd_cbs& cbs = fdinfo.get(fd);
 		     if (cbs.cb_read  && (condition & cond_rd)) cbs.cb_read(fd);
 		else if (cbs.cb_write && (condition & cond_wr)) cbs.cb_write(fd);
 		return G_SOURCE_CONTINUE;
 	}
-	static gboolean fd_cb_s(gint fd, GIOCondition condition, gpointer user_data)
+	//TODO: should autogenerate this from fd_cb using same methods as function.h
+	/*private*/ static gboolean fd_cb_s(gint fd, GIOCondition condition, gpointer user_data)
 	{
 		return ((runloop_gtk*)user_data)->fd_cb(fd, condition);
 	}
@@ -406,11 +407,7 @@ class runloop_gtk : public runloop
 	}
 	
 	
-	void set_timer_oneshot(time_t when, function<void()> callback)
-	{
-		abort();
-	}
-	void set_timer_interval(unsigned ms, function<void()> callback)
+	void set_timer_rel(unsigned ms, function<bool()> callback)
 	{
 		abort();
 	}
@@ -441,11 +438,11 @@ class runloop_gtk : public runloop
 			//there's no publically exported symbol to perform these cleanup tasks, so gtk_main() must be called
 			// (GtkApplication does the same deinitialization, but gtk_main is easier)
 			
-			//we need it to exit immediately so let's schedule a oneshot idle event saying gtk_main_quit
+			//we need it to exit immediately, so let's schedule a oneshot idle event saying gtk_main_quit
 			//there could be other events at this point, but they don't matter, gtk doesn't know we're about to exit
 			
 			//but this is still an ugly hack. a much better solution would be creating gtk_deinit() and moving these shutdown actions there
-			//or even better, have gtk put this in its own atexit handler
+			//or have gtk put this in its own atexit handler
 			
 			g_idle_add([](void*)->gboolean { gtk_main_quit(); return false; }, NULL);
 			gtk_main();

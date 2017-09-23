@@ -64,6 +64,20 @@ fd_mon::~fd_mon() { close(epoll_fd); }
 
 };
 
+namespace {
+struct abs_cb {
+	function<void()> callback;
+	abs_cb(function<void()> callback) : callback(callback) {}
+	bool invoke() { callback(); return false; }
+};
+}
+void runloop::set_timer_abs(time_t when, function<void()> callback)
+{
+	int ms = (when-time(NULL))*1000;
+	if (ms <= 0) ms = 0;
+	set_timer_rel(ms, bind_ptr_del(&abs_cb::invoke, new abs_cb(callback)));
+}
+
 //runloop* runloop::create()
 //{
 //	return new runloop_linux();
@@ -73,6 +87,7 @@ fd_mon::~fd_mon() { close(epoll_fd); }
 #ifdef ARGUI_NONE
 //runloop* runloop::global()
 //{
+	//TODO: not thread safe
 	//static runloop* ret = NULL;
 	//if (!ret) ret = runloop::create();
 	//return ret;

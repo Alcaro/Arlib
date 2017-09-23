@@ -2,23 +2,30 @@
 #include "global.h"
 
 //A runloop keeps track of a number of file descriptors, calling their handlers whenever the relevant operation is available.
-//There are no fairness guarantees. If a fd doesn't properly read its data, it may inhibit other fds.
-//Do not call enter() or step() while inside a callback. However, set_* and exit() are fine.
+//There are no fairness guarantees. If an event doesn't terminate properly, it may inhibit other fds.
+//Do not call enter() or step() while inside a callback. However, set_*(), remove() and exit() are fine.
 class runloop : nomove { // Objects are expected to keep pointers to their runloop, so no moving.
 protected:
 	runloop() {}
 public:
 	static runloop* global(); // The global runloop handles GUI events, in addition to whatever fds it's told to track.
-	static runloop* create(); // For best results, only use this one on secondary threads, and only one per thread.
+	static runloop* create(); // For best results, use only one runloop per thread, and use the global one if applicable.
 	
 	//Callback argument is the fd, in case one object maintains multiple fds. To remove, set both callbacks to NULL.
 	//A fd can only be used once per runloop.
 	virtual void set_fd(uintptr_t fd, function<void(uintptr_t)> cb_read, function<void(uintptr_t)> cb_write = NULL) = 0;
 	
-	virtual void set_timer_oneshot(time_t when, function<void()> callback) = 0;
-	virtual void set_timer_interval(unsigned ms, function<void()> callback) = 0;
+	//Runs once.
+	void set_timer_abs(time_t when, function<void()> callback);
+	//Runs again if the callback returns true.
+	//Accuracy is not guaranteed; it may or may not round the timer frequency to something it finds appropriate,
+	// in either direction, and may or may not try to 'catch up' if a call is late (or early).
+	virtual void set_timer_rel(unsigned ms, function<bool()> callback) = 0;
 	
-	//Runs until ->exit() is called. Recommended for most programs.
+	//Return value from each set_*() is a token which can be used to cancel the event. Only usable before the timer fires.
+	//virtual void remove(uintptr_t id) = 0;
+	
+	//Executes the mainloop until ->exit() is called. Recommended for most programs.
 	virtual void enter() = 0;
 	virtual void exit() = 0;
 	
