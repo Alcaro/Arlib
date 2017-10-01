@@ -197,6 +197,7 @@ template<typename Tl> inline LambdaBinder<Tl> bind_lambda(Tl l)
 template<typename R C TYPENAMES>
 class function<R (ARG_TYPES)>
 {
+    template<typename T> friend class function;
 private:
     class null_only;
 
@@ -247,6 +248,8 @@ private:
     {
         if (ref) ref->count++;
     }
+
+    function(FuncType f, const void* o, refcount* ref) : func(f), obj(o), ref(ref) { add_ref(); }
 
 public:
     //to make null objects callable, 'func' must be a valid function
@@ -335,7 +338,6 @@ private:
 public:
     //strange how operator= can deduce T without this default argument, but constructor can't
     //this shouldn't match if there's two constructor arguments, nothing is convertible to PrivateType
-    //(and all real two-arg constructors are private)
     template<typename T>
     function(T func_raw_ref,
              typename std::enable_if<std::is_convertible<T, FuncTypeNp>::value, PrivateType>::type ignore = PrivateType())
@@ -347,6 +349,19 @@ public:
     {
         unref();
         set_to_free(func_raw_ref);
+    }
+
+    //WARNING: Dangerous if mishandled! Ensure every type (including return) is either unchanged,
+    // or a fundamental type of the same size as the original.
+    //I'd stick in some static_assert to enforce that, but with the variable size of the argument lists,
+    // that'd be annoying. Not sure how to unpack T, either.
+    template<typename T>
+    function<T> reinterpret()
+    {
+        //static_assert(std::is_fundamental<T>::value);
+        //static_assert(std::is_fundamental<T2>::value);
+        //static_assert(sizeof(T)==sizeof(T2));
+        return function<T>((typename function<T>::FuncType)func, obj, (typename function<T>::refcount*)ref);
     }
 };
 

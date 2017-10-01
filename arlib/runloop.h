@@ -20,22 +20,27 @@ public:
 	//A fd can only be used once per runloop. If that fd is already there, it's removed prior to binding the new callbacks.
 	//If the new callbacks are both NULL, it's removed. The return value can still safely be passed to remove().
 	//If only one callback is provided, events of the other kind are ignored.
-	//If both reading and writing is possible, reading takes precedence.
+	//If both reading and writing is possible, only the read callback is called.
 	//If the other side of the fd is closed, it's considered both readable and writable.
 	virtual uintptr_t set_fd(uintptr_t fd, function<void(uintptr_t)> cb_read, function<void(uintptr_t)> cb_write = NULL) = 0;
 #else
-	//TODO: need socket support
+	//TODO: sockets and timers are the only usable devices on windows
+	//virtual uintptr_t set_socket(socket* sock, function<void()> cb_read, function<void()> cb_write) = 0;
 #endif
 	
 	//Runs once.
 	uintptr_t set_timer_abs(time_t when, function<void()> callback);
-	//Do not remove() the callback from within itself; instead, return false and it won't return.
+	//Do not remove() the callback from within itself; instead, return false and it will disapear.
 	//Accuracy is not guaranteed; it may or may not round the timer frequency to something it finds appropriate,
 	// in either direction, and may or may not try to 'catch up' if a call is late (or early).
 	//Don't use for anything that needs tighter timing than ±1 second.
 	virtual uintptr_t set_timer_rel(unsigned ms, function<bool()> callback) = 0;
 	
-	//Return value from each set_*() is a token which can be used to cancel the event. Only usable before the timer fires.
+	//Will be called next time no other events (other than other idle callbacks) are ready, or earlier.
+	//Like set_timer_rel, the return value tells whether to call it again later.
+	virtual uintptr_t set_idle(function<bool()> callback) { return set_timer_rel(0, callback); }
+	
+	//Return value from each set_*() is a token which can be used to cancel the event. remove(0) is guaranteed to be ignored.
 	virtual void remove(uintptr_t id) = 0;
 	
 	//Executes the mainloop until ->exit() is called. Recommended for most programs.

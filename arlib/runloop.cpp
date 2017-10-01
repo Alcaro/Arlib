@@ -5,6 +5,7 @@
 #include <sys/epoll.h>
 #include <unistd.h>
 
+namespace {
 class runloop_linux : public runloop {
 public:
 	#define RD_EV (EPOLLIN |EPOLLRDHUP|EPOLLHUP|EPOLLERR)
@@ -63,7 +64,7 @@ public:
 	
 	runloop_linux() { epoll_fd = epoll_create1(EPOLL_CLOEXEC); }
 	
-	uintptr_t set_fd(uintptr_t fd, function<void(uintptr_t)> cb_read, function<void(uintptr_t)> cb_write = NULL)
+	uintptr_t set_fd(uintptr_t fd, function<void(uintptr_t)> cb_read, function<void(uintptr_t)> cb_write)
 	{
 		fd_cbs& cb = fdinfo.get_create(fd);
 		cb.cb_read  = cb_read;
@@ -198,21 +199,6 @@ public:
 	
 	~runloop_linux() { close(epoll_fd); }
 };
-
-
-
-namespace {
-struct abs_cb {
-	function<void()> callback;
-	abs_cb(function<void()> callback) : callback(callback) {}
-	bool invoke() { callback(); return false; }
-};
-}
-uintptr_t runloop::set_timer_abs(time_t when, function<void()> callback)
-{
-	int ms = (when-time(NULL))*1000;
-	if (ms <= 0) ms = 0;
-	return set_timer_rel(ms, bind_ptr_del(&abs_cb::invoke, new abs_cb(callback)));
 }
 
 runloop* runloop::create()
@@ -220,6 +206,15 @@ runloop* runloop::create()
 	return new runloop_linux();
 }
 #endif
+
+
+
+uintptr_t runloop::set_timer_abs(time_t when, function<void()> callback)
+{
+	time_t now = time(NULL);
+	unsigned ms = (now < when ? (when-now)*1000 : 0);
+	return set_timer_rel(ms, bind_lambda([callback]()->bool { callback(); return false; }));
+}
 
 #ifdef ARGUI_NONE
 runloop* runloop::global()
@@ -234,6 +229,7 @@ runloop* runloop::global()
 #include "test.h"
 static int64_t time_ms()
 {
+	//time() is too low resolution, clock() is CLOCK_PROCESS_CPUTIME_ID
 	//TODO: non-linux version
 	struct timespec now;
 	clock_gettime(CLOCK_MONOTONIC, &now);
@@ -249,7 +245,6 @@ static void test_runloop(bool is_global)
 	}
 	
 	{
-		//time() is too low resolution, clock() is CLOCK_PROCESS_CPUTIME_ID
 		int64_t start = time_ms();
 		int64_t end = start;
 		loop->set_timer_rel(100, bind_lambda([&]()->bool { end = time_ms(); loop->exit(); return false; }));
@@ -258,6 +253,8 @@ static void test_runloop(bool is_global)
 		int64_t ms = end-start;
 		assert_msg(ms > 75 && ms < 200, tostring(ms)+" not in range");
 	}
+	
+	//TODO: stick in some fd tests
 	
 	if (!is_global) delete loop;
 }

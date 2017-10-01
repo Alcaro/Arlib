@@ -365,6 +365,7 @@ bool file::unlink(cstring filename)
 namespace {
 class runloop_gtk : public runloop
 {
+public:
 	struct fd_cbs {
 		guint source_id;
 		
@@ -439,6 +440,14 @@ class runloop_gtk : public runloop
 		else cb.source_id = g_timeout_add_seconds((ms+750)/1000, timer_cb_s, &cb);
 		return cb.source_id;
 	}
+	uintptr_t set_idle(function<bool()> callback)
+	{
+		timer_cb& cb = timerinfo.append();
+		cb.callback = callback;
+		cb.parent = this;
+		cb.source_id = g_idle_add(timer_cb_s, &cb);
+		return cb.source_id;
+	}
 	
 	
 	/*private*/ void remove_full(uintptr_t id, bool remove_source)
@@ -485,6 +494,11 @@ class runloop_gtk : public runloop
 	
 	~runloop_gtk()
 	{
+		abort(); // illegal to call this
+	}
+	
+	void finalize()
+	{
 		if (need_exit_sync)
 		{
 			//GTK BUG WORKAROUND:
@@ -495,11 +509,11 @@ class runloop_gtk : public runloop
 			//there's no publically exported symbol to perform these cleanup tasks, so gtk_main() must be called
 			// (GtkApplication does the same deinitialization, but gtk_main is easier)
 			
-			//we need it to exit immediately, so let's schedule a oneshot idle event saying gtk_main_quit
-			//there could be other events at this point, but they don't matter, gtk doesn't know we're about to exit
+			//we need it to exit immediately, so let's schedule a oneshot idle event saying gtk_main_quit()
+			//there could be other events at this point, but they're unlikely and harmless
 			
 			//but this is still an ugly hack. a much better solution would be creating gtk_deinit() and moving these shutdown actions there
-			//or have gtk put this in its own atexit handler
+			//or having gtk put this in its own atexit handler
 			
 			g_idle_add([](void*)->gboolean { gtk_main_quit(); return false; }, NULL);
 			gtk_main();
@@ -510,15 +524,15 @@ class runloop_gtk : public runloop
 
 runloop* runloop::global()
 {
-	static runloop* ret = NULL;
+	static runloop_gtk* ret = NULL;
 	if (!ret)
 	{
 		ret = new runloop_gtk();
 		//If more than one atexit function has been specified by different calls to this function,
 		// they are all executed in reverse order as a stack (i.e. the last function specified is
 		// the first to be executed at exit).
-		//so this should be called early, while gtk is still operational
-		atexit([](){ delete ret; });
+		//so this one most likely gets called early, while gtk is still operational
+		atexit([](){ ret->finalize(); });
 	}
 	return ret;
 }

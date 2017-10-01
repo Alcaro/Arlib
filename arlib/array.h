@@ -87,6 +87,7 @@ public:
 		return out;
 	}
 	
+	//WARNING: Keep track of endianness if using this.
 	template<typename T2> arrayview<T2> reinterpret() const
 	{
 		//reject cast<string>()
@@ -97,7 +98,7 @@ public:
 		return arrayview<T2>((T2*)this->items, newsize);
 	}
 	
-	template<typename T2> array<T2> cast() const;
+	template<typename T2> inline array<T2> cast() const;
 	
 	size_t find(const T& item) const
 	{
@@ -514,7 +515,7 @@ public:
 };
 
 template<typename T> template<typename T2>
-array<T2> arrayview<T>::cast() const
+inline array<T2> arrayview<T>::cast() const
 {
 	array<T2> ret;
 	for (const T& tmp : *this) ret.append(tmp);
@@ -594,7 +595,8 @@ protected:
 		size_t low = this->nbits;
 		size_t high = nbytes*8;
 		
-		high = (high+7)&~7; // wipe the rest of the byte, it doesn't matter
+		//TODO: figure out what purpose this could've possibly served, given that nbytes is a multiple of 8
+		//high = (high+7)&~7; // wipe the rest of the byte, it doesn't matter
 		
 		uint8_t& byte = bits()[low/8];
 		byte &=~ (0xFF<<(low&7));
