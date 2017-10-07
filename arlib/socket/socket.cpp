@@ -20,12 +20,14 @@
 	#include <fcntl.h>
 	
 	#include <netinet/tcp.h>
+	#include <arpa/inet.h>
 #endif
 
 //wrapper because 'socket' is a type in this code, so socket(2) needs another name
 static int mksocket(int domain, int type, int protocol) { return socket(domain, type|SOCK_CLOEXEC, protocol); }
 #define socket socket_t
 
+#include"../stringconv.h"
 namespace {
 
 static void initialize()
@@ -50,7 +52,7 @@ static int setsockopt(int socket, int level, int option_name, int option_value)
 	return setsockopt(socket, level, option_name, &option_value, sizeof(option_value));
 }
 
-static int connect(cstring domain, int port)
+static int connect(cstring domain, int port, bool udp, bool async)
 {
 	initialize();
 	
@@ -60,14 +62,15 @@ static int connect(cstring domain, int port)
 	addrinfo hints;
 	memset(&hints, 0, sizeof(addrinfo));
 	hints.ai_family = AF_UNSPEC;
-	hints.ai_socktype = SOCK_STREAM;
-	hints.ai_flags = 0;
+	hints.ai_socktype = udp ? SOCK_DGRAM : SOCK_STREAM;
+	hints.ai_flags = (async ? AI_NUMERICHOST : 0);
 	
 	addrinfo * addr = NULL;
 	getaddrinfo(domain.c_str(), portstr, &hints, &addr);
 	if (!addr) return -1;
 	
-	int fd = mksocket(addr->ai_family, addr->ai_socktype, addr->ai_protocol);
+	//TODO: this probably fails on windows...
+	int fd = mksocket(addr->ai_family, addr->ai_socktype | SOCK_CLOEXEC | (async ? SOCK_NONBLOCK : 0), addr->ai_protocol);
 #ifndef _WIN32
 	//because 30 second pauses are unequivocally detestable
 	timeval timeout;
@@ -75,12 +78,13 @@ static int connect(cstring domain, int port)
 	timeout.tv_usec = 0;
 	setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, (char*)&timeout, sizeof(timeout));
 #endif
-	if (connect(fd, addr->ai_addr, addr->ai_addrlen) != 0)
+	if (connect(fd, addr->ai_addr, addr->ai_addrlen) != 0 && errno != EINPROGRESS)
 	{
 		freeaddrinfo(addr);
 		close(fd);
 		return -1;
 	}
+	freeaddrinfo(addr);
 	
 #ifndef _WIN32
 	setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, 1); // enable
@@ -100,9 +104,34 @@ static int connect(cstring domain, int port)
 	WSAIoctl(fd, SIO_KEEPALIVE_VALS, &keepalive, sizeof(keepalive), NULL, 0, &ignore, NULL, NULL);
 #endif
 	
-	freeaddrinfo(addr);
 	return fd;
 }
+
+/*
+static int connect_async(cstring domain, int port)
+{
+	initialize();
+	
+	bool ipv6;
+	struct sockaddr_in addr;
+	struct sockaddr_in6 addr6;
+	
+	if (inet_pton(AF_INET6, domain.c_str(), &addr.sin6_addr) == 1) ipv6 = true;
+	else if (inet_pton(AF_INET, domain.c_str(), &addr.sin_addr) == 1) ipv6 = false;
+	else return -1;
+	
+puts(domain+":ip6="+tostring(ipv6)+":"+tostringhex(arrayview<byte>((byte*)&addr, sizeof(struct sockaddr_in))));
+	
+	int fd = mksocket(ipv6 ? AF_INET6 : AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+	if (fd < 0) return -1;
+	
+	int ok = connect(fd, (sockaddr*)&addr, ipv6 ? sizeof(struct sockaddr_in6) : sizeof(struct sockaddr_in));
+	if (ok < 0 && errno != EINPROGRESS) { close(fd); return -1; }
+	
+	sock_keepalive(fd);
+	return fd;
+}
+*/
 
 } // close namespace
 
@@ -191,7 +220,17 @@ socket* socket::create_from_fd(int fd)
 
 socket* socket::create(cstring domain, int port)
 {
-	return socket_wrap(connect(domain, port));
+	return socket_wrap(connect(domain, port, false, false));
+}
+
+socket* socket::create_async(cstring domain, int port)
+{
+	return socket_wrap(connect(domain, port, false, true));
+}
+
+socket* socket::create_udp(cstring domain, int port)
+{
+	return socket_wrap(connect(domain, port, true, false));
 }
 
 //static socket* socket::create_udp(const char * domain, int port);

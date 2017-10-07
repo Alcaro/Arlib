@@ -21,7 +21,7 @@ public:
 	map<int,fd_cbs> fdinfo;
 	
 	struct timer_cb {
-		unsigned id;
+		unsigned id; // -1 if marked for removal
 		unsigned ms;
 		struct timespec next;
 		function<bool()> cb;
@@ -124,7 +124,7 @@ public:
 			{
 				if (timerinfo[i].id == t_id)
 				{
-					timerinfo.remove(i);
+					timerinfo[i].id = -1;
 					return;
 				}
 			}
@@ -142,25 +142,27 @@ public:
 		
 		for (size_t i=0;i<timerinfo.size();i++)
 		{
+		again: ;
 			timer_cb& timer = timerinfo[i];
 //printf("runloop: scheduled event at %lu.%09lu\n", timer.next.tv_sec, timer.next.tv_nsec);
+			
+			if (timer.id == (unsigned)-1)
+			{
+				timerinfo.remove(i);
+				goto again; // not 'i--; continue'; if the first timer is removed, (size_t)-1 is not less than timerinfo.size()
+			}
 			
 			int next_ms = timespec_sub(&timer.next, &now);
 			if (next_ms <= 0)
 			{
 //printf("runloop: calling event scheduled %ims ago\n", -next_ms);
-				bool keep = timer.cb();
-				if (exited) block = false; // make sure it doesn't block forever if timer callback calls exit()
-				if (!keep)
-				{
-					timerinfo.remove(i);
-					i--;
-					continue;
-				}
-				
 				timer.next = now;
 				timespec_add(&timer.next, timer.ms);
 				next_ms = timer.ms;
+				
+				bool keep = timer.cb(); // WARNING: May invalidate 'timer'.
+				if (exited) block = false; // make sure it doesn't block forever if timer callback calls exit()
+				if (!keep) timerinfo[i].id = -1;
 			}
 			
 			if (next_ms < next) next = next_ms;
@@ -227,14 +229,82 @@ runloop* runloop::global()
 #endif
 
 #include "test.h"
-static int64_t time_ms()
+#include "os.h"
+
+#ifdef ARLIB_TEST
+class runloop_blocktest : public runloop {
+	runloop* loop;
+	
+	uint64_t us;
+	uint64_t max_us;
+	void begin() { us = time_us_ne(); }
+	void end()
+	{
+		uint64_t new_us = time_us_ne();
+		assert_lte(new_us-us, max_us);
+	}
+	
+	uintptr_t set_fd(uintptr_t fd, function<void(uintptr_t)> cb_read, function<void(uintptr_t)> cb_write)
+	{
+		function<void(uintptr_t)> cb_read_w;
+		function<void(uintptr_t)> cb_write_w;
+		if (cb_read)  cb_read_w  = bind_lambda([this, cb_read ](uintptr_t fd){ this->begin(); cb_read( fd); this->end(); });
+		if (cb_write) cb_write_w = bind_lambda([this, cb_write](uintptr_t fd){ this->begin(); cb_write(fd); this->end(); });
+		return loop->set_fd(fd, cb_read_w, cb_write_w);
+	}
+	
+	uintptr_t set_timer_rel(unsigned ms, function<bool()> callback)
+	{
+		function<bool()> callback_w = bind_lambda([]()->bool { return false; });
+		if (callback) callback_w = bind_lambda([this, callback]()->bool { this->begin(); bool ret = callback(); this->end(); return ret; });
+		return loop->set_timer_rel(ms, callback_w);
+	}
+	uintptr_t set_idle(function<bool()> callback)
+	{
+		function<bool()> callback_w = bind_lambda([]()->bool { return false; });
+		if (callback) callback_w = bind_lambda([this, callback]()->bool { this->begin(); bool ret = callback(); this->end(); return ret; });
+		return loop->set_idle(callback_w);
+	}
+	void remove(uintptr_t id) { loop->remove(id); }
+	void enter() { end(); loop->enter(); begin(); }
+	void exit() { loop->exit(); }
+	void step() { end(); loop->step(); begin(); }
+	
+	
+public:
+	runloop_blocktest(uint64_t max_us)
+	{
+		this->loop = runloop::create();
+		this->max_us = max_us;
+		begin();
+	}
+	~runloop_blocktest()
+	{
+		end();
+		delete loop;
+	}
+};
+
+#ifdef __linux__
+#define HAVE_VALGRIND
+#endif
+#ifdef HAVE_VALGRIND
+#include <valgrind/memcheck.h>
+#else
+#define RUNNING_ON_VALGRIND false
+#endif
+
+runloop* runloop_blocktest_create(int max_ms)
 {
-	//time() is too low resolution, clock() is CLOCK_PROCESS_CPUTIME_ID
-	//TODO: non-linux version
-	struct timespec now;
-	clock_gettime(CLOCK_MONOTONIC, &now);
-	return (int64_t)now.tv_sec*1000 + now.tv_nsec/1000000;
+	if (RUNNING_ON_VALGRIND)
+	{
+		max_ms += 30;
+		test_skip_force_delay("runloop latency test under Valgrind, inconclusive due to 25ms latency spikes");
+	}
+	return new runloop_blocktest(max_ms*1000);
 }
+#endif
+
 static void test_runloop(bool is_global)
 {
 	runloop* loop = (is_global ? runloop::global() : runloop::create());
@@ -245,13 +315,12 @@ static void test_runloop(bool is_global)
 	}
 	
 	{
-		int64_t start = time_ms();
+		int64_t start = time_ms_ne();
 		int64_t end = start;
-		loop->set_timer_rel(100, bind_lambda([&]()->bool { end = time_ms(); loop->exit(); return false; }));
+		loop->set_timer_rel(100, bind_lambda([&]()->bool { end = time_ms_ne(); loop->exit(); return false; }));
 		loop->enter();
 		
-		int64_t ms = end-start;
-		assert_msg(ms > 75 && ms < 200, tostring(ms)+" not in range");
+		assert_range(end-start, 75,200);
 	}
 	
 	//TODO: stick in some fd tests

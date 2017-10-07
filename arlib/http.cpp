@@ -424,7 +424,7 @@ test("HTTP")
 			if (mon.select(0) == (void*)42) readies++;
 			assert_eq(h.ready(), false);
 		}
-		assert(readies < 10);
+		assert_lt(readies, 10);
 	}
 	
 	//httpbin response time is super slow, and super erratic

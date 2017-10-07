@@ -12,7 +12,7 @@ public:
 	//Don't call from anything other than the main thread.
 	static runloop* global();
 	
-	//Use only one runloop per thread. Don't use on the main thread.
+	//Use only one runloop per thread.
 	static runloop* create();
 	
 #ifndef _WIN32 // fd isn't a defined concept on windows
@@ -24,7 +24,7 @@ public:
 	//If the other side of the fd is closed, it's considered both readable and writable.
 	virtual uintptr_t set_fd(uintptr_t fd, function<void(uintptr_t)> cb_read, function<void(uintptr_t)> cb_write = NULL) = 0;
 #else
-	//TODO: sockets and timers are the only usable devices on windows
+	//TODO: figure out sockets on windows (other fds aren't needed)
 	//virtual uintptr_t set_socket(socket* sock, function<void()> cb_read, function<void()> cb_write) = 0;
 #endif
 	
@@ -51,5 +51,6 @@ public:
 	virtual void step() = 0;
 	
 	//Deleting a non-global runloop is fine, but leave the global one alone.
+	//Don't delete a non-empty runloop, the contents will use-after-free.
 	virtual ~runloop() {}
 };

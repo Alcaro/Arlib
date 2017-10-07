@@ -8,7 +8,7 @@
 class HTTP : nocopy {
 public:
 	struct req {
-		//Every field except 'url' is safe to leave as default.
+		//Every field except 'url' is optional.
 		string url;
 		
 		string method;
@@ -21,7 +21,7 @@ public:
 		array<string> headers; // TODO: multimap
 		array<byte> postdata;
 		
-		uintptr_t userdata; // Not used by the HTTP object.
+		uintptr_t userdata; // Not used by the HTTP object. It's returned unchanged in the rsp object.
 		
 		req() {}
 		req(string url) : url(url) {}
@@ -30,7 +30,7 @@ public:
 	struct rsp {
 		req q;
 		
-		bool finished; // Always true for anything returned by the HTTP object, 
+		bool finished; // Used internally. Always true in return value from recv().
 		bool success;
 		
 		enum {
@@ -77,8 +77,8 @@ public:
 	
 	//Multiple requests may be sent to the same object. This will make them use HTTP Keep-Alive.
 	//The requests must be to the same protocol-domain-port tuple.
-	//Always succeeds, failures are reported in recv(). Failures may be reported in arbitrary order.
-	//They will be returned in an arbitrary order. Use the userdata to keep them apart.
+	//Always succeeds, failures are reported in recv().
+	//Return values will be in an arbitrary order. If there's more than one, use the userdata to keep them apart.
 	void send(req q)
 	{
 		rsp& r = requests.append();

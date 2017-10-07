@@ -166,7 +166,7 @@ ifneq ($(SELFTEST),)
     CONF_CFLAGS += -DARLIB_TEST -Dmain=not_quite_main
     CFLAGS_ARLIB += -UARLIB_TEST -DARLIB_TESTRUNNER
   else
-    DOMAINS :=
+    # with SOURCES blanked, the real main isn't compiled
     SOURCES :=
     CFLAGS_ARLIB += -DARLIB_TEST -DARLIB_TESTRUNNER -DARLIB_TEST_ARLIB
   endif

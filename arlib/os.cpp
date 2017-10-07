@@ -181,7 +181,7 @@ void debug_or_abort()
 
 
 #ifdef _WIN32
-uint64_t perfcounter()
+uint64_t time_us_ne()
 {
 	////this one has an accuracy of 10ms by default
 	//ULARGE_INTEGER time;
@@ -198,10 +198,60 @@ uint64_t perfcounter()
 #else
 #include <time.h>
 
-uint64_t perfcounter()
+uint64_t time_us()
 {
 	struct timespec tp;
-	clock_gettime(CLOCK_MONOTONIC, &tp);
+	clock_gettime(CLOCK_REALTIME, &tp);
 	return tp.tv_sec*1000000 + tp.tv_nsec/1000;
 }
+uint64_t time_ms()
+{
+	struct timespec tp;
+	clock_gettime(CLOCK_REALTIME, &tp);
+	return tp.tv_sec*1000 + tp.tv_nsec/1000000;
+}
+
+uint64_t time_us_ne()
+{
+	struct timespec tp;
+	clock_gettime(CLOCK_MONOTONIC_RAW, &tp);
+	return tp.tv_sec*1000000 + tp.tv_nsec/1000;
+}
+uint64_t time_ms_ne()
+{
+	struct timespec tp;
+	clock_gettime(CLOCK_MONOTONIC_RAW, &tp);
+	return tp.tv_sec*1000 + tp.tv_nsec/1000000;
+}
 #endif
+
+#include "test.h"
+test("time")
+{
+	uint64_t time_u_ft = (uint64_t)time(NULL)*1000000;
+	uint64_t time_u_fm = time_ms()*1000;
+	uint64_t time_u_fu = time_us();
+	assert_range(time_u_fm, time_u_ft-1100000, time_u_ft+1100000);
+	assert_range(time_u_fu, time_u_fm-1100,    time_u_fm+1500);
+	
+	uint64_t time_une_fm = time_ms_ne()*1000;
+	uint64_t time_une_fu = time_us_ne();
+	assert_range(time_une_fu, time_une_fm-1100,    time_une_fm+1500);
+	
+	usleep(100000);
+	
+	uint64_t time2_u_ft = (uint64_t)time(NULL)*1000000;
+	uint64_t time2_u_fm = time_ms()*1000;
+	uint64_t time2_u_fu = time_us();
+	assert_range(time2_u_fm, time2_u_ft-1100000, time2_u_ft+1100000);
+	assert_range(time2_u_fu, time2_u_fm-1100,    time2_u_fm+1500);
+	
+	uint64_t time2_une_fm = time_ms_ne()*1000;
+	uint64_t time2_une_fu = time_us_ne();
+	assert_range(time2_une_fu, time2_une_fm-1100,    time2_une_fm+1500);
+	
+	assert_range(time2_u_fm-time_u_fm, 90000, 110000);
+	assert_range(time2_u_fu-time_u_fu, 90000, 110000);
+	assert_range(time2_une_fm-time_une_fm, 90000, 110000);
+	assert_range(time2_une_fu-time_une_fu, 90000, 110000);
+}

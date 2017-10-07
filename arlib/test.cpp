@@ -8,9 +8,9 @@
 #include "os.h"
 
 #ifdef __linux__
-#define WITHVALGRIND
+#define HAVE_VALGRIND
 #endif
-#ifdef WITHVALGRIND
+#ifdef HAVE_VALGRIND
 #include <valgrind/memcheck.h>
 #endif
 
@@ -34,7 +34,8 @@ _testdecl::_testdecl(void(*func)(), const char * loc, const char * name)
 }
 
 static bool all_tests;
-int _test_result;
+int _test_result; // 0 - pass or still running; 1 - fail; 2 - skipped
+static string delayskip_why; // if a test exits as pass and this is nonblank, print this and treat as skip
 
 static array<int> callstack;
 void _teststack_push(int line) { callstack.append(line); }
@@ -65,7 +66,7 @@ void _testfail(cstring why, int line)
 	_testfail(why+stack(line));
 }
 
-void _testeqfail(cstring name, int line, cstring expected, cstring actual)
+void _testcmpfail(cstring name, int line, cstring expected, cstring actual)
 {
 	if (expected.contains("\n") || actual.contains("\n") || name.length()+expected.length()+actual.length()>240)
 	{
@@ -84,6 +85,11 @@ void _test_skip(cstring why)
 		if (!_test_result) puts("skipped: "+why);
 		_test_result = 2;
 	}
+}
+
+void _test_skip_force_delay(cstring why)
+{
+	delayskip_why = why;
 }
 
 #undef main // the real main is #define'd to something stupid on test runs
@@ -117,14 +123,23 @@ int main(int argc, char* argv[])
 			testlist* next = test->next;
 			if (true)
 			{
-				if (test->name) printf("Testing %s (%s)...", test->name, test->loc);
-				else printf("Testing %s...", test->loc);
+				if (test->name) printf("Testing %s (%s)... ", test->name, test->loc);
+				else printf("Testing %s... ", test->loc);
 				fflush(stdout);
 				_test_result = 0;
 				callstack.reset();
+				delayskip_why = "";
 				test->func();
+				if (!_test_result)
+				{
+					if (delayskip_why)
+					{
+						puts("skipped: "+delayskip_why);
+						_test_result = 2;
+					}
+					else puts("pass");
+				}
 				count[_test_result]++;
-				if (!_test_result) puts(" pass");
 			}
 			else
 			{
@@ -138,12 +153,12 @@ int main(int argc, char* argv[])
 		if (count[2]) printf(", skipped %i", count[2]);
 		puts("");
 		
-#ifdef WITHVALGRIND
+#ifdef HAVE_VALGRIND
 		if (all_tests_twice)
 		{
 			if (pass==0)
 			{
-				//discard everything leaked in first pass
+				//discard everything leaked in first pass, it's probably gtk+ setup and whatever
 				VALGRIND_DISABLE_ERROR_REPORTING;
 				VALGRIND_DO_LEAK_CHECK;
 				VALGRIND_ENABLE_ERROR_REPORTING;

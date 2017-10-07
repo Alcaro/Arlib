@@ -11,9 +11,6 @@
 
 //TODO: fiddle with https://github.com/ckennelly/hole-punch
 
-//TODO: http, websocket and async socket should have pointer to fd monitor, which they auto update
-//maybe all sockets should, probably easier. no point saving memory, sockets have fds which are expensive
-
 #define socket socket_t
 class socket : nocopy {
 protected:
@@ -30,7 +27,7 @@ public:
 	//Returns NULL on connection failure.
 	static socket* create(cstring domain, int port);
 	//Always succeeds. If the server can't be contacted (including DNS failure), returns failure on first write or read.
-	//WARNING: DNS lookup is currently synchronous.
+	//WARNING: DNS lookup is currently not implemented.
 	static socket* create_async(cstring domain, int port);
 	//Always succeeds. If the server can't be contacted, may return e_broken at some point, or may just discard everything.
 	static socket* create_udp(cstring domain, int port);
@@ -90,8 +87,9 @@ public:
 	//The socket will remove its callbacks when destroyed.
 	//It is safe to call this multiple times; however, 'loop' must be same for each call.
 	//If there's still data available for reading on the socket, the callbacks will be called again.
-	//If both read and write are possible and callbacks are set, read is called; it's implementation defined whether write is too.
+	//If both read and write are possible and both callbacks are set, read is called; it's implementation defined whether write is too.
 	//False positives are possible. Use nonblocking operations.
+	//If the socket is closed, it's considered both readable and writable.
 	virtual void callback(runloop* loop, function<void(socket*)> cb_read, function<void(socket*)> cb_write = NULL) = 0;
 	
 	virtual ~socket() {}
@@ -159,6 +157,9 @@ public:
 	//The socket must be a normal TCP socket; UDP and nested SSL is not supported.
 	//socket::create_async counts as normal. However, this may return success immediately, even if the server certificate is bad.
 	// In this case, recv() will never succeed, and send() will never send anything to the server (but may buffer data internally).
+	
+	//TODO: figure out how this interacts with async sockets, they don't have a 'hi are you async' function
+	//do I remove everything synchronous? sync is easier for tiny apps, but I do most of those in Python anyways
 	static socketssl* create(socket* parent, cstring domain, bool permissive=false);
 	
 	//set_cert or set_cert_cb must be called before read or write.

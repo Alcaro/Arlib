@@ -5,9 +5,6 @@
 //- fetch howsmyssl, ensure the only failure is the session cache
 
 #ifdef ARLIB_TEST
-//#undef test_skip
-//#define test_skip(x)
-
 //not in socket.h because this shouldn't really be used for anything, blocking is evil
 static array<byte> recvall(socket* sock, unsigned int len)
 {
@@ -41,7 +38,7 @@ static void clienttest(socket* rs)
 	const char http_get[] =
 		"GET / HTTP/1.1\r\n"
 		"Host: example.com\r\n" // wrong host, but we don't care, all we care about is server returning a HTTP response
-		"Connection: close\r\n" // 400 Bad Request is the easiest to summon, so let's do that
+		"Connection: close\r\n"
 		"\r\n";
 	assert_eq(s->send(http_get), (int)strlen(http_get));
 	
@@ -50,7 +47,7 @@ static void clienttest(socket* rs)
 	assert(!memcmp(ret.ptr(), "HTTP", 4));
 }
 
-test("plaintext client") { test_skip("too slow"); clienttest(socket::create("google.com", 80)); }
+test("plaintext TCP client") { test_skip("too slow"); clienttest(socket::create("google.com", 80)); }
 test("SSL client") { test_skip("too slow"); clienttest(socketssl::create("google.com", 443)); }
 test("SSL SNI") { test_skip("too slow"); clienttest(socketssl::create("git.io", 443)); }
 test("SSL permissiveness (bad root)")
@@ -107,7 +104,7 @@ test("SSL serialization")
 }
 #endif
 
-void listentest(const char * localhost, int port)
+static void listentest(const char * localhost, int port)
 {
 #ifdef __linux__
 	test_skip("spurious failures due to TIME_WAIT (add SO_REUSEADDR?)");
@@ -145,4 +142,54 @@ void listentest(const char * localhost, int port)
 test("listen on localhost") { listentest("localhost", 7777); }
 test("listen on 127.0.0.1") { listentest("127.0.0.1", 7778); }
 test("listen on ::1")       { listentest("::1", 7779); }
+
+#include "../runloop.h"
+static void test_nonblock(cstring target, int port, bool ssl)
+{
+	test_skip("too slow");
+	
+	autoptr<runloop> loop = runloop_blocktest_create();
+	
+	//autoptr<socket> sock = socket::create(target, port);
+	
+	autoptr<socket> sock = socket::create_async(target, port);
+	assert(sock);
+	
+	//ugly, but the alternative is nesting lambdas forever or busywait. I need a way to break it anyways
+	function<void(socket*)> break_runloop = bind_lambda([&](socket*) { loop->exit(); });
+	
+	const char * http_get =
+		"GET / HTTP/1.1\r\n"
+		"Host: example.com\r\n"
+		"Connection: close\r\n"
+		"\r\n";
+	
+	sock->callback(loop, NULL, break_runloop);
+	
+	while (*http_get)
+	{
+		testcall(loop->enter());
+		int bytes = sock->sendp(arrayview<byte>((uint8_t*)http_get, strlen(http_get)), false);
+		assert(bytes >= 0);
+		http_get += bytes;
+	}
+	
+	sock->callback(loop, break_runloop, NULL);
+	
+	uint8_t buf[4];
+	size_t n_buf = 0;
+	while (n_buf < 4)
+	{
+		testcall(loop->enter());
+		int bytes = sock->recv(arrayvieww<byte>(buf).skip(n_buf));
+		assert(bytes >= 0);
+		n_buf += bytes;
+	}
+	
+	assert_eq(string(arrayview<byte>(buf)), "HTTP");
+}
+
+test("nonblocking TCP") { test_nonblock("192.41.192.145", 80, false); } // www.nic.ad.jp
+//test("nonblocking DNS") { test_nonblock("www.nic.ad.jp", 80, false); } // both lookup and ping time for that one are 300ms
+//test("nonblocking SSL") { test_nonblock("www.nic.ad.jp", 443, true); }
 #endif
