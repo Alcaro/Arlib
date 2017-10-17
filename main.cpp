@@ -1,19 +1,4 @@
-#include <stddef.h>
-
-void walrus(int x);
-
-class x {
-public:
-void operator=(nullptr_t)      { walrus(1); }
-void operator=(const char * s) { walrus(6); }
-void operator=(long n)         { walrus(7); }
-};
-
-void y()
-{
-	x z;
-	z = NULL;
-}
+#include "arlib.h"
 
 int main(int argc, char** argv)
 {

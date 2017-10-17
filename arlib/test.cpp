@@ -35,7 +35,6 @@ _testdecl::_testdecl(void(*func)(), const char * loc, const char * name)
 
 static bool all_tests;
 int _test_result; // 0 - pass or still running; 1 - fail; 2 - skipped
-static string delayskip_why; // if a test exits as pass and this is nonblank, print this and treat as skip
 
 static array<int> callstack;
 void _teststack_push(int line) { callstack.append(line); }
@@ -56,9 +55,9 @@ static string stack(int top)
 
 static void _testfail(cstring why)
 {
-	if (!_test_result) puts(why.c_str()); // discard multiple failures from same test, they're probably caused by same thing
+	if (_test_result == 0) puts(why.c_str()); // discard multiple failures from same test, they're probably caused by same thing
+	if (_test_result != 1) debug_or_ignore();
 	_test_result = 1;
-	debug_or_ignore();
 }
 
 void _testfail(cstring why, int line)
@@ -80,16 +79,20 @@ void _testcmpfail(cstring name, int line, cstring expected, cstring actual)
 
 void _test_skip(cstring why)
 {
-	if (!all_tests)
+	if (!all_tests && !_test_result)
 	{
-		if (!_test_result) puts("skipped: "+why);
+		puts("skipped: "+why);
 		_test_result = 2;
 	}
 }
 
-void _test_skip_force_delay(cstring why)
+void _test_skip_force(cstring why)
 {
-	delayskip_why = why;
+	if (!_test_result)
+	{
+		puts("skipped: "+why);
+		_test_result = 2;
+	}
 }
 
 #undef main // the real main is #define'd to something stupid on test runs
@@ -98,6 +101,8 @@ int main(int argc, char* argv[])
 #ifndef ARGUI_NONE
 	window_init(&argc, &argv);
 #endif
+	srand(time(NULL)); // TODO: force this to exist everywhere
+	
 	all_tests = (argc>1);
 	bool all_tests_twice = (argc>2);
 	
@@ -128,18 +133,9 @@ int main(int argc, char* argv[])
 				fflush(stdout);
 				_test_result = 0;
 				callstack.reset();
-				delayskip_why = "";
 				test->func();
-				if (!_test_result)
-				{
-					if (delayskip_why)
-					{
-						puts("skipped: "+delayskip_why);
-						_test_result = 2;
-					}
-					else puts("pass");
-				}
 				count[_test_result]++;
+				if (!_test_result) puts("pass");
 			}
 			else
 			{

@@ -28,30 +28,19 @@ void _teststack_push(int line);
 void _teststack_pop();
 
 void _test_skip(cstring why);
-void _test_skip_force_delay(cstring why);
+void _test_skip_force(cstring why);
 
+//undefined behavior if T is unsigned and T2 is negative
+//I'd prefer making it compare properly, but that requires way too many conditionals.
 template<typename T, typename T2>
 bool _test_eq(const T& v, const T2& v2)
 {
-	return (v == v2);
+	return (v == (T)v2);
 }
-//silence sign-comparison warning if lhs is size_t and rhs is integer constant
-template<typename T>
-bool _test_eq(const T& v, int v2)
-{
-	return (std::is_unsigned<T>::value || v2>=0) && (int)v == v2 && v == (T)v2;
-}
-//likewise, but for huge constants
-template<typename T>
-bool _test_eq(const T& v, long long v2)
-{
-	return (std::is_unsigned<T>::value || v2>=0) && (long long)v == v2 && v == (T)v2;
-}
-
 template<typename T, typename T2>
 bool _test_lt(const T& v, const T2& v2)
 {
-	return (v < v2);
+	return (v < (T)v2);
 }
 
 template<typename T, typename T2>
@@ -60,6 +49,17 @@ void _assert_eq(const T&  actual,   const char * actual_exp,
                 int line)
 {
 	if (!_test_eq(actual, expected))
+	{
+		_testcmpfail((string)actual_exp+" == "+expected_exp, line, tostring(expected), tostring(actual));
+	}
+}
+
+template<typename T, typename T2>
+void _assert_neq(const T&  actual,   const char * actual_exp,
+                const T2& expected, const char * expected_exp,
+                int line)
+{
+	if (!!_test_eq(actual, expected)) // a!=b implemented as !(a==b)
 	{
 		_testcmpfail((string)actual_exp+" == "+expected_exp, line, tostring(expected), tostring(actual));
 	}
@@ -84,6 +84,28 @@ void _assert_lte(const T&  actual,   const char * actual_exp,
 	if (!!_test_lt(expected, actual)) // a<=b implemented as !(b<a)
 	{
 		_testcmpfail((string)actual_exp+" <= "+expected_exp, line, tostring(expected), tostring(actual));
+	}
+}
+
+template<typename T, typename T2>
+void _assert_gt(const T&  actual,   const char * actual_exp,
+                 const T2& expected, const char * expected_exp,
+                 int line)
+{
+	if (!_test_lt(expected, actual)) // a>b implemented as b<a
+	{
+		_testcmpfail((string)actual_exp+" >= "+expected_exp, line, tostring(expected), tostring(actual));
+	}
+}
+
+template<typename T, typename T2>
+void _assert_gte(const T&  actual,   const char * actual_exp,
+                 const T2& expected, const char * expected_exp,
+                 int line)
+{
+	if (!!_test_lt(actual, expected)) // a>=b implemented as !(a<b)
+	{
+		_testcmpfail((string)actual_exp+" >= "+expected_exp, line, tostring(expected), tostring(actual));
 	}
 }
 
@@ -113,6 +135,11 @@ void _assert_range(const T&  actual, const char * actual_exp,
 		if (_test_result) return ret; \
 	} while(0)
 #define assert_eq(actual,expected) assert_eq_ret(actual,expected,)
+#define assert_neq_ret(actual,expected,ret) do { \
+		_assert_neq(actual, #actual, expected, #expected, __LINE__); \
+		if (_test_result) return ret; \
+	} while(0)
+#define assert_neq(actual,expected) assert_neq_ret(actual,expected,)
 #define assert_lt_ret(actual,expected,ret) do { \
 		_assert_lt(actual, #actual, expected, #expected, __LINE__); \
 		if (_test_result) return ret; \
@@ -123,6 +150,16 @@ void _assert_range(const T&  actual, const char * actual_exp,
 		if (_test_result) return ret; \
 	} while(0)
 #define assert_lte(actual,expected) assert_lte_ret(actual,expected,)
+#define assert_gt_ret(actual,expected,ret) do { \
+		_assert_gt(actual, #actual, expected, #expected, __LINE__); \
+		if (_test_result) return ret; \
+	} while(0)
+#define assert_gt(actual,expected) assert_gt_ret(actual,expected,)
+#define assert_gte_ret(actual,expected,ret) do { \
+		_assert_gte(actual, #actual, expected, #expected, __LINE__); \
+		if (_test_result) return ret; \
+	} while(0)
+#define assert_gte(actual,expected) assert_gte_ret(actual,expected,)
 #define assert_range_ret(actual,min,max,ret) do { \
 		_assert_range(actual, #actual, min, #min, max, #max, __LINE__); \
 		if (_test_result) return ret; \
@@ -132,27 +169,23 @@ void _assert_range(const T&  actual, const char * actual_exp,
 #define assert_fail_nostack(msg) do { _testfail((string)"\n"+msg, -1); return; } while(0)
 #define testcall(x) do { _teststack_push(__LINE__); x; _teststack_pop(); if (_test_result) return; } while(0)
 #define test_skip(x) do { _test_skip(x); if (_test_result) return; } while(0)
-#define test_skip_force_delay(x) do { _test_skip_force_delay(x); } while(0)
-
-class runloop;
-//This creates a specialized runloop that calls assert() if anything takes more than max_ms milliseconds.
-//Note that running the program under Valgrind causes heavy latency penalties, up to 25ms. Don't set limit below 30ms.
-runloop* runloop_blocktest_create(int max_ms = 1);
+#define test_skip_force(x) do { _test_skip_force(x); return; } while(0)
 
 #else
 
 #define test(...) static void MAYBE_UNUSED JOIN(_testfunc_, __LINE__)()
+#define assert_ret(x, ret) ((void)(x))
 #define assert(x) ((void)(x))
 #define assert_msg(x, msg) ((void)(x),(void)(msg))
 #define assert_eq(x,y) ((void)(x==y))
+#define assert_neq(x,y) ((void)(x==y))
 #define assert_lt(x,y) ((void)(x<y))
 #define assert_lte(x,y) ((void)(x<y))
+#define assert_gt(x,y) ((void)(x<y))
+#define assert_gte(x,y) ((void)(x<y))
 #define assert_range(x,y,z) ((void)(x<y))
 #define testcall(x) x
 #define test_skip(x) return
 #define test_skip_force(x) return
-
-class runloop;
-static inline runloop* runloop_blocktest_create() { return NULL; }
 
 #endif

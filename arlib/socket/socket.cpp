@@ -1,5 +1,7 @@
 #include "socket.h"
-#include <stdio.h>
+#include "../bytepipe.h"
+#include "../dns.h"
+#include"../stringconv.h"
 
 #undef socket
 #ifdef _WIN32
@@ -27,7 +29,6 @@
 static int mksocket(int domain, int type, int protocol) { return socket(domain, type|SOCK_CLOEXEC, protocol); }
 #define socket socket_t
 
-#include"../stringconv.h"
 namespace {
 
 static void initialize()
@@ -52,10 +53,22 @@ static int setsockopt(int socket, int level, int option_name, int option_value)
 	return setsockopt(socket, level, option_name, &option_value, sizeof(option_value));
 }
 
-static int connect(cstring domain, int port, bool udp, bool async)
+//MSG_DONTWAIT is usually better, but accept() and connect() don't take that argument
+static void setblock(int fd, bool newblock)
 {
-	initialize();
-	
+#ifdef _WIN32
+	u_long nonblock = !newblock;
+	ioctlsocket(fd, FIONBIO, &nonblock);
+#else
+	int flags = fcntl(fd, F_GETFL, 0);
+	flags &= ~O_NONBLOCK;
+	if (!newblock) flags |= O_NONBLOCK;
+	fcntl(fd, F_SETFL, flags);
+#endif
+}
+
+static addrinfo * parse_hostname(cstring domain, int port, bool udp)
+{
 	char portstr[16];
 	sprintf(portstr, "%i", port);
 	
@@ -63,14 +76,24 @@ static int connect(cstring domain, int port, bool udp, bool async)
 	memset(&hints, 0, sizeof(addrinfo));
 	hints.ai_family = AF_UNSPEC;
 	hints.ai_socktype = udp ? SOCK_DGRAM : SOCK_STREAM;
-	hints.ai_flags = (async ? AI_NUMERICHOST : 0);
+	hints.ai_flags = AI_NUMERICHOST;
 	
 	addrinfo * addr = NULL;
 	getaddrinfo(domain.c_str(), portstr, &hints, &addr);
+	
+	return addr;
+}
+
+static int connect(cstring domain, int port)
+{
+	initialize();
+	
+	addrinfo * addr = parse_hostname(domain, port, false);
 	if (!addr) return -1;
 	
 	//TODO: this probably fails on windows...
-	int fd = mksocket(addr->ai_family, addr->ai_socktype | SOCK_CLOEXEC | (async ? SOCK_NONBLOCK : 0), addr->ai_protocol);
+	int fd = mksocket(addr->ai_family, addr->ai_socktype | SOCK_CLOEXEC | SOCK_NONBLOCK, addr->ai_protocol);
+	if (fd < 0) return -1;
 #ifndef _WIN32
 	//because 30 second pauses are unequivocally detestable
 	timeval timeout;
@@ -107,57 +130,28 @@ static int connect(cstring domain, int port, bool udp, bool async)
 	return fd;
 }
 
-/*
-static int connect_async(cstring domain, int port)
-{
-	initialize();
-	
-	bool ipv6;
-	struct sockaddr_in addr;
-	struct sockaddr_in6 addr6;
-	
-	if (inet_pton(AF_INET6, domain.c_str(), &addr.sin6_addr) == 1) ipv6 = true;
-	else if (inet_pton(AF_INET, domain.c_str(), &addr.sin_addr) == 1) ipv6 = false;
-	else return -1;
-	
-puts(domain+":ip6="+tostring(ipv6)+":"+tostringhex(arrayview<byte>((byte*)&addr, sizeof(struct sockaddr_in))));
-	
-	int fd = mksocket(ipv6 ? AF_INET6 : AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
-	if (fd < 0) return -1;
-	
-	int ok = connect(fd, (sockaddr*)&addr, ipv6 ? sizeof(struct sockaddr_in6) : sizeof(struct sockaddr_in));
-	if (ok < 0 && errno != EINPROGRESS) { close(fd); return -1; }
-	
-	sock_keepalive(fd);
-	return fd;
-}
-*/
-
 } // close namespace
 
-//MSG_DONTWAIT is usually better, but accept() and connect() don't take that argument
 void socket::setblock(int fd, bool newblock)
 {
-#ifdef _WIN32
-	u_long nonblock = !newblock;
-	ioctlsocket(fd, FIONBIO, &nonblock);
-#else
-	int flags = fcntl(fd, F_GETFL, 0);
-	flags &= ~O_NONBLOCK;
-	if (!newblock) flags |= O_NONBLOCK;
-	fcntl(fd, F_SETFL, flags);
-#endif
+	::setblock(fd, newblock);
 }
 
 namespace {
 
-class socket_impl : public socket {
+class socket_raw : public socket {
 public:
-	socket_impl(int fd) : socket(fd), loop(NULL) {}
+	socket_raw(int fd) : socket(fd) {}
 	
-	runloop* loop;
+	runloop* loop = NULL;
 	function<void(socket*)> cb_read;
 	function<void(socket*)> cb_write;
+	
+	static socket* create(int fd)
+	{
+		if (fd<0) return NULL;
+		return new socket_raw(fd);
+	}
 	
 	/*private*/ int fixret(int ret)
 	{
@@ -172,20 +166,14 @@ public:
 		return e_broken;
 	}
 	
-	int recv(arrayvieww<byte> data, bool block = false)
+	int recv(arrayvieww<byte> data)
 	{
-#ifdef _WIN32 // for Linux, MSG_DONTWAIT is enough
-		socket::setblock(this->fd, block);
-#endif
-		return fixret(::recv(this->fd, (char*)data.ptr(), data.size(), MSG_NOSIGNAL | (block ? 0 : MSG_DONTWAIT)));
+		return fixret(::recv(this->fd, (char*)data.ptr(), data.size(), MSG_NOSIGNAL));
 	}
 	
-	int sendp(arrayview<byte> data, bool block = true)
+	int send(arrayview<byte> data)
 	{
-#ifdef _WIN32
-		socket::setblock(this->fd, block);
-#endif
-		return fixret(::send(fd, (char*)data.ptr(), data.size(), MSG_NOSIGNAL | (block ? 0 : MSG_DONTWAIT)));
+		return fixret(::send(fd, (char*)data.ptr(), data.size(), MSG_NOSIGNAL));
 	}
 	
 	/*private*/ void on_readable(uintptr_t) { cb_read(this); }
@@ -195,46 +183,225 @@ public:
 		this->loop = loop;
 		this->cb_read = cb_read;
 		this->cb_write = cb_write;
-		loop->set_fd(fd, cb_read ? bind_this(&socket_impl::on_readable) : NULL, cb_write ? bind_this(&socket_impl::on_writable) : NULL);
+		loop->set_fd(fd,
+		             cb_read  ? bind_this(&socket_raw::on_readable) : NULL,
+		             cb_write ? bind_this(&socket_raw::on_writable) : NULL);
 	}
 	
-	~socket_impl()
+	~socket_raw()
 	{
 		if (loop) loop->set_fd(fd, NULL, NULL);
 		if (fd>=0) close(fd);
 	}
 };
 
-static socket* socket_wrap(int fd)
-{
-	if (fd<0) return NULL;
-	return new socket_impl(fd);
-}
+class socket_raw_udp : public socket {
+public:
+	socket_raw_udp(int fd, sockaddr * addr, socklen_t addrlen) : socket(fd), peeraddr((uint8_t*)addr, addrlen)
+	{
+		peeraddr_cmp.resize(addrlen);
+	}
+	
+	runloop* loop = NULL;
+	function<void(socket*)> cb_read;
+	function<void(socket*)> cb_write;
+	
+	array<byte> peeraddr;
+	array<byte> peeraddr_cmp;
+	
+	/*private*/ int fixret(int ret)
+	{
+		if (ret > 0) return ret;
+		if (ret == 0) return e_closed;
+#ifdef __unix__
+		if (ret < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) return 0;
+#endif
+#ifdef _WIN32
+		if (ret < 0 && WSAGetLastError() == WSAEWOULDBLOCK) return 0;
+#endif
+		return e_broken;
+	}
+	
+	int recv(arrayvieww<byte> data)
+	{
+		socklen_t len = peeraddr_cmp.size();
+		int ret = fixret(::recvfrom(fd, (char*)data.ptr(), data.size(), MSG_NOSIGNAL, (sockaddr*)peeraddr_cmp.ptr(), &len));
+		//discard data from unexpected sources. source IPs can be forged under UDP, but probably helps a little
+		//TODO: may be better to implement recvfrom as an actual function on those sockets
+		if (len != peeraddr.size() || peeraddr != peeraddr_cmp) return 0;
+		return ret;
+	}
+	
+	int send(arrayview<byte> data)
+	{
+		return fixret(::sendto(fd, (char*)data.ptr(), data.size(), MSG_NOSIGNAL, (sockaddr*)peeraddr.ptr(), peeraddr.size()));
+	}
+	
+	/*private*/ void on_readable(uintptr_t) { cb_read(this); }
+	/*private*/ void on_writable(uintptr_t) { cb_write(this); }
+	void callback(runloop* loop, function<void(socket*)> cb_read, function<void(socket*)> cb_write)
+	{
+		this->loop = loop;
+		this->cb_read = cb_read;
+		this->cb_write = cb_write;
+		loop->set_fd(fd,
+		             cb_read  ? bind_this(&socket_raw_udp::on_readable) : NULL,
+		             cb_write ? bind_this(&socket_raw_udp::on_writable) : NULL);
+	}
+	
+	~socket_raw_udp()
+	{
+		if (loop) loop->set_fd(fd, NULL, NULL);
+		if (fd>=0) close(fd);
+	}
+};
 
-}
+class socketwrap : public socket {
+public:
+	socket* i_connect(cstring domain, cstring ip, int port)
+	{
+		socket* ret = socket_raw::create(connect(ip, port));
+		if (ret && this->ssl) ret = socket::wrap_ssl(ret, domain, loop);
+		return ret;
+	}
+	
+	socketwrap(cstring domain, int port, runloop* loop, bool ssl) : socket(-1000)
+	{
+		this->loop = loop;
+		this->ssl = ssl;
+		child = i_connect(domain, domain, port);
+		if (!child)
+		{
+			this->port = port;
+			dns = new DNS(loop);
+			dns->resolve(domain, bind_this(&socketwrap::dns_cb));
+		}
+		set_loop();
+	}
+	
+	autoptr<DNS> dns;
+	uint16_t port;
+	bool ssl;
+	
+	void dns_cb(string domain, string ip)
+	{
+		child = i_connect(domain, ip, port);
+		dns = NULL;
+		set_loop();
+	}
+	
+	autoptr<socket> child;
+	
+	bytepipe tosend;
+	runloop* loop = NULL;
+	uintptr_t idle_id = 0;
+	function<void(socket*)> cb_read;
+	function<void(socket*)> cb_write; // call once when connection is done, or forever if connection is broken
+	
+	/*private*/ void cancel()
+	{
+		child = NULL;
+	}
+	
+	/*private*/ void set_loop()
+	{
+		if (!child)
+		{
+			if (dns) return;
+			if (!idle_id) idle_id = loop->set_idle(bind_this(&socketwrap::on_idle));
+			return;
+		}
+		child->callback(loop,
+		                cb_read            ? bind_this(&socketwrap::on_readable) : NULL,
+		                tosend.remaining() ? bind_this(&socketwrap::on_writable) : NULL);
+		if (cb_write && !idle_id) idle_id = loop->set_idle(bind_this(&socketwrap::on_idle));
+	}
+	/*private*/ void trysend()
+	{
+		if (!child) return set_loop();
+		
+		arrayview<byte> bytes = tosend.pull_buf();
+		int nbytes = child->send(bytes);
+		if (nbytes < 0) return cancel();
+		tosend.pull_done(nbytes);
+		
+		set_loop();
+	}
+	
+	int recv(arrayvieww<byte> data)
+	{
+		if (!child)
+		{
+			if (dns) return 0;
+			return e_broken;
+		}
+		return child->recv(data);
+	}
+	
+	int send(arrayview<byte> data)
+	{
+		if (!data) return 0;
+		if (!child && !dns) return e_broken;
+		tosend.push(data);
+		trysend();
+		return data.size();
+	}
+	
+	/*private*/ void on_readable(socket*) { cb_read(this); }
+	/*private*/ void on_writable(socket*) { trysend(); }
+	/*private*/ bool on_idle()
+	{
+		if (!child && cb_read) cb_read(this);
+		else if (cb_write) cb_write(this);
+		else { idle_id = 0; return false; }
+		return true;
+	}
+	void callback(runloop* loop, function<void(socket*)> cb_read, function<void(socket*)> cb_write)
+	{
+		this->loop = loop;
+		this->cb_read = cb_read;
+		this->cb_write = cb_write;
+		set_loop();
+	}
+	~socketwrap()
+	{
+		loop->remove(idle_id);
+	}
+};
+
+} // close namespace
 
 socket* socket::create_from_fd(int fd)
 {
-	return socket_wrap(fd);
+	return socket_raw::create(fd);
 }
 
-socket* socket::create(cstring domain, int port)
+socket* socket::create(cstring domain, int port, runloop* loop)
 {
-	return socket_wrap(connect(domain, port, false, false));
+	return new socketwrap(domain, port, loop, false);
 }
 
-socket* socket::create_async(cstring domain, int port)
+socket* socket::create_ssl(cstring domain, int port, runloop* loop)
 {
-	return socket_wrap(connect(domain, port, false, true));
+	return new socketwrap(domain, port, loop, true);
 }
 
-socket* socket::create_udp(cstring domain, int port)
+socket* socket::create_udp(cstring domain, int port, runloop* loop)
 {
-	return socket_wrap(connect(domain, port, true, false));
+	initialize();
+	
+	addrinfo * addr = parse_hostname(domain, port, true);
+	if (!addr) return NULL;
+	
+	int fd = mksocket(addr->ai_family, addr->ai_socktype | SOCK_CLOEXEC | SOCK_NONBLOCK, addr->ai_protocol);
+	socket* ret = new socket_raw_udp(fd, addr->ai_addr, addr->ai_addrlen);
+	freeaddrinfo(addr);
+	//TODO: add the wrapper
+	
+	return ret;
 }
 
-//static socket* socket::create_udp(const char * domain, int port);
-
+#if 0
 #ifdef __unix__
 #include <poll.h>
 #define RD_EV (POLLIN |POLLRDHUP|POLLHUP|POLLERR)
@@ -335,3 +502,4 @@ socket* socketlisten::accept()
 }
 
 socketlisten::~socketlisten() { if (loop) loop->set_fd(fd, NULL, NULL); close(this->fd); }
+#endif

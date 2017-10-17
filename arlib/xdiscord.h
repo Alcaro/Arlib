@@ -15,6 +15,9 @@ class Discord {
 	struct i_guild;
 	
 public:
+	Discord(runloop* loop) : loop(loop), m_ws(loop), m_http(loop) {}
+	~Discord() { loop->remove(keepalive_id); }
+	
 	struct msg {
 		static string raw_escape(cstring in)
 		{
@@ -60,14 +63,14 @@ public:
 	
 	void connect_bot(cstring token);
 	
-	//Discord is a complex protocol. On activity, or after a 1000 millisecond timeout, call process().
-	void monitor(socket::monitor& mon, void* key)
-	{
-		m_ws.monitor(mon, key); // pun not intended
-		m_http.monitor(mon, key);
-	}
-	//Only nonblocking is available.
-	void process() { process(false); }
+	////Discord is a complex protocol. On activity, or after a 1000 millisecond timeout, call process().
+	//void monitor(socket::monitor& mon, void* key)
+	//{
+	//	m_ws.monitor(mon, key); // pun not intended
+	//	m_http.monitor(mon, key);
+	//}
+	////Only nonblocking is available.
+	//void process() { process(false); }
 	
 	class Role;
 	class User;
@@ -301,23 +304,33 @@ public:
 private:
 	void process(bool block);
 	
+	runloop* loop;
 	bool connecting = false;
 	WebSocket m_ws; // be careful about using these directly, dangerous!
 	HTTP m_http;
-	map<uintptr_t, function<void(HTTP::rsp)>> m_http_callbacks; // TODO: kinda annoying, do I make it all synchronous?
-	size_t m_http_index = 1;
+	//map<uintptr_t, function<void(HTTP::rsp)>> m_http_callbacks; // TODO: kinda annoying, do I make it all synchronous?
+	//size_t m_http_index = 1;
 	
 	void connect();
 	void connect_cb(HTTP::rsp r);
+	
+	void ws_str(string text);
 	
 	bool bot;
 	string token;
 	
 	time_t ratelimit = 0;
 	
-	time_t keepalive_next = 0;
-	int keepalive_ms;
+	int keepalive_ms = 30000;
 	bool keepalive_sent;
+	
+	uintptr_t keepalive_id = 0;
+	bool keepalive_cb();
+	void update_keepalive_cb()
+	{
+		loop->remove(keepalive_id);
+		loop->set_timer_rel(keepalive_ms, bind_this(&Discord::keepalive_cb));
+	}
 	
 	int guilds_to_join;
 	
@@ -383,7 +396,7 @@ private:
 		http(r, callback);
 	}
 	
-	void http_process();
+	//void http_process();
 	
 	void send_ws(JSON& json)
 	{

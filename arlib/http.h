@@ -7,6 +7,8 @@
 
 class HTTP : nocopy {
 public:
+	HTTP(runloop* loop) : loop(loop) {}
+	
 	struct req {
 		//Every field except 'url' is optional.
 		string url;
@@ -30,12 +32,10 @@ public:
 	struct rsp {
 		req q;
 		
-		bool finished; // Used internally. Always true in return value from recv().
 		bool success;
 		
 		enum {
-			e_not_sent      = -1, // too few send() calls
-			e_bad_url       = -2, // couldn't parse URL
+			e_bad_url       = -1, // couldn't parse URL
 			e_different_url = -2, // can't use Keep-Alive between these, create a new http object
 			e_connect       = -3, // couldn't open TCP/SSL stream
 			e_broken        = -4, // server unexpectedly closed connection, or timeout
@@ -48,6 +48,8 @@ public:
 		
 		array<string> headers; // TODO: switch to multimap once it exists
 		array<byte> body;
+		
+		function<void(rsp)> callback; // Used internally. Ignore it.
 		
 		
 		operator arrayvieww<byte>()
@@ -72,41 +74,21 @@ public:
 		cstring text() const { return body; }
 	};
 	
-	static string request(string url) { return std::move(request((req)url).body); }
-	static rsp request(const req& q) { HTTP http; http.send(q); return std::move(http.recv()); }
-	
 	//Multiple requests may be sent to the same object. This will make them use HTTP Keep-Alive.
 	//The requests must be to the same protocol-domain-port tuple.
 	//Always succeeds, failures are reported in recv().
 	//Return values will be in an arbitrary order. If there's more than one, use the userdata to keep them apart.
-	void send(req q)
-	{
-		rsp& r = requests.append();
-		r.q = std::move(q);
-		activity(false);
-	}
-	bool ready() { activity(false); return i_ready(); }
-	//void progress(size_t& done, size_t& total); // Both are 0 if unknown, or if empty. Do not use for checking if it's done, use ready().
-	
-	// Waits until a response object is ready to be returned. If no request was made, returns status=e_not_sent, userdata=0.
-	rsp recv();
-	void await(); // Waits until recv() would return immediately.
+	void send(req q, function<void(rsp)> callback);
 	
 	//Discards any unfinished requests, errors, and similar.
 	void reset()
 	{
 		host = location();
 		requests.reset();
-		active_req = 0;
-		active_rsp = 0;
-		tosend.reset();
+		next_send = 0;
 		sock = NULL;
 		state = st_boundary;
 	}
-	
-	//If this key is returned, call .ready(), then .monitor() again.
-	//This object may be returned even if no request is pending. In this case, call .ready() anyways; it will return false.
-	void monitor(socket::monitor& mon, void* key) { if (sock) mon.add(sock, key, true, tosend.remaining()); }
 	
 	
 	struct location {
@@ -117,17 +99,25 @@ public:
 	};
 	static bool parseUrl(cstring url, bool relative, location& out);
 	
+	~HTTP() { if (deleted_p) *deleted_p = true; }
 	
 private:
-	bool i_ready() const;
-	
-	void error_v(size_t id, int err)
+	void resolve(bool* deleted, size_t id, bool success)
 	{
-		requests[id].finished = true;
-		requests[id].success = false;
-		requests[id].status = err;
+		requests[id].success = success;
+		deleted_p = deleted;
+		requests[id].callback(std::move(requests[id]));
+		if (deleted && *deleted) return;
+		else deleted_p = NULL;
+		requests.remove(id);
+		if (next_send > id) next_send--;
 	}
-	bool error_f(size_t id, int err) { error_v(id, err); return false; }
+	void resolve_err_v(bool* deleted, size_t id, int err)
+	{
+		requests[id].status = err;
+		resolve(deleted, id, false);
+	}
+	bool resolve_err_f(bool* deleted, size_t id, int err) { resolve_err_v(deleted, id, err); return false; }
 	
 	void sock_cancel() { sock = NULL; }
 	
@@ -136,16 +126,17 @@ private:
 	void try_compile_req();
 	
 	void create_sock();
-	void activity(bool block);
+	void activity(socket*);
 	
 	
 	location host; // used to verify that the requests aren't sent anywhere they don't belong
 	array<rsp> requests;
-	size_t active_req = 0; // index to requests[] next to be added to tosend, or requests.size() if all done / in tosend
-	size_t active_rsp = 0; // index to requests[] currently being returned; if state is st_boundary, this is the next one to be returned
+	size_t next_send = 0; // index to requests[] next to sock->send(), or requests.size() if all done / in tosend
 	
+	runloop* loop;
 	autoptr<socket> sock;
-	bytepipe tosend;
+	
+	bool* deleted_p = NULL;
 	
 	enum {
 		st_boundary, // between requests; if socket closes, make a new one

@@ -24,16 +24,31 @@ protected:
 	static void setblock(int fd, bool newblock);
 	
 public:
-	//Returns NULL on connection failure.
-	static socket* create(cstring domain, int port);
-	//Always succeeds. If the server can't be contacted (including DNS failure), returns failure on first write or read.
-	//WARNING: DNS lookup is currently not implemented.
-	static socket* create_async(cstring domain, int port);
-	//Always succeeds. If the server can't be contacted, may return e_broken at some point, or may just discard everything.
-	static socket* create_udp(cstring domain, int port);
+	
+	//Always succeeds immediately, doing the real work asynchronously.
+	//If the server doesn't exist or doesn't respond, reports a broken connection.
+	//Once the connection is established, it reports writability to its runloop. However, writes before that will succeed.
+	static socket* create(cstring domain, int port, runloop* loop);
+	static socket* create_ssl(cstring domain, int port, runloop* loop); // TODO: choosable backend, permissiveness, SSL server
+	static socket* create_udp(cstring domain, int port, runloop* loop);
+	
+	//Doesn't return until the connection is established. Not recommended.
+	static socket* create_sync(cstring domain, int port);
+	
+	//The wrapper will buffer write() calls, making them succeed even if the actual socket is full.
+	//The normal creation functions create wrappers already. The runloop must be same as given to the child.
+	static socket* wrap(socket* inner, runloop* loop);
+	//Acts like create(), but no DNS lookups are done, and write() can fail or return partial success.
+	//It is also unsafe to send a 0-byte buffer to such a socket. Wrapped sockets ignore them.
+	static socket* create_raw(cstring ip, int port, runloop* loop);
+	static socket* wrap_ssl(socket* inner, cstring domain, runloop* loop);
+	
+	
+	
+	
 	
 	enum {
-		e_lazy_dev = -1, // Whoever implemented this socket handler was lazy and just returned -1. Treat it as e_broken or an unknown error.
+		e_lazy_dev = -1, // Whoever implemented this socket handler was lazy. Treat it as e_broken or an unknown error.
 		e_closed = -2, // Remote host chose to gracefully close the connection.
 		e_broken = -3, // Connection was forcibly torn down.
 		e_udp_too_big = -4, // Attempted to process an unacceptably large UDP packet.
@@ -42,47 +57,25 @@ public:
 	};
 	
 	//WARNING: Most socket APIs treat read/write of zero bytes as EOF. Not this one! 0 is EWOULDBLOCK; EOF is an error.
-	// This reduces the number of special cases; EOF is usually treated the same way as unknown errors, and EWOULDBLOCK is usually not an error.
-	//The first two functions will process at least one byte, or if block is false, at least zero. send() sends all bytes before returning.
+	// This reduces the number of special cases; EOF is usually treated the same way as unknown errors,
+	// and EWOULDBLOCK is usually not an error.
+	//The first two functions will process at least one byte, or if block is false, at least zero.
+	// send() buffers everything internally, and always uses every byte.
 	//For UDP sockets, partial reads or writes aren't possible; you always get one or zero packets.
-	virtual int recv(arrayvieww<byte> data, bool block = false) = 0;
-	int recv(array<byte>& data, bool block = false)
+	virtual int recv(arrayvieww<byte> data) = 0;
+	int recv(array<byte>& data)
 	{
 		if (data.size()==0)
 		{
 			data.resize(4096);
-			int bytes = recv((arrayvieww<byte>)data, block);
+			int bytes = recv((arrayvieww<byte>)data);
 			if (bytes >= 0) data.resize(bytes);
 			else data.resize(0);
 			return bytes;
 		}
-		else return recv((arrayvieww<byte>)data, block);
+		else return recv((arrayvieww<byte>)data);
 	}
-	virtual int sendp(arrayview<byte> data, bool block = true) = 0;
-	
-	int send(arrayview<byte> bytes)
-	{
-		const byte * data = bytes.ptr();
-		unsigned int len = bytes.size();
-		unsigned int sent = 0;
-		while (sent < len)
-		{
-			int here = this->sendp(arrayview<byte>(data+sent, len-sent));
-			if (here<0) return here;
-			sent += here;
-		}
-		return len;
-	}
-	
-	//Convenience functions for handling textual data.
-	//maybe<string> recvstr(bool block = false)
-	//{
-	//	maybe<array<byte>> ret = this->recv(block);
-	//	if (!ret) return maybe<string>(NULL, ret.error);
-	//	return maybe<string>((string)ret.value);
-	//}
-	int sendp(cstring data, bool block = true) { return this->sendp(data.bytes(), block); }
-	int send(cstring data) { return this->send(data.bytes()); }
+	virtual int send(arrayview<byte> data) = 0;
 	
 	//The socket will remove its callbacks when destroyed.
 	//It is safe to call this multiple times; however, 'loop' must be same for each call.
@@ -103,6 +96,7 @@ public:
 	// everything after this point
 	// all implementations of active(), grep them
 	// the fd member, and associated constructor
+	// all private members
 	
 	//Can be used to keep a socket alive across exec(). Don't use for an SSL socket, use serialize() instead.
 	static socket* create_from_fd(int fd);
@@ -131,7 +125,6 @@ public:
 	static size_t select(arrayview<socket*> socks, int timeout_ms = -1) { bool x; return select(socks, &x, NULL, timeout_ms); }
 };
 
-
 //SSL feature matrix:
 //                      | OpenSSL | SChannel | GnuTLS | BearSSL | TLSe | Comments
 //Basic functionality   | Yes     | ?        | Yes    | Yes     | Yes* | TLSe doesn't support SNI
@@ -144,60 +137,3 @@ public:
 //Server                | No      | No       | No     | No      | No   | Likely possible on everything, I'm just lazy
 //Reputable author      | Yes     | Yes      | Yes    | Yes     | No
 //Binary size           | 4       | 2.5      | 4      | 80      | 169  | In kilobytes, estimated; DLLs not included
-class socketssl : public socket {
-protected:
-	socketssl(int fd) : socket(fd) {}
-public:
-	//If 'permissive' is false and the cert is untrusted (expired, bad root, wrong domain, etc), returns NULL.
-	static socketssl* create(cstring domain, int port, bool permissive=false)
-	{
-		return socketssl::create(socket::create(domain, port), domain, permissive);
-	}
-	//On entry, this takes ownership of the socket. Even if connection fails, the socket may not be used anymore.
-	//The socket must be a normal TCP socket; UDP and nested SSL is not supported.
-	//socket::create_async counts as normal. However, this may return success immediately, even if the server certificate is bad.
-	// In this case, recv() will never succeed, and send() will never send anything to the server (but may buffer data internally).
-	
-	//TODO: figure out how this interacts with async sockets, they don't have a 'hi are you async' function
-	//do I remove everything synchronous? sync is easier for tiny apps, but I do most of those in Python anyways
-	static socketssl* create(socket* parent, cstring domain, bool permissive=false);
-	
-	//set_cert or set_cert_cb must be called before read or write.
-	static socketssl* create_server(socket* parent);
-	//Only usable on server sockets.
-	void set_cert(array<byte> data); // Must be called exactly once.
-	void set_cert_cb(function<void(cstring hostname)> cb); // Used for SNI. The callback must call set_cert.
-	
-	//Can be used to keep a socket alive across exec().
-	//If successful, serialize() returns the the file descriptor needed to unserialize, and the socket is deleted.
-	//On failure, returns empty and nothing happens.
-	//Only available under some implementations. Non-virtual, to fail in linker rather than runtime.
-	//After doing this, the object is not attached to a runloop. Call callback() on it.
-	array<byte> serialize(int* fd);
-	static socketssl* deserialize(int fd, arrayview<byte> data);
-};
-
-class socketlisten : public socket {
-	socketlisten(int fd) : socket(fd), loop(NULL) {}
-	
-public:
-	static socketlisten* create(int port);
-	socket* accept();
-	~socketlisten();
-	
-	int recv(arrayvieww<byte> data, bool block) { return e_not_supported; }
-	int sendp(arrayview<byte> data, bool block) { return e_not_supported; }
-	
-private:
-	runloop* loop;
-	function<void(socket*)> cb_read;
-	void on_readable(uintptr_t) { cb_read(this); }
-public:
-	//Having a socket waiting for accept() is considered a read operation. cb_write is ignored.
-	void callback(runloop* loop, function<void(socket*)> cb_read, function<void(socket*)> cb_write = NULL)
-	{
-		this->loop = loop;
-		this->cb_read = cb_read;
-		loop->set_fd(fd, cb_read ? bind_this(&socketlisten::on_readable) : NULL, NULL);
-	}
-};

@@ -75,7 +75,7 @@ static HANDLE dylib_init(const char * filename, bool uniq)
 
 bool dylib::init(const char * filename, bool * owned)
 {
-	
+	//not needed
 }
 
 void* dylib::sym_ptr(const char * name)
@@ -140,6 +140,16 @@ void debug_or_abort()
 #include <unistd.h>
 #include <fcntl.h>
 
+#ifdef __linux__
+#define HAVE_VALGRIND
+#endif
+#ifdef HAVE_VALGRIND
+#include <valgrind/memcheck.h>
+#else
+#define RUNNING_ON_VALGRIND false
+#define VALGRIND_PRINTF_BACKTRACE(...) ;
+#endif
+
 //method from https://src.chromium.org/svn/trunk/src/base/debug/debugger_posix.cc
 static bool has_debugger()
 {
@@ -163,11 +173,13 @@ static bool has_debugger()
 void debug_or_ignore()
 {
 	if (has_debugger()) raise(SIGTRAP);
+	else if (RUNNING_ON_VALGRIND) VALGRIND_PRINTF_BACKTRACE("debug trace");
 }
 
 void debug_or_exit()
 {
 	if (has_debugger()) raise(SIGTRAP);
+	else if (RUNNING_ON_VALGRIND) VALGRIND_PRINTF_BACKTRACE("debug trace");
 	exit(1);
 }
 
@@ -214,13 +226,13 @@ uint64_t time_ms()
 uint64_t time_us_ne()
 {
 	struct timespec tp;
-	clock_gettime(CLOCK_MONOTONIC_RAW, &tp);
+	clock_gettime(CLOCK_MONOTONIC, &tp); // CLOCK_MONOTONIC_RAW is better, but MONOTONIC uses vdso and skips the syscall
 	return tp.tv_sec*1000000 + tp.tv_nsec/1000;
 }
 uint64_t time_ms_ne()
 {
 	struct timespec tp;
-	clock_gettime(CLOCK_MONOTONIC_RAW, &tp);
+	clock_gettime(CLOCK_MONOTONIC, &tp);
 	return tp.tv_sec*1000 + tp.tv_nsec/1000000;
 }
 #endif

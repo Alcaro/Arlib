@@ -47,7 +47,7 @@ public:
 	virtual void enter() = 0;
 	virtual void exit() = 0;
 	
-	//Runs until there are no more events to process, then returns. Recommended for high-performance programs like games. Call it frequently.
+	//Runs until there are no more events to process, then returns. Usable if you require control over the runloop.
 	virtual void step() = 0;
 	
 	//Deleting a non-global runloop is fine, but leave the global one alone.

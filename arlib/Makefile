@@ -84,7 +84,7 @@ ifeq ($(OS),linux)
     CONF_LFLAGS += -pthread
   endif
   OBJNAME = linux
-  TESTRUNNER = valgrind
+  TESTRUNNER = valgrind --num-callers=100
 endif
 
 ifeq ($(OS),windows)

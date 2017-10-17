@@ -1,6 +1,8 @@
 #include "runloop.h"
 #include "set.h"
 
+static runloop* runloop_wrap_blocktest(runloop* inner);
+
 #ifdef __linux__
 #include <sys/epoll.h>
 #include <unistd.h>
@@ -149,7 +151,10 @@ public:
 			if (timer.id == (unsigned)-1)
 			{
 				timerinfo.remove(i);
-				goto again; // not 'i--; continue'; if the first timer is removed, (size_t)-1 is not less than timerinfo.size()
+				
+				//funny code to avoid (size_t)-1
+				if (i == timerinfo.size()) break;
+				goto again;
 			}
 			
 			int next_ms = timespec_sub(&timer.next, &now);
@@ -205,7 +210,7 @@ public:
 
 runloop* runloop::create()
 {
-	return new runloop_linux();
+	return runloop_wrap_blocktest(new runloop_linux());
 }
 #endif
 
@@ -223,7 +228,7 @@ runloop* runloop::global()
 {
 	//ignore thread safety, this function can only be used from main thread
 	static runloop* ret = NULL;
-	if (!ret) ret = runloop::create();
+	if (!ret) ret = runloop_wrap_blocktest(runloop::create());
 	return ret;
 }
 #endif
@@ -232,59 +237,6 @@ runloop* runloop::global()
 #include "os.h"
 
 #ifdef ARLIB_TEST
-class runloop_blocktest : public runloop {
-	runloop* loop;
-	
-	uint64_t us;
-	uint64_t max_us;
-	void begin() { us = time_us_ne(); }
-	void end()
-	{
-		uint64_t new_us = time_us_ne();
-		assert_lte(new_us-us, max_us);
-	}
-	
-	uintptr_t set_fd(uintptr_t fd, function<void(uintptr_t)> cb_read, function<void(uintptr_t)> cb_write)
-	{
-		function<void(uintptr_t)> cb_read_w;
-		function<void(uintptr_t)> cb_write_w;
-		if (cb_read)  cb_read_w  = bind_lambda([this, cb_read ](uintptr_t fd){ this->begin(); cb_read( fd); this->end(); });
-		if (cb_write) cb_write_w = bind_lambda([this, cb_write](uintptr_t fd){ this->begin(); cb_write(fd); this->end(); });
-		return loop->set_fd(fd, cb_read_w, cb_write_w);
-	}
-	
-	uintptr_t set_timer_rel(unsigned ms, function<bool()> callback)
-	{
-		function<bool()> callback_w = bind_lambda([]()->bool { return false; });
-		if (callback) callback_w = bind_lambda([this, callback]()->bool { this->begin(); bool ret = callback(); this->end(); return ret; });
-		return loop->set_timer_rel(ms, callback_w);
-	}
-	uintptr_t set_idle(function<bool()> callback)
-	{
-		function<bool()> callback_w = bind_lambda([]()->bool { return false; });
-		if (callback) callback_w = bind_lambda([this, callback]()->bool { this->begin(); bool ret = callback(); this->end(); return ret; });
-		return loop->set_idle(callback_w);
-	}
-	void remove(uintptr_t id) { loop->remove(id); }
-	void enter() { end(); loop->enter(); begin(); }
-	void exit() { loop->exit(); }
-	void step() { end(); loop->step(); begin(); }
-	
-	
-public:
-	runloop_blocktest(uint64_t max_us)
-	{
-		this->loop = runloop::create();
-		this->max_us = max_us;
-		begin();
-	}
-	~runloop_blocktest()
-	{
-		end();
-		delete loop;
-	}
-};
-
 #ifdef __linux__
 #define HAVE_VALGRIND
 #endif
@@ -294,14 +246,98 @@ public:
 #define RUNNING_ON_VALGRIND false
 #endif
 
-runloop* runloop_blocktest_create(int max_ms)
-{
-	if (RUNNING_ON_VALGRIND)
+
+class runloop_blocktest : public runloop {
+	runloop* loop;
+	
+	uint64_t us = 0;
+	uint64_t lim_us = 0;
+	uint64_t max_us = 0;
+	uint64_t thissecond = 0;
+	/*private*/ void begin()
 	{
-		max_ms += 30;
-		test_skip_force_delay("runloop latency test under Valgrind, inconclusive due to 25ms latency spikes");
+		uint64_t new_us = time_us_ne();
+		if (new_us/1000000 != us/1000000) thissecond = 0;
+		thissecond++;
+		if (thissecond == 1000) assert(!"1000 runloop iterations in a second");
+		us = new_us;
 	}
-	return new runloop_blocktest(max_ms*1000);
+	/*private*/ void end()
+	{
+		uint64_t new_us = time_us_ne();
+		uint64_t diff = new_us-us;
+		if (max_us < diff) max_us = diff;
+		assert_lt(diff, lim_us);
+	}
+	
+	//don't carelessly inline into the lambdas, sometimes lambdas are deallocated by the callbacks 'this' is a use-after-free
+	/*private*/ void do_cb(function<void(uintptr_t)> cb, uintptr_t arg)
+	{
+		this->begin();
+		cb(arg);
+		this->end();
+	}
+	/*private*/ bool do_cb(function<bool()> cb)
+	{
+		this->begin();
+		bool ret = cb();
+		this->end();
+		return ret;
+	}
+	
+	uintptr_t set_fd(uintptr_t fd, function<void(uintptr_t)> cb_read, function<void(uintptr_t)> cb_write)
+	{
+		function<void(uintptr_t)> cb_read_w;
+		function<void(uintptr_t)> cb_write_w;
+		if (cb_read)  cb_read_w  = bind_lambda([this, cb_read ](uintptr_t fd){ this->do_cb(cb_read,  fd); });
+		if (cb_write) cb_write_w = bind_lambda([this, cb_write](uintptr_t fd){ this->do_cb(cb_write, fd); });
+		return loop->set_fd(fd, std::move(cb_read_w), std::move(cb_write_w));
+	}
+	
+	uintptr_t set_timer_rel(unsigned ms, function<bool()> callback)
+	{
+		function<bool()> callback_w = bind_lambda([]()->bool { return false; });
+		if (callback) callback_w = bind_lambda([this, callback]()->bool { return this->do_cb(callback); });
+		return loop->set_timer_rel(ms, callback_w);
+	}
+	uintptr_t set_idle(function<bool()> callback)
+	{
+		function<bool()> callback_w = bind_lambda([]()->bool { return false; });
+		if (callback) callback_w = bind_lambda([this, callback]()->bool { return this->do_cb(callback); });
+		return loop->set_idle(callback_w);
+	}
+	void remove(uintptr_t id) { loop->remove(id); }
+	void enter() { end(); loop->enter(); begin(); }
+	void exit() { loop->exit(); }
+	void step() { end(); loop->step(); begin(); }
+	
+	
+public:
+	runloop_blocktest(runloop* inner) : loop(inner)
+	{
+		lim_us = (RUNNING_ON_VALGRIND ? 1000000 : 3000);
+		begin();
+	}
+	~runloop_blocktest()
+	{
+		end();
+		delete loop;
+		
+		if (RUNNING_ON_VALGRIND)
+		{
+			test_skip_force("runloop latency "+tostring(max_us)+"us under Valgrind");
+		}
+	}
+};
+
+static runloop* runloop_wrap_blocktest(runloop* inner)
+{
+	return new runloop_blocktest(inner);
+}
+#else
+static runloop* runloop_wrap_blocktest(runloop* inner)
+{
+	return inner;
 }
 #endif
 
@@ -311,7 +347,7 @@ static void test_runloop(bool is_global)
 	
 	{
 		//must be before the other one, loop->enter() must be called to ensure it doesn't actually run
-		loop->remove(loop->set_timer_rel(10, bind_lambda([]()->bool { abort(); return false; })));
+		loop->remove(loop->set_timer_rel(50, bind_lambda([]()->bool { assert_ret(!"should not be called", false); return false; })));
 	}
 	
 	{
