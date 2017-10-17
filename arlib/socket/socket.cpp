@@ -54,7 +54,7 @@ static int setsockopt(int socket, int level, int option_name, int option_value)
 }
 
 //MSG_DONTWAIT is usually better, but accept() and connect() don't take that argument
-static void setblock(int fd, bool newblock)
+static void MAYBE_UNUSED setblock(int fd, bool newblock)
 {
 #ifdef _WIN32
 	u_long nonblock = !newblock;
@@ -132,17 +132,13 @@ static int connect(cstring domain, int port)
 
 } // close namespace
 
-void socket::setblock(int fd, bool newblock)
-{
-	::setblock(fd, newblock);
-}
-
 namespace {
 
 class socket_raw : public socket {
 public:
-	socket_raw(int fd) : socket(fd) {}
+	socket_raw(int fd) : fd(fd) {}
 	
+	int fd;
 	runloop* loop = NULL;
 	function<void(socket*)> cb_read;
 	function<void(socket*)> cb_write;
@@ -197,10 +193,12 @@ public:
 
 class socket_raw_udp : public socket {
 public:
-	socket_raw_udp(int fd, sockaddr * addr, socklen_t addrlen) : socket(fd), peeraddr((uint8_t*)addr, addrlen)
+	socket_raw_udp(int fd, sockaddr * addr, socklen_t addrlen) : fd(fd), peeraddr((uint8_t*)addr, addrlen)
 	{
 		peeraddr_cmp.resize(addrlen);
 	}
+	
+	int fd;
 	
 	runloop* loop = NULL;
 	function<void(socket*)> cb_read;
@@ -265,7 +263,7 @@ public:
 		return ret;
 	}
 	
-	socketwrap(cstring domain, int port, runloop* loop, bool ssl) : socket(-1000)
+	socketwrap(cstring domain, int port, runloop* loop, bool ssl)
 	{
 		this->loop = loop;
 		this->ssl = ssl;
@@ -371,11 +369,6 @@ public:
 
 } // close namespace
 
-socket* socket::create_from_fd(int fd)
-{
-	return socket_raw::create(fd);
-}
-
 socket* socket::create(cstring domain, int port, runloop* loop)
 {
 	return new socketwrap(domain, port, loop, false);
@@ -402,43 +395,6 @@ socket* socket::create_udp(cstring domain, int port, runloop* loop)
 }
 
 #if 0
-#ifdef __unix__
-#include <poll.h>
-#define RD_EV (POLLIN |POLLRDHUP|POLLHUP|POLLERR)
-#define WR_EV (POLLOUT|POLLRDHUP|POLLHUP|POLLERR)
-
-void* socket::monitor::select(int timeout_ms)
-{
-	map<uintptr_t,item> items = std::move(m_items);
-	array<pollfd> pfds;
-	array<void*> pfds_keys;
-	
-	for (auto& pair : items)
-	{
-		socket* sock = (socket*)pair.key;
-		bool read = pair.value.read;
-		bool write = pair.value.write;
-		if (sock->active(read, write)) return pair.value.key;
-		
-		pollfd& pfd = pfds.append();
-		pfd.fd = sock->fd;
-		pfd.events = (read ? POLLIN : 0) | (write ? POLLOUT : 0);
-		pfd.revents = 0;
-		pfds_keys.append(pair.value.key);
-	}
-	
-	poll(pfds.ptr(), pfds.size(), timeout_ms);
-	
-	for (size_t i=0;i<pfds.size();i++)
-	{
-		if (pfds[i].revents != 0) return pfds_keys[i];
-	}
-	
-	return NULL;
-}
-#endif
-
-
 static MAYBE_UNUSED int socketlisten_create_ip4(int port)
 {
 	struct sockaddr_in sa;

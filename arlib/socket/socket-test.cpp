@@ -7,9 +7,9 @@
 
 static void clienttest(cstring target, int port, bool ssl, bool xfail = false)
 {
-	if (ssl) socket::wrap_ssl(NULL, "", NULL); // bearssl takes forever to initialize, do it outside the runloop check
-	
 	test_skip("too slow");
+	
+	if (ssl) socket::wrap_ssl(NULL, "", NULL); // bearssl takes forever to initialize, do it outside the runloop check
 	
 	autoptr<runloop> loop = runloop::create();
 	bool timeout = false;

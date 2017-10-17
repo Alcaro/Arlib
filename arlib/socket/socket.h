@@ -13,16 +13,6 @@
 
 #define socket socket_t
 class socket : nocopy {
-protected:
-	socket(int fd) : fd(fd) {}
-	int fd; // Used by select().
-	
-	//deallocates the socket, returning its fd, while letting the fd remain valid
-	static int decompose(socket* * sock) { int ret = (*sock)->fd; (*sock)->fd=-1; delete *sock; *sock = NULL; return ret; }
-	static int decompose(autoptr<socket> * sock) { int ret = (*sock)->fd; (*sock)->fd=-1; *sock = NULL; return ret; }
-	
-	static void setblock(int fd, bool newblock);
-	
 public:
 	
 	//Always succeeds immediately, doing the real work asynchronously.
@@ -97,32 +87,6 @@ public:
 	// all implementations of active(), grep them
 	// the fd member, and associated constructor
 	// all private members
-	
-	//Can be used to keep a socket alive across exec(). Don't use for an SSL socket, use serialize() instead.
-	static socket* create_from_fd(int fd);
-	int get_fd() { return fd; }
-	
-	
-	//Returns whether the object has buffers such that recv() or send() will return immediately, even if the fd doesn't claim it will.
-	//If select(2) will return this one, this function isn't needed.
-	virtual bool active(bool want_recv, bool want_send) { return false; }
-	
-	//Note that these may return false positives. Use nonblocking operations.
-	//Resets after select().
-	class monitor {
-		struct item { void* key; bool read; bool write; };
-		map<uintptr_t,item> m_items;
-	public:
-		void add(socket* sock, void* key, bool read = true, bool write = false)
-		{
-			item i = { key, read, write };
-			m_items.insert((uintptr_t)sock, i);
-		}
-		void* select(int timeout_ms = -1);
-	};
-	
-	static size_t select(arrayview<socket*> socks, bool* can_read, bool* can_write, int timeout_ms = -1);
-	static size_t select(arrayview<socket*> socks, int timeout_ms = -1) { bool x; return select(socks, &x, NULL, timeout_ms); }
 };
 
 //SSL feature matrix:

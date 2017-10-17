@@ -314,6 +314,8 @@ test("HTTP")
 {
 	test_skip("too slow");
 	
+	socket::wrap_ssl(NULL, "", NULL); // bearssl takes forever to initialize, do it outside the runloop check
+	
 	autoptr<runloop> loop = runloop::create();
 	HTTP::rsp r;
 	//ugly, but the alternative is nesting lambdas forever or busywait. I need a way to break it anyways

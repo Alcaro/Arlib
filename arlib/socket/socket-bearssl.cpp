@@ -211,7 +211,7 @@ public:
 	
 	bool* deleted_p = NULL;
 	
-	socketssl_impl(socket* inner, cstring domain, runloop* loop, bool permissive) : socket(inner->get_fd())
+	socketssl_impl(socket* inner, cstring domain, runloop* loop, bool permissive)
 	{
 		this->loop = loop;
 		this->sock = inner;

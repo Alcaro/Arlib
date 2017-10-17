@@ -63,15 +63,6 @@ public:
 	
 	void connect_bot(cstring token);
 	
-	////Discord is a complex protocol. On activity, or after a 1000 millisecond timeout, call process().
-	//void monitor(socket::monitor& mon, void* key)
-	//{
-	//	m_ws.monitor(mon, key); // pun not intended
-	//	m_http.monitor(mon, key);
-	//}
-	////Only nonblocking is available.
-	//void process() { process(false); }
-	
 	class Role;
 	class User;
 	class Channel;
@@ -308,8 +299,6 @@ private:
 	bool connecting = false;
 	WebSocket m_ws; // be careful about using these directly, dangerous!
 	HTTP m_http;
-	//map<uintptr_t, function<void(HTTP::rsp)>> m_http_callbacks; // TODO: kinda annoying, do I make it all synchronous?
-	//size_t m_http_index = 1;
 	
 	void connect();
 	void connect_cb(HTTP::rsp r);
@@ -395,8 +384,6 @@ private:
 		r.postdata = post.serialize().bytes();
 		http(r, callback);
 	}
-	
-	//void http_process();
 	
 	void send_ws(JSON& json)
 	{

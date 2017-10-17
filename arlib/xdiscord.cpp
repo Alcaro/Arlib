@@ -121,32 +121,6 @@ bool Discord::keepalive_cb()
 
 void Discord::ws_str(string msg)
 {
-//static time_t t = 0;
-//static int n;
-//if (t != time(NULL))
-//{
-//t = time(NULL);
-//n = 0;
-//}
-//else
-//{
-//n++;
-//if (n >= 50)
-//{
-//socket::monitor mon;
-//m_ws.monitor(mon, (void*)1);
-//m_http.monitor(mon, (void*)2);
-//int x = (uintptr_t)mon.select(0);
-//puts("misbehaving: "+tostring(x));
-//if (n >= 100)
-//{
-//puts("ded");
-//freopen("/dev/null", "w", stdout);
-////usleep(50*1000);
-//}
-//}
-//}
-
 //printf("d=%i dn=%li t=%li\n",(bool)debug_target,debug_next,time(NULL));
 //if (debug_target && time(NULL) >= debug_next)
 //{
