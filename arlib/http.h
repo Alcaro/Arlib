@@ -49,8 +49,6 @@ public:
 		array<string> headers; // TODO: switch to multimap once it exists
 		array<byte> body;
 		
-		function<void(rsp)> callback; // Used internally. Ignore it.
-		
 		
 		operator arrayvieww<byte>()
 		{
@@ -72,18 +70,22 @@ public:
 		}
 		
 		cstring text() const { return body; }
+		
+		
+		//Ised internally. Ignore it.
+		function<void(rsp)> callback;
 	};
 	
 	//Multiple requests may be sent to the same object. This will make them use HTTP Keep-Alive.
 	//The requests must be to the same protocol-domain-port tuple.
-	//Always succeeds, failures are reported in recv().
-	//Return values will be in an arbitrary order. If there's more than one, use the userdata to keep them apart.
+	//Failures are reported in the callback.
+	//Callbacks will be called in an arbitrary order. If there's more than one request, use different callbacks or vary the userdata.
 	void send(req q, function<void(rsp)> callback);
 	
 	//Discards any unfinished requests, errors, and similar.
 	void reset()
 	{
-		host = location();
+		lasthost = location();
 		requests.reset();
 		next_send = 0;
 		sock = NULL;
@@ -129,7 +131,7 @@ private:
 	void activity(socket*);
 	
 	
-	location host; // used to verify that the requests aren't sent anywhere they don't belong
+	location lasthost; // used to verify that the requests aren't sent anywhere they don't belong
 	array<rsp> requests;
 	size_t next_send = 0; // index to requests[] next to sock->send(), or requests.size() if all done / in tosend
 	

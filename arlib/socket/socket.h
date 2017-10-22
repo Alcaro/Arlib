@@ -14,7 +14,6 @@
 #define socket socket_t
 class socket : nocopy {
 public:
-	
 	//Always succeeds immediately, doing the real work asynchronously.
 	//If the server doesn't exist or doesn't respond, reports a broken connection.
 	//Once the connection is established, it reports writability to its runloop. However, writes before that will succeed.
@@ -32,9 +31,6 @@ public:
 	//It is also unsafe to send a 0-byte buffer to such a socket. Wrapped sockets ignore them.
 	static socket* create_raw(cstring ip, int port, runloop* loop);
 	static socket* wrap_ssl(socket* inner, cstring domain, runloop* loop);
-	
-	
-	
 	
 	
 	enum {

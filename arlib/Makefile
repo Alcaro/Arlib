@@ -19,6 +19,14 @@ define LF
 
 endef
 
+ifeq ($(V),)
+Q = @
+ECHOQ = @echo
+else
+Q =
+ECHOQ = @true
+endif
+
 ifeq ($(OS),Windows_NT)
   OS = windows
 else
@@ -154,9 +162,11 @@ CFLAGS_NOWARN = -w
 .DELETE_ON_ERROR:
 
 obj/%.c.o: $$(call SOURCENAME,$$@) arlib.h | obj
-	$(CC) $(TRUE_CFLAGS) $(CFLAGS_$(call DOMAINNAME,$@)) -c $< -o $@
+	$(ECHOQ) CC $<
+	$(Q)$(CC) $(TRUE_CFLAGS) $(CFLAGS_$(call DOMAINNAME,$@)) -c $< -o $@
 obj/%.cpp.o: $$(call SOURCENAME,$$@) arlib.h | obj
-	$(CXX) $(TRUE_CXXFLAGS) $(CFLAGS_$(call DOMAINNAME,$@)) -c $< -o $@
+	$(ECHOQ) CXX $<
+	$(Q)$(CXX) $(TRUE_CXXFLAGS) $(CFLAGS_$(call DOMAINNAME,$@)) -c $< -o $@
 
 SOURCES += *.cpp
 SOURCES_ARLIB := arlib/*.cpp
@@ -280,10 +290,6 @@ endif
 
 .force:
 
-obj/build.o: .force | obj
-	$(CC) $(TRUE_CFLAGS) -c arlib/build.c -o $@
-OBJS += obj/build.o
-
 #On Windows, cleaning up the object directory is expected to be done with 'del /q obj\*' in a batch script.
 clean:
 	rm -f obj/*
@@ -311,16 +317,23 @@ SOURCES_DEFAULT := $(SOURCES)
 OBJS += $(foreach domain,$(sort $(DOMAINS)),$(call OBJMANGLE,$(domain),$(wildcard $(SOURCES_$(domain)))))
 OBJS += $(OBJS_LATE)
 
+obj/build.o: .force | obj
+	$(ECHOQ) CC arlib/build.c
+	$(Q)$(CC) $(TRUE_CFLAGS) -c arlib/build.c -o $@
+OBJS += obj/build.o
+
 all: $(OUTNAME)
 arlib-default2: $(OUTNAME)
 $(OUTNAME): $(OBJS)
-	$(LD) $+ $(TRUE_LFLAGS) -o $@ -lm
+	$(ECHOQ) LD $@
+	$(Q)$(LD) $+ $(TRUE_LFLAGS) -o $@ -lm
 
 
 
 ifneq ($(SELFTEST),)
 obj/arlibtest$(EXESUFFIX): $(OBJS)
-	$(LD) $+ $(TRUE_LFLAGS) -o $@ -lm
+	$(ECHOQ) LD $@
+	$(Q)$(LD) $+ $(TRUE_LFLAGS) -o $@ -lm
 
 test: obj/arlibtest$(EXESUFFIX)
 	$(TESTRUNNER) obj/arlibtest$(EXESUFFIX)

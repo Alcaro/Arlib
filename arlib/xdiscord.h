@@ -318,7 +318,7 @@ private:
 	void update_keepalive_cb()
 	{
 		loop->remove(keepalive_id);
-		loop->set_timer_rel(keepalive_ms, bind_this(&Discord::keepalive_cb));
+		keepalive_id = loop->set_timer_rel((keepalive_ms > 30000 ? keepalive_ms : 30000), bind_this(&Discord::keepalive_cb));
 	}
 	
 	int guilds_to_join;

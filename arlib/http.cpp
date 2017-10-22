@@ -54,19 +54,19 @@ void HTTP::send(req q, function<void(rsp)> callback)
 	r.q = std::move(q);
 	r.callback = callback;
 	
-	if (!host.proto)
+	if (!lasthost.proto)
 	{
-		if (!parseUrl(r.q.url, false, this->host)) return resolve_err_v(NULL, requests.size()-1, rsp::e_bad_url);
+		if (!parseUrl(r.q.url, false, this->lasthost)) return resolve_err_v(NULL, requests.size()-1, rsp::e_bad_url);
 	}
 	else
 	{
 		location loc;
 		if (!parseUrl(r.q.url, false, loc)) return resolve_err_v(NULL, requests.size()-1, rsp::e_bad_url);
-		if (loc.proto != host.proto || loc.domain != host.domain || loc.port != host.port)
+		if (loc.proto != lasthost.proto || loc.domain != lasthost.domain || loc.port != lasthost.port)
 		{
 			return resolve_err_v(NULL, requests.size()-1, rsp::e_different_url);
 		}
-		host.path = loc.path;
+		lasthost.path = loc.path;
 	}
 	
 	activity(NULL);
@@ -84,8 +84,11 @@ void HTTP::try_compile_req()
 	if (!method) method = (q.postdata ? "POST" : "GET");
 	if (method != "GET" && next_send != 0) return;
 	
+	location loc;
+	parseUrl(q.url, false, loc); // known to succeed, it was tested in send()
+	
 	bytepipe tosend;
-	tosend.push(method, " ", host.path, " HTTP/1.1\r\n");
+	tosend.push(method, " ", loc.path, " HTTP/1.1\r\n"); // FIXME: lasthost.path is wrong
 	
 	bool httpHost = false;
 	bool httpContentLength = false;
@@ -100,7 +103,7 @@ void HTTP::try_compile_req()
 		tosend.push(head, "\r\n");
 	}
 	
-	if (!httpHost) tosend.push("Host: ", host.domain, "\r\n");
+	if (!httpHost) tosend.push("Host: ", loc.domain, "\r\n"); // FIXME: lasthost.domain is wrong
 	if (method!="GET" && !httpContentLength) tosend.push("Content-Length: ", tostring(q.postdata.size()), "\r\n");
 	if (method!="GET" && !httpContentType)
 	{
@@ -146,8 +149,9 @@ newsock:
 	{
 		if (state == st_boundary)
 		{
-			if (host.proto == "https")  sock = socket::create_ssl(host.domain, host.port ? host.port : 443, loop);
-			else if (host.proto == "http") sock = socket::create( host.domain, host.port ? host.port : 80,  loop);
+			//lasthost.proto/domain/port never changes between requests
+			if (lasthost.proto == "https")  sock = socket::create_ssl(lasthost.domain, lasthost.port ? lasthost.port : 443, loop);
+			else if (lasthost.proto == "http") sock = socket::create( lasthost.domain, lasthost.port ? lasthost.port : 80,  loop);
 			else { resolve_err_v(&deleted, 0, rsp::e_bad_url); goto newsock; }
 		}
 		if (!sock) { resolve_err_v(&deleted, 0, rsp::e_connect); goto newsock; }
@@ -322,7 +326,13 @@ test("HTTP")
 	function<void(HTTP::rsp)> break_runloop = bind_lambda([&](HTTP::rsp inner_r) { r = std::move(inner_r); loop->exit(); });
 	
 #define URL "http://media.smwcentral.net/Alcaro/test.txt"
+#define URL2 "http://media.smwcentral.net/Alcaro/test2.txt"
+#define URL3 "http://media.smwcentral.net/Alcaro/test3.txt"
+#define URL4 "http://media.smwcentral.net/Alcaro/test4.txt"
 #define CONTENTS "hello world"
+#define CONTENTS2 "hello world 2"
+#define CONTENTS3 "hello world 3"
+#define CONTENTS4 "hello world 4"
 	{
 		HTTP h(loop);
 		
@@ -353,6 +363,46 @@ test("HTTP")
 		assert_eq(r.text(), CONTENTS);
 		loop->enter();
 		assert_eq(r.text(), CONTENTS);
+	}
+	
+	//ensure it doesn't mix up the URL it's supposed to request
+	{
+		HTTP h(loop);
+		
+		function<void(HTTP::rsp)> break_runloop_testc =
+			bind_lambda([&](HTTP::rsp inner_r)
+			{
+				loop->exit();
+				assert_eq(inner_r.text(), CONTENTS);
+			});
+		function<void(HTTP::rsp)> break_runloop_testc2 =
+			bind_lambda([&](HTTP::rsp inner_r)
+			{
+				loop->exit();
+				assert_eq(inner_r.text(), CONTENTS2);
+			});
+		function<void(HTTP::rsp)> break_runloop_testc3 =
+			bind_lambda([&](HTTP::rsp inner_r)
+			{
+				loop->exit();
+				assert_eq(inner_r.text(), CONTENTS3);
+			});
+		function<void(HTTP::rsp)> break_runloop_testc4 =
+			bind_lambda([&](HTTP::rsp inner_r)
+			{
+				loop->exit();
+				assert_eq(inner_r.text(), CONTENTS4);
+			});
+		
+		h.send(HTTP::req(URL),  break_runloop_testc);
+		h.send(HTTP::req(URL2), break_runloop_testc2);
+		h.send(HTTP::req(URL3), break_runloop_testc3);
+		h.send(HTTP::req(URL4), break_runloop_testc4);
+		
+		loop->enter();
+		loop->enter();
+		loop->enter();
+		loop->enter();
 	}
 	
 	{

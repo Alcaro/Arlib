@@ -94,6 +94,7 @@ public:
 		unsigned timer_id = 1;
 		for (size_t i=0;i<timerinfo.size();i++)
 		{
+			if (timerinfo[i].id == (unsigned)-1) continue;
 			if (timerinfo[i].id >= timer_id)
 			{
 				timer_id = timerinfo[i].id+1;
@@ -112,9 +113,13 @@ public:
 	
 	void remove(uintptr_t id)
 	{
+		if (id == 0) return;
+		
 		intptr_t id_s = id;
 		if (id_s >= 0)
 		{
+			if (!fdinfo.contains(id_s)) abort();
+			
 			int fd = id_s;
 			epoll_ctl(epoll_fd, EPOLL_CTL_DEL, fd, NULL);
 			fdinfo.remove(fd);
@@ -130,6 +135,7 @@ public:
 					return;
 				}
 			}
+			abort(); // happens if that timer doesn't exist
 		}
 	}
 	
@@ -228,7 +234,7 @@ runloop* runloop::global()
 {
 	//ignore thread safety, this function can only be used from main thread
 	static runloop* ret = NULL;
-	if (!ret) ret = runloop_wrap_blocktest(runloop::create());
+	if (!ret) ret = runloop::create();
 	return ret;
 }
 #endif
@@ -345,10 +351,19 @@ static void test_runloop(bool is_global)
 {
 	runloop* loop = (is_global ? runloop::global() : runloop::create());
 	
-	{
-		//must be before the other one, loop->enter() must be called to ensure it doesn't actually run
-		loop->remove(loop->set_timer_rel(50, bind_lambda([]()->bool { assert_ret(!"should not be called", false); return false; })));
-	}
+	//must be before the other one, loop->enter() must be called to ensure it doesn't actually run
+	loop->remove(loop->set_timer_rel(50, bind_lambda([]()->bool { assert_ret(!"should not be called", false); return false; })));
+	
+	//don't put this scoped
+	uintptr_t id = loop->set_timer_rel(20, bind_lambda([&]()->bool
+		{
+			assert_neq_ret(id, 0, true);
+			uintptr_t id_copy = id; // the 'id' reference gets freed by loop->remove(), keep a copy
+			id = 0;
+			loop->remove(id_copy);
+			return true;
+		}));
+	assert_neq(id, 0); // no thinking -1 is the highest ID so 0 should be used
 	
 	{
 		int64_t start = time_ms_ne();
@@ -359,7 +374,10 @@ static void test_runloop(bool is_global)
 		assert_range(end-start, 75,200);
 	}
 	
-	//TODO: stick in some fd tests
+	assert_eq(id, 0);
+	
+	//I could stick in some fd tests, but the socket tests exercise all plausible operations anyways.
+	//Okay, they should vary which runloop they use.
 	
 	if (!is_global) delete loop;
 }

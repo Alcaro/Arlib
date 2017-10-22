@@ -61,7 +61,7 @@ void _assert_neq(const T&  actual,   const char * actual_exp,
 {
 	if (!!_test_eq(actual, expected)) // a!=b implemented as !(a==b)
 	{
-		_testcmpfail((string)actual_exp+" == "+expected_exp, line, tostring(expected), tostring(actual));
+		_testcmpfail((string)actual_exp+" != "+expected_exp, line, tostring(expected), tostring(actual));
 	}
 }
 
@@ -94,7 +94,7 @@ void _assert_gt(const T&  actual,   const char * actual_exp,
 {
 	if (!_test_lt(expected, actual)) // a>b implemented as b<a
 	{
-		_testcmpfail((string)actual_exp+" >= "+expected_exp, line, tostring(expected), tostring(actual));
+		_testcmpfail((string)actual_exp+" > "+expected_exp, line, tostring(expected), tostring(actual));
 	}
 }
 
@@ -177,11 +177,17 @@ void _assert_range(const T&  actual, const char * actual_exp,
 #define assert_ret(x, ret) ((void)(x))
 #define assert(x) ((void)(x))
 #define assert_msg(x, msg) ((void)(x),(void)(msg))
+#define assert_eq_ret(x,y,r) ((void)(x==y))
 #define assert_eq(x,y) ((void)(x==y))
+#define assert_neq_ret(x,y,r) ((void)(x==y))
 #define assert_neq(x,y) ((void)(x==y))
+#define assert_lt_ret(x,y,r) ((void)(x<y))
 #define assert_lt(x,y) ((void)(x<y))
+#define assert_lte_ret(x,y,r) ((void)(x<y))
 #define assert_lte(x,y) ((void)(x<y))
+#define assert_gt_ret(x,y,r) ((void)(x<y))
 #define assert_gt(x,y) ((void)(x<y))
+#define assert_gte_ret(x,y,r) ((void)(x<y))
 #define assert_gte(x,y) ((void)(x<y))
 #define assert_range(x,y,z) ((void)(x<y))
 #define testcall(x) x

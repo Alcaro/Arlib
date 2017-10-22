@@ -12,7 +12,7 @@ public:
 	//Don't call from anything other than the main thread.
 	static runloop* global();
 	
-	//Use only one runloop per thread.
+	//Using multiple runloops per thread is generally a bad idea.
 	static runloop* create();
 	
 #ifndef _WIN32 // fd isn't a defined concept on windows
@@ -30,7 +30,7 @@ public:
 	
 	//Runs once.
 	uintptr_t set_timer_abs(time_t when, function<void()> callback);
-	//Do not remove() the callback from within itself; instead, return false and it will disapear.
+	//Runs repeatedly. To stop it, remove() it, or return false from the callback. Don't do both.
 	//Accuracy is not guaranteed; it may or may not round the timer frequency to something it finds appropriate,
 	// in either direction, and may or may not try to 'catch up' if a call is late (or early).
 	//Don't use for anything that needs tighter timing than ±1 second.
@@ -39,6 +39,11 @@ public:
 	//Will be called next time no other events (other than other idle callbacks) are ready, or earlier.
 	//Like set_timer_rel, the return value tells whether to call it again later.
 	virtual uintptr_t set_idle(function<bool()> callback) { return set_timer_rel(0, callback); }
+	
+	//Deletes an existing timer and adds a new one.
+	uintptr_t set_timer_abs(uintptr_t prev_id, time_t when, function<void()> callback) { remove(prev_id); return set_timer_abs(when, callback); }
+	uintptr_t set_timer_rel(uintptr_t prev_id, unsigned ms, function<bool()> callback) { remove(prev_id); return set_timer_rel(ms, callback); }
+	uintptr_t set_idle(uintptr_t prev_id, function<bool()> callback) { remove(prev_id); return set_idle(callback); }
 	
 	//Return value from each set_*() is a token which can be used to cancel the event. remove(0) is guaranteed to be ignored.
 	virtual void remove(uintptr_t id) = 0;

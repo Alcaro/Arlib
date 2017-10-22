@@ -139,7 +139,7 @@ class bmlunserialize_impl {
 		bmlparser::event ret = p.next();
 		if (ret.action == bmlparser::enter) pdepth++;
 		if (ret.action == bmlparser::exit) pdepth--;
-		if (ret.action == bmlparser::finish) pdepth=-2;
+		if (ret.action == bmlparser::finish) pdepth = -2;
 		return ret;
 	}
 	

@@ -91,7 +91,7 @@ again:
 	
 	if (msg[0]&0x08) // throw away control messages
 	{
-puts("RETURNSKIP:"+tostringhex(msg.slice(0,headsize))+" "+tostringhex(msg.skip(headsize)));
+//puts("RETURNSKIP:"+tostringhex(msg.slice(0,headsize))+" "+tostringhex(msg.skip(headsize)));
 		msg = msg.skip(msgsize);
 		goto again;
 	}
@@ -122,6 +122,11 @@ puts("RETURNSKIP:"+tostringhex(msg.slice(0,headsize))+" "+tostringhex(msg.skip(h
 	{
 		if (cb_str) cb_str(out);
 		else cb_bin(out);
+	}
+	
+	if (!sock) // happens if cb_str doesn't like that input and resets websocket
+	{
+		return;
 	}
 	
 	msg = msg.skip(msgsize);

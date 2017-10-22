@@ -16,6 +16,8 @@ string DNS::default_resolver()
 
 void DNS::resolve(cstring domain, unsigned timeout_ms, function<void(string domain, string ip)> callback)
 {
+	if (!domain) return callback(domain, "");
+	
 	bytestreamw packet;
 	
 	uint16_t trid = pick_trid();
@@ -240,7 +242,7 @@ test()
 	assert(isdigit(DNS::default_resolver()[0]));
 	
 	DNS dns(loop);
-	int await = 3;
+	int await = 4;
 	dns.resolve("google-public-dns-b.google.com", bind_lambda([&](string domain, string ip)
 		{
 			await--; if (await == 0) loop->exit(); // put this above assert, otherwise it deadlocks
@@ -258,6 +260,12 @@ test()
 			await--; if (await == 0) loop->exit();
 			assert_eq(domain, "git.io");
 			assert_neq(ip, ""); // this domain returns eight values in answer section
+		}));
+	dns.resolve("", bind_lambda([&](string domain, string ip) // this must fail
+		{
+			await--; if (await == 0) loop->exit();
+			assert_eq(domain, "");
+			assert_eq(ip, "");
 		}));
 	
 	if (await != 0) loop->enter();
