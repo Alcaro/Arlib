@@ -2,25 +2,22 @@
 
 int main(int argc, char** argv)
 {
-	array<string> lines1 = string(file::read("/home/alcaro/x/Glide64_Ini_sjis.c"))                 .split("\n");
-	array<string> lines2 = string(file::read("/home/alcaro/x/Glide64_Ini_utf8.c")).replace("‾","~").split("\n");
-	for (int i=0;i<lines1.size();i++)
+	uint64_t time = time_us_ne();
+	array<uint64_t> top20;
+	for (int i=0;i<20;i++) top20[i] = 0;
+	while (true)
 	{
-		if (lines1[i] == lines2[i]) puts(lines1[i]);
-		else
+		uint64_t newtime = time_us_ne();
+		uint64_t diff = newtime - time;
+		time = newtime;
+		if (diff > top20[0])
 		{
-			array<string> parts1 = lines1[i].split("\"");
-			array<string> parts2 = lines2[i].split("\"");
-			if (parts1.size() != 3 || parts2.size() != 3 || parts1[0]!=parts2[0] || parts1[2]!=parts2[2]) abort();
-			string out = parts1[0] + "\"";
+			top20[0] = diff;
+			top20.sort();
 			
-			for (int j=0;j<parts1[1].length();j++)
-			{
-				out += "\\x"+tostringhex<2>((uint8_t)parts1[1][j]);
-			}
-			out += "\"" + parts1[2] + " // " + parts2[1];
+			puts(top20.select([](uint64_t n)->string { return tostring(n); }).as_array().join(",")+" "+tostring(diff));
 			
-			puts(out);
+			time = time_us_ne();
 		}
 	}
 /*
