@@ -1,8 +1,8 @@
 PROGRAM = arlibtest
 ARGUI = 1
-AROPENGL = 1
+AROPENGL = 0
 ARTHREAD = 1
-ARWUTF = 1
+ARWUTF = 0
 ARSOCKET = 1
 #valid values: openssl (default), gnutls, tlse, bearssl, no
 ARSOCKET_SSL = bearssl
