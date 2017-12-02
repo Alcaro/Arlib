@@ -2,6 +2,9 @@
 
 int main(int argc, char** argv)
 {
+	arlib_init(NULL, argv);
+	
+/*
 	uint64_t time = time_us_ne();
 	array<uint64_t> top20;
 	for (int i=0;i<20;i++) top20[i] = 0;
@@ -20,6 +23,7 @@ int main(int argc, char** argv)
 			time = time_us_ne();
 		}
 	}
+*/
 /*
 	sandproc ch;
 	ch.set_stdout(process::output::create_stdout());
@@ -55,4 +59,5 @@ int main(int argc, char** argv)
 	ch.launch(argv[1], arrayview<const char*>(argv+2, argc-2).cast<string>());
 	ch.wait();
 */
+	return 0;
 }
