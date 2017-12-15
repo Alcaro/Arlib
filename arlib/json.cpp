@@ -147,18 +147,14 @@ jsonparser::event jsonparser::next()
 	}
 	if (ch == '[')
 	{
-//puts("[ PRE="+tostring(m_nesting.size()));
 		m_nesting.append(false);
-//puts("[ POST="+tostring(m_nesting.size()));
 		return { enter_list };
 	}
 	if (ch == ']')
 	{
-//puts("] PRE="+tostring(m_nesting.size()));
 		if (!m_nesting || m_nesting[m_nesting.size()-1] != false) return do_error();
 		if (!skipcomma(2)) return do_error();
 		m_nesting.resize(m_nesting.size()-1);
-//puts("] POST="+tostring(m_nesting.size()));
 		return { exit_list };
 	}
 	if (ch == '{')
@@ -227,10 +223,8 @@ jsonparser::event jsonparser::next()
 
 void JSON::construct(jsonparser& p, bool* ok, size_t maxdepth)
 {
-//printf("%i\n",maxdepth);
 	if (maxdepth == 0)
 	{
-puts("XDEPTH");
 		*ok = false;
 		if (ev.action == jsonparser::enter_list || ev.action == jsonparser::enter_map)
 		{
@@ -247,19 +241,16 @@ puts("XDEPTH");
 		return;
 	}
 	
-//if(pull)puts("1,"+tostring(ev.action));
 	if (ev.action == jsonparser::enter_list)
 	{
 		while (true)
 		{
 			jsonparser::event next = p.next();
-//puts("2,"+tostring(next.action));
 			if (next.action == jsonparser::exit_list) break;
 			if (next.action == jsonparser::error) *ok = false;
 			JSON& child = chld_list.append();
 			child.ev = next;
 			child.construct(p, ok, maxdepth-1);
-//if(next.action==jsonparser::finish)return;
 		}
 	}
 	if (ev.action == jsonparser::enter_map)
@@ -267,7 +258,6 @@ puts("XDEPTH");
 		while (true)
 		{
 			jsonparser::event next = p.next();
-//puts("3,"+tostring(next.action));
 			if (next.action == jsonparser::exit_map) break;
 			if (next.action == jsonparser::map_key)
 			{
@@ -276,7 +266,6 @@ puts("XDEPTH");
 				child.construct(p, ok, maxdepth-1);
 			}
 			if (next.action == jsonparser::error) *ok = false;
-//if(next.action==jsonparser::finish)return;
 		}
 	}
 	if (ev.action == jsonparser::error) *ok = false;
