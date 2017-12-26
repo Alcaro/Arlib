@@ -46,7 +46,7 @@
 
 //#include<sys/resource.h>
 
-#ifdef ARGUIPROT_X11
+#if defined(ARGUIPROT_X11) && defined(AROPENGL)
 struct window_x11_info window_x11;
 #endif
 
@@ -81,7 +81,7 @@ void arlib_init_gui(void* args, char** & argv)
 //	//we could tell it how to free this, but it will be used until replaced, and it won't be replaced.
 //	gtk_window_set_default_icon(gdk_pixbuf_new_from_data((guchar*)img.pixels, GDK_COLORSPACE_RGB, true, 8, 64,64, 64*4, NULL, NULL));
 //#endif
-#ifdef ARGUIPROT_X11
+#if defined(ARGUIPROT_X11) && defined(AROPENGL)
 	window_x11.display=gdk_x11_get_default_xdisplay();
 	window_x11.screen=gdk_x11_get_default_screen();
 	window_x11.root=gdk_x11_get_default_root_xwindow();//alternatively XRootWindow(window_x11.display, window_x11.screen)
@@ -483,18 +483,20 @@ public:
 	{
 		if (submit_fds[0] >= 0) return;
 		//leak these fds - this object only goes away on process exit
-		pipe2(submit_fds, O_CLOEXEC);
+		if (pipe2(submit_fds, O_CLOEXEC) < 0) abort();
 		this->set_fd(submit_fds[0], bind_this(&runloop_gtk::submit_cb), NULL);
 	}
-	void submit(function<void()> cb)
+	void submit(function<void()>&& cb)
 	{
-		write(submit_fds[1], &cb, sizeof(cb));
+		//full pipe should be impossible
+		if (write(submit_fds[1], &cb, sizeof(cb)) != sizeof(cb)) abort();
 		memset(&cb, 0, sizeof(cb));
 	}
 	/*private*/ void submit_cb(uintptr_t)
 	{
 		function<void()> cb;
-		read(submit_fds[0], &cb, sizeof(cb));
+		//we know the write pushed a complete one of those, we can assume we can read it out
+		if (read(submit_fds[0], &cb, sizeof(cb)) != sizeof(cb)) abort();
 		cb();
 	}
 #endif

@@ -204,7 +204,7 @@ bool file::unlink(cstring filename)
 #endif
 
 
-static string exepath;
+static cstring exepath;
 cstring file::exepath() { return ::exepath; }
 
 void arlib_init_file()
@@ -215,16 +215,17 @@ void arlib_init_file()
 	again: ;
 	ssize_t r = readlink("/proc/self/exe", buf.ptr(), buf.size());
 	if (r <= 0) abort();
-	if ((size_t)r >= buf.size())
+	if ((size_t)r >= buf.size()-1)
 	{
 		buf.resize(buf.size() * 2);
 		goto again;
 	}
 	
-	buf[r] = '\0'; // this resizes if needed
-	char * end = strrchr(buf.ptr(), '/'); // a / is known to exist
+	buf[r] = '\0';
+	char * end = strrchr(buf.ptr(), '/')+1; // a / is known to exist
+	*end = '\0';
 	
-	exepath = buf.slice(0, end+1 - buf.ptr());
+	exepath = strdup(buf.ptr());
 	
 	
 	//char * cwd_init_tmp=getcwd(NULL, 0);

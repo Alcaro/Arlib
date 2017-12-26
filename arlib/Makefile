@@ -127,6 +127,7 @@ ifneq ($(OPT),0)
     CONF_CFLAGS += -O3
   endif
   LFLAGS += -Wl,--gc-sections -Wl,--build-id=none
+  #LFLAGS += -Wl,--print-map
   ifneq ($(DEBUG),1)
     ifneq ($(STRIP),0)
       LFLAGS += -s

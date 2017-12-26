@@ -68,7 +68,7 @@ class sandproc : public process {
 	void watch_add(int sock);
 	void watch_del(int sock);
 	void send_rsp(int sock, broker_rsp* rsp, int fd);
-	void on_readable(int sock);
+	void on_readable(uintptr_t sock);
 	int mainsock;
 	set<int> socks;
 	
@@ -80,6 +80,8 @@ class sandproc : public process {
 	pid_t launch_impl(array<const char*> argv, array<int> stdio_fd) override;
 	
 public:
+	sandproc(runloop* loop) : process(loop) {}
+	
 	//If the child process uses Arlib, this allows convenient communication with it.
 	//Must be called before starting the child, and exactly once (or never).
 	//Like process, the object is not thread safe.

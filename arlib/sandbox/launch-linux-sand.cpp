@@ -181,7 +181,9 @@ pid_t sandproc::launch_impl(array<const char*> argv, array<int> stdio_fd)
 	
 	int clone_flags = CLONE_NEWUSER | CLONE_NEWPID | CLONE_NEWNET | CLONE_NEWCGROUP | CLONE_NEWIPC | CLONE_NEWNS | CLONE_NEWUTS;
 	clone_flags |= SIGCHLD; // termination signal, must be SIGCHLD for waitpid to work properly
+printf("d%lu\n",time_us_ne());
 	pid_t pid = syscall(__NR_clone, clone_flags, NULL, NULL, NULL, NULL);
+printf("e%lu,%i\n",time_us_ne(),(int)pid);
 	if (pid<0) return -1;
 	if (pid>0)
 	{
@@ -190,6 +192,14 @@ pid_t sandproc::launch_impl(array<const char*> argv, array<int> stdio_fd)
 		close(socks[1]);
 		return pid;
 	}
+	
+	//WARNING:
+	//fork(), POSIX.1-2008, http://pubs.opengroup.org/onlinepubs/9699919799/functions/fork.html
+	//  If a multi-threaded process calls fork(), the new process shall contain a replica of the
+	//  calling thread and its entire address space, possibly including the states of mutexes and
+	//  other resources. Consequently, to avoid errors, the child process may only execute
+	//  async-signal-safe operations until such time as one of the exec functions is called.
+	//This applies to clone() too, per the above. In particular, malloc must be avoided.
 	
 	//we're the child
 	

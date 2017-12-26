@@ -186,20 +186,29 @@ static bool has_debugger()
 
 void debug_or_ignore()
 {
-	if (has_debugger()) raise(SIGTRAP);
-	else if (RUNNING_ON_VALGRIND) VALGRIND_PRINTF_BACKTRACE("debug trace");
+	if (RUNNING_ON_VALGRIND) VALGRIND_PRINTF_BACKTRACE("debug trace");
+	else if (has_debugger()) raise(SIGTRAP);
+}
+
+#undef debug_or_print
+void debug_or_print(const char * filename, int line)
+{
+	if (RUNNING_ON_VALGRIND) VALGRIND_PRINTF_BACKTRACE("debug trace");
+	else if (has_debugger()) raise(SIGTRAP);
+	else fprintf(stderr, "arlib: debug_or_print(%s, %i)\n", filename, line);
 }
 
 void debug_or_exit()
 {
-	if (has_debugger()) raise(SIGTRAP);
-	else if (RUNNING_ON_VALGRIND) VALGRIND_PRINTF_BACKTRACE("debug trace");
+	if (RUNNING_ON_VALGRIND) VALGRIND_PRINTF_BACKTRACE("debug trace");
+	else if (has_debugger()) raise(SIGTRAP);
 	exit(1);
 }
 
 void debug_or_abort()
 {
-	raise(SIGTRAP);
+	if (RUNNING_ON_VALGRIND) VALGRIND_PRINTF_BACKTRACE("debug trace");
+	else raise(SIGTRAP);
 	abort();
 }
 #endif

@@ -165,6 +165,7 @@ test("file writing", "array", "file")
 test("in-memory files", "array", "file")
 {
 	array<byte> bytes;
+	bytes.resize(8);
 	for (int i=0;i<8;i++) bytes[i]=i;
 	array<byte> bytes2;
 	bytes2.resize(4);

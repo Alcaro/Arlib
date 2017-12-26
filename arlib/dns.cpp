@@ -52,7 +52,7 @@ void DNS::resolve(cstring domain, unsigned timeout_ms, function<void(string doma
 	
 	sock->send(packet.out());
 	
-	query& q = queries[trid];
+	query& q = queries.get_create(trid);
 	q.callback = callback;
 	q.domain = domain;
 	q.timeout_id = loop->set_timer_rel(timeout_ms, bind_lambda([this,trid]()->bool { this->timeout(trid); return false; }));
