@@ -224,7 +224,6 @@ public:
 	} s;
 	
 	runloop* loop = NULL;
-	uintptr_t idle_id = 0;
 	function<void()> cb_read;
 	function<void()> cb_write;
 	
@@ -324,50 +323,32 @@ public:
 		return buflen;
 	}
 	
-	/*private*/ bool do_cbs(bool from_cb)
+	/*private*/ void do_cbs()
 	{
 		//this function is known to be called only directly by the runloop, and as such, can't recurse
 		//TODO: use-after-free if the callbacks throw
 		bool deleted = false;
 		deleted_p = &deleted;
 		
-		uintptr_t idle_backup;
-		if (from_cb)
-		{
-			idle_backup = idle_id; // avoid having destructor remove the callback if we're inside it
-			idle_id = 0;
-		}
-		
 		int bearstate = br_ssl_engine_current_state(&s.sc.eng);
+	again:
 		if (cb_read  && (bearstate&(BR_SSL_RECVAPP|BR_SSL_CLOSED))) cb_read( );
-		if (deleted) return false;
+		if (deleted) return;
 		if (cb_write && (bearstate&(BR_SSL_SENDAPP|BR_SSL_CLOSED))) cb_write();
-		if (deleted) return false;
+		if (deleted) return;
 		if (bearstate & BR_SSL_CLOSED) sock = NULL;
+		
+		bearstate = br_ssl_engine_current_state(&s.sc.eng);
+		if (cb_read  && (bearstate&(BR_SSL_RECVAPP|BR_SSL_CLOSED))) goto again;
+		if (cb_write && (bearstate&(BR_SSL_SENDAPP|BR_SSL_CLOSED))) goto again;
 		
 		deleted_p = NULL;
 		
-		bearstate = br_ssl_engine_current_state(&s.sc.eng);
-		bool again = false;
-		if (cb_read  && (bearstate&(BR_SSL_RECVAPP|BR_SSL_CLOSED))) again = true;
-		if (cb_write && (bearstate&(BR_SSL_SENDAPP|BR_SSL_CLOSED))) again = true;
-		
 		set_child_cb();
-		
-		if (from_cb)
-		{
-			idle_id = idle_backup;
-			if (!again) this->idle_id = 0;
-			return again;
-		}
-		
-		if (again && !this->idle_id) this->idle_id = loop->set_idle(bind_this(&socketssl_impl::idle_cb));
-		return false;
 	}
 	
-	/*private*/ void on_readable() { process_recv(); do_cbs(false); }
-	/*private*/ void on_writable() { process_send(); do_cbs(false); }
-	/*private*/ bool idle_cb() { return do_cbs(true); }
+	/*private*/ void on_readable() { process_recv(); do_cbs(); }
+	/*private*/ void on_writable() { process_send(); do_cbs(); }
 	void callback(function<void()> cb_read, function<void()> cb_write)
 	{
 		this->cb_read = cb_read;
@@ -377,8 +358,6 @@ public:
 	~socketssl_impl()
 	{
 		if (deleted_p) *deleted_p = true;
-		
-		loop->remove(idle_id);
 		
 		if (!sock) return;
 		
@@ -469,7 +448,7 @@ socket* socket::wrap_ssl(socket* inner, cstring domain, runloop* loop)
 // if it provides 'ssl', it'd run alongside the other SSL tests and fail watchdog
 test("BearSSL init", "array,base64", "tcp")
 {
-	//test_skip("kinda slow");
+	test_skip("kinda slow");
 	
 	//for (size_t i=0;i<certs.size();i++)
 	//{

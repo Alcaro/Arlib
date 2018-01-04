@@ -10,8 +10,12 @@
 
 struct testlist {
 	void(*func)();
-	const char * loc;
+	
+	const char * filename;
+	int line;
+	
 	const char * name;
+	
 	const char * requires;
 	const char * provides;
 	testlist* next;
@@ -21,11 +25,12 @@ static testlist* g_testlist = NULL;
 
 static testlist* cur_test;
 
-_testdecl::_testdecl(void(*func)(), const char * loc, const char * name, const char * requires, const char * provides)
+_testdecl::_testdecl(void(*func)(), const char * filename, int line, const char * name, const char * requires, const char * provides)
 {
 	testlist* next = malloc(sizeof(testlist));
 	next->func = func;
-	next->loc = loc;
+	next->filename = filename;
+	next->line = line;
 	next->name = name;
 	next->requires = requires;
 	next->provides = provides;
@@ -129,7 +134,8 @@ namespace {
 struct latrec {
 	uint64_t us;
 	const char * name;
-	const char * loc;
+	const char * filename;
+	int line;
 	
 	bool operator<(const latrec& other) { return us < other.us; }
 };
@@ -141,14 +147,15 @@ void _test_runloop_latency(uint64_t us)
 {
 	max_latencies_us[0].us = us;
 	max_latencies_us[0].name = cur_test->name;
-	max_latencies_us[0].loc = cur_test->loc;
+	max_latencies_us[0].filename = cur_test->filename;
+	max_latencies_us[0].line = cur_test->line;
 	arrayvieww<latrec>(max_latencies_us).sort();
 }
 
 
 static void err_print(testlist* err)
 {
-	printf("%s (at %s, requires %s, provides %s)\n", err->name, err->loc, err->requires, err->provides);
+	printf("%s (at %s:%i, requires %s, provides %s)\n", err->name, err->filename, err->line, err->requires, err->provides);
 }
 
 //whether 'a' must be before 'b'; alternatively, whether 'a' provides something 'b' requires
@@ -179,6 +186,9 @@ static testlist* sort_tests(testlist* unsorted)
 {
 	testlist* sorted_head = NULL;
 	testlist* * sorted_tail = &sorted_head; // points to where to attach the next test, usually &something->next
+	
+	//ideally, this would pick all tests in a file simultaneously, if possible
+	//but that's annoying to implement even with full Arlib, and this thing doesn't assume Arlib is functional
 	
 	while (unsorted)
 	{
@@ -234,6 +244,11 @@ static testlist* sort_tests(testlist* unsorted)
 	return sorted_head;
 }
 
+#ifdef __linux__
+#include <sys/time.h>
+#include <sys/resource.h>
+#endif
+
 #undef main // the real main is #define'd to something stupid on test runs
 int main(int argc, char* argv[])
 {
@@ -242,6 +257,12 @@ int main(int argc, char* argv[])
 //if(argc>1)abort(); // TODO: argument parser
 #ifndef ARGUI_NONE
 	arlib_init(NULL, argv);
+#endif
+	
+#ifdef __linux__
+	struct rlimit rlim = { 500*1024*1024, RLIM_INFINITY };
+	setrlimit(RLIMIT_AS, &rlim);
+	setrlimit(RLIMIT_DATA, &rlim);
 #endif
 	
 	all_tests = (argc>1);
@@ -285,17 +306,22 @@ int main(int argc, char* argv[])
 		while (cur_test)
 		{
 			testlist* next = cur_test->next;
-			if (cur_test->name) printf("Testing %s (%s)... ", cur_test->name, cur_test->loc);
-			else printf("Testing %s... ", cur_test->loc);
+			if (cur_test->name) printf("Testing %s (%s:%i)... ", cur_test->name, cur_test->filename, cur_test->line);
+			else printf("Testing %s:%i... ", cur_test->filename, cur_test->line);
 			fflush(stdout);
 			callstack.reset();
 			result = err_ok;
 			nothrow_level = 0;
 			try {
+				uint64_t start_time = time_us_ne();
 				cur_test->func();
+				uint64_t end_time = time_us_ne();
+				uint64_t time_us = end_time - start_time;
+				assert_lt(time_us, all_tests ? 5000*1000 : 500*1000);
 			} catch (err_t e) {
 				result = e;
 			}
+			
 			if (result == err_ok) puts("pass");
 			count[result]++;
 			cur_test = next;
@@ -312,10 +338,11 @@ int main(int argc, char* argv[])
 			uint64_t max_latency_us = (RUNNING_ON_VALGRIND ? 100 : 3) * 1000;
 			if (max_latencies_us[i].us > max_latency_us || i == ARRAY_SIZE(max_latencies_us)-1)
 			{
-				printf("Latency %luus at %s (%s)\n",
+				printf("Latency %luus at %s (%s:%i)\n",
 				       (unsigned long)max_latencies_us[i].us,
 				       max_latencies_us[i].name,
-				       max_latencies_us[i].loc);
+				       max_latencies_us[i].filename,
+				       max_latencies_us[i].line);
 			}
 		}
 		
@@ -385,6 +412,5 @@ test("tests themselves (4/8)", "test2,test3", "test4")
 }
 
 test("", "", "") { test_expfail("use an argument parser"); }
-test("", "", "") { assert(!"make tests tell how long they took, fail if too high (limit 500ms, 5s for test-all - split http)"); }
 #endif
 #endif

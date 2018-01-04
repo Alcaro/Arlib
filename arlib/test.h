@@ -8,7 +8,7 @@
 
 class _testdecl {
 public:
-	_testdecl(void(*func)(), const char * loc, const char * name, const char * requires, const char * provides);
+	_testdecl(void(*func)(), const char * filename, int line, const char * name, const char * requires, const char * provides);
 };
 
 void _testfail(cstring why, int line);
@@ -126,7 +126,7 @@ void _assert_range(const T&  actual, const char * actual_exp,
 //Requiring a feature that no test provides, or cyclical dependencies, causes a test failure.
 #define test(name, requires, provides) \
 	static void TESTFUNCNAME(); \
-	static KEEP_OBJECT _testdecl JOIN(_testdecl, __LINE__)(TESTFUNCNAME, __FILE__ ":" STR(__LINE__), name, requires, provides); \
+	static KEEP_OBJECT _testdecl JOIN(_testdecl, __LINE__)(TESTFUNCNAME, __FILE__, __LINE__, name, requires, provides); \
 	static void TESTFUNCNAME()
 #define assert_ret(x, ret) do { if (!(x)) { _testfail("\nFailed assertion " #x, __LINE__); } } while(0)
 #define assert(x) assert_ret(x,)

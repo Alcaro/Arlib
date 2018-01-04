@@ -482,7 +482,7 @@ test("HTTP", "tcp,ssl", "http")
 		T assert_eq(r.text(), CONTENTS);
 	}
 	
-	//ensure it doesn't mix up the URL it's supposed to request
+	//ensure it doesn't mix up the URLs it's supposed to request
 	T {
 		HTTP h(loop);
 		
@@ -561,6 +561,7 @@ test("HTTP", "tcp,ssl", "http")
 	{
 		HTTP::req rq("https://httpbin.org/stream-bytes/128?chunk_size=30&seed=1");
 		rq.id = 42;
+		
 		HTTP h(loop);
 		h.send(rq, break_runloop);
 		h.send(rq, break_runloop);
@@ -595,7 +596,19 @@ test("HTTP", "tcp,ssl", "http")
 	
 	T {
 		HTTP h(loop);
-		h.send(HTTP::req("http://floating.muncher.se:99/"), break_runloop);
+		HTTP::req rq("http://www.smwcentral.net/ajax.php?a=getdiscordusers");
+		rq.limit_bytes = 2000;
+		h.send(rq, break_runloop);
+		
+		loop->enter();
+		assert_eq(r.status, HTTP::rsp::e_too_big);
+	}
+	
+	T {
+		HTTP h(loop);
+		HTTP::req rq("http://floating.muncher.se:99/");
+		rq.limit_ms = 200;
+		h.send(rq, break_runloop);
 		
 		loop->enter();
 		assert_eq(r.status, HTTP::rsp::e_timeout);
@@ -603,12 +616,12 @@ test("HTTP", "tcp,ssl", "http")
 	
 	T {
 		HTTP h(loop);
-		HTTP::req rq("http://www.smwcentral.net/ajax.php?a=getdiscordusers");
-		rq.limit_bytes = 2000;
+		HTTP::req rq("https://floating.muncher.se:99/");
+		rq.limit_ms = 200;
 		h.send(rq, break_runloop);
 		
 		loop->enter();
-		assert_eq(r.status, HTTP::rsp::e_too_big);
+		assert_eq(r.status, HTTP::rsp::e_timeout);
 	}
 }
 #endif

@@ -242,10 +242,11 @@ public:
 	
 	void exit()
 	{
-		exited = true;
 #ifdef ARLIB_TEST
 		assert(can_exit);
+		//assert(!exited);
 #endif
+		exited = true;
 	}
 	
 	void step()
@@ -314,7 +315,7 @@ class runloop_blocktest : public runloop {
 		uint64_t new_us = time_us_ne();
 		if (new_us/1000000/10 != us/1000000/10) loopdetect = 0;
 		loopdetect++;
-		if (loopdetect == 1000) assert(!"1000 runloop iterations in 10 seconds");
+		if (loopdetect == 10000) assert(!"10000 runloop iterations in 10 seconds");
 		us = new_us;
 	}
 	/*private*/ void end()

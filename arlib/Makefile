@@ -106,6 +106,9 @@ ifeq ($(OS),linux)
   OBJNAME = linux
   TESTRUNNER = valgrind --num-callers=100
 endif
+ifeq ($(TESTRUNNER),gdb)
+  override TESTRUNNER = gdb --args
+endif
 
 ifeq ($(OS),windows)
   EXESUFFIX = .exe

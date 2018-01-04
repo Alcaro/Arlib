@@ -12,13 +12,10 @@ static void clienttest(cstring target, int port, bool ssl, bool xfail = false)
 	
 	autoptr<runloop> loop = runloop::create();
 	bool timeout = false;
-	loop->set_timer_rel(8000, bind_lambda([&]()->bool { timeout = true; loop->exit(); return false; }));
+	loop->set_timer_rel(8000, bind_lambda([&]()->bool { assert_unreachable(); loop->exit(); return false; }));
 	
 	autoptr<socket> sock = (ssl ? socket::create_ssl : socket::create)(target, port, loop);
 	assert(sock);
-	
-	//ugly, but the alternative is nesting lambdas forever or busywait. I need a way to break it anyways
-	function<void()> break_runloop = bind_lambda([&]() { loop->exit(); });
 	
 	cstring http_get =
 		"GET / HTTP/1.1\r\n"
@@ -28,27 +25,37 @@ static void clienttest(cstring target, int port, bool ssl, bool xfail = false)
 	
 	assert_eq(sock->send(http_get.bytes()), http_get.length());
 	
-	sock->callback(break_runloop, NULL);
-	
 	uint8_t buf[8];
 	size_t n_buf = 0;
-	while (n_buf < 8)
-	{
-		testcall(loop->enter());
-		assert(!timeout);
-		
-		int bytes = sock->recv(arrayvieww<byte>(buf).slice(n_buf, 2));
-		if (xfail)
-		{
-			if (bytes == 0) continue;
-			assert_lt(bytes, 0);
-			return;
-		}
-		assert_gte(bytes, 0);
-		n_buf += bytes;
-	}
 	
-	assert_eq(string(arrayview<byte>(buf)), "HTTP/1.1");
+	sock->callback(bind_lambda([&]()
+		{
+			if (n_buf < 8)
+			{
+				int bytes = sock->recv(arrayvieww<byte>(buf).slice(n_buf, n_buf==0 ? 2 : 1));
+				if (bytes == 0) return;
+				if (xfail)
+				{
+					assert_lt(bytes, 0);
+					loop->exit();
+				}
+				else
+				{
+					assert_gte(bytes, 0);
+					n_buf += bytes;
+				}
+			}
+			if (n_buf >= 8)
+			{
+				uint8_t discard[4096];
+				sock->recv(discard);
+				loop->exit();
+			}
+		}));
+	
+	loop->enter();
+	assert(!timeout);
+	if (!xfail) assert_eq(string(arrayview<byte>(buf)), "HTTP/1.1");
 }
 
 //this IP is www.nic.ad.jp, both lookup and ping time for that one are 300ms

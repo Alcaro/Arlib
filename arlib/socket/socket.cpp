@@ -331,24 +331,17 @@ public:
 	/*private*/ void cancel()
 	{
 		child = NULL;
-		set_loop();
+		if (cb_read) cb_read();
+		else cb_write();
 	}
 	
 	/*private*/ void set_loop()
 	{
-		if (!child)
-		{
-			if (!idle_id) idle_id = loop->set_idle(bind_this(&socketbuf::on_idle));
-			return;
-		}
-		child->callback(cb_read            ? bind_this(&socketbuf::on_readable) : NULL,
-		                tosend.remaining() ? bind_this(&socketbuf::on_writable) : NULL);
-		if (cb_write && !idle_id) idle_id = loop->set_idle(bind_this(&socketbuf::on_idle));
+		if (!child) return;
+		child->callback(cb_read, tosend.remaining() ? bind_this(&socketbuf::trysend) : NULL);
 	}
 	/*private*/ void trysend()
 	{
-		if (!child) return set_loop();
-		
 		arrayview<byte> bytes = tosend.pull_buf();
 		if (!bytes.size()) return;
 		int nbytes = child->send(bytes);
@@ -372,24 +365,11 @@ public:
 		return data.size();
 	}
 	
-	/*private*/ void on_readable() { cb_read(); }
-	/*private*/ void on_writable() { trysend(); }
-	/*private*/ bool on_idle()
-	{
-		if (!child && cb_read) cb_read();
-		else if (cb_write) cb_write();
-		else { idle_id = 0; return false; }
-		return true;
-	}
 	void callback(function<void()> cb_read, function<void()> cb_write)
 	{
 		this->cb_read = cb_read;
 		this->cb_write = cb_write;
 		set_loop();
-	}
-	~socketbuf()
-	{
-		loop->remove(idle_id);
 	}
 };
 

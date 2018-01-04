@@ -2,9 +2,9 @@
 #include "global.h"
 
 //A runloop keeps track of a number of file descriptors, calling their handlers whenever the relevant operation is available.
-//There are no fairness guarantees. If an event doesn't terminate or unset itself properly, it may inhibit other fds.
+//Event handlers must handle the event. If they don't, the handler may be called again forever and block everything else.
 //Do not call enter() or step() while inside a callback. However, set_*(), remove() and exit() are fine.
-//Like nearly all other objects, a runloop is not thread safe.
+//Like most other objects, a runloop is not thread safe.
 class runloop : nocopy {
 protected:
 	runloop() {}
