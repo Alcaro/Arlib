@@ -3,6 +3,7 @@
 #include "../file.h"
 #include "../os.h"
 #include "../set.h"
+#include "../init.h"
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>
@@ -259,17 +260,17 @@ public:
 		else
 		{
 			byte nul[1] = {0};
-			return write(nul, newsize-1);
+			return pwrite(nul, newsize-1);
 		}
 	}
 	
-	size_t read(arrayvieww<byte> target, size_t start)
+	size_t pread(arrayvieww<byte> target, size_t start)
 	{
 		bool ok = g_seekable_seek(this->seek, start, G_SEEK_SET, NULL, NULL);
 		if (!ok) return 0;
 		return g_input_stream_read(this->input, target.ptr(), target.size(), NULL, NULL);
 	}
-	bool write(arrayview<byte> data, size_t start)
+	bool pwrite(arrayview<byte> data, size_t start)
 	{
 		bool ok = g_seekable_seek(this->seek, start, G_SEEK_SET, NULL, NULL);
 		if (!ok) return false;

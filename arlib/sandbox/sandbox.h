@@ -108,6 +108,14 @@ public:
 	//Do not use as a security mechanism. Use it only as a warning suppression mechanism.
 	void fs_hide(cstring path) { fs.grant_errno(path, ENOENT, false); }
 	
+	//The callback should return a file descriptor, or -1 with errno set.
+	//It will never call the access violation callback. Do that yourself.
+	//The returned file descriptor must be writable if 'write' is set. If it's not,
+	// returning a writable fd will make the sandbox create a new fd corresponding to the same file,
+	// but without write access.
+	//should_close tells whether the sandbox should close the returned fd for you. Defaults to true.
+	void fs_grant_callback(cstring path, function<uintptr_t(cstring path, bool write, bool& should_close)> callback);
+	
 	//Grants access to some system libraries present in default installations of the operating system,
 	// needed to run simple programs.
 	//Some programs may require additional files.

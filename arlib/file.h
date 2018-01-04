@@ -10,9 +10,9 @@ public:
 		virtual size_t size() = 0;
 		virtual bool resize(size_t newsize) = 0;
 		
-		virtual size_t read(arrayvieww<byte> target, size_t start) = 0;
-		virtual bool write(arrayview<byte> data, size_t start = 0) = 0;
-		virtual bool replace(arrayview<byte> data) { return resize(data.size()) && write(data); }
+		virtual size_t pread(arrayvieww<byte> target, size_t start) = 0;
+		virtual bool pwrite(arrayview<byte> data, size_t start = 0) = 0;
+		virtual bool replace(arrayview<byte> data) { return resize(data.size()) && pwrite(data); }
 		
 		virtual arrayview<byte> mmap(size_t start, size_t len) = 0;
 		virtual void unmap(arrayview<byte> data) = 0;
@@ -32,8 +32,8 @@ public:
 		virtual size_t size() = 0;
 		bool resize(size_t newsize) { return false; }
 		
-		virtual size_t read(arrayvieww<byte> target, size_t start) = 0;
-		bool write(arrayview<byte> data, size_t start = 0) { return false; }
+		virtual size_t pread(arrayvieww<byte> target, size_t start) = 0;
+		bool pwrite(arrayview<byte> data, size_t start = 0) { return false; }
 		bool replace(arrayview<byte> data) { return false; }
 		
 		virtual arrayview<byte> mmap(size_t start, size_t len) = 0;
@@ -43,6 +43,7 @@ public:
 	};
 private:
 	impl* core;
+	size_t pos = 0;
 	file(impl* core) : core(core) {}
 	
 public:
@@ -55,8 +56,8 @@ public:
 	};
 	
 	file() : core(NULL) {}
-	file(file&& f) { core=f.core; f.core=NULL; }
-	file& operator=(file&& f) { delete core; core=f.core; f.core=NULL; return *this; }
+	file(file&& f) { core = f.core; f.core = NULL; }
+	file& operator=(file&& f) { delete core; core = f.core; f.core = NULL; return *this; }
 	file(cstring filename, mode m = m_read) : core(NULL) { open(filename, m); }
 	
 	bool open(cstring filename, mode m = m_read)
@@ -84,33 +85,51 @@ public:
 	
 	//Reading outside the file will return partial results.
 	size_t size() const { return core->size(); }
-	size_t read(arrayvieww<byte> target, size_t start) const { return core->read(target, start); }
-	array<byte> read() const
+	size_t pread(arrayvieww<byte> target, size_t start) const { return core->pread(target, start); }
+	array<byte> readall() const
 	{
 		array<byte> ret;
 		ret.reserve_noinit(this->size());
-		size_t actual = this->read(ret, 0);
+		size_t actual = this->pread(ret, 0);
 		ret.resize(actual);
 		return ret;
 	}
-	static array<byte> read(cstring path)
+	static array<byte> readall(cstring path)
 	{
 		file f(path);
-		if (f) return f.read();
+		if (f) return f.readall();
 		else return NULL;
 	}
 	
 	bool resize(size_t newsize) { return core->resize(newsize); }
-	//Writes outside the file will extend it. If the write starts after the current size, it's zero extended.
-	bool write(arrayview<byte> data, size_t start = 0) { return core->write(data, start); }
+	//Writes outside the file will extend it with NULs.
+	bool pwrite(arrayview<byte> data, size_t pos = 0) { return core->pwrite(data, pos); }
+	//File pointer is undefined after calling this.
 	bool replace(arrayview<byte> data) { return core->replace(data); }
 	bool replace(cstring data) { return replace(data.bytes()); }
-	bool write(cstring data) { return write(data.bytes()); }
-	static bool write(cstring path, arrayview<byte> data)
+	bool pwrite(cstring data, size_t pos = 0) { return pwrite(data.bytes(), pos); }
+	static bool writeall(cstring path, arrayview<byte> data)
 	{
 		file f(path, m_replace);
-		return f.write(data);
+		return f.pwrite(data);
 	}
+	
+	//Seeking outside the file is fine. This will return short reads, or extend the file 
+	bool seek(size_t pos) { this->pos = pos; return true; }
+	size_t tell() { return pos; }
+	size_t read(arrayvieww<byte> data)
+	{
+		size_t ret = core->pread(data, pos);
+		pos += ret;
+		return ret;
+	}
+	bool write(arrayview<byte> data)
+	{
+		bool ok = core->pwrite(data, pos);
+		if (ok) pos += data.size();
+		return ok;
+	}
+	bool write(cstring data) { return write(data.bytes()); }
 	
 	//Mappings are not guaranteed to update if the underlying file changes. To force an update, delete and recreate the mapping.
 	//If the underlying file is changed while a written mapping exists, it's undefined which (if any) writes take effect.
@@ -158,13 +177,13 @@ private:
 			return true;
 		}
 		
-		size_t read(arrayvieww<byte> target, size_t start)
+		size_t pread(arrayvieww<byte> target, size_t start)
 		{
 			size_t nbyte = min(target.size(), datard.size()-start);
 			memcpy(target.ptr(), datard.slice(start, nbyte).ptr(), nbyte);
 			return nbyte;
 		}
-		bool write(arrayview<byte> newdata, size_t start = 0)
+		bool pwrite(arrayview<byte> newdata, size_t start = 0)
 		{
 			if (!datawr) return false;
 			size_t nbyte = newdata.size();

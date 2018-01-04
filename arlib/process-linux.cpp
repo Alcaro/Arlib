@@ -2,6 +2,7 @@
 
 #ifdef __linux__
 #include <spawn.h>
+#include <errno.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/syscall.h>
@@ -68,7 +69,9 @@ namespace sigchld {
 				act.sa_flags = SA_SIGINFO|SA_NODEFER|SA_NOCLDSTOP;
 				sigaction(SIGCHLD, &act, NULL);
 			}
+#ifdef ARLIB_THREAD
 			loop->prepare_submit();
+#endif
 			loop->set_fd(pipe[0], on_readable, NULL);
 		}
 	}
@@ -337,7 +340,11 @@ void process::_on_sigchld_offloop()
 	{
 		onexit_cb->ref();
 		onexit_cb->arg = status;
+#ifdef ARLIB_THREAD
 		this->loop->submit(bind_ptr(&onexit_t::invoke_unref, onexit_cb));
+#else
+		onexit_cb->invoke_unref(); // if Arlib is configured single threaded, we're always on the right thread, so this is safe
+#endif
 	}
 	
 	lock_write(&this->exitcode, status);

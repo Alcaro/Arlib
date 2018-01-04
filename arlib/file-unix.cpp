@@ -1,6 +1,7 @@
 #include "file.h"
 #include "os.h"
 #include "thread.h"
+#include "init.h"
 
 #ifdef __unix__
 #include <unistd.h>
@@ -117,15 +118,15 @@ namespace {
 			return (ftruncate(this->fd, newsize) == 0);
 		}
 		
-		size_t read(arrayvieww<byte> target, size_t start)
+		size_t pread(arrayvieww<byte> target, size_t start)
 		{
-			size_t ret = pread(fd, target.ptr(), target.size(), start);
+			size_t ret = ::pread(fd, target.ptr(), target.size(), start);
 			if (ret<0) return 0;
 			else return ret;
 		}
-		bool write(arrayview<byte> data, size_t start)
+		bool pwrite(arrayview<byte> data, size_t start)
 		{
-			size_t ret = pwrite(fd, data.ptr(), data.size(), start);
+			size_t ret = ::pwrite(fd, data.ptr(), data.size(), start);
 			if (ret<0) return 0;
 			else return ret;
 		}

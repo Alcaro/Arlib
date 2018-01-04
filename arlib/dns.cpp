@@ -11,7 +11,7 @@ string DNS::default_resolver()
 	//there is a native async dns handler https://msdn.microsoft.com/en-us/library/hh447188(v=vs.85).aspx
 	//but it requires 8+, and some funky dll that probably usually isn't used
 	//also check what ifdef (if any) controls DnsQuery_UTF8 https://msdn.microsoft.com/en-us/library/ms682016(v=vs.85).aspx
-	return ("\n"+file::read("/etc/resolv.conf")).split<1>("\nnameserver ")[1].split<1>("\n")[0];
+	return ("\n"+file::readall("/etc/resolv.conf")).split<1>("\nnameserver ")[1].split<1>("\n")[0];
 }
 
 void DNS::resolve(cstring domain, unsigned timeout_ms, function<void(string domain, string ip)> callback)

@@ -144,7 +144,7 @@ test("set", "array", "set")
 		
 		uint32_t set_flags = 0;
 		size_t len_iter = 0;
-		for (auto& x : item) // this blows up if the last slot in the set is used
+		for (auto& x : item) // ensure this doesn't blow up if the last slot in the set is used
 		{
 			assert(x >= 0 && x < 32);
 			

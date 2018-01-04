@@ -27,7 +27,7 @@
 
 test("process", "array,string,runloop", "process")
 {
-	//test_skip("kinda slow");
+	test_skip("kinda slow");
 	
 	autoptr<runloop> loop = runloop::create();
 	//ugly, but the alternative is nesting lambdas forever or busywait. and I need a way to break it anyways

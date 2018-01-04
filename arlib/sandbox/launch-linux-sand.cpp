@@ -120,7 +120,7 @@ int sandproc::preloader_fd()
 	if (lock_read_loose(&s_fd)) return s_fd;
 	
 	int fd = syscall(__NR_memfd_create, "arlib-sand-preload", MFD_CLOEXEC|MFD_ALLOW_SEALING);
-	if (fd<0)
+	if (fd < 0)
 		goto fail;
 	if (write(fd, sandbox_preload_bin, sandbox_preload_len) != sandbox_preload_len)
 		goto fail;
@@ -136,7 +136,7 @@ int sandproc::preloader_fd()
 	return fd;
 	
 fail:
-	if (fd>=0) close(fd);
+	if (fd >= 0) close(fd);
 	return -1;
 }
 

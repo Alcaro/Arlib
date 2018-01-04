@@ -385,5 +385,6 @@ test("tests themselves (4/8)", "test2,test3", "test4")
 }
 
 test("", "", "") { test_expfail("use an argument parser"); }
+test("", "", "") { assert(!"make tests tell how long they took, fail if too high (limit 500ms, 5s for test-all - split http)"); }
 #endif
 #endif
