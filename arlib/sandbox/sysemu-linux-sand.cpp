@@ -417,7 +417,7 @@ static inline int execveat(int dirfd, const char * pathname, char * const * argv
 	int access_ok = access(pathname, X_OK);
 	if (access_ok < 0) return access_ok;
 	
-	//TODO: this leaks the argv malloc on failure
+	//TODO: this leaks lots of memory on failure
 	const char * * new_argv = dup_prefix(argv, "[Arlib-sandbox]");
 	new_argv[1] = (char*)pathname; // discard our given argv[0], no way to make ld-linux load one file but pass another argv[0]
 	
@@ -687,6 +687,12 @@ extern "C" void preload_action(char** argv, char** envp)
 	const char * * env_pwd = find_env((const char**)envp, "PWD=");
 	if (env_pwd) chdir(*env_pwd + strlen("PWD="));
 	else chdir("/@CWD");
+}
+
+extern "C" void preload_error(const char * why)
+{
+	error(why);
+	exit_group(1);
 }
 
 }}

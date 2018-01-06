@@ -136,7 +136,7 @@ int sandproc::filesystem::child_file(cstring pathname, int op_, int flags, mode_
 		return -1;
 	}
 	
-	if (pathname[0]!='/' ||
+	if (pathname[0] != '/' ||
 		pathname.contains("/./") || pathname.contains("/../") ||
 		pathname.endswith("/.") || pathname.endswith("/.."))
 	{
@@ -144,7 +144,7 @@ int sandproc::filesystem::child_file(cstring pathname, int op_, int flags, mode_
 		errno = EACCES;
 		return -1;
 	}
-	while (pathname[~1] == '/') pathname = pathname.substr(0, ~1);
+	while (pathname.endswith("/")) pathname = pathname.substr(0, ~1);
 	
 	bool exact_path = false;
 	
@@ -153,7 +153,7 @@ int sandproc::filesystem::child_file(cstring pathname, int op_, int flags, mode_
 	size_t mlen = 0;
 	for (auto& miter : mounts)
 	{
-		if (miter.key[0]!='/') abort();
+		if (miter.key[0] != '/') abort();
 //puts("  mount "+miter.key);
 		if (miter.key.length() <= mlen) continue;
 		bool use;
