@@ -223,10 +223,12 @@ puts("GTJ="+tostring(guilds_to_join));
 		}
 		if (json["t"] == "CHANNEL_CREATE" || json["t"] == "CHANNEL_UPDATE")
 		{
+			if (json["d"]["type"] != 0) return;
+			
 			cstring cid = json["d"]["id"];
 			cstring gid = json["d"]["guild_id"];
 			
-			i_channel& c = channels[cid];
+			i_channel& c = channels.get_create(cid);
 			i_guild& g = guilds[gid];
 			
 			g.channels.add(cid);

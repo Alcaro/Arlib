@@ -243,6 +243,7 @@ newsock:
 	}
 	
 	try_compile_req();
+	if (!sock) goto newsock;
 	
 	array<byte> newrecv;
 	if (sock->recv(newrecv) < 0) { sock = NULL; goto newsock; }

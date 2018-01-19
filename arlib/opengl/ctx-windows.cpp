@@ -305,13 +305,8 @@ public:
 	}
 	
 #ifdef AROPENGL_D3DSYNC
-	/*private*/ bool CreateD3DContext()
+	/*private*/ D3DPRESENT_PARAMETERS PresentParams()
 	{
-		IDirect3D9Ex* d3d;
-		this->D3D_device = NULL;
-		
-		if (FAILED(lpDirect3DCreate9Ex(D3D_SDK_VERSION, &d3d))) return false;
-		
 		D3DPRESENT_PARAMETERS parameters = {};
 		parameters.BackBufferCount = 2; // D3DPRESENT_FORCEIMMEDIATE|D3DPRESENT_DONOTWAIT doesn't work without this
 		parameters.SwapEffect = D3DSWAPEFFECT_FLIPEX;
@@ -321,7 +316,17 @@ public:
 		//_ONE is _DEFAULT, but also calls timeBeginPeriod to improve precision
 		//anything opting in to Direct3D vsync is clearly a high-performance program, and thus wants the increased precision
 		parameters.PresentationInterval = D3DPRESENT_INTERVAL_ONE;
+		return parameters;
+	}
+	
+	/*private*/ bool CreateD3DContext()
+	{
+		IDirect3D9Ex* d3d;
+		this->D3D_device = NULL;
 		
+		if (FAILED(lpDirect3DCreate9Ex(D3D_SDK_VERSION, &d3d))) return false;
+		
+		D3DPRESENT_PARAMETERS parameters = PresentParams();
 		if (FAILED(d3d->CreateDeviceEx(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, this->D3D_hwnd,
 		                               D3DCREATE_MIXED_VERTEXPROCESSING|D3DCREATE_MULTITHREADED,
 		                               &parameters, NULL, &this->D3D_device)))
@@ -429,6 +434,25 @@ public:
 			wgl.DXUnlockObjectsNV(D3D_sharehandle, 1, &this->GL_htexture);
 			this->D3D_device->StretchRect(this->D3D_GLtarget, NULL, this->D3D_backbuf, NULL, D3DTEXF_NONE);
 			this->D3D_device->PresentEx(NULL, NULL, NULL, NULL, (vsync ? 0 : D3DPRESENT_FORCEIMMEDIATE|D3DPRESENT_DONOTWAIT));
+			
+			HRESULT err = this->D3D_device->PresentEx(NULL, NULL, NULL, NULL, D3DPRESENT_FORCEIMMEDIATE);
+			if (err == D3DERR_DEVICELOST || err == D3DERR_DEVICEHUNG)
+			{
+				//WARNING: Untested, stolen from https://github.com/mudlord/einweggerat/commit/07dc0cb74f76c8cde890f4bbf290bad1d56975d9
+				debug_or_print();
+				
+				DeallocRenderTarget();
+				D3DPRESENT_PARAMETERS parameters = PresentParams();
+				err = this->D3D_device->ResetEx(&parameters, NULL);
+				if (err == D3DERR_DEVICELOST || err == D3DERR_DEVICEHUNG)
+				{
+					// WARNING: Not tested by mudlord either
+					debug_or_abort();
+				}
+				AllocRenderTarget();
+				return;
+			}
+			
 			wgl.DXLockObjectsNV(D3D_sharehandle, 1, &this->GL_htexture);
 		}
 		else
@@ -446,7 +470,7 @@ public:
 		}
 	}
 	
-	GLuint outputFramebuffer()
+	GLuint outputFramebuffer()f
 	{
 		if (d3dsync) return GL_fboname;
 		else return 0;

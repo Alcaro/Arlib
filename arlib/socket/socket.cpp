@@ -338,17 +338,26 @@ public:
 	/*private*/ void set_loop()
 	{
 		if (!child) return;
-		child->callback(cb_read, tosend.remaining() ? bind_this(&socketbuf::trysend) : NULL);
+		child->callback(cb_read, tosend.remaining() ? bind_this(&socketbuf::trysend_void) : NULL);
 	}
-	/*private*/ void trysend()
+	/*private*/ bool trysend(bool in_runloop)
 	{
 		arrayview<byte> bytes = tosend.pull_buf();
-		if (!bytes.size()) return;
+		if (!bytes.size()) return true;
 		int nbytes = child->send(bytes);
-		if (nbytes < 0) return cancel();
+		if (nbytes < 0)
+		{
+			if (in_runloop) cancel();
+			return false;
+		}
 		tosend.pull_done(nbytes);
 		
 		set_loop();
+		return true;
+	}
+	/*private*/ void trysend_void()
+	{
+		trysend(true);
 	}
 	
 	int recv(arrayvieww<byte> data)
@@ -361,7 +370,7 @@ public:
 	{
 		if (!child) return e_broken;
 		tosend.push(data);
-		trysend();
+		if (!trysend(false)) return -1;
 		return data.size();
 	}
 	

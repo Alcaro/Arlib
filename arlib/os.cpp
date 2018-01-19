@@ -204,10 +204,12 @@ bool debug_or_print(const char * filename, int line)
 		static mutex mut;
 		synchronized(mut)
 		{
-			if (!f) f.open(file::exepath()+"/arlib-debug-or-print.log");
 			string err = (cstring)"arlib: debug_or_print("+filename+", "+tostring(line)+")\n";
-			f.write(err);
 			fputs(err, stderr);
+			
+			if (!f) f.open(file::exepath()+"/arlib-debug-or-print.log", file::m_replace);
+			if (f) f.write(err);
+			else fputs("arlib: debug_or_print(): couldn't open debug log", stderr);
 		}
 	}
 	return true;

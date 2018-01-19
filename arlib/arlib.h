@@ -4,6 +4,7 @@
 //- msvc compat: add some define that, if absent, enables every feature
 
 //WARNING: Arlib comes with zero stability guarantees. It can and will change in arbitrary ways, for any reason and at any time.
+//if anyone whines about antivirus, https://arstechnica.com/information-technology/2017/01/antivirus-is-bad/
 
 #pragma once
 #include "global.h"
