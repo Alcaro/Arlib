@@ -118,6 +118,7 @@ ifeq ($(OS),windows)
 #obj/resource$(OBJNAME).o: ico/*
 #	$(RC) $(RCFLAGS) ico/minir.rc obj/resource$(OBJNAME).o
   OBJNAME = windows
+  $(error check if -Wl,nxcompat does anything or if it defaults to true)
 endif
 
 OPTFLAGS := -Os -fomit-frame-pointer -fmerge-all-constants -fvisibility=hidden
@@ -125,18 +126,19 @@ OPTFLAGS += -fno-unwind-tables -fno-asynchronous-unwind-tables
 OPTFLAGS += -ffunction-sections -fdata-sections
 OPTFLAGS += -fno-ident
 OPTFLAGS += -Werror -DNDEBUG
+OPTLFLAGS := -Wl,--gc-sections -Wl,--build-id=none
+#OPTLFLAGS += -Wl,--print-map
+ifneq ($(DEBUG),1)
+  ifneq ($(STRIP),0)
+    OPTLFLAGS += -s
+  endif
+endif
 
 ifneq ($(OPT),0)
   CONF_CFLAGS += $(OPTFLAGS)
+  CONF_LFLAGS += $(OPTLFLAGS)
   ifeq ($(OPT),spd)
     CONF_CFLAGS += -O3
-  endif
-  LFLAGS += -Wl,--gc-sections -Wl,--build-id=none
-  LFLAGS += -Wl,--print-map
-  ifneq ($(DEBUG),1)
-    ifneq ($(STRIP),0)
-      LFLAGS += -s
-    endif
   endif
   OBJNAME := $(OBJNAME)-opt
 endif
@@ -286,9 +288,12 @@ endif
 
 SOURCES_NOWARN += arlib/deps/miniz.c
 
-TRUE_CFLAGS = -std=c99 $(CCXXFLAGS) $(CFLAGS) $(CONF_CFLAGS)
-TRUE_CXXFLAGS = -std=c++11 -fno-rtti $(CCXXFLAGS) $(CXXFLAGS) $(CONF_CXXFLAGS)
-TRUE_LFLAGS = $(LFLAGS) -fvisibility=hidden $(CONF_LFLAGS)
+#CFLAGS_ARLIB += $(patsubst %,-D%,$(DEFINES))
+CONF_CFLAGS += $(patsubst %,-D%,$(DEFINES))
+
+TRUE_CFLAGS := -std=c99 $(CCXXFLAGS) $(CFLAGS) $(CONF_CFLAGS)
+TRUE_CXXFLAGS := -std=c++11 -fno-rtti $(CCXXFLAGS) $(CXXFLAGS) $(CONF_CXXFLAGS)
+TRUE_LFLAGS := $(LFLAGS) -fvisibility=hidden $(CONF_LFLAGS)
 
 ifeq ($(OS),windows)
   TRUE_LFLAGS += -static-libgcc 
@@ -305,9 +310,6 @@ clean-prof:
 
 obj:
 	mkdir obj
-
-#CFLAGS_ARLIB += $(patsubst %,-D%,$(DEFINES))
-CONF_CFLAGS += $(patsubst %,-D%,$(DEFINES))
 
 #ARLIB_H := $(patsubst %,\#define %$(LF),$(DEFINES))
 #arlib.h: Makefile

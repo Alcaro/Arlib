@@ -17,12 +17,9 @@ class DNS {
 	};
 	map<uint16_t, query> queries;
 	
-	void init(cstring resolver, int port, runloop* loop)
-	{
-		this->loop = loop;
-		this->sock = socket::create_udp(resolver, port, loop);
-		sock->callback(bind_this(&DNS::sock_cb), NULL);
-	}
+	map<string, string> hosts_txt;
+	
+	void init(cstring resolver, int port, runloop* loop);
 	
 	uint16_t pick_trid()
 	{
@@ -32,6 +29,7 @@ class DNS {
 			if (!queries.contains(n)) return n;
 		}
 	}
+	
 public:
 	static string default_resolver();
 	

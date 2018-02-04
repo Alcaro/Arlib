@@ -224,6 +224,22 @@ public:
 	template<size_t limit = SIZE_MAX>
 	array<string> rsplit(cstring sep) const { return rsplit(sep, limit); }
 	
+	array<cstring> csplitw(size_t limit) const;
+	template<size_t limit = SIZE_MAX>
+	array<cstring> csplitw() const { return csplitw(limit); }
+	
+	array<cstring> crsplitw(size_t limit) const;
+	template<size_t limit = SIZE_MAX>
+	array<cstring> crsplitw() const { return crsplitw(limit); }
+	
+	array<string> splitw(size_t limit) const { return csplitw(limit).cast<string>(); }
+	template<size_t limit = SIZE_MAX>
+	array<string> splitw() const { return splitw(limit); }
+	
+	array<string> rsplitw(size_t limit) const { return crsplitw(limit).cast<string>(); }
+	template<size_t limit = SIZE_MAX>
+	array<string> rsplitw() const { return rsplitw(limit); }
+	
 	cstring trim() const
 	{
 		const uint8_t * chars = ptr();

@@ -187,6 +187,7 @@ extern "C" funcptr bootstrap_start(void** stack)
 	if (fd < 0) preload_error("couldn't open dynamic linker");
 	uint8_t hbuf[832]; // FILEBUF_SIZE from glibc elf/dl-load.c
 	uint8_t* ld_base;  // ld-linux has 7 segments, 832 bytes fits 13 (plus ELF header)
+	ld_base = NULL; // shut up false positive warning
 	Elf64_Ehdr* ld_ehdr = map_binary(fd, ld_base, hbuf, sizeof(hbuf));
 	close(fd);
 	if (!ld_ehdr) preload_error("couldn't initialize dynamic linker");
@@ -208,9 +209,9 @@ __asm__(R"(
 .globl _start
 _start:
 mov rdi, rsp
-sub rsp, 8 # nothing in bootstrap_start seems to require stack alignment, but better do it anyways
+push rcx  # nothing in bootstrap_start seems to require stack alignment, but better do it anyways
 call bootstrap_start
-pop rdx
+pop rcx  # why rcx? no real reason, I just picked one at random
 jmp rax
 )");
 

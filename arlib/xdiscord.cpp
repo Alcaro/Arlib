@@ -111,7 +111,11 @@ bool Discord::keepalive_cb()
 		json["d"] = sequence;
 		send_ws(json);
 	}
-	else debug_target.message("con="+debug_connect+" now="+getdate()+"; pingsent="+tostring(keepalive_sent)+" int="+tostring(keepalive_ms)+"; gtj="+tostring(guilds_to_join));
+	else if (debug_target)
+	{
+		debug_target.message("con="+debug_connect+" now="+getdate()+"; pingsent="+tostring(keepalive_sent)+
+		                     " int="+tostring(keepalive_ms)+"; gtj="+tostring(guilds_to_join));
+	}
 	
 	if (keepalive_sent)
 	{

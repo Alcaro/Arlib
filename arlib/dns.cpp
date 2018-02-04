@@ -14,9 +14,30 @@ string DNS::default_resolver()
 	return ("\n"+file::readall("/etc/resolv.conf")).split<1>("\nnameserver ")[1].split<1>("\n")[0];
 }
 
+void DNS::init(cstring resolver, int port, runloop* loop)
+{
+	this->loop = loop;
+	this->sock = socket::create_udp(resolver, port, loop);
+	sock->callback(bind_this(&DNS::sock_cb), NULL);
+	
+	for (cstring line : string(file::readall("/etc/hosts")).split("\n"))
+	{
+		array<cstring> words = line.csplit("#")[0].csplitw();
+		for (cstring host : words.skip(1))
+		{
+			hosts_txt.insert(host, words[0]);
+		}
+	}
+}
+
 void DNS::resolve(cstring domain, unsigned timeout_ms, function<void(string domain, string ip)> callback)
 {
 	if (!domain) return callback(domain, "");
+	if (hosts_txt.contains(domain))
+	{
+		callback(domain, hosts_txt.get(domain));
+		return;
+	}
 	
 	bytestreamw packet;
 	
@@ -248,7 +269,7 @@ fail:
 }
 
 #include "test.h"
-test("dummy", "runloop", "udp") {} // there are no real udp tests, the dns test is enough
+test("dummy", "runloop", "udp") {} // there are no real udp tests, the dns test is enough. but something must provide udp or it gets angry
 test("DNS", "udp,string", "dns")
 {
 	test_skip("kinda slow");
@@ -258,7 +279,7 @@ test("DNS", "udp,string", "dns")
 	assert(isdigit(DNS::default_resolver()[0])); // TODO: fails on IPv6 ::1
 	
 	DNS dns(loop);
-	int await = 4;
+	int await = 5;
 	dns.resolve("google-public-dns-b.google.com", bind_lambda([&](string domain, string ip)
 		{
 			await--; if (await == 0) loop->exit(); // put this above assert, otherwise it deadlocks
@@ -282,6 +303,13 @@ test("DNS", "udp,string", "dns")
 			await--; if (await == 0) loop->exit();
 			assert_eq(domain, "");
 			assert_eq(ip, "");
+		}));
+	dns.resolve("localhost", bind_lambda([&](string domain, string ip)
+		{
+			await--; if (await == 0) loop->exit();
+			assert_eq(domain, "localhost");
+			// silly way to say 'can be either of those, but must be one of them', but it's the best I can find
+			if (ip != "::1") assert_eq(ip, "127.0.0.1");
 		}));
 	
 	if (await != 0) loop->enter();

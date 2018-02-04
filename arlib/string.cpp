@@ -178,6 +178,47 @@ done:
 	return ret;
 }
 
+array<cstring> cstring::csplitw(size_t limit) const
+{
+	array<cstring> ret;
+	const uint8_t * data = ptr();
+	const uint8_t * dataend = ptr()+length();
+	
+	while (ret.size() < limit)
+	{
+		const uint8_t * next = data;
+		while (next < dataend && !isspace(*next)) next++;
+		if (next == dataend) break;
+		ret.append(arrayview<uint8_t>(data, next-data));
+		data = next+1;
+	}
+	ret.append(arrayview<uint8_t>(data, dataend-data));
+	return ret;
+}
+
+array<cstring> cstring::crsplitw(size_t limit) const
+{
+	array<cstring> ret;
+	const uint8_t * datastart = ptr();
+	const uint8_t * data = ptr()+length();
+	
+	while (ret.size() < limit)
+	{
+		if (datastart+1 > data) break;
+		const uint8_t * next = data-1;
+		while (!isspace(*next))
+		{
+			if (datastart==next) goto done;
+			next--;
+		}
+		ret.insert(0, arrayview<uint8_t>(next+1, data-(next+1)));
+		data = next;
+	}
+done:
+	ret.insert(0, arrayview<uint8_t>(datastart, data-datastart));
+	return ret;
+}
+
 string string::codepoint(uint32_t cp)
 {
 	string ret;
@@ -424,6 +465,31 @@ test("string", "", "string")
 		assert_eq(a.rsplit("aa").join("."), "a.......b");
 		assert_eq(a.rsplit<1>("aa").join("."), "aaaaaaaaaaaaa.b");
 		assert_eq(a.rsplit<1>("x").join("."), "aaaaaaaaaaaaaaab");
+	}
+	
+	{
+		string a;
+		a = "192 168 0 1";
+		assert_eq(a.splitw().join("/"), "192/168/0/1");
+		assert_eq(a.splitw<1>().join("/"), "192/168 0 1");
+		assert_eq(a.rsplitw().join("/"), "192/168/0/1");
+		assert_eq(a.rsplitw<1>().join("/"), "192 168 0/1");
+		
+		a = "b               ";
+		assert_eq(a.splitw().join("."), "b...............");
+		assert_eq(a.splitw<1>().join("."), "b.              ");
+		
+		a = "               b";
+		assert_eq(a.splitw().join("."), "...............b");
+		assert_eq(a.splitw<1>().join("."), ".              b");
+		
+		a = "b               ";
+		assert_eq(a.rsplitw().join("."), "b...............");
+		assert_eq(a.rsplitw<1>().join("."), "b              .");
+		
+		a = "               b";
+		assert_eq(a.rsplitw().join("."), "...............b");
+		assert_eq(a.rsplitw<1>().join("."), "              .b");
 	}
 	
 	{

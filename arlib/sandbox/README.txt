@@ -233,7 +233,7 @@ The filter is installed by the locker. It's the seccomp-bpf code that rejects un
 The emulator runs in the child once it's locked down, and emulates an unconstrained environment. It
  intercepts various syscalls and passes them to the broker, or otherwise emulates them. It is a very
  complex component; however, as it's fully inside the sandbox, anything malicious could easily issue
- its own syscalls, so it doesn't need to protect against hostile inputs.
+ its own syscalls (including broker requests), so it doesn't need to protect against hostile inputs.
 
 
 Broker
@@ -442,10 +442,10 @@ Leaving execve is covered above. However, entering it isn't obvious either.
 
 To start with, execve() takes a filename, which will fail due to chroot. Solution: fexecve().
 
-Except that's just a wrapper for execve(/proc/self/fd/123), which won't work either. I could change
- the chroot to /proc/self/fd, but that'd probably screw up on fork(). And I'm not chrooting to
- /proc, too high risk of granting access to something unauthorized (kernel command line, for
- example).
+Except that's not a syscall, glibc implements it as execve(/proc/self/fd/123), which won't work
+ either. I could change the chroot to /proc/self/fd, but that'd probably screw up on fork(). And I'm
+ not chrooting to /proc, too high risk of granting access to something unauthorized (kernel command
+ line, for example).
 
 Instead, execveat() can be employed. Like other *at() functions, it takes a fd and a path, using the
  fd instead of the current directory if the path is relative. It also supports a flag to execute the
@@ -521,7 +521,7 @@ Vulnerabilities
 
 Everything contains bugs. The following is a list of possible vulnerabilities that have been fixed
  since I presented it at school.
-- filesystem: max_write was ignored
+- filesystem: nonzero max_write was treated as infinite
     exploitability: trivial
     maximum impact: disk space exhaustion - though attacker is assumed able to launch arbitrarily many sandboxes, so none in practice.
 - launch_impl: failure in process::set_fds was ignored
@@ -601,7 +601,7 @@ As much fun as it is to sandbox gcc, sandbox-aware children can also do some nif
 For example, there is a system called Libretro <https://www.libretro.com/>; a large number of
  emulators and other games have been rewritten to be shared libraries ("cores"), under a consistent
  API that can be used by various programs ("frontends"). Obviously, there's a lot of attack surface
- in here (and who says the core itself isn't malicious?), but if the cores are sandboxed, said
+ in the cores (and who says the core itself isn't malicious?), but if the cores are sandboxed, said
  attack surface becomes irrelevant.
 
 It's not finished, but the sandbox architecture allows it.
@@ -642,13 +642,17 @@ However, there is one possibility: Place a process in the sandbox PID namespace,
 Killing the other threads is also tricky. There's no syscall to list them, nor is there any obvious
  way to terminate them - sending SIGKILL terminates the entire process.
 
-But, again, it's possible: The list can be found in /proc/self/task/ and fetched by the namespace
- init, and installing a signal handler could cause any recipient thread to terminate itself. SIGSYS,
- for example, we already have a SIGSYS handler. Signals can be blocked, but only if it can get past
- seccomp, which it can't. (And exec in multithreaded programs at all is rare.)
+But, again, it's possible: The list can be found in /proc/getpid()/task/ and fetched by the
+ namespace init, and installing a signal handler could cause any recipient thread to terminate
+ itself. SIGSYS, for example, we already have a SIGSYS handler. Signals can be blocked, but only
+ if it can get past seccomp, which it can't. (And exec in multithreaded programs at all is rare.)
 
 However, it's a lot of effort, and since the sandbox is in a chroot, it doesn't really accomplish
  anything.
+
+Removing the need to chroot would be a slight improvement, but won't accomplish much either;
+ I would be happy if I could remove CLONE_NEWUSER, but it's also needed for CLONE_NEWPID, which I
+ haven't found a usable replacement for.
 
 
 Future - Cooperating with ld-linux
