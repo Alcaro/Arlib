@@ -1,3 +1,4 @@
+#ifdef ARLIB_SOCKET
 #pragma once
 #include "../global.h"
 #include "../containers.h"
@@ -99,3 +100,4 @@ public:
 //Server                | No      | No       | No     | No      | No   | Likely possible on everything, I'm just lazy
 //Reputable author      | Yes     | Yes      | Yes    | Yes     | No
 //Binary size           | 4       | 2.5      | 4      | 80      | 169  | In kilobytes, estimated; DLLs not included
+#endif

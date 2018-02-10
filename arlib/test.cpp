@@ -275,6 +275,7 @@ int main(int argc, char* argv[])
 	//don't care, strings/arrays work; worst case, I comment it out
 	for (testlist* outer = alltests; outer; outer = outer->next)
 	{
+		if (outer->requires[0] == '\0') continue;
 		array<cstring> required = cstring(outer->requires).csplit(",");
 		for (size_t i=0;i<required.size();i++)
 		{
@@ -338,6 +339,7 @@ int main(int argc, char* argv[])
 			uint64_t max_latency_us = (RUNNING_ON_VALGRIND ? 100 : 3) * 1000;
 			if (max_latencies_us[i].us > max_latency_us || i == ARRAY_SIZE(max_latencies_us)-1)
 			{
+				if (!max_latencies_us[i].name) continue; // happens if the runloop is never used
 				printf("Latency %luus at %s (%s:%i)\n",
 				       (unsigned long)max_latencies_us[i].us,
 				       max_latencies_us[i].name,

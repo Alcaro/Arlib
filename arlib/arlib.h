@@ -56,6 +56,7 @@
 
 #ifdef ARLIB_SOCKET
 #include "socket/socket.h"
+#include "dns.h"
 #include "http.h"
 #include "websocket.h"
 #endif

@@ -162,6 +162,9 @@ void _assert_range(const T&  actual, const char * actual_exp,
 
 #define WANT_VALGRIND
 
+#define main not_quite_main
+int not_quite_main(int argc, char** argv);
+
 #else
 
 #define test(...) static void MAYBE_UNUSED JOIN(_testfunc_, __LINE__)()

@@ -184,7 +184,7 @@ SOURCES_ARLIB := arlib/*.cpp
 
 ifneq ($(SELFTEST),)
   ifeq ($(ARLIB_MAIN),)
-    CONF_CFLAGS += -DARLIB_TEST -Dmain=not_quite_main
+    CONF_CFLAGS += -DARLIB_TEST
     CFLAGS_ARLIB += -UARLIB_TEST -DARLIB_TESTRUNNER
   else
     # with SOURCES blanked, the real main isn't compiled

@@ -503,9 +503,11 @@ test("string", "", "string")
 		cstring a(NULL);
 		cstring b = NULL;
 		cstring c; c = NULL;
-		string d(NULL);
-		string e = NULL;
-		string f; f = NULL;
+		cstring d((const char*)NULL);
+		string e(NULL);
+		string f = NULL;
+		string g; g = NULL;
+		string h((const char*)NULL);
 		
 		assert_eq(a, "");
 		assert_eq(b, "");
@@ -513,6 +515,8 @@ test("string", "", "string")
 		assert_eq(d, "");
 		assert_eq(e, "");
 		assert_eq(f, "");
+		assert_eq(g, "");
+		assert_eq(h, "");
 	}
 	
 	{

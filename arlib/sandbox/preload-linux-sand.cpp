@@ -208,11 +208,11 @@ __asm__(R"(
 # guess c++ and asm is a rare combination
 .globl _start
 _start:
-mov rdi, rsp
-push rcx  # nothing in bootstrap_start seems to require stack alignment, but better do it anyways
+mov %rdi, %rsp
+push %rcx  # nothing in bootstrap_start seems to require stack alignment, but better do it anyways
 call bootstrap_start
-pop rcx  # why rcx? no real reason, I just picked one at random
-jmp rax
+pop %rcx  # why rcx? no real reason, I just picked one at random
+jmp %rax
 )");
 
 

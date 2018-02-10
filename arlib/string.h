@@ -76,6 +76,7 @@ public:
 private:
 	void init_from_nocopy(const char * str)
 	{
+		if (!str) str = "";
 		init_from_nocopy(arrayview<byte>((uint8_t*)str, strlen(str)));
 		if (!inlined()) m_nul = true;
 	}
@@ -311,6 +312,7 @@ class string : public cstring {
 	
 	void init_from(const char * str)
 	{
+		if (!str) str = "";
 		init_from(arrayview<byte>((uint8_t*)str, strlen(str)));
 	}
 	void init_from(arrayview<byte> data);
@@ -430,6 +432,8 @@ private:
 		
 	public:
 		charref& operator=(char ch) { parent->setchar(index, ch); return *this; }
+		charref& operator+=(char ch) { parent->setchar(index, parent->getchar(index) + ch); return *this; }
+		charref& operator-=(char ch) { parent->setchar(index, parent->getchar(index) - ch); return *this; }
 		operator char() { return parent->getchar(index); }
 	};
 	friend class charref;
@@ -467,7 +471,6 @@ public:
 private:
 	static const uint16_t windows1252tab[32];
 public:
-	//Input must be in the range 80-9F, or undefined behavior.
 	static uint32_t cpfromwindows1252(uint8_t byte)
 	{
 		if (byte >= 0x80 && byte <= 0x9F) return windows1252tab[byte-0x80];

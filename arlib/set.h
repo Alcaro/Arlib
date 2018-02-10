@@ -389,47 +389,21 @@ private:
 	class iterator {
 		typename set<node>::iterator it;
 	public:
-		
 		iterator(typename set<node>::iterator it) : it(it) {}
 		
-		node& operator*()
-		{
-			return const_cast<node&>(*it);
-		}
-		
-		iterator& operator++()
-		{
-			++it;
-			return *this;
-		}
-		
-		bool operator!=(const iterator& other)
-		{
-			return it != other.it;
-		}
+		node& operator*() { return const_cast<node&>(*it); }
+		iterator& operator++() { ++it; return *this; }
+		bool operator!=(const iterator& other) { return it != other.it; }
 	};
 	
 	class c_iterator {
 		typename set<node>::iterator it;
 	public:
-		
 		c_iterator(typename set<node>::iterator it) : it(it) {}
 		
-		const node& operator*()
-		{
-			return const_cast<node&>(*it);
-		}
-		
-		c_iterator& operator++()
-		{
-			++it;
-			return *this;
-		}
-		
-		bool operator!=(const c_iterator& other)
-		{
-			return it != other.it;
-		}
+		const node& operator*() { return const_cast<node&>(*it); }
+		c_iterator& operator++() { ++it; return *this; }
+		bool operator!=(const c_iterator& other) { return it != other.it; }
 	};
 	
 public:

@@ -340,7 +340,7 @@ private:
 	}
 	
 public:
-	T& operator[](size_t n) { if (n >= this->size()) debug_or_print(); resize_grow(n+1); return this->items[n]; }
+	T& operator[](size_t n) { if (n >= this->size()) { debug_or_print(); resize_grow(n+1); } return this->items[n]; }
 	const T& operator[](size_t n) const { if (n >= this->size()) debug_or_print(); return this->items[n]; }
 	
 	void resize(size_t len) { resize_to(len); }
@@ -389,12 +389,12 @@ public:
 		resize_shrink_noinit(this->count-1);
 	}
 	
-	T pop(size_t index = 0)
-	{
-		T ret(std::move(this->items[index]));
-		remove(index);
-		return std::move(ret);
-	}
+	//T pop(size_t index = 0)
+	//{
+	//	T ret(std::move(this->items[index]));
+	//	remove(index);
+	//	return std::move(ret);
+	//}
 	
 	array()
 	{
@@ -515,7 +515,7 @@ public:
 		return ret;
 	}
 	
-	//remember to call all applicable destructors
+	//remember to call all applicable destructors if using this
 	arrayvieww<T> release()
 	{
 		arrayvieww<T> ret = *this;
@@ -810,7 +810,7 @@ public:
 
 
 //A refarray acts mostly like a normal array. The difference is that it stores pointers rather than the elements themselves;
-//as such, you can't cast to arrayview or pointer, but you can keep pointers or references to the elements.
+//as such, you can't cast to arrayview or pointer, but you can keep pointers or references to the elements, or insert something virtual.
 template<typename T> class refarray {
 	array<autoptr<T>> items;
 public:
@@ -829,6 +829,24 @@ public:
 		items.append(ret);
 		return *ret;
 	}
+	void append_take(T& item)
+	{
+		items.append(&item);
+	}
 	void remove(size_t index) { items.remove(index); }
 	size_t size() { return items.size(); }
+	
+private:
+	class enumerator {
+		autoptr<T>* ptr;
+	public:
+		enumerator(autoptr<T>* ptr) : ptr(ptr) {}
+		
+		T& operator*() { return **ptr; }
+		enumerator& operator++() { ++ptr; return *this; }
+		bool operator!=(const enumerator& other) { return ptr != other.ptr; }
+	};
+public:
+	enumerator begin() { return enumerator(items.ptr()); }
+	enumerator end() { return enumerator(items.ptr() + items.size()); }
 };

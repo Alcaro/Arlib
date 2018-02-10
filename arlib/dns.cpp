@@ -1,3 +1,4 @@
+#ifdef ARLIB_SOCKET
 #include "dns.h"
 #include "set.h"
 #include "endian.h"
@@ -314,3 +315,4 @@ test("DNS", "udp,string", "dns")
 	
 	if (await != 0) loop->enter();
 }
+#endif

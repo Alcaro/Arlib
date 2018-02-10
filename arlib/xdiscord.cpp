@@ -1,3 +1,4 @@
+#ifdef ARLIB_SOCKET
 #include "xdiscord.h"
 #include <time.h>
 
@@ -454,3 +455,4 @@ void Discord::debug()
 		for (cstring channel : guild.value.channels) puts("  channel "+channel);
 	}
 }
+#endif

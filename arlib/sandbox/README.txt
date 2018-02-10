@@ -488,6 +488,22 @@ AT_BENEATH/etc <https://lwn.net/Articles/723057/> seem similar; they're not inte
  quite a lot faster.
 
 
+inode numbers
+-------------
+
+should probably not be exposed via stat() (and I'll admit I forgot them when designing the BPF
+ rules), but I believe they're harmless.
+
+Additionally, blocking it would be fairly tricky. First off, teaching the broker about stat() would
+ add a bit of complexity - nothing terrible, but good to avoid if possible.
+
+But fstat() is a lot worse. I'd have to either block it (which would probably break a lot of stuff -
+ didn't check), or have the child send the fd to the broker somehow (which would require opening
+ sendmsg() to the children, and possibly a few others; this could be dangerous).
+
+As such, I choose to accept this leak, much like the vDSO leaking the current time.
+
+
 Results
 -------
 
