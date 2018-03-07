@@ -66,6 +66,14 @@ void string::init_from(arrayview<byte> data)
 	}
 }
 
+string string::create_usurp(char * str)
+{
+	cstring tmp(str);
+	string ret;
+	memcpy(&ret, &tmp, sizeof(string));
+	return ret;
+}
+
 void string::replace_set(int32_t pos, int32_t len, cstring newdat)
 {
 	//if newdat is a cstring backed by this, modifying this invalidates that string, so it's illegal

@@ -3,7 +3,7 @@ import sys
 
 filter_std = "-f" in sys.argv # only portable (unsuffixed, EXT, ARB or OES) functions; this is about 1900, though many are dupes of core functions
 filter_core = "-ff" in sys.argv # only core (unsuffixed) functions; this is about 1000
-filter_used = "-fff" in sys.argv # only functions used by the program, should be about 100; only works if your interface object is named 'gl'; 
+filter_used = "-fff" in sys.argv # only functions used by the program, should be about 100; only works if your interface object is named 'gl'
 #unfiltered is about 2600 functions
 
 def readfile(name):

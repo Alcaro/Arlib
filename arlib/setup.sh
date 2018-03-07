@@ -1,6 +1,8 @@
 #!/bin/bash
 [ -e Makefile ] && echo 'Already configured' && exit
 
+[ -e arlib ] || ln -s $(dirname $0) .
+
 program=$1
 [[ -z $program ]] && program=$(basename $(pwd))
 
@@ -25,6 +27,7 @@ EOF
 
 cat > Makefile <<-EOF
 	PROGRAM = $program
+	ARTYPE = exe
 	ARGUI = 0
 	AROPENGL = 0
 	ARTHREAD = 0

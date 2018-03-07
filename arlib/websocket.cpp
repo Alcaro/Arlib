@@ -144,14 +144,14 @@ void WebSocket::send(arrayview<byte> message, int type)
 	else if (message.size() <= 65535)
 	{
 		header.u8(126 | 0x80);
-		header.u16be(message.size());
+		header.u16b(message.size());
 	}
 	else
 	{
 		header.u8(127 | 0x80);
-		header.u64be(message.size());
+		header.u64b(message.size());
 	}
-	header.u32be(0); // mask key
+	header.u32b(0); // mask key
 //puts("SEND:"+tostringhex(header.peek())+" "+tostringhex(message));
 	if (inHandshake)
 	{

@@ -1,9 +1,7 @@
 #ifdef ARGUIPROT_X11
 #include "aropengl.h"
 
-//TODO: wipe -lGL dependency
 //TODO: fix SwapInterval
-//TODO: wipe printfs
 
 #include <GL/gl.h>
 #include <GL/glext.h>
@@ -149,8 +147,8 @@ public:
 	
 	void makeCurrent(bool make)
 	{
-		if (make) glx.MakeCurrent( window_x11.display, win, ctx );
-		else glx.MakeCurrent( window_x11.display, None, NULL );
+		if (make) glx.MakeCurrent(window_x11.display, win, ctx);
+		else glx.MakeCurrent(window_x11.display, None, NULL);
 	}
 	
 	funcptr getProcAddress(const char * proc)

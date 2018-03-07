@@ -24,7 +24,7 @@ public:
 		t_ver_1_0 = 100, t_ver_1_1 = 110, t_ver_1_2 = 120, t_ver_1_3 = 130, t_ver_1_4 = 140, t_ver_1_5 = 150,
 		t_ver_2_0 = 200, t_ver_2_1 = 210,
 		t_ver_3_0 = 300, t_ver_3_1 = 310, t_ver_3_2 = 320, t_ver_3_3 = 330,
-		t_ver_4_0 = 400, t_ver_4_1 = 410, t_ver_4_2 = 420, t_ver_4_3 = 430, t_ver_4_4 = 440, t_ver_4_5 = 450,
+		t_ver_4_0 = 400, t_ver_4_1 = 410, t_ver_4_2 = 420, t_ver_4_3 = 430, t_ver_4_4 = 440, t_ver_4_5 = 450, t_ver_4_6 = 460,
 		
 		t_opengl_es      = 0x001000, // Probably not supported.
 		t_debug_context  = 0x002000, // Requests a debug context. Doesn't actually enable debugging,
@@ -114,7 +114,7 @@ public:
 	aropengl(context* core) { create(core); }
 	aropengl(uintptr_t parent, uintptr_t* window, uint32_t flags) { create(parent, window, flags); }
 	aropengl(widget_viewport* port, uint32_t flags) { create(port, flags); }
-	explicit operator bool() { return core!=NULL; }
+	explicit operator bool() { return core != NULL; }
 	
 	~aropengl()
 	{

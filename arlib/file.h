@@ -214,6 +214,31 @@ public:
 	static string dirname(cstring path);
 	static string basename(cstring path);
 	
+	//Returns whether the path is absolute.
+	//On Unix, absolute paths start with /.
+	//On Windows:
+	// Absolute paths start with two slashes, or letter+colon+slash.
+	// Drive-relative or rooted paths (/foo.txt, C:foo.txt) are considered invalid and are implementation-defined.
+	// The path component separator is the forward slash on all operating systems, including Windows.
+	static bool is_absolute(cstring path)
+	{
+#if defined(__unix__)
+		return path[0]=='/';
+#elif defined(_WIN32)
+		if (path[0]=='/' && path[1]=='/') return true;
+		if (path[1]==':' && path[2]=='/') return true;
+		return false;
+#else
+#error unimplemented
+#endif
+	}
+	
+	//Removes all possible ./ and ../ components, and duplicate slashes, while still referring to the same file.
+	//Similar to realpath(), but does not flatten symlinks.
+	//foo/bar/../baz -> foo/baz, ./foo.txt -> foo.txt, ../foo.txt -> ../foo.txt, foo//bar.txt -> foo/bar.txt, . -> .
+	//Invalid paths (above the root, or Windows half-absolute paths) are undefined behavior.
+	static string resolve(cstring path);
+	
 	//Returns the path of the executable.
 	//The cstring is owned by Arlib and lives forever.
 	static cstring exepath();

@@ -43,7 +43,7 @@ void DNS::resolve(cstring domain, unsigned timeout_ms, function<void(string doma
 	bytestreamw packet;
 	
 	uint16_t trid = pick_trid();
-	packet.u16be(trid);
+	packet.u16b(trid);
 	
 	uint16_t flags = 0;
 	flags |= 0<<15; // QR, 'is response' flag
@@ -54,12 +54,12 @@ void DNS::resolve(cstring domain, unsigned timeout_ms, function<void(string doma
 	flags |= 0<<7; // RA, recursion available
 	flags |= 0<<4; // Z, 3 bits, reserved
 	flags |= 0<<0; // RCODE, 4 bits; 0 = no error
-	packet.u16be(flags);
+	packet.u16b(flags);
 	
-	packet.u16be(1); // QDCOUNT
-	packet.u16be(0); // ANCOUNT
-	packet.u16be(0); // NSCOUNT
-	packet.u16be(0); // ARCOUNT
+	packet.u16b(1); // QDCOUNT
+	packet.u16b(0); // ANCOUNT
+	packet.u16b(0); // NSCOUNT
+	packet.u16b(0); // ARCOUNT
 	
 	for (cstring cs : domain.csplit("."))
 	{
@@ -68,8 +68,8 @@ void DNS::resolve(cstring domain, unsigned timeout_ms, function<void(string doma
 	}
 	packet.u8(0);
 	
-	packet.u16be(0x0001); // type A (could switch to 0x00FF Everything, but I can't test ipv6 so let's not ask for it)
-	packet.u16be(0x0001); // class IN
+	packet.u16b(0x0001); // type A (could switch to 0x00FF Everything, but I can't test ipv6 so let's not ask for it)
+	packet.u16b(0x0001); // class IN
 	//judging by musl libc, there's no way to ask for both ipv4 and ipv6 but not everything else, it sends two separate queries
 	
 	sock->send(packet.out());
@@ -226,35 +226,35 @@ void DNS::sock_cb()
 	
 	if (stream.remaining() < 12) return; // can't fit dns header? fake packet, discard
 	
-	uint16_t trid = stream.u16be();
+	uint16_t trid = stream.u16b();
 	if (!queries.contains(trid)) return; // possible if the timeout was hit already, or whatever
 	query& q = queries.get(trid);
 	
 	string ret = "";
 	
-	if (stream.u16be() != 0x8180) goto fail; // QR, RD, RA
-	if (stream.u16be() != 0x0001) goto fail; // QDCOUNT
+	if (stream.u16b() != 0x8180) goto fail; // QR, RD, RA
+	if (stream.u16b() != 0x0001) goto fail; // QDCOUNT
 	uint16_t ancount;
-	ancount = stream.u16be(); // git.io gives eight different IPs
+	ancount = stream.u16b(); // git.io gives eight different IPs
 	if (ancount < 0x0001) goto fail; // ANCOUNT
-	if (stream.u16be() != 0x0000) goto fail; // NSCOUNT
-	if (stream.u16be() != 0x0000) goto fail; // ARCOUNT
+	if (stream.u16b() != 0x0000) goto fail; // NSCOUNT
+	if (stream.u16b() != 0x0000) goto fail; // ARCOUNT
 	
 	//query
 	if (read_name(stream) != q.domain) goto fail;
 	if (stream.remaining() < 4) return;
-	if (stream.u16be() != 0x0001) goto fail; // type A
-	if (stream.u16be() != 0x0001) goto fail; // class IN
+	if (stream.u16b() != 0x0001) goto fail; // type A
+	if (stream.u16b() != 0x0001) goto fail; // class IN
 	
 	//answer
 	if (read_name(stream) != q.domain) goto fail;
 	if (stream.remaining() < 4+4+2) return;
-	if (stream.u16be() != 0x0001) goto fail; // type A
-	if (stream.u16be() != 0x0001) goto fail; // class IN
+	if (stream.u16b() != 0x0001) goto fail; // type A
+	if (stream.u16b() != 0x0001) goto fail; // class IN
 	
-	stream.u32be(); // TTL, ignore
+	stream.u32b(); // TTL, ignore
 	size_t iplen;
-	iplen = stream.u16be();
+	iplen = stream.u16b();
 	if (stream.remaining() < iplen) goto fail;
 	if (ancount == 1 && stream.remaining() != iplen) goto fail;
 	

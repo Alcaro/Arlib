@@ -60,7 +60,3 @@
 #include "http.h"
 #include "websocket.h"
 #endif
-
-extern const char * BUILD_DATE;
-extern const char * BUILD_TIME;
-extern const char * BUILD_DATETIME;

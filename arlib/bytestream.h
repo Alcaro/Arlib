@@ -47,27 +47,27 @@ public:
 		if (at==end) return otherwise;
 		return *(at++);
 	}
-	uint16_t u16()
+	uint16_t u16l()
 	{
 		return end_nat_to_le(bytes(2).reinterpret<uint16_t>()[0]);
 	}
-	uint16_t u16be()
+	uint16_t u16b()
 	{
 		return end_nat_to_be(bytes(2).reinterpret<uint16_t>()[0]);
 	}
-	uint32_t u32()
+	uint32_t u32l()
 	{
 		return end_nat_to_le(bytes(4).reinterpret<uint32_t>()[0]);
 	}
-	uint32_t u32be()
+	uint32_t u32b()
 	{
 		return end_nat_to_be(bytes(4).reinterpret<uint32_t>()[0]);
 	}
-	uint32_t u32at(size_t pos)
+	uint32_t u32lat(size_t pos)
 	{
 		return end_nat_to_le(*(uint32_t*)(start+pos));
 	}
-	uint32_t u32beat(size_t pos)
+	uint32_t u32bat(size_t pos)
 	{
 		return end_nat_to_be(*(uint32_t*)(start+pos));
 	}
@@ -78,15 +78,15 @@ public:
 	
 	void seek(size_t pos) { at = start+pos; }
 	
-	uint32_t u24()
+	uint32_t u24l()
 	{
 		//doubt this is worth optimizing, probably rare...
 		arrayview<uint8_t> b = bytes(3);
 		return b[0] | b[1]<<8 | b[2]<<16;
 	}
-	uint32_t u24be()
+	uint32_t u24b()
 	{
-		return end_swap24(u24());
+		return end_swap24(u24l());
 	}
 };
 
@@ -107,32 +107,44 @@ public:
 	{
 		buf += arrayview<byte>(&val, 1);
 	}
-	void u16(uint16_t val)
+	void u16l(uint16_t val)
 	{
 		litend<uint16_t> valn = val;
 		buf += valn.bytes();
 	}
-	void u16be(uint16_t val)
+	void u16b(uint16_t val)
 	{
 		bigend<uint16_t> valn = val;
 		buf += valn.bytes();
 	}
-	void u32(uint32_t val)
+	void u24l(uint32_t val)
+	{
+		u8(val>>0);
+		u8(val>>8);
+		u8(val>>16);
+	}
+	void u24b(uint32_t val)
+	{
+		u8(val>>16);
+		u8(val>>8);
+		u8(val>>0);
+	}
+	void u32l(uint32_t val)
 	{
 		litend<uint32_t> valn = val;
 		buf += valn.bytes();
 	}
-	void u32be(uint32_t val)
+	void u32b(uint32_t val)
 	{
 		bigend<uint32_t> valn = val;
 		buf += valn.bytes();
 	}
-	void u64(uint64_t val)
+	void u64l(uint64_t val)
 	{
 		litend<uint64_t> valn = val;
 		buf += valn.bytes();
 	}
-	void u64be(uint64_t val)
+	void u64b(uint64_t val)
 	{
 		bigend<uint64_t> valn = val;
 		buf += valn.bytes();

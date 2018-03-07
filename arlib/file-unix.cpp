@@ -185,7 +185,7 @@ bool file::unlink_fs(cstring filename)
 
 string file::dirname(cstring path)
 {
-	return path.rsplit<1>("/")[0];
+	return path.rsplit<1>("/")[0]+"/";
 }
 string file::basename(cstring path)
 {
@@ -205,7 +205,7 @@ bool file::unlink(cstring filename)
 #endif
 
 
-static cstring exepath;
+static string exepath;
 cstring file::exepath() { return ::exepath; }
 
 void arlib_init_file()
@@ -213,7 +213,7 @@ void arlib_init_file()
 	array<char> buf;
 	buf.resize(64);
 	
-	again: ;
+again: ;
 	ssize_t r = readlink("/proc/self/exe", buf.ptr(), buf.size());
 	if (r <= 0) abort();
 	if ((size_t)r >= buf.size()-1)
@@ -226,7 +226,7 @@ void arlib_init_file()
 	char * end = strrchr(buf.ptr(), '/')+1; // a / is known to exist
 	*end = '\0';
 	
-	exepath = strdup(buf.ptr());
+	exepath = buf.ptr();
 	
 	
 	//char * cwd_init_tmp=getcwd(NULL, 0);

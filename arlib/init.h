@@ -3,7 +3,6 @@
 #include "stringconv.h"
 
 class argparse {
-	enum type { t_int };
 	class arg_base {
 		friend class argparse;
 		
@@ -23,6 +22,8 @@ class argparse {
 		virtual bool parse(cstring arg) = 0;
 	public:
 		virtual ~arg_base() {}
+		
+		friend void arlib_init_gui(argparse& args, char** argv);
 	};
 	
 	template<typename T>
@@ -41,6 +42,8 @@ class argparse {
 	string m_appname;
 	refarray<arg_base> m_args;
 	function<void(cstring error)> m_onerror;
+	bool m_accept_cli = false;
+	bool m_has_gui = false;
 	
 	//sname can be '\0' or absent if you only want long names
 	//if the long name is empty, all non-option arguments are sent here; if nothing has a long name, passing non-options is an error
@@ -102,6 +105,9 @@ public:
 	arg_bool& add(char sname, cstring name, bool* target);
 	arg_bool& add(cstring name, bool* target) { return add('\0', name, target); }
 	
+	void add_cli() { m_accept_cli = true; }
+	bool has_gui() { return m_has_gui; }
+	
 private:
 	string get_usage();
 	void usage();
@@ -109,6 +115,11 @@ private:
 	void single_arg(arg_base& arg, cstring value, bool must_use_value, bool* used_value);
 	void single_arg(cstring name, cstring value, bool must_use_value, bool* used_value);
 	void single_arg(char sname, cstring value, bool must_use_value, bool* used_value);
+	
+	void set_appname(cstring name)
+	{
+		m_appname = name;
+	}
 	
 public:
 	//The handler should not return; if it does, the default handler (print error to stderr and terminate) is called.
@@ -121,27 +132,25 @@ public:
 private:
 	//if the next argument is an option (starts with - and is not just -), don't use it
 	const char * next_if_appropriate(const char * arg);
+	
+	void parse_pre(const char * const * argv);
+	void parse_post(bool has_gui);
+	
 public:
 	void parse(const char * const * argv);
+	
+	friend void arlib_init_gui(argparse& args, char** argv);
 };
 
-//This must be the first Arlib function called in main() (don't do anything funny in static initializers, either).
-//Give it argv, and a descriptor of the arguments supported by this program. Afterwards, the arguments will be available for inspection.
+//This must be the first Arlib function called in main(), other than argparse setup. Be careful with static initializers too.
+//Give it argv, and a descriptor of the arguments supported by this program.
 //Automatically adds support for a few arguments, like --help, and --display on Linux if GUI is enabled.
 //NULL means no arguments supported (if any present, throws error; still supports --help and --display).
-//Additionally, if there's a --cli parameter (even if not passed to the program), failing to connect to the display
-// is accepted and acts as if --cli was passed. (If it wasn't, a warning is printed.)
 
-//TODO: actually add argument support
-//TODO: instead of arlib_try_init, hardcode support for a --nogui parameter in args
-//TODO: if gtk is enabled, decide if I should use g_option_context_parse, ignore GTK flags, or rip apart GOptionContext
-//                         probably #1
-//TODO: for inspiration:
-//https://github.com/tanakh/cmdline
-//https://github.com/jarro2783/cxxopts
-void arlib_init(void* args, char** argv);
+void arlib_init(argparse& args, char** argv);
+void arlib_init(nullptr_t, char** argv);
 
 
 //Called by arlib_init(). Don't use them yourself.
 void arlib_init_file();
-void arlib_init_gui(void* args, char** & argv);
+void arlib_init_gui(argparse& args, char** argv);

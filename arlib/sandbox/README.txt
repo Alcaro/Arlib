@@ -1,4 +1,5 @@
-(this was originally a school project, this is basically the report I wrote minus a bunch of fluff)
+(this was originally a school project, this is basically the report I wrote minus a bunch of fluff
+ plus a bunch of updates)
 
 
 Background
@@ -58,7 +59,7 @@ but does not include:
     for Gentoo, build flags are considered public as well
 - Which distro is running
     can't hide that when all the system libraries vary between distros
-- Installed base hardware (CPU, RAM, disk; GPU and peripherials are private)
+- Installed base hardware (CPU model, amount of RAM and disk; GPU and peripherials are private)
     hard to hide, especially the CPU model (cpuid)
 - Kernel version and config, unless likely to be edited by the user
     distro default config is as public as their packages
@@ -83,22 +84,24 @@ though obviously, even acceptable data will not be leaked frivolously.
 - Denying service to non-sandboxed software
 but does not include:
 - Resource hogging information-transfer side channels
-    they're too many, and no non-hostile recipient would understand them
+    no non-hostile recipient would understand them
 - Resource hogging information-transfer side channels, even if measurable across the network
     whoever launches a sandbox is assumed to have access to its output, so this gains the attacker nothing
 - Two sandboxes communicating, if hostile programs are running in both
     they can do it already, using aforementioned side channels
 - Cache timing side channels to leak data from non-sandboxed processes
     again, impossible to block, other than by using constant-time algorithms in the victim
+    this includes Meltdown/Spectre; only the victim can defend against that, the sandbox can't do
+      anything about it (though Spectre may possibly be usable against the sandbox)
 though again, such permissions will not be granted frivolously.
 
 The above applies even if the attacker is able to cause arbitrary syscalls to fail during sandbox
  setup. Such an attacker may not cause the child to be launched with a less restrictive sandbox. (It
  may, however, prevent the sandbox from launching at all.)
 
-I choose to discount the possibility of kernel or glibc bugs; I know there are some, but smarter
- people than me have already looked for them. (And by restricting many syscalls, especially the rare
- and complex ones, there's a good chance said bugs are inaccessible.)
+I choose to discount the possibility of kernel/glibc/compiler/hardware bugs; I know there are some,
+ but smarter people than me have already looked for them. (And by restricting many syscalls,
+ especially the rare and complex ones, there's a good chance said bugs are inaccessible.)
 
 
 Prior work
@@ -540,6 +543,7 @@ Everything contains bugs. The following is a list of possible vulnerabilities th
 - filesystem: nonzero max_write was treated as infinite
     exploitability: trivial
     maximum impact: disk space exhaustion - though attacker is assumed able to launch arbitrarily many sandboxes, so none in practice.
+    severity: low, due to the trivial maximum impact
 - launch_impl: failure in process::set_fds was ignored
     exploitability: extremely hard, requires resource exhaustion and then some luck
     maximum impact: child may be able to access (including write) some or all fds open in parent
@@ -547,11 +551,13 @@ Everything contains bugs. The following is a list of possible vulnerabilities th
         inherits some fds from the shell (extremely rare, and most shell-inherited fds are lock
         files anyways)
       with other parents, it can be data leak, data loss, or even a full jailbreak
+    severity: low, due to the infeasible exploitability
 - filesystem::grant_native_redir, filesystem::child_file: open() of use-after-free garbage
     exploitability: in theory, takes a while, but perfectly possible
       in practice, innocent programs are very likely to hit these and fail to launch,
         prompting administrator attention
     maximum impact: full sandbox jailbreak
+    severity: low, due to the low probability any buggy version was ever successfully deployed
 - launch_impl: if parent process dies before its communicator fd, child may survive sandbox termination
     exploitability: extremely hard in theory, requires a race condition during sandbox launch
       and it's 100% impossible to do anything malicious even if you hit this race; the first code
@@ -559,9 +565,26 @@ Everything contains bugs. The following is a list of possible vulnerabilities th
       and I don't know if the linux kernel allows this race condition in the first place;
         if it tears down fds before processing PR_SET_PDEATHSIG, it doesn't even enter the emulator
     maximum impact: in theory, outliving sandbox termination; in practice, zero
+    severity: low, due to being impossible to exploit
 - launch_impl: allocation failure could confuse sandbox about whether it's correctly launched
     exploitability: extremely hard, requires resource exhaustion and then some luck
     maximum impact: none; it can make parent wait forever for a nonexistent child process to exit, but child can already sleep forever
+    severity: low, due to the trivial maximum impact
+- seccomp filter: stat() or fstat() reveals inode numbers
+    exploitability: trivial
+    maximum impact: per the inode section above, most likely none
+    severity: low, due to the trivial maximum impact
+- Spectre type 2 (indirect jumps)
+    exploitability: fully possible for a determined attacker
+    maximum impact: revealing the full contents of the broker's address space of the broker,
+      including the full environment (containing, for example, the user ID and username), and (under
+      some parents) other private data (possibly including freed data, if the memory wasn't reused)
+    severity: medium, due to leaking the username; it can't leak data the parent isn't already
+      processing, which is unlikely to be of much interest
+- Spectre type 1 (array indexing behind mispredicted branches)
+    exploitability: unknown if any vulnerable sequences exist, but likely same as Spectre type 2
+    maximum impact: same as Spectre type 2
+    severity: medium, same as Spectre type 2
 
 
 Missing kernel features
@@ -574,12 +597,13 @@ Each of these would either enable additional functionality, or simplify somethin
     in particular, I want to restrict the number of processes in the PID or user namespace, everything else can be done with setrlimit
     setrlimit(RLIMIT_NPROC) would be the obvious choice, but it's affected by processes outside the namespace
       http://elixir.free-electrons.com/linux/latest/source/kernel/fork.c#L1564
-- Add a syscall to disable the filesystem completely, rather than just chroot to an empty (except . and ..) directory
+    setting /proc/sys/kernel/pid_max to 10 would also work, but that too is a global parameter, not per-pid-namespace
+- A way to disable the filesystem completely, rather than just chroot to an empty (except . and ..) directory
 - Slightly less bizarre naming policy in the kernel, these foobar/__foobar pairs confuse me (there's even ___sys_sendmsg)
 - MSG_NOADDR in sendmsg(), to block non-NULL msg_name
-- Add control mechanism for global disk bandwidth usage
+- A control mechanism for global disk bandwidth usage
 - fcntl(F_GETPATH) (like OSX), or similar
-- Add a way to list existing fds in the process without /proc/self/fd
+- A way to list existing fds in the process without /proc/self/fd
     My favorite interface would be fcntl(F_NEXTFD), which returns the lowest fd >= this (or error if there is none)
 - A way to list threads in the process without /proc/self/tasks/, and a way to terminate them
 - O_BENEATH or similar (AT_BENEATH/etc <https://lwn.net/Articles/723057/>, maybe?)

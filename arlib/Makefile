@@ -50,6 +50,7 @@ ifneq (,$(findstring check,$(MAKECMDGOALS)))
   SELFTEST = 1
 endif
 
+ARTYPE ?= exe
 ARGUI ?= 0
 AROPENGL ?= 0
 AROPENGL_D3DSYNC ?= 1
@@ -98,7 +99,12 @@ EXESUFFIX =
 CONF_CXXFLAGS += $(CONF_CFLAGS)
 
 ifeq ($(OS),linux)
-  CONF_LFLAGS += -ldl
+  CONF_LFLAGS += -ldl -Wl,-z,relro,-z,now,--no-undefined
+  ifeq ($(ARTYPE),dll)
+    CONF_CFLAGS += -fPIC
+    CONF_LFLAGS += -shared
+    EXESUFFIX = .so
+  endif
   ifeq ($(ARTHREADS),1)
     CONF_CFLAGS += -pthread
     CONF_LFLAGS += -pthread
@@ -134,16 +140,17 @@ ifneq ($(DEBUG),1)
   endif
 endif
 
+ifeq ($(DEBUG),1)
+  CFLAGS += -g -DDEBUG
+endif
 ifneq ($(OPT),0)
-  CONF_CFLAGS += $(OPTFLAGS)
+  #OPT=1 DEBUG=1 should prioritize optimization over debugging; OPT=1 DEBUG=1 then 'strip' should be identical to OPT=1 DEBUG=0
+  CONF_CFLAGS += $(OPTFLAGS) -UDEBUG
   CONF_LFLAGS += $(OPTLFLAGS)
   ifeq ($(OPT),spd)
     CONF_CFLAGS += -O3
   endif
   OBJNAME := $(OBJNAME)-opt
-endif
-ifeq ($(DEBUG),1)
-  CFLAGS += -g -DDEBUG
 endif
 
 ifeq ($(PROFILE),gen)
@@ -323,11 +330,6 @@ DOMAINS += DEFAULT ARLIB NOWARN
 SOURCES_DEFAULT := $(SOURCES)
 OBJS += $(foreach domain,$(sort $(DOMAINS)),$(call OBJMANGLE,$(domain),$(wildcard $(SOURCES_$(domain)))))
 OBJS += $(OBJS_LATE)
-
-obj/build.o: .force | obj
-	$(ECHOQ) CC arlib/build.c
-	$(Q)$(CC) $(TRUE_CFLAGS) -c arlib/build.c -o $@
-OBJS += obj/build.o
 
 all: $(OUTNAME)
 arlib-default2: $(OUTNAME)

@@ -294,7 +294,7 @@ private:
 	}
 	
 	//it would be better if this thing didn't reallocate until it's a quarter of the original size
-	//but there's nowhere to store the allocated size
+	//but I don't store the allocated size, so that's hard
 	//there is malloc_usable_size (and similar), but it may or may not exist depending on the libc used
 	void resize_shrink_noinit(size_t count)
 	{
@@ -340,7 +340,11 @@ private:
 	}
 	
 public:
+#ifdef MARCH2018
+	T& operator[](size_t n) { return this->items[n]; }
+#else
 	T& operator[](size_t n) { if (n >= this->size()) { debug_or_print(); resize_grow(n+1); } return this->items[n]; }
+#endif
 	const T& operator[](size_t n) const { if (n >= this->size()) debug_or_print(); return this->items[n]; }
 	
 	void resize(size_t len) { resize_to(len); }
@@ -389,12 +393,12 @@ public:
 		resize_shrink_noinit(this->count-1);
 	}
 	
-	//T pop(size_t index = 0)
-	//{
-	//	T ret(std::move(this->items[index]));
-	//	remove(index);
-	//	return std::move(ret);
-	//}
+	T pop(size_t index = 0)
+	{
+		T ret(std::move(this->items[index]));
+		remove(index);
+		return std::move(ret);
+	}
 	
 	array()
 	{
@@ -817,10 +821,6 @@ public:
 	T& operator[](size_t n)
 	{
 		if (n >= items.size()) debug_or_print();
-		while (n >= items.size())
-		{
-			items.append(new T());
-		}
 		return *items[n];
 	}
 	T& append()

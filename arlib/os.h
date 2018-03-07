@@ -9,6 +9,13 @@
 #define DYLIB_EXT ".dll"
 #define DYLIB_MAKE_NAME(name) name DYLIB_EXT
 #endif
+#ifdef __GNUC__
+#define DLLEXPORT extern "C" __attribute__((__visibility__("default")))
+#define DLLMAIN __attribute__((constructor))
+#endif
+#ifdef _MSC_VER
+#define DLLEXPORT extern "C" __declspec(dllexport)
+#endif
 
 class dylib : nocopy {
 	void* handle;

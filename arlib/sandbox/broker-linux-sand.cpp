@@ -339,8 +339,8 @@ void sandproc::on_readable(uintptr_t sock)
 	case br_unlink:
 	case br_access:
 	{
-		close_fd = true;
 		fd = fs.child_file(req.path, req.type, req.flags[0], req.flags[1]);
+		close_fd = true;
 //puts((string)req.path+" "+tostring(req.type)+": "+tostring(fd)+" "+tostring(errno));
 		if (fd<0) rsp.err = errno;
 		break;
@@ -361,6 +361,7 @@ void sandproc::on_readable(uintptr_t sock)
 		}
 		
 		fd = socks[1];
+		close_fd = true;
 		watch_add(socks[0]);
 		break;
 	}

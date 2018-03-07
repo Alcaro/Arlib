@@ -445,6 +445,8 @@ public:
 	//char operator[](uint32_t index) const { return getchar(index); }
 	char operator[](int index) const { if (index < 0) debug_or_print(); return getchar(index); }
 	
+	static string create_usurp(char * str);
+	
 	//static string create(arrayview<uint8_t> data) { string ret=noinit(); ret.init_from(data.ptr(), data.size()); return ret; }
 	
 	/*

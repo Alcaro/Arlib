@@ -111,15 +111,19 @@ const char * argparse::next_if_appropriate(const char * arg)
 	if (arg[0] != '-' || arg[1] == '\0') return arg;
 	else return NULL;
 }
-void argparse::parse(const char * const * argv)
+void argparse::parse_pre(const char * const * argv)
 {
 	if (m_appname)
 	{
 		error("internal error: argparse::parse called twice");
 	}
 	m_appname = argv[0];
-	argv++;
+}
+void argparse::parse(const char * const * argv)
+{
+	parse_pre(argv);
 	
+	argv++;
 	while (*argv)
 	{
 		const char * arg = *argv;
@@ -190,6 +194,11 @@ void argparse::parse(const char * const * argv)
 		}
 	}
 	
+	parse_post(false);
+}
+
+void argparse::parse_post(bool has_gui)
+{
 	for (arg_base& arg : m_args)
 	{
 		if (arg.must_use) error("missing required argument --"+arg.name);
@@ -340,13 +349,19 @@ assert(!"use these");
 }
 #endif
 
-void arlib_init(void* args, char** argv)
+void arlib_init(argparse& args, char** argv)
 {
+	srand(time(NULL));
+	arlib_init_file();
 #ifndef ARGUI_NONE
 	arlib_init_gui(args, argv);
 #else
-	//TODO: use argument parser
+	args.parse(argv);
 #endif
-	arlib_init_file();
-	srand(time(NULL));
+}
+
+void arlib_init(nullptr_t, char** argv)
+{
+	argparse dummy;
+	arlib_init(dummy, argv);
 }
