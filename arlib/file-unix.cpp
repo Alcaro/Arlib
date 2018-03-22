@@ -192,6 +192,27 @@ string file::basename(cstring path)
 	return path.rsplit<1>("/")[1];
 }
 
+array<string> file::listdir(cstring path)
+{
+	DIR* dir = opendir(path.c_str());
+	if (!dir) return NULL;
+	
+	array<string> ret;
+	dirent* ent;
+	while ((ent = readdir(dir)))
+	{
+		if (!strcmp(ent->d_name, ".") || !strcmp(ent->d_name, "..")) continue;
+		
+		string childpath = path + ent->d_name;
+		struct stat st;
+		stat(childpath, &st);
+		if (S_ISDIR(st.st_mode)) childpath += "/";
+		ret.append(childpath);
+	}
+	closedir(dir);
+	return ret;
+}
+
 #ifdef ARGUI_NONE
 file::impl* file::open_impl(cstring filename, mode m)
 {
@@ -205,10 +226,10 @@ bool file::unlink(cstring filename)
 #endif
 
 
-static string exepath;
-cstring file::exepath() { return ::exepath; }
-static string cwd;
-cstring file::cwd() { return ::cwd; }
+static char* g_exepath;
+cstring file::exepath() { return g_exepath; }
+static char* g_cwd;
+cstring file::cwd() { return g_cwd; }
 
 void arlib_init_file()
 {
@@ -228,11 +249,12 @@ again: ;
 	char * end = strrchr(buf.ptr(), '/')+1; // a / is known to exist
 	*end = '\0';
 	
-	exepath = buf.ptr();
+	g_exepath = buf.release().ptr();
 	
 	
-	cwd = getcwd(NULL, 0);
+	string cwd = getcwd(NULL, 0);
 	if (!cwd.endswith("/")) cwd += "/";
+	g_cwd = strdup(cwd);
 	
 	//char * cwd_init_tmp=getcwd(NULL, 0);
 	//char * cwdend=strrchr(cwd_init_tmp, '/');

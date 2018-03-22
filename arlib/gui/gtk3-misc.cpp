@@ -76,6 +76,7 @@ void arlib_init_gui(argparse& args, char** argv)
 	//gtk won't let me rip apart its option parser and add its flags to mine
 	//have to rip apart my parser and add it to gtk instead
 	//why does gtk keep insisting on being as obnoxious as possible to make optional
+	//(another example: gtk_gl_area_attach_buffers(). see opengl/ctx-x11.cpp)
 	array<GOptionEntry> gtkargs;
 	gtkargs.resize(args.m_args.size()+1);
 	for (size_t i=0;i<args.m_args.size();i++)
@@ -121,7 +122,11 @@ void arlib_init_gui(argparse& args, char** argv)
 	GError* error = NULL;
 	gtk_init_with_args(&argc, &argv, NULL, gtkargs.ptr(), NULL, &error);
 	
-	if (argv[1]) args.error("non-arguments not supported");
+	if (argv[1])
+	{
+		if (argv[1][0]=='-') args.error((cstring)"unknown argument: "+argv[1]);
+		else args.error("non-arguments not supported");
+	}
 	args.parse_post();
 	
 	args.m_has_gui = true;
@@ -572,9 +577,9 @@ public:
 	
 	void enter() { gtk_main(); need_exit_sync = false; }
 	void exit() { gtk_main_quit(); }
-	void step()
+	void step(bool wait)
 	{
-		gtk_main_iteration_do(false);
+		gtk_main_iteration_do(wait);
 		
 		//workaround for GTK thinking the program is lagging if we only call this every 16ms
 		//we're busy waiting in non-gtk syscalls, waiting less costs us nothing

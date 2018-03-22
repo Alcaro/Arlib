@@ -204,14 +204,19 @@ typedef void* anyptr;
 
 
 #include <stdlib.h> // needed because otherwise I get errors from malloc_check being redeclared
-anyptr malloc_check(size_t size);
-anyptr try_malloc(size_t size);
+#ifdef __GNUC__
+#define ATTR_MALLOC // __attribute__((__malloc__))
+#else               // keeps throwing 'warning: '__malloc__' attribute ignored [-Wattributes]' for some unclear reason
+#define ATTR_MALLOC
+#endif
+anyptr malloc_check(size_t size) ATTR_MALLOC;
+anyptr try_malloc(size_t size) ATTR_MALLOC;
 #define malloc malloc_check
 anyptr realloc_check(anyptr ptr, size_t size);
 anyptr try_realloc(anyptr ptr, size_t size);
 #define realloc realloc_check
-anyptr calloc_check(size_t size, size_t count);
-anyptr try_calloc(size_t size, size_t count);
+anyptr calloc_check(size_t size, size_t count) ATTR_MALLOC;
+anyptr try_calloc(size_t size, size_t count) ATTR_MALLOC;
 #define calloc calloc_check
 void malloc_assert(bool cond); // if the condition is false, the malloc failure handler is called
 
@@ -280,7 +285,7 @@ protected:
 	const nocopy& operator=(const nocopy&) = delete;
 #if !defined(_MSC_VER) || _MSC_VER >= 1900 // error C2610: is not a special member function which can be defaulted
                                            // deleting the copies deletes the moves on gcc, but does nothing on msvc2013; known bug
-                                           // luckily those two bugs cancel out pretty well, so we can do this
+                                           // luckily, those two bugs cancel out pretty well, so we can do this
 	nocopy(nocopy&&) = default;
 	nocopy& operator=(nocopy&&) = default;
 #endif
@@ -367,7 +372,7 @@ size_t memcmp_d(const void * a, const void * b, size_t len);
 template<typename T> static inline T bitround(T in)
 {
 #if defined(__GNUC__) && defined(__x86_64__)
-	//this seems somewhat faster for me, and more importantly, it's smaller
+	//this seems somewhat faster, and more importantly, it's smaller
 	//x64 only because I don't know if it does something stupid on other archs
 	//I'm surprised gcc doesn't detect this pattern and optimize it, it does detect a few others (like byteswap)
 	if (in == 1) return in;

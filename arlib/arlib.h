@@ -18,6 +18,7 @@
 #include "file.h"
 #include "function.h"
 #include "html.h"
+#include "image.h"
 #include "init.h"
 #include "intwrap.h"
 #include "json.h"

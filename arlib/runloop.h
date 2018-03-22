@@ -81,7 +81,8 @@ public:
 	virtual void exit() = 0;
 	
 	//Runs until there are no more events to process, then returns. Usable if you require control over the runloop.
-	virtual void step() = 0;
+	//If wait is true, waits for at least one event before returning.
+	virtual void step(bool wait = false) = 0;
 	
 	//Delete all runloop contents (sockets, HTTP or anything else using sockets, etc) before deleting the loop itself,
 	// or said contents will use-after-free.

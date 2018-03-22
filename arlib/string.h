@@ -6,7 +6,7 @@
 #include <ctype.h>
 
 //A string is a mutable sequence of bytes. It usually represents UTF-8 text, but can be arbitrary binary data, including NULs.
-//All string:: functions taking or returning a char* assume/guarantee NUL termination. However, anything using uint8_t* does not.
+//All string:: functions taking or returning a char* assume/guarantee NUL termination. Anything using uint8_t* does not.
 
 //cstring is an immutable sequence of bytes that does not own its storage. It can also be called stringview.
 
@@ -116,17 +116,9 @@ private:
 	char getchar(int32_t index) const
 	{
 		//this function is REALLY hot, use the strongest possible optimizations
-		if (index >= 0)
-		{
-			if ((uint32_t)index > length()) debug_or_print();
-			
-			if (inlined()) return m_inline[index];
-			else if ((uint32_t)index < m_len) return m_data[index];
-			else return '\0';
-		}
-		
-		debug_or_print();
-		return getchar(realpos(index));
+		if (inlined()) return m_inline[index];
+		else if ((uint32_t)index < m_len) return m_data[index];
+		else return '\0'; // for cstring, which isn't necessarily NUL-terminated
 	}
 	
 public:
@@ -151,7 +143,7 @@ public:
 	explicit operator bool() const { return length() != 0; }
 	//operator const char * () const { return ptr_withnul(); }
 	
-	char operator[](int index) const { if (index < 0) debug_or_print(); return getchar(index); }
+	char operator[](int index) const { return getchar(index); }
 	
 	//static string create(arrayview<uint8_t> data) { string ret=noinit(); ret.init_from(data.ptr(), data.size()); return ret; }
 	
@@ -334,11 +326,6 @@ class string : public cstring {
 	void setchar(int32_t index_, char val)
 	{
 		uint32_t index = realpos(index_);
-		if (index == length())
-		{
-			debug_or_print();
-			resize(index+1);
-		}
 		ptr()[index] = val;
 	}
 	
@@ -441,9 +428,9 @@ private:
 public:
 	//Reading the NUL terminator is fine. Writing extends the string. Poking outside the string is undefined.
 	//charref operator[](uint32_t index) { return charref(this, index); }
-	charref operator[](int index) { if (index < 0) debug_or_print(); return charref(this, index); }
+	charref operator[](int index) { return charref(this, index); }
 	//char operator[](uint32_t index) const { return getchar(index); }
-	char operator[](int index) const { if (index < 0) debug_or_print(); return getchar(index); }
+	char operator[](int index) const { return getchar(index); }
 	
 	static string create_usurp(char * str);
 	

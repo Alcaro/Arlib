@@ -23,7 +23,7 @@ PRELOADER_CFLAGS += -fvisibility=hidden
 PRELOADER_CFLAGS += -masm=intel
 
 #I could include TRUE_{C,L}FLAGS, but that includes silly stuff like -pthread and -lgtk-3, so just hardcode them
-#CFLAGS/LFLAGS are set by command line only, empty by default, can safely be ignored
+#CFLAGS/LFLAGS are set by command line only, empty by default, let's include anyways
 PRELOADER_CFLAGS += -DSANDBOX_INTERNAL -std=c++11 $(CFLAGS)
 PRELOADER_CFLAGS += -Wall -Wmissing-declarations -Wno-comment
 PRELOADER_LFLAGS += -Wl,-z,now $(LFLAGS)

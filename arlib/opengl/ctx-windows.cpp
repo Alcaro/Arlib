@@ -109,10 +109,10 @@ static bool libLoadD3D()
 {
 	hD3D9=LoadLibrary("d3d9.dll");
 	if (!hD3D9) return false;
-	//these are for verifying that Direct3DCreate9Ex_t matches the real function; they're not needed anymore
+	//these are for verifying that Direct3DCreate9Ex_t matches the real function, they're not needed anymore
 	//lpDirect3DCreate9=Direct3DCreate9;
 	//lpDirect3DCreate9Ex=Direct3DCreate9Ex;
-	lpDirect3DCreate9Ex=(Direct3DCreate9Ex_t)GetProcAddress(hD3D9, "Direct3DCreate9Ex");
+	lpDirect3DCreate9Ex = (Direct3DCreate9Ex_t)GetProcAddress(hD3D9, "Direct3DCreate9Ex");
 	if (!lpDirect3DCreate9Ex) { FreeLibrary(hD3D9); return false; }
 	//if (!lpDirect3DCreate9Ex) return false;
 	return true;
@@ -230,8 +230,6 @@ public:
 		if (wgl.GetCurrentContext()) return false;
 		
 		bool debug = (flags & aropengl::t_debug_context);
-		bool depthbuf = (flags & aropengl::t_depth_buffer);
-		bool stenbuf = (flags & aropengl::t_stencil_buffer);
 		uint32_t version = (flags & 0xFFF);
 		
 		PIXELFORMATDESCRIPTOR pfd;
@@ -243,8 +241,8 @@ public:
 		pfd.cColorBits = 24;
 		pfd.cAlphaBits = 0;
 		pfd.cAccumBits = 0;
-		pfd.cDepthBits = (stenbuf ? 24 : depthbuf ? 16 : 0);
-		pfd.cStencilBits = (stenbuf ? 8 : 0);
+		pfd.cDepthBits = 0;
+		pfd.cStencilBits = 0;
 		pfd.cAuxBuffers = 0;
 #ifdef AROPENGL_D3DSYNC
 		if (this->d3dsync)
@@ -396,7 +394,7 @@ public:
 		this->D3D_GLtarget = NULL;
 		
 		//those D3D share handles are weird stuff like 0xC0007000, closing them throws errors
-		//I'll assume it's freed by deleting the rendertarget, device or IDirect3D9Ex, and that reusing it does not leak
+		//I'll assume it's freed by deleting the rendertarget, device or IDirect3D9Ex, and that this does not leak
 		//CloseHandle(D3D_sharetexture);
 		//D3D_sharetexture = NULL;
 	}
@@ -470,7 +468,7 @@ public:
 		}
 	}
 	
-	GLuint outputFramebuffer()f
+	GLuint outputFramebuffer()
 	{
 		if (d3dsync) return GL_fboname;
 		else return 0;

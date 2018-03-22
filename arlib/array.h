@@ -9,11 +9,6 @@ template<typename T> class arrayview;
 template<typename T> class arrayvieww;
 template<typename T> class array;
 
-//Do not remove the debug_or_print calls without testing both the Russian, the Walrus and the sandbox.
-//Additionally, to ensure high chance I'll hit anything I don't remember that uses Arlib, do not remove until March 1, 2018.
-//Same applies to similar constructions in set.h and string.h.
-#include"os.h"
-
 //size: two pointers
 //this object does not own its storage, it's just a pointer wrapper
 template<typename T> class arrayview : public linqbase<arrayview<T>> {
@@ -340,12 +335,8 @@ private:
 	}
 	
 public:
-#ifdef MARCH2018
 	T& operator[](size_t n) { return this->items[n]; }
-#else
-	T& operator[](size_t n) { if (n >= this->size()) { debug_or_print(); resize_grow(n+1); } return this->items[n]; }
-#endif
-	const T& operator[](size_t n) const { if (n >= this->size()) debug_or_print(); return this->items[n]; }
+	const T& operator[](size_t n) const { return this->items[n]; }
 	
 	void resize(size_t len) { resize_to(len); }
 	void reserve(size_t len) { resize_grow(len); }
@@ -577,18 +568,11 @@ protected:
 	
 	bool get(size_t n) const
 	{
-		if (n >= nbits) debug_or_print();
-		if (n >= nbits) return false;
 		return bits()[n/8]>>(n&7) & 1;
 	}
 	
 	void set(size_t n, bool val)
 	{
-		if (n >= nbits)
-		{
-			debug_or_print();
-			resize(n+1);
-		}
 		uint8_t& byte = bits()[n/8];
 		byte &=~ (1<<(n&7));
 		byte |= (val<<(n&7));
@@ -634,8 +618,8 @@ protected:
 	}
 	
 public:
-	bool operator[](size_t n) const { if (n >= size()) debug_or_print(); return get(n); }
-	entry operator[](size_t n) { if (n >= size()) debug_or_print(); return entry(*this, n); }
+	bool operator[](size_t n) const { return get(n); }
+	entry operator[](size_t n) { return entry(*this, n); }
 	
 	bool get_or(size_t n, bool def) const
 	{
@@ -824,7 +808,6 @@ template<typename T> class refarray {
 public:
 	T& operator[](size_t n)
 	{
-		if (n >= items.size()) debug_or_print();
 		return *items[n];
 	}
 	T& append()

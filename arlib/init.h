@@ -112,8 +112,6 @@ private:
 	string get_usage();
 	void usage();
 	void error(cstring why);
-	void error_unexpected_arg(cstring name);
-	void error_unexpected_nonarg();
 	void single_arg(arg_base& arg, cstring value, bool must_use_value, bool* used_value);
 	void single_arg(cstring name, cstring value, bool must_use_value, bool* used_value);
 	void single_arg(char sname, cstring value, bool must_use_value, bool* used_value);

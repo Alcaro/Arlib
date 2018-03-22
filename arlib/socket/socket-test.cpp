@@ -19,8 +19,8 @@ static void clienttest(cstring target, int port, bool ssl, bool xfail = false)
 	
 	cstring http_get =
 		"GET / HTTP/1.1\r\n"
-		"Host: example.com\r\n"
-		"Connection: close\r\n"
+		"Host: example.com\r\n" // this is wrong host, so we'll get a 400 or 404 or whatever
+		"Connection: close\r\n" // but the response is valid HTTP and that's all we care about
 		"\r\n";
 	
 	assert_eq(sock->send(http_get.bytes()), http_get.length());

@@ -152,7 +152,7 @@ public:
 	}
 	
 	
-	/*private*/ void step(bool block)
+	void step(bool wait)
 	{
 		struct timespec now;
 		timespec_now(&now);
@@ -184,7 +184,7 @@ public:
 				next_ms = timer.ms;
 				
 				bool keep = timer.cb(); // WARNING: May invalidate 'timer'.
-				if (exited) block = false; // make sure it doesn't block forever if timer callback calls exit()
+				if (exited) wait = false; // make sure it doesn't block forever if timer callback calls exit()
 				if (!keep) timerinfo[i].id = -1;
 			}
 			
@@ -192,7 +192,7 @@ public:
 		}
 		
 		if (next == INT_MAX) next = -1;
-		if (!block) next = 0;
+		if (!wait) next = 0;
 		
 		
 		epoll_event ev[16];
@@ -247,11 +247,6 @@ public:
 		//assert(!exited);
 #endif
 		exited = true;
-	}
-	
-	void step()
-	{
-		step(false);
 	}
 	
 	~runloop_linux()

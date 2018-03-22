@@ -29,30 +29,30 @@ public:
 		t_opengl_es      = 0x001000, // Probably not supported.
 		t_debug_context  = 0x002000, // Requests a debug context. Doesn't actually enable debugging,
 		                             // use gl.enableDefaultDebugger or gl.DebugMessageControl/etc.
-		//TODO: maybe I should remove these two, hard to use them without special casing all kinds of stuff
-		t_depth_buffer   = 0x004000, // These two only apply to the main buffer. You can always create
-		t_stencil_buffer = 0x008000, // additional FBOs with or without depth/stencil.
+		//WGL/GLX/etc allow attaching depth/stencil buffers to the output, but it's special cased in all kinds of ways.
+		//Therefore, it's not supported here. Create an FBO and stick them there.
 		
 #ifdef AROPENGL_D3DSYNC
 		//Direct3D vsync is an advanced feature that uses WGL_NV_DX_interop and
 		// D3DSWAPEFFECT_FLIPEX to ensure smooth framerate on Windows.
+		//(Despite the name, it works on both Intel, AMD and nVidia.)
 		//Advantages:
 		//- Less stuttering, especially with DWM enabled (at least on some computers, sometimes vsync is already smooth)
 		//Disadvantages:
 		//- Requires Windows 7 or newer
-		//- Some graphics cards and drivers are not compatible
-		//- Poorly tested driver path, may be slow or buggy (in fact, I believe I found a nVidia driver bug while creating this)
+		//- May not work on all graphics cards and drivers
+		//- Poorly tested driver path, may be slow or buggy (in fact, I believe I found a nVidia driver bug while creating it)
 		//- You may not render to the default framebuffer, 0; you must render to gl.defaultFramebuffer()
 		//    (if you don't use framebuffers, you can ignore this; defaultFramebuffer is bound on creation)
 		//- You must call gl.notifyResize() whenever the window is resized (whether by the application or the user),
-		//    in addition to gl.Viewport/etc (notifyResize is optional if created from an Arlib widget_viewport, Viewport isn't)
+		//    in addition to gl.Viewport/etc (notifyResize is optional if created from an Arlib widget_viewport, gl.Viewport isn't)
 		//- Swap intervals other than 0 and 1 are not supported, not even -1
-		//- May be slower, especially with vsync off
-		//- D/S buffers are currently not created (TODO: remove limitation)
+		//- May be slightly slower, especially with vsync off; it does an extra render pass
+		//    (this pass contains only a single Direct3DDevice9Ex->StretchRect, so it's fast, but nonzero)
 		//The flag is ignored on non-Windows systems.
 		//It is safe to use gl.defaultFramebuffer and gl.notifyResize on non-d3dsync objects, even outside Windows.
 # ifdef _WIN32
-		t_direct3d_vsync = 0x010000,
+		t_direct3d_vsync = 0x004000,
 # else
 		t_direct3d_vsync = 0,
 #  undef AROPENGL_D3DSYNC
@@ -104,7 +104,7 @@ public:
 		return true;
 	}
 	
-	//Must be called after the window is resized. Not needed if created from a viewport.
+	//Must be called after the window is resized. If created from a viewport, this is configured automatically.
 	void notifyResize(unsigned int width, unsigned int height)
 	{
 		core->notifyResize(width, height);
@@ -151,6 +151,7 @@ public:
 		core = NULL;
 	}
 	
+	//contents:
 	//void (GLAPIENTRY * ClearColor)(GLclampf red, GLclampf green, GLclampf blue, GLclampf alpha);
 	//void (GLAPIENTRY * Clear)(GLbitfield mask);
 	//etc

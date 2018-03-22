@@ -47,11 +47,6 @@ class set : public linqbase<set<T>> {
 	
 	bool slot_empty(size_t pos) const
 	{
-		if (pos >= m_valid.size())
-		{
-			printf("%i,%i\n",(int)pos,(int)m_valid.size());
-			debug_or_print();
-		}
 		return !m_valid[pos];
 	}
 	
@@ -357,8 +352,7 @@ public:
 	}
 	Tvalue& operator[](const Tkey& key) // C# does this better...
 	{
-		if (!contains(key)) debug_or_print();
-		return get_create(key);
+		return get(key);
 	}
 	
 	Tvalue& insert(const Tkey& key)
