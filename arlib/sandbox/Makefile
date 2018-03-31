@@ -6,7 +6,7 @@ SOURCES_ARLIB += arlib/sandbox/*.cpp
 DEFINES += ARLIB_SANDBOX
 
 #ensure we're usable as linker, with ASLR enabled
-PRELOADER_CFLAGS := -fPIC
+PRELOADER_CFLAGS := -fpic
 PRELOADER_LFLAGS := -static -shared
 #runtime libraries aren't available, don't use them and don't use anything using them
 PRELOADER_CFLAGS += -ffreestanding
@@ -23,19 +23,19 @@ PRELOADER_CFLAGS += -fvisibility=hidden
 PRELOADER_CFLAGS += -masm=intel
 
 #I could include TRUE_{C,L}FLAGS, but that includes silly stuff like -pthread and -lgtk-3, so just hardcode them
-#CFLAGS/LFLAGS are set by command line only, empty by default, let's include anyways
+#CFLAGS/LFLAGS are set by command line only, empty by default, let's include them
 PRELOADER_CFLAGS += -DSANDBOX_INTERNAL -std=c++11 $(CFLAGS)
 PRELOADER_CFLAGS += -Wall -Wmissing-declarations -Wno-comment
 PRELOADER_LFLAGS += -Wl,-z,now $(LFLAGS)
 
 ifneq ($(OPT),0)
-  #not sure if gdb can find the debug flags of the sandbox child, or do anything useful with it at all
-  #(strace works fine, but doesn't care about symbols)
-  #but gdb can run the launcher without the sandbox, so keep debug by default anyways
   PRELOADER_CFLAGS += $(OPTFLAGS)
   PRELOADER_LFLAGS += $(OPTLFLAGS)
 endif
 ifeq ($(DEBUG),1)
+  #not sure if gdb can find the debug flags of the sandbox child, or do anything useful with it at all
+  #(strace works fine, but doesn't care about symbols)
+  #but gdb can run the launcher without the sandbox, so keep debug by default anyways
   PRELOADER_CFLAGS += -g -DDEBUG
 endif
 
@@ -55,6 +55,6 @@ obj/sand-preload-$(OBJNAME).elf: $(PRELOADER_OBJS) | obj
 	$(Q)$(CXX) -D SANDBOX_INTERNAL $(PRELOADER_LFLAGS) $(PRELOADER_OBJS) -o $@
 #ensure failure if this thing isn't 100% static
 #requires .DELETE_ON_ERROR, which is set in Arlib's main makefile
-	objdump -R $@ | grep -A500 -E 'DYNAMIC RELOCATION RECORDS$$' || true
-	objdump -R $@ | grep -qF 'DYNAMIC RELOCATION RECORDS (none)'
+	$(Q)objdump -R $@ | grep -A500 -E 'DYNAMIC RELOCATION RECORDS$$' || true
+	$(Q)objdump -R $@ | grep -qF 'DYNAMIC RELOCATION RECORDS (none)'
 $(call OBJMANGLE,ARLIB,arlib/sandbox/preload-linux-sand.cpp): arlib/sandbox/preload-linux-sand.cpp obj/sand-preload-$(OBJNAME).elf | obj

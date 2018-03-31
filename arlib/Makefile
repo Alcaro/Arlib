@@ -74,7 +74,7 @@ CXXFLAGS = $(CFLAGS)
 LD = g++
 LFLAGS =
 OBJNAME =
-CCXXFLAGS = -fvisibility=hidden -Wall -Wmissing-declarations
+CCXXFLAGS = -fvisibility=hidden -Wall -Wmissing-declarations -pipe
 #doesn't seem to do anything, and CFLAGS is used for c++ too which throws warnings all over
 #CFLAGS += -Wmissing-prototypes
 ifneq ($(EXCEPTIONS),1)
@@ -103,6 +103,10 @@ ifeq ($(OS),linux)
     CONF_CFLAGS += -fPIC
     CONF_LFLAGS += -shared
     EXESUFFIX = .so
+  endif
+  ifeq ($(ARTYPE),hybrid)
+    CONF_CFLAGS += -fpie
+    CONF_LFLAGS += -pie -rdynamic
   endif
   ifeq ($(ARTHREADS),1)
     CONF_CFLAGS += -pthread
@@ -284,7 +288,7 @@ ifeq ($(ARSOCKET),1)
     SOURCES_ARLIB += arlib/socket/bear-ser.c
     OBJS_LATE += arlib/deps/bearssl-0.5/build/libbearssl.a
 arlib/deps/bearssl-0.5/build/libbearssl.a:
-	$(MAKE) -C arlib/deps/bearssl-0.5/ CFLAGS='$(OPTFLAGS)' lib
+	$(MAKE) -C arlib/deps/bearssl-0.5/ CFLAGS='$(OPTFLAGS) -fpic' lib
   else ifeq ($(ARSOCKET_SSL),tlse)
     CFLAGS_ARLIB += -DARLIB_SSL_TLSE
     SOURCES_NOWARN += arlib/deps/tlse.c

@@ -64,12 +64,14 @@ struct image : nocopy {
 	
 	//If xspace is nonzero, that many pixels (not multiplied by scale) are added after every space.
 	//If align is true, a letter may only start at x + (integer * fnt.scale). If false, anywhere is fine.
-	void insert_text(int32_t x, int32_t y, const font& fnt, cstring text, float xspace = 0, bool align = false);
+	//Returns the width (in pixels) of the widest line.
+	uint32_t insert_text(int32_t x, int32_t y, const font& fnt, cstring text, float xspace = 0, bool align = false);
 	//If the line is at least width1 pixels, spaces are resized such that the line is approximately width2 pixels.
 	//If the line is longer than width2, it overflows.
-	void insert_text_justified(int32_t x, int32_t y, uint32_t width1, uint32_t width2, const font& fnt, cstring text, bool align = false);
-	//Automatically inserts linebreaks to ensure everything stays within width2.
-	void insert_text_wrap(int32_t x, int32_t y, uint32_t width1, uint32_t width2, const font& fnt, cstring text);
+	void insert_text_justified(int32_t x, int32_t y, uint32_t width1, uint32_t width2,
+	                           const font& fnt, cstring text, bool align = false);
+	//Automatically inserts linebreaks to ensure everything stays within the given width.
+	void insert_text_wrap(int32_t x, int32_t y, uint32_t width, const font& fnt, cstring text);
 	
 	template<typename T> arrayvieww<T> view()
 	{
@@ -80,7 +82,7 @@ struct image : nocopy {
 	//Result is undefined for ifmt_none and unknown formats.
 	static uint8_t byteperpix(imagefmt fmt)
 	{
-		//yes, this code is silly, but compiler gives shitty code for more obvious implementation
+		//yes, this code is silly, but compiler gives shitty code for more obvious implementations
 		//'magic' is, of course, optimized into a constant
 		uint32_t magic = 0;
 		
@@ -141,6 +143,7 @@ struct image : nocopy {
 	
 	//Always emits valid argb8888. May (but is not required to) report bargb or xrgb instead,
 	// if inspecting the image header proves it to be degenerate.
+	//Always emits a packed image, where stride = width*byteperpix.
 	bool init_decode_png(arrayview<byte> pngdata);
 };
 
@@ -152,8 +155,12 @@ struct font {
 	uint8_t width[128];
 	uint8_t height;
 	
-	uint32_t color = 0x000000;
+	uint32_t color = 0x000000; // High byte is ignored.
 	uint8_t scale = 1;
+	
+	//Called if told to render characters 00-1F, except 0A (LF). Can draw whatever it wants, or change the font color.
+	//If it draws, and the drawn item should have a width, width[ch] should be nonzero after this callback returns.
+	function<void(image& out, const font& fnt, int32_t x, int32_t y, uint8_t ch)> fallback;
 	
 	//The image must be pure black and white, containing 16x8 tiles of equal size.
 	//Each tile must contain one left-aligned symbol, corresponding to its index in the ASCII table.

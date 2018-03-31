@@ -363,7 +363,7 @@ class runloop_blocktest : public runloop {
 	void submit(function<void()>&& cb) { loop->submit(std::move(cb)); }
 	
 	void exit() { loop->exit(); }
-	void step() { end(); loop->step(); begin(); }
+	void step(bool wait) { end(); loop->step(wait); begin(); }
 	
 	
 public:

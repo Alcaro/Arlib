@@ -1,4 +1,5 @@
 PROGRAM = arlibtest
+ARTYPE = hybrid
 ARGUI = 1
 AROPENGL = 0
 ARTHREAD = 1

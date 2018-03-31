@@ -410,6 +410,15 @@ Chosen solution: Ignore it, leave it unimplemented (except openat(AT_FDCWD), whi
   open()). Only a few programs need this function family.
 (Programs using openat admittedly includes this one, but nested sandboxes ... let's not.)
 
+There's one tiny additional issue: glibc implements open() as openat(AT_FDCWD) since 2015, so that
+ case has to be handled. (This appears to be because newer Linux architectures only support openat
+  <https://github.com/bminor/glibc/blob/ee19f1de0d0da24114be/sysdeps/unix/sysv/linux/generic/README>
+ and they want to use the same code for everything.)
+Easy fix (redirect openat(AT_FDCWD) to open(), reject every other openat()), but it means the
+ sandbox has broken due to userspace upgrade, and will likely do so again. I don't think there's
+ anything I can do about that, other than keep maintaining the sandbox. Which I have to do anyways,
+ unmaintained software is generally not considered secure.
+
 
 fork
 ----
@@ -418,8 +427,8 @@ fork, isn't this one easy? It requires no filesystem access, and the child alrea
  resources created by this one. And it's impossible to emulate without calling that exact syscall.
 
 Answer: fork() itself is fine, but another resource needs cloning: The broker communicator socket.
- Each process needs its own copy, or the broker's replies are sent to wrong child. The emulator must
- intercept this.
+ Each process needs its own socket, or the broker's replies are sent to wrong child. Therefore, the
+ emulator must intercept fork() and create a new communicator socket.
 
 To reissue the syscall without seccomp intercepting it, the emulator passes a nonsensical flag
  combination: CLONE_PARENT_SETTID && ptid==NULL, requesting that the child's TID is stored at
@@ -456,7 +465,7 @@ Instead, execveat() can be employed. Like other *at() functions, it takes a fd a
 
 To ensure the path is empty, the path address must be the last mappable byte in the address space,
  0x00007FFF'FFFFEFFF; either it's "", or it's not a NUL-terminated string and the kernel returns
- EFAULT. This check isn't necessary security-wise, but violating it shows that the child isn't
+ -EFAULT. This check isn't necessary security-wise, but violating it shows that the child isn't
  sandbox aware, so like fork(), we're intercepting it for its own sake. (The child can't call
  execveat itself, for the same reasons as openat, but it's a rare syscall.)
 
@@ -464,8 +473,8 @@ Either way, when execve or execveat is intercepted, the emulator asks the broker
  containing said emulator and executes that, passing the intended program as argv[0]. After that,
  the emulator runs again, installs a new SIGSYS handler, and control is again passed to ld-linux.
 
-Shebangs make things trickier, as ld-linux can't handle them. They could be emulated in userspace,
- or they can be put on the TODO list and forgotten. I chose the latter.
+Shebangs (and 32/64bit mismatch) make things trickier, as ld-linux can't handle that. It could be
+ emulated in userspace, or put on the TODO list and forgotten. I chose the latter.
 
 
 Symlinks
@@ -478,17 +487,17 @@ can grant access to files outside the directly authorized paths. These are consi
 However, the existence of symlinks blocks another operation: rename(). Moving a relative symlink is,
  of course, not allowed, but checking whether something is a symlink is a TOCTTOU.
 
-Renaming something within the same directory is safe, and cross-directory rename could be
- implemented via open()+linkat() to a temporary target. But, as usual, most programs don't need
- this, so I choose not to.
+Renaming something within the same directory can't grant access to anything new, and cross-directory
+ rename could be implemented via open()+linkat() to a temporary target. But, as usual, most programs
+ don't need this, so I choose not to.
 
 O_BENEATH would solve most symlink-related issues (other than restricted directories inside public
  ones, which can be "solved" by adding "don't do that" to the docs), but it was never merged.
 
-AT_BENEATH/etc <https://lwn.net/Articles/723057/> seem similar; they're not intended for sandboxes,
- but may be close enough. I'll take a look once (if) it's merged and my distro updates. The broker
- is still needed (to count the number of writes), but keeping reads in the same process would be
- quite a lot faster.
+AT_BENEATH/etc <https://lwn.net/Articles/723057/> seem similar; they claim to not be intended for
+ sandboxes, but so does chroot. If it acts the way I need, it's a sandbox component. I'll take a
+ look once (if) it's merged and my distro updates. The broker is still needed (to count the number
+ of writes), but keeping reads in the same process would be a fair bit faster.
 
 
 inode numbers
@@ -517,7 +526,7 @@ While 20% overhead is more than I expected, it is in fact not noticable; all pro
 
 And compilers are a quite nasty case; in these 1.16 seconds, it spawns 140 child processes, each of
  which has to load dynamic libraries and #include headers - the broker gets about 37000 requests. If
- anything, 20% is surpisingly little.
+ anything, 20% is surprisingly little.
 
 I intend to use this sandbox to allow random people to compile and run arbitrary C++ code, like
  <https://godbolt.org/> and <https://wandbox.org/>. However, unlike most public compilers I've seen,

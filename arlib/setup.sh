@@ -27,6 +27,7 @@ EOF
 
 cat > Makefile <<-EOF
 	PROGRAM = $program
+	#valid values: exe (executable), dll (shared library), hybrid (usable as both exe and dll, named as if it's an exe)
 	ARTYPE = exe
 	ARGUI = 0
 	AROPENGL = 0

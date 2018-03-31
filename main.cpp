@@ -1,8 +1,17 @@
 #include "arlib.h"
 
+DLLEXPORT void x() { puts("x"); }
+void y() { puts("y"); }
+
 int main(int argc, char** argv)
 {
 	arlib_init(NULL, argv);
+	
+	dylib z;
+	printf("%i\n",z.init("./arlibtest"));
+	y();
+	printf("%p\n",z.sym_func("x"));
+	z.sym_func("x")();
 	
 /*
 	uint64_t time = time_us_ne();
