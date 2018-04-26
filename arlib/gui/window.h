@@ -435,6 +435,8 @@ public:
 	impl * m;
 };
 #define widget_create_viewport(width, height) (new widget_viewport(width, height))
+// TODO: should support KMS probably
+// http://betteros.org/tut/graphics1.php or check retroarch
 
 
 class widget_listbox_virtual : public widget_base { WIDGET_BASE

@@ -135,7 +135,7 @@ OPTFLAGS += -fno-unwind-tables -fno-asynchronous-unwind-tables
 OPTFLAGS += -ffunction-sections -fdata-sections
 OPTFLAGS += -fno-ident
 OPTFLAGS += -Werror -DNDEBUG
-OPTLFLAGS := -Wl,--gc-sections -Wl,--build-id=none
+OPTLFLAGS := -Wl,--gc-sections,--build-id=none,--hash-style=gnu,--relax
 #OPTLFLAGS += -Wl,--print-map
 ifneq ($(DEBUG),1)
   ifneq ($(STRIP),0)

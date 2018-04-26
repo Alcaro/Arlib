@@ -252,7 +252,9 @@ again: ;
 	g_exepath = buf.release().ptr();
 	
 	
-	string cwd = getcwd(NULL, 0);
+	char* cwd_true = getcwd(NULL, 0);
+	string cwd = cwd_true;
+	free(cwd_true);
 	if (!cwd.endswith("/")) cwd += "/";
 	g_cwd = strdup(cwd);
 	

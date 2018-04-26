@@ -254,8 +254,7 @@ bool image::init_decode_png(arrayview<byte> pngdata)
 	size_t nbytes = max(this->stride, bytes_per_line_raw+4) * (height+2) + sizeof(uint32_t)*7;
 	this->storage = malloc(nbytes);
 	
-	this->pixels = (uint8_t*)this->storage;
-	//xrgb8888 is probably faster than rgb888, and a lot easier
+	this->pixels8 = (uint8_t*)this->storage;
 	this->fmt = (has_alpha ? (has_bool_alpha ? ifmt_bargb8888 : ifmt_argb8888) : ifmt_xrgb8888);
 	
 	uint8_t* inflate_end = (uint8_t*)this->storage + nbytes;
@@ -532,6 +531,7 @@ static inline void unpack_pixels(uint32_t width, uint32_t height, uint32_t* pixe
 //- overlong PLTE - <=16-color PLTE but 8 bits per pixel
 //- paletted image with too long tRNS
 //- for bit width 16, a tRNS chunk saying RGB 0x0001*3 is transparent, and image contains 1,1,2 that should not be transparent
+//- for bit width 16, some filtering shenanigans that yield markedly different results if 16->8bpp conversion is done before filtering
 //- tRNS on grayscale
 //- tRNS on gray+alpha / RGBA
 //- tRNS with values out of bounds
@@ -554,7 +554,7 @@ static inline void unpack_pixels(uint32_t width, uint32_t height, uint32_t* pixe
 //finally, the reference images are bad; they're not bulk downloadable, and they're GIF, rather than PNGs without fancy features
 //instead, I ran all of them through 'pngout -c6 -f0 -d8 -s4 -y -force'
 //I also ran the invalid x*.png, and pngout-unsupported *16.png, through 'truncate -s0' instead
-//all png test suites I could find are just variants of PngSuite
+//all png test suites I could find are just PngSuite (possibly renamed)
 //
 //I will create these, and submit for inclusion in PngSuite, once I have a png encoder to manipulate,
 // except bitwidth 16, interlaced (rare and unsupported), and invalid DEFLATE (need a deflater to manipulate).
@@ -584,8 +584,8 @@ test("png", "array,imagebase,file", "png")
 			assert_eq(im.width, ref.width);
 			assert_eq(im.height, ref.height);
 			
-			arrayview<uint32_t> imp = im.view<uint32_t>();
-			arrayview<uint32_t> refp = ref.view<uint32_t>();
+			uint32_t* imp = im.pixels32;
+			uint32_t* refp = ref.pixels32;
 			
 //if(tests[i].contains("unknown"))
 //{

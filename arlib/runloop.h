@@ -25,7 +25,7 @@ public:
 	//If the other side of the fd is closed, it's considered both readable and writable.
 	virtual uintptr_t set_fd(uintptr_t fd, function<void(uintptr_t)> cb_read, function<void(uintptr_t)> cb_write = NULL) = 0;
 #else
-	//TODO: figure out sockets on windows (other fds aren't needed)
+	//TODO: figure out sockets and gui events on windows (other fds aren't needed)
 	//virtual uintptr_t set_socket(socket* sock, function<void()> cb_read, function<void()> cb_write) = 0;
 #endif
 	

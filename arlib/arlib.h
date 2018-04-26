@@ -28,6 +28,7 @@
 #include "runloop.h"
 #include "safeint.h"
 #include "serialize.h"
+#include "simd.h"
 #include "stringconv.h"
 #include "string.h"
 #include "test.h"

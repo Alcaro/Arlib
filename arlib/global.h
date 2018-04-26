@@ -10,6 +10,7 @@
 //#define __STDC_LIMIT_MACROS //how many of these stupid things exist
 //#define __STDC_FORMAT_MACROS//if I include a header, it's because I want to use its contents
 //#define __STDC_CONSTANT_MACROS
+#define _USE_MATH_DEFINES // needed for M_PI on Windows
 
 #include <stdint.h>
 #include <stddef.h>

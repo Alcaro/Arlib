@@ -28,8 +28,6 @@ static inline int memfd_create(const char * name, unsigned int flags) { return s
 
 void sandproc::filesystem::grant_native_redir(string cpath, string ppath, int max_write)
 {
-	mutexlocker lock(mut);
-	
 	mount& m = mounts.insert(cpath);
 	
 	string cend = cpath.rsplit<1>("/")[1];
@@ -66,8 +64,6 @@ void sandproc::filesystem::grant_native(string path, int max_write)
 }
 void sandproc::filesystem::grant_tmp(string cpath, int max_size)
 {
-	mutexlocker lock(mut);
-	
 	mount& m = mounts.insert(cpath);
 	
 	m.type = ty_tmp;
@@ -75,8 +71,6 @@ void sandproc::filesystem::grant_tmp(string cpath, int max_size)
 }
 void sandproc::filesystem::grant_errno(string cpath, int error, bool noisy)
 {
-	mutexlocker lock(mut);
-	
 	mount& m = mounts.insert(cpath);
 	
 	m.type = ty_error;
@@ -106,8 +100,6 @@ sandproc::filesystem::~filesystem()
 //calls report_access_violation if needed
 int sandproc::filesystem::child_file(cstring pathname, int op_, int flags, mode_t mode)
 {
-	mutexlocker lock(mut);
-	
 	broker_req_t op = (broker_req_t)op_;
 	bool is_write;
 	if (op == br_open)

@@ -9,10 +9,10 @@
 //bytes is output
 
 static const char * const entities_def[] = {
-	u8"amp\0?\u0026",
-	u8"apos\0\u0027",
-	u8"gt\0\u003E",
-	u8"lt\0\u003C",
+	u8"amp\0?&",
+	u8"apos\0'",
+	u8"gt\0>",
+	u8"lt\0<",
 	u8"quot\0?\"",
 };
 
@@ -122,9 +122,9 @@ fail:
 
 test("HTML entities", "string", "html")
 {
-	//do not use existing entities other than amp apos gt lt quot,
+	//do not use existing named entities other than amp apos gt lt quot,
 	// or this will fail depending on whether it runs before or after htmlent.cpp
-	//(nonexistent entities are fine)
+	//(nonexistent and numbered entities are fine)
 	assert_eq(HTML::entity_decode("&quot;&#xF8;&#248;&#xF8&#&#x"), "\"øøø&#&#x");
 	assert_eq(HTML::entity_decode("&quot&#xF8&#248&#xF8&#&#x"), "\"øøø&#&#x");
 	assert_eq(HTML::entity_decode("foo&quot&quote=42&quot=42"), "foo\"\"e=42\"=42");
