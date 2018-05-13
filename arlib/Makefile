@@ -5,6 +5,16 @@
 #PATH is the source filename, including extension, relative to project root, with slashes replaced with double underscore
 #example: obj/DEFAULT___linux___arlib__file-posix.cpp.o
 
+#TODO: make OPT=1 should enable optimizations, but also assertions and debug symbols; OPT=1 DEBUG=0 or OPT=2 should disable them
+#actually, check which assertions exist, probably safe to disable
+
+#to create a profiled build:
+#make clean
+#make OPT=1 PROFILE=gen
+#./program --do-expensive-operations=true
+#make clean-prof
+#make OPT=1 PROFILE=use
+
 arlib-default: arlib-default2
 
 ifeq (,$(wildcard arlib/string.cpp))
@@ -134,7 +144,7 @@ OPTFLAGS := -Os -fomit-frame-pointer -fmerge-all-constants -fvisibility=hidden
 OPTFLAGS += -fno-unwind-tables -fno-asynchronous-unwind-tables
 OPTFLAGS += -ffunction-sections -fdata-sections
 OPTFLAGS += -fno-ident
-OPTFLAGS += -Werror -DNDEBUG
+OPTFLAGS += -Werror -DNDEBUG -DARLIB_OPT
 OPTLFLAGS := -Wl,--gc-sections,--build-id=none,--hash-style=gnu,--relax
 #OPTLFLAGS += -Wl,--print-map
 ifneq ($(DEBUG),1)
@@ -144,11 +154,14 @@ ifneq ($(DEBUG),1)
 endif
 
 ifeq ($(DEBUG),1)
-  CFLAGS += -g -DDEBUG
+  CFLAGS += -g
+  ifeq ($(OPT),0)
+    #OPT=1 DEBUG=1 should prioritize optimization over debugging; OPT=1 DEBUG=1 then 'strip' should be identical to OPT=1 DEBUG=0
+    CFLAGS += -DDEBUG
+  endif
 endif
 ifneq ($(OPT),0)
-  #OPT=1 DEBUG=1 should prioritize optimization over debugging; OPT=1 DEBUG=1 then 'strip' should be identical to OPT=1 DEBUG=0
-  CONF_CFLAGS += $(OPTFLAGS) -UDEBUG
+  CONF_CFLAGS += $(OPTFLAGS)
   CONF_LFLAGS += $(OPTLFLAGS)
   ifeq ($(OPT),spd)
     CONF_CFLAGS += -O3
@@ -236,6 +249,11 @@ ifeq ($(AROPENGL),1)
   ifeq ($(AROPENGL_D3DSYNC),1)
     DEFINES += AROPENGL_D3DSYNC
   endif
+obj/glsym-slim.h:
+	python arlib/opengl/generate.py used aropengl obj/glsym-slim.h
+ifneq ($(OPT),0)
+arlib.h: obj/glsym-slim.h
+endif
 endif
 
 ifeq ($(ARTHREAD),1)

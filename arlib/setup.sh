@@ -6,9 +6,19 @@
 program=$1
 [[ -z $program ]] && program=$(basename $(pwd))
 
-echo '#include "arlib/arlib.h"' > arlib.h
-
 mkdir obj
+
+cat > arlib.h <<EOF
+#if defined(ARLIB_OPENGL) && defined(ARLIB_OPT)
+#define AROPENGL_SLIM
+#endif
+
+#include "arlib/arlib.h"
+
+#ifdef AROPENGL_SLIM
+#include "obj/glsym-slim.h"
+#endif
+EOF
 
 cat > main.cpp <<EOF
 #include "arlib.h"
