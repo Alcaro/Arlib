@@ -208,6 +208,7 @@ public:
 	void sort()
 	{
 		//insertion sort, without binary search optimization for finding the new position
+		//TODO: less lazy
 		for (size_t a=0;a<this->count;a++)
 		{
 			size_t b;
@@ -230,13 +231,19 @@ public:
 		sort(); // TODO: less lazy
 	}
 	
-	//void shuffle()
-	//{
-	//	for (int i=count;i>0;i--)
-	//	{
-	//		swap(i-1, rand()%i);
-	//	}
-	//}
+	void shuffle()
+	{
+		for (int i=this->count;i>0;i--)
+		{
+			int a = i-1;
+			int b = rand()%i;
+			
+			char tmp[sizeof(T)];
+			memcpy(tmp, this->items+a, sizeof(T));
+			memcpy(this->items+a, this->items+b, sizeof(T));
+			memcpy(this->items+b, tmp, sizeof(T));
+		}
+	}
 	
 	const T* begin() const { return this->items; }
 	const T* end() const { return this->items+this->count; }

@@ -349,7 +349,7 @@ int main(int argc, char* argv[])
 		if (count[2]) printf(", skipped %i", count[2]);
 		if (count[3]) printf(", inconclusive %i", count[3]);
 		if (count[4]) printf(", expected-fail %i", count[4]);
-		puts("     ");
+		puts("             ");
 		
 		for (size_t i=1;i<ARRAY_SIZE(max_latencies_us);i++)
 		{

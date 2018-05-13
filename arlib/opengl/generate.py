@@ -76,6 +76,7 @@ if filter_used:
 			if filename.endswith((".c", ".cpp")) and filename!="generated.c":
 				used += extract_gl(readfile(os.path.join(root, filename)))
 	
+	#TODO: for cacheline purposes, sort it by first index in 'used', not alphabetically
 	functions = filter(functions, used)
 
 

@@ -1,5 +1,5 @@
 PROGRAM = arlibtest
-ARTYPE = hybrid
+ARTYPE = exe
 ARGUI = 1
 AROPENGL = 0
 ARTHREAD = 1

@@ -265,7 +265,8 @@ puts("GTJ="+tostring(guilds_to_join));
 			string text = json["d"]["content"];
 			string guild = channels.contains(chan) ? channels[chan].guild : "0";
 			
-			set_user(guild, json["d"]);
+			set_user_inner(json["d"]["author"]); // this will create users for webhooks, but that's fine
+			if (guild != "0") guilds[guild].users.add(user);
 			
 			if (user != my_user && users[user].discriminator) // ignore partial users, probably timing issue
 			{

@@ -250,30 +250,42 @@ uint64_t time_us_ne()
 #else
 #include <time.h>
 
+//these functions calculate n/1000 and n/1000000, respectively
+//-O3 optimizes this automatically, but I want -Os on most of the program, only optimizing the hottest spots
+//this is one of said hotspots; the size penalty is tiny (2 bytes, 4 for both), and it's about twice as fast
+static inline uint32_t div1000(uint32_t n)
+{
+	return 274877907*(uint64_t)n >> 38;
+}
+static inline uint32_t div1mil(uint32_t n)
+{
+	return 1125899907*(uint64_t)n >> 50;
+}
+
 uint64_t time_us()
 {
 	struct timespec tp;
 	clock_gettime(CLOCK_REALTIME, &tp);
-	return tp.tv_sec*1000000 + tp.tv_nsec/1000;
+	return tp.tv_sec*1000000 + div1000(tp.tv_nsec);
 }
 uint64_t time_ms()
 {
 	struct timespec tp;
 	clock_gettime(CLOCK_REALTIME, &tp);
-	return tp.tv_sec*1000 + tp.tv_nsec/1000000;
+	return tp.tv_sec*1000 + div1mil(tp.tv_nsec);
 }
 
 uint64_t time_us_ne()
 {
 	struct timespec tp;
 	clock_gettime(CLOCK_MONOTONIC, &tp); // CLOCK_MONOTONIC_RAW makes more sense, but MONOTONIC uses vdso and skips the syscall
-	return tp.tv_sec*1000000 + tp.tv_nsec/1000;
+	return tp.tv_sec*1000000 + div1000(tp.tv_nsec);
 }
 uint64_t time_ms_ne()
 {
 	struct timespec tp;
 	clock_gettime(CLOCK_MONOTONIC, &tp);
-	return tp.tv_sec*1000 + tp.tv_nsec/1000000;
+	return tp.tv_sec*1000 + div1mil(tp.tv_nsec);
 }
 #endif
 

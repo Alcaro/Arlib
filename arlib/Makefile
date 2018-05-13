@@ -302,8 +302,8 @@ SOURCES_NOWARN += arlib/deps/miniz.c
 #CFLAGS_ARLIB += $(patsubst %,-D%,$(DEFINES))
 CONF_CFLAGS += $(patsubst %,-D%,$(DEFINES))
 
-TRUE_CFLAGS := -std=c99 $(CCXXFLAGS) $(CFLAGS) $(CONF_CFLAGS)
-TRUE_CXXFLAGS := -std=c++11 -fno-rtti $(CCXXFLAGS) $(CXXFLAGS) $(CONF_CXXFLAGS)
+TRUE_CFLAGS := -std=c99 $(CCXXFLAGS) $(CONF_CFLAGS) $(CFLAGS)
+TRUE_CXXFLAGS := -std=c++11 -fno-rtti $(CCXXFLAGS) $(CONF_CXXFLAGS) $(CXXFLAGS)
 TRUE_LFLAGS := $(LFLAGS) -fvisibility=hidden $(CONF_LFLAGS)
 
 ifeq ($(OS),windows)

@@ -95,7 +95,7 @@ public:
 //Permissive (expired)  | Yes     | ?        | Yes    | No      | No
 //Permissive (bad root) | Yes     | ?        | Yes    | Yes     | No
 //Permissive (bad name) | Yes     | ?        | Yes    | No      | No
-//Serialize             | No      | No       | No     | Yes*    | No   | TLSe claims to support it, but I can't get it working
+//Serialize             | No      | No       | No     | Yes*    | No*  | TLSe claims to support it, but I can't get it working
 //                                                                     | BearSSL is homemade and will need rewrites if upstream changes
 //Server                | No      | No       | No     | No      | No   | Likely possible on everything, I'm just lazy
 //Reputable author      | Yes     | Yes      | Yes    | Yes     | No
