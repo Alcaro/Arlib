@@ -456,6 +456,8 @@ test("HTTP", "tcp,ssl", "http")
 		
 		h.send(HTTP::req(URL), break_runloop);
 		loop->enter();
+		assert(r.success);
+		assert_eq(r.status, 200);
 		assert_eq(r.text(), CONTENTS);
 	}
 	
@@ -464,10 +466,14 @@ test("HTTP", "tcp,ssl", "http")
 		
 		h.send(HTTP::req(URL), break_runloop);
 		loop->enter();
+		assert(r.success);
+		assert_eq(r.status, 200);
 		assert_eq(r.text(), CONTENTS);
 		
 		h.send(HTTP::req(URL), break_runloop);
 		loop->enter();
+		assert(r.success);
+		assert_eq(r.status, 200);
 		assert_eq(r.text(), CONTENTS);
 	}
 	
@@ -478,8 +484,13 @@ test("HTTP", "tcp,ssl", "http")
 		T h.send(HTTP::req(URL), break_runloop);
 		
 		T loop->enter();
+		assert(r.success);
+		assert_eq(r.status, 200);
 		T assert_eq(r.text(), CONTENTS);
+		
 		T loop->enter();
+		assert(r.success);
+		assert_eq(r.status, 200);
 		T assert_eq(r.text(), CONTENTS);
 	}
 	
@@ -491,24 +502,32 @@ test("HTTP", "tcp,ssl", "http")
 			bind_lambda([&](HTTP::rsp inner_r)
 			{
 				loop->exit();
+				assert(inner_r.success);
+				assert_eq(inner_r.status, 200);
 				assert_eq(inner_r.text(), CONTENTS);
 			});
 		function<void(HTTP::rsp)> break_runloop_testc2 =
 			bind_lambda([&](HTTP::rsp inner_r)
 			{
 				loop->exit();
+				assert(inner_r.success);
+				assert_eq(inner_r.status, 200);
 				assert_eq(inner_r.text(), CONTENTS2);
 			});
 		function<void(HTTP::rsp)> break_runloop_testc3 =
 			bind_lambda([&](HTTP::rsp inner_r)
 			{
 				loop->exit();
+				assert(inner_r.success);
+				assert_eq(inner_r.status, 200);
 				assert_eq(inner_r.text(), CONTENTS3);
 			});
 		function<void(HTTP::rsp)> break_runloop_testc4 =
 			bind_lambda([&](HTTP::rsp inner_r)
 			{
 				loop->exit();
+				assert(inner_r.success);
+				assert_eq(inner_r.status, 200);
 				assert_eq(inner_r.text(), CONTENTS4);
 			});
 		
@@ -532,9 +551,15 @@ test("HTTP", "tcp,ssl", "http")
 		HTTP h(loop);
 		h.send(rq, break_runloop);
 		h.send(rq, break_runloop);
+		
 		loop->enter();
+		assert(r.success);
+		assert_eq(r.status, 200);
 		assert_eq(r.text(), "{\"post\":\"x\"}");
+		
 		loop->enter();
+		assert(r.success);
+		assert_eq(r.status, 200);
 		assert_eq(r.text(), "{\"post\":\"x\"}");
 	}
 	
@@ -549,8 +574,13 @@ test("HTTP", "tcp,ssl", "http")
 		h.send(rq, break_runloop);
 		
 		loop->enter();
+		assert(r.success);
+		assert_eq(r.status, 200);
 		assert_eq(r.text(), CONTENTS);
+		
 		loop->enter();
+		assert(r.success);
+		assert_eq(r.status, 200);
 		assert_eq(r.text(), CONTENTS); // ensure it tries again
 	}
 	

@@ -153,13 +153,7 @@ ifneq ($(DEBUG),1)
   endif
 endif
 
-ifeq ($(DEBUG),1)
-  CFLAGS += -g
-  ifeq ($(OPT),0)
-    #OPT=1 DEBUG=1 should prioritize optimization over debugging; OPT=1 DEBUG=1 then 'strip' should be identical to OPT=1 DEBUG=0
-    CFLAGS += -DDEBUG
-  endif
-endif
+CFLAGS += -g
 ifneq ($(OPT),0)
   CONF_CFLAGS += $(OPTFLAGS)
   CONF_LFLAGS += $(OPTLFLAGS)
@@ -167,6 +161,10 @@ ifneq ($(OPT),0)
     CONF_CFLAGS += -O3
   endif
   OBJNAME := $(OBJNAME)-opt
+else
+  #OPT=1 DEBUG=1 should prioritize optimization over debugging; OPT=1 DEBUG=1 then 'strip' should be identical to OPT=1 DEBUG=0
+  #so this one is gated on OPT=0, not DEBUG=1
+  CFLAGS += -DDEBUG
 endif
 
 ifeq ($(PROFILE),gen)
@@ -366,13 +364,16 @@ obj/arlibtest$(EXESUFFIX): $(OBJS)
 	$(ECHOQ) LD $@
 	$(Q)$(LD) $+ $(TRUE_LFLAGS) -o $@ -lm
 
+ifneq ($(TF),)
+  TESTFILTER := --filter="$(TF)"
+endif
 test: obj/arlibtest$(EXESUFFIX)
-	$(TESTRUNNER) obj/arlibtest$(EXESUFFIX)
+	$(TESTRUNNER) obj/arlibtest$(EXESUFFIX) $(TESTFILTER)
 check: test
 test-all: obj/arlibtest$(EXESUFFIX)
-	$(TESTRUNNER) obj/arlibtest$(EXESUFFIX) --all
+	$(TESTRUNNER) obj/arlibtest$(EXESUFFIX) --all $(TESTFILTER)
 test-all-twice: obj/arlibtest$(EXESUFFIX)
-	$(TESTRUNNER) obj/arlibtest$(EXESUFFIX) --all --twice
+	$(TESTRUNNER) obj/arlibtest$(EXESUFFIX) --all --twice $(TESTFILTER)
 endif
 
 

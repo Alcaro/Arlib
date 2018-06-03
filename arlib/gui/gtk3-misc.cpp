@@ -545,9 +545,10 @@ public:
 		}
 		abort(); // removing nonexistent events is bad news
 	}
-	void remove(uintptr_t id)
+	uintptr_t remove(uintptr_t id)
 	{
 		remove_full(id, true);
+		return 0;
 	}
 	
 	
@@ -611,7 +612,7 @@ public:
 			//but this is still an ugly hack. a much better solution would be creating gtk_deinit()
 			// and moving these shutdown actions there, or having gtk put this in its own atexit handler
 			
-			g_idle_add([](void*)->gboolean { gtk_main_quit(); return false; }, NULL);
+			g_idle_add([](void*)->gboolean { gtk_main_quit(); return G_SOURCE_REMOVE; }, NULL);
 			gtk_main();
 		}
 	}

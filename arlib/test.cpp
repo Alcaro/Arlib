@@ -117,6 +117,13 @@ void _test_skip(cstring why)
 	}
 }
 
+void _test_skip_force(cstring why)
+{
+	if (result!=err_ok) return;
+	if (all_tests) puts("skipped: "+why);
+	test_throw(err_skip);
+}
+
 void _test_inconclusive(cstring why)
 {
 	if (result!=err_ok) return;
@@ -263,10 +270,15 @@ int main(int argc, char* argv[])
 	setrlimit(RLIMIT_DATA, &rlim);
 #endif
 	
+	int n_filtered_tests = 0;
+	
 #if 1 // set to 0 if string or array is misbehaving
 	argparse args;
+	
+	string filter;
 	args.add("all", &all_tests);
 	args.add("twice", &run_twice);
+	args.add("filter", &filter);
 	arlib_init(args, argv);
 	
 	puts("Sorting tests...");
@@ -292,6 +304,26 @@ int main(int argc, char* argv[])
 				puts("error: dependency on nonexistent feature");
 				err_print(outer);
 				abort();
+			}
+		}
+	}
+	
+	if (filter)
+	{
+		testlist** tp = &alltests;
+		while (*tp)
+		{
+			testlist* t = *tp;
+			cstring tn = t->name;
+			if (!tn.icontains(filter))
+			{
+				*tp = t->next; // discard test
+				n_filtered_tests++;
+				free(t);
+			}
+			else
+			{
+				tp = &t->next;
 			}
 		}
 	}
@@ -349,6 +381,7 @@ int main(int argc, char* argv[])
 		if (count[2]) printf(", skipped %i", count[2]);
 		if (count[3]) printf(", inconclusive %i", count[3]);
 		if (count[4]) printf(", expected-fail %i", count[4]);
+		if (n_filtered_tests) printf(", filtered %i", n_filtered_tests);
 		puts("             ");
 		
 		for (size_t i=1;i<ARRAY_SIZE(max_latencies_us);i++)

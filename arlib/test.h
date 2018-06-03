@@ -19,6 +19,7 @@ void _teststack_push(int line);
 void _teststack_pop();
 
 void _test_skip(cstring why);
+void _test_skip_force(cstring why);
 void _test_inconclusive(cstring why);
 void _test_expfail(cstring why);
 
@@ -156,6 +157,7 @@ void _assert_range(const T&  actual, const char * actual_exp,
 #define assert_fail_nostack(msg) do { _testfail((string)"\n"+msg, -1); } while(0)
 #define testcall(x) do { _teststack_push(__LINE__); x; _teststack_pop(); } while(0)
 #define test_skip(x) do { _test_skip(x); } while(0)
+#define test_skip_force(x) do { _test_skip_force(x); } while(0)
 #define test_inconclusive(x) do { _test_inconclusive(x); } while(0)
 #define test_expfail(x) do { _test_expfail(x); } while(0)
 #define test_nothrow(x) do { _test_nothrow(+1); x; _test_nothrow(-1); } while(0)
@@ -186,6 +188,7 @@ int not_quite_main(int argc, char** argv);
 #define assert_range(x,y,z) ((void)((x)<(y)))
 #define testcall(x) x
 #define test_skip(x) return
+#define test_skip_force(x) return
 #define test_inconclusive(x) return
 #define test_expfail(x) return
 #define assert_unreachable() return

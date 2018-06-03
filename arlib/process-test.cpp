@@ -206,7 +206,7 @@ test("sandbox", "process", "sandbox")
 {
 	//test_skip("kinda slow");
 	
-	if (RUNNING_ON_VALGRIND) test_inconclusive("valgrind doesn't understand the sandbox");
+	if (RUNNING_ON_VALGRIND) test_skip_force("valgrind doesn't understand the sandbox");
 	
 	//use the global one instead here for no reason
 	runloop* loop = runloop::global();

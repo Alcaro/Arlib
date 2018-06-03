@@ -61,7 +61,7 @@ def compile(header):
 def extract_gl(code):
 	import re
 	code = re.sub("//.*", "", code)
-	return set(re.findall("gl.([A-Za-z0-9]*)", code))
+	return list(re.findall(r"gl\.([A-Za-z0-9]+)", code))
 
 def filter(functions, used):
 	return [f for f in functions if f["name"] in used]
@@ -88,14 +88,19 @@ if filter_used:
 	
 	used = []
 	for root, dirs, files in os.walk("."):
-		if 'arlib' in dirs:
-			dirs.remove("arlib")
+		for ignore in ['arlib','.git','obj']:
+			if ignore in dirs:
+				dirs.remove(ignore)
 		for filename in files:
 			if filename.endswith((".c", ".cpp")):
 				used += extract_gl(readfile(os.path.join(root, filename)))
 	
-	#TODO: for cacheline purposes, sort it by first index in 'used', not alphabetically
 	functions = filter(functions, used)
+	#pointless, the savings are completely dwarfed by whatever the function does
+	#it also makes the resulting binary dependent on os.walk order, which isn't stable
+	##sort by first index in 'used', not alphabetically, to maximize cache coherence
+	##used.index() throws if it doesn't exist, but filter() says it does
+	#functions.sort(key = lambda fn: used.index(fn['name']))
 
 
 with open(sys.argv[3], "wt") as out:
@@ -128,14 +133,4 @@ return
 	for func in functions:
 		out.write("funcptr* internalGetSymDest() { return (funcptr*)&this->"+func["name"]+"; }\n")
 		break
-	out.write("""
-};
-""")
-
-
-
-
-
-
-
-
+	out.write("};\n")

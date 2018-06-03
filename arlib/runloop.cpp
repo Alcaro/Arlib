@@ -123,9 +123,9 @@ public:
 	}
 	
 	
-	void remove(uintptr_t id)
+	uintptr_t remove(uintptr_t id)
 	{
-		if (id == 0) return;
+		if (id == 0) return 0;
 		
 		intptr_t id_s = id;
 		if (id_s >= 0)
@@ -144,11 +144,13 @@ public:
 				if (timerinfo[i].id == t_id)
 				{
 					timerinfo[i].id = -1;
-					return;
+					return 0;
 				}
 			}
 			abort(); // happens if that timer doesn't exist
 		}
+		
+		return 0;
 	}
 	
 	
@@ -356,7 +358,7 @@ class runloop_blocktest : public runloop {
 		if (callback) callback_w = bind_lambda([this, callback]()->bool { return this->do_cb(callback); });
 		return loop->set_idle(callback_w);
 	}
-	void remove(uintptr_t id) { loop->remove(id); }
+	uintptr_t remove(uintptr_t id) { return loop->remove(id); }
 	void enter() { end(); loop->enter(); begin(); }
 	
 	void prepare_submit() { loop->prepare_submit(); }
@@ -454,5 +456,5 @@ test("global runloop", "function,array,set,time", "runloop")
 }
 test("private runloop", "function,array,set,time", "runloop")
 {
-	test_runloop(false); // it's technically illegal to create a runloop on the main thread, but nobody's gonna notice
+	test_runloop(false);
 }

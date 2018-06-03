@@ -534,4 +534,17 @@ test("string", "", "string")
 		assert_eq(a.indexof("unc"), 10);
 		assert_eq(a.indexof("x"), (size_t)-1);
 	}
+	
+	{
+		cstring a = "floating munchers";
+		assert(a.icontains("f"));
+		assert(a.icontains("l"));
+		assert(a.icontains("unc"));
+		assert(a.icontains("ers"));
+		assert(a.icontains("F"));
+		assert(a.icontains("L"));
+		assert(a.icontains("Unc"));
+		assert(a.icontains("Ers"));
+		assert(!a.icontains("x"));
+	}
 }

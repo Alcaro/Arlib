@@ -169,6 +169,7 @@ void WebSocket::send(arrayview<byte> message, int type)
 test("WebSocket", "tcp,ssl,bytepipe", "websocket")
 {
 	test_skip("kinda slow");
+	test_inconclusive("this server is super slow");
 	
 	autoptr<runloop> loop = runloop::create();
 	string str;

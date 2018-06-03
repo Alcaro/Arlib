@@ -13,6 +13,7 @@ bool aropengl_base::create(context* core, const char * symNames, funcptr* symDes
 		symDest++;
 		symNames += strlen(symNames)+1;
 	}
+	return true;
 }
 
 

@@ -535,10 +535,6 @@ inline array<T2> arrayview<T>::cast() const
 	return std::move(ret);
 }
 
-typedef arrayview<uint8_t> bytes;
-typedef arrayvieww<uint8_t> bytesw;
-typedef array<uint8_t> bytearray;
-
 
 template<> class array<bool> {
 protected:

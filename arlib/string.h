@@ -174,6 +174,22 @@ public:
 		if (other.length() > this->length()) return false;
 		return (!memcmp(this->ptr()+this->length()-other.length(), other.ptr(), other.length()));
 	}
+	bool icontains(cstring other) const
+	{
+		if (other.length() > this->length()) return false;
+		const char* a = (char*)this->ptr();
+		const char* b = (char*)other.ptr();
+		for (size_t start=0;start<=this->length()-other.length();start++)
+		{
+			size_t i;
+			for (i=0;i<other.length();i++)
+			{
+				if (tolower(a[start+i]) != tolower(b[i])) break;
+			}
+			if (i==other.length()) return true;
+		}
+		return false;
+	}
 	bool istartswith(cstring other) const
 	{
 		if (other.length() > this->length()) return false;

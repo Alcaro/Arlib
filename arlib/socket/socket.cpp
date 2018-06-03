@@ -142,9 +142,6 @@ static int connect(cstring domain, int port)
 	return fd;
 }
 
-} // close namespace
-
-namespace {
 
 class socket_raw : public socket {
 public:
@@ -331,14 +328,28 @@ public:
 	/*private*/ void cancel()
 	{
 		child = NULL;
+		set_loop();
+	}
+	
+	/*private*/ bool call_cb_immed()
+	{
 		if (cb_read) cb_read();
-		else cb_write();
+		if (cb_write) cb_write();
+		
+		set_loop();
+		return true;
 	}
 	
 	/*private*/ void set_loop()
 	{
 		if (!child) return;
 		child->callback(cb_read, tosend.remaining() ? bind_this(&socketbuf::trysend_void) : NULL);
+		
+		if (cb_write || (cb_read && !child))
+		{
+			if (!idle_id) idle_id = loop->set_timer_rel(idle_id, 0, bind_this(&socketbuf::call_cb_immed));
+		}
+		else idle_id = loop->remove(idle_id);
 	}
 	/*private*/ bool trysend(bool in_runloop)
 	{
@@ -380,6 +391,11 @@ public:
 		this->cb_write = cb_write;
 		set_loop();
 	}
+	
+	~socketbuf()
+	{
+		loop->remove(idle_id);
+	}
 };
 
 } // close namespace
@@ -404,9 +420,14 @@ socket* socket::create_udp(cstring domain, int port, runloop* loop)
 	int fd = mksocket(addr->ai_family, addr->ai_socktype | SOCK_CLOEXEC | SOCK_NONBLOCK, addr->ai_protocol);
 	socket* ret = new socket_raw_udp(fd, addr->ai_addr, addr->ai_addrlen, loop);
 	freeaddrinfo(addr);
-	//TODO: add the wrapper
+	//TODO: teach the wrapper about UDP, then add it
 	
 	return ret;
+}
+
+socket* socket::wrap(socket* inner, runloop* loop)
+{
+	return new socketbuf(inner, loop);
 }
 
 #if 0
