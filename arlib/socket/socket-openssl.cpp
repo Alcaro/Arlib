@@ -15,7 +15,6 @@ RUN_ONCE_FN(initialize)
 	ctx = SSL_CTX_new(SSLv23_client_method());
 	SSL_CTX_set_default_verify_paths(ctx);
 	SSL_CTX_set_cipher_list(ctx, "HIGH:!DSS:!aNULL@STRENGTH");
-	//SSL_CTX_set_cipher_list(ctx, "ALL");
 }
 
 #if OPENSSL_VERSION_NUMBER < 0x10002000
