@@ -38,7 +38,7 @@ Under a suitable sandbox policy, typical runs of distro-provided command line pr
 
 Under the same sandbox policy, if a malicious program is substituted, it cannot in any way:
 (1) access private data
-(2) contact any unrelated process
+(2) contact or disrupt any unrelated process
 (3) keep running beyond termination of the sandbox
 
 "Private data" includes (unless authorized by sandbox policy):
@@ -75,6 +75,8 @@ but does not include:
 - The current timezone
     like the above, it's exported in vdso
     hard-but-not-impossible is a waste of time, it will become a library routine and then it's easy
+- inode numbers
+    fstat() leaks them, and I'm not aware of anything useful that can be done with an inode, other than equality comparisons
 though obviously, even acceptable data will not be leaked frivolously.
 
 "Contact" includes:
@@ -96,8 +98,8 @@ but does not include:
 though again, such permissions will not be granted frivolously.
 
 The above applies even if the attacker is able to cause arbitrary syscalls to fail during sandbox
- setup. Such an attacker may not cause the child to be launched with a less restrictive sandbox. (It
- may, however, prevent the sandbox from launching at all.)
+ setup, and/or launch arbitrarily many arbitrary executables (including ones built using information
+ gathered by previous ones).
 
 I choose to discount the possibility of kernel/glibc/compiler/hardware bugs; I know there are some,
  but smarter people than me have already looked for them. (And by restricting many syscalls,
@@ -605,21 +607,23 @@ Everything contains bugs. The following is a list of possible vulnerabilities th
     exploitability: trivial
     maximum impact: per the inode section above, most likely none
     severity: low, due to the trivial maximum impact
-    notes: not fixed, security model was changed; however, it did break its stated security model, so still vulnerability
+    notes: not fixed, security model was changed; however, it did break its stated security model, so still a vulnerability
 - Spectre type 2 (indirect jumps)
-    exploitability: fully possible for a determined attacker
-    maximum impact: if I understand this one correctly, it can reveal the full contents of the
-      broker's address space, including the full environment (containing, for example, the user ID
-      and username), and (under some parents) other private data (possibly including freed data)
-    severity: medium, due to leaking the username (the parent isn't likely to process any TOO
-      sensitive data)
-    notes: not fixed yet, requires compiler/firmware/etc patches
+    exploitability: if I understand it correctly, fully possible for a sufficiently determined attacker
+    maximum impact: revealing the full contents of the broker's address space, including the full
+      environment (containing, for example, the user ID and username), and (under some parents)
+      other private data (possibly including freed data)
+    severity: medium; leaking the username is a medium-severity vulnerability
+    notes: not fixed yet, I believe this one can only be fixed with a compiler patch
 - Other Spectre and Meltdown variants
     not gonna list them separately, they're too many and they affect exactly everything
     exploitability: likely fully possible for a determined attacker
     maximum impact: see documentation for each Spectre variant
     severity: likely no more than medium, but depends on what exactly shows up
-    notes: not fixed yet - in fact, it'd surprise me if all variants are discovered yet
+    notes: not fixed yet - in fact, it'd surprise me if all variants are even discovered yet
+
+This is a total of 6 low-severity vulnerabilities, and an unknown but nonzero number of hardware
+  bugs (Spectre variants) that yield low- or medium-severity vulnerabilities.
 
 
 Missing kernel features
@@ -647,7 +651,7 @@ Each of these would either enable additional functionality, or simplify somethin
 Future - Networking
 -------------------
 
-Of course there are more features that could make sense. For example, perhaps some sandboxed
+There are, of course, more features that could make sense. For example, perhaps some sandboxed
  children should access the network. This isn't part of this project, but like everything else I've
  chosen to exclude, it's architecturally possible.
 
@@ -655,16 +659,21 @@ Let's list some things to consider if adding this feature.
 
 Obviously, the child can't be allowed access to the entire internet, only a whitelisted set of
  hostnames (and ports on said hostnames). Therefore, the broker must perform both connect() and
- getaddrinfo() - but they're blocking! We can't allow the child to freeze the broker for an
- arbitrary amount of time, it may contain a limit for how long the child is allowed to execute.
- connect() can be made nonblocking with a setsockopt, but getaddrinfo() can't. I haven't found how
- to solve this; perhaps the broker should use a thread, perhaps it should create DNS packets
- manually.
+ getaddrinfo() - but they're blocking! We can't allow the child to freeze the broker like that, it
+ may contain a limit for how long the child is allowed to execute.
+
+Solutions: connect() can be made nonblocking with a setsockopt, and getaddrinfo() is the sequence 
+ 'open UDP socket, send DNS query, wait for reply, parse reply, return', each of which is (or can be
+ made) nonblocking. It requires using a non-libc DNS client, but that's not too terrible.
 
 We also need a way to ensure the child can't saturate the pipe and disrupt everything else trying to
  use the network. I believe this is best solved by wrapping the connection in a AF_LOCAL socketpair
  and letting the broker add a rate limit. This also stops the child from accessing anything
- unauthorized via getpeername.
+ unauthorized via getpeername. (Not that getpeername would get past seccomp, but defense in depth.)
+
+Additionally, there may be complications in reproducing the high-level 'give me a TCP connection to
+ example.com port 80' operation from the child's syscall sequence. I don't expect it to be a too big
+ deal, but I haven't analyzed it.
 
 
 Future - Sandbox-aware children
@@ -676,10 +685,45 @@ As much fun as it is to sandbox gcc, sandbox-aware children can also do some nif
 For example, there is a system called Libretro <https://www.libretro.com/>; a large number of
  emulators and other games have been rewritten to be shared libraries ("cores"), under a consistent
  API that can be used by various programs ("frontends"). Obviously, there's a lot of attack surface
- in the cores (and who says the core itself isn't malicious?), but if the cores are sandboxed, said
- attack surface becomes irrelevant.
+ in the cores (and the core itself could be malicious), but if the cores are sandboxed, said attack
+ surface becomes irrelevant.
 
 It's not finished, but the sandbox architecture allows it.
+
+
+Future - Sandboxing of OpenGL
+-----------------------------
+
+Some Libretro cores want to use OpenGL. This requires access to X11 (or Wayland, but I'll ignore
+ that, at least for now). Obviously, unrestricted X11 access is unacceptable - for example, the
+ child could use XTEST to send ctrl-alt-T to open a terminal, then type whatever it wants and have
+ it executed outside the sandbox.
+
+Therefore, the broker must monitor all communication. Which means it must avoid the host's installed
+ GPU drivers, since the ABIs are very complex, poorly documented, likely a race condition to try to
+ audit, and possibly not stable.
+
+Luckily, X11 (including GLX) supports running across the network. If the child thinks this is done,
+ all communication will be done over a single TCP socket, which the broker can easily audit. (Yes,
+ this is slower, I don't think safe and fast is possible. Maybe with Wayland, but who knows. Or
+ maybe I should check what Flatpak does.)
+
+To enable networking mode, I can set the env DISPLAY=127.0.0.1:123. But on the other hand, since
+ this won't go to the connect() syscall, there's no reason to use localhost, and it wouldn't
+ surprise me if localhost is special cased somehow. Instead, I'd rather use some other IP address;
+ for example, 203.0.113.1 (from TEST-NET-3) would be usable. (While it would be tempting to skip
+ DISPLAY and the X protocol completely, glFlush() ends up sending GLX opcodes, so I need Xlib to
+ think it's talking to an X server.)
+
+To reduce the amount of information the child can access, the child won't create a toplevel window;
+ it will only create a child window using the XEmbed protocol, and the parent will aggressively
+ censor irrelevant data. This also allows the parent to draw its own stuff (for example a 'disable
+ sandbox' button), which the child won't even know about.
+
+Another solution would be to implement a custom GL wrapper protocol, but the GL API is HUGE so let's
+ not.
+
+Vulkan would also be desirable, but I don't know how the Vulkan-kernel interfaces look.
 
 
 Future - execve
@@ -721,9 +765,9 @@ Killing the other threads is also tricky. (Threads aren't implemented yet, but t
 But, again, it's possible: The list can be found in /proc/getpid()/task/ and fetched by the
  namespace init, and installing a signal handler could cause any recipient thread to terminate
  itself. SIGSYS, for example, we already have a SIGSYS handler. Signals can be blocked, but only
- if it can get past seccomp, which it can't. (And exec in multithreaded programs at all is rare -
+ if it can get past seccomp, which it can't. And exec in multithreaded programs at all is rare -
  even if a multithreaded program wants to exec something, it usually does fork() first, which only
- clones one thread.)
+ clones the calling thread.
 
 However, it's a lot of effort, and since the sandbox can't specify paths (and it's in a chroot, so
  no paths exist), it doesn't really accomplish anything.
