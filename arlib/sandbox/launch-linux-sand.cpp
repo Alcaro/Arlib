@@ -12,6 +12,7 @@
 #include <sys/stat.h>
 #include <sys/resource.h>
 #include <linux/memfd.h> // documented as sys/memfd.h, but that doesn't exist
+#include <linux/ioprio.h> // ioprio_set
 #include <fcntl.h>
 #define F_LINUX_SPECIFIC_BASE 1024
 #define F_ADD_SEALS   (F_LINUX_SPECIFIC_BASE + 9)  // and these only exist in linux/fcntl.h - where fcntl() doesn't exist
@@ -98,7 +99,7 @@ template<typename T> inline T require(T x)
 	if ((long)x == -1) _exit(1);
 	return x;
 }
-//this could be an overload, but for security-critical code, compact is bad
+//this could be an overload, but for security-critical code, explicit is good
 inline void require_b(bool expected)
 {
 	if (!expected) _exit(1);
@@ -162,7 +163,6 @@ static int execveat(int dirfd, const char * pathname, char * const argv[], char 
 }
 
 
-#include"../os.h"
 pid_t sandproc::launch_impl(array<const char*> argv, array<int> stdio_fd)
 {
 	argv.prepend("[Arlib-sandbox]"); // ld-linux thinks it's argv[0] and discards the real one
@@ -170,7 +170,7 @@ pid_t sandproc::launch_impl(array<const char*> argv, array<int> stdio_fd)
 	//fcntl is banned by seccomp, so this goes early
 	//putting it before clone() allows sharing it between sandbox children
 	int preld_fd = preloader_fd();
-	if (preld_fd<0)
+	if (preld_fd < 0)
 		return -1;
 	
 	int socks[2];
@@ -182,11 +182,9 @@ pid_t sandproc::launch_impl(array<const char*> argv, array<int> stdio_fd)
 	
 	int clone_flags = CLONE_NEWUSER | CLONE_NEWPID | CLONE_NEWNET | CLONE_NEWCGROUP | CLONE_NEWIPC | CLONE_NEWNS | CLONE_NEWUTS;
 	clone_flags |= SIGCHLD; // termination signal, must be SIGCHLD for waitpid to work properly
-printf("d%lu\n",time_us_ne());
 	pid_t pid = syscall(__NR_clone, clone_flags, NULL, NULL, NULL, NULL);
-printf("e%lu,%i\n",time_us_ne(),(int)pid);
-	if (pid<0) return -1;
-	if (pid>0)
+	if (pid < 0) return -1;
+	if (pid > 0)
 	{
 		mainsock = socks[0];
 		watch_add(socks[0]);
@@ -215,7 +213,7 @@ printf("e%lu,%i\n",time_us_ne(),(int)pid);
 	//once (if) it does, set these:
 	// memory.memsw.limit_in_bytes = 100*1024*1024
 	// cpu.cfs_period_us = 100*1000, cpu.cfs_quota_us = 50*1000
-	// pids.max = 10
+	// pids.max = 30
 	//for now, just stick up some rlimit rules, to disable the most naive forkbombs or memory wastes
 	
 	struct rlimit rlim_as = { 1*1024*1024*1024, 1*1024*1024*1024 }; // this is the only one that affects mmap
@@ -226,16 +224,24 @@ printf("e%lu,%i\n",time_us_ne(),(int)pid);
 	struct rlimit rlim_nproc = { 500, 500 };
 	require(setrlimit(RLIMIT_NPROC, &rlim_nproc));
 	
+	//nice value
+	//PRIO_PROCESS,0 - calling thread
+	//19 - lowest possible priority
+	require(setpriority(PRIO_PROCESS,0, 19));
+	//ionice
+	//IOPRIO_PRIO_VALUE(IOPRIO_CLASS_IDLE, 0) - lowest priority; the 0 is unused as of kernel 4.16
+	require(syscall(__NR_ioprio_set, IOPRIO_WHO_PROCESS,0, IOPRIO_PRIO_VALUE(IOPRIO_CLASS_IDLE, 0)));
+	
 	//die on parent death
 	require(prctl(PR_SET_PDEATHSIG, SIGKILL));
 	
 	//ensure parent is still alive
 	//have to check for a response, it's possible that parent died before the prctl but its socket isn't deleted yet
-	//(I don't know in which order Linux executes process teardown action, nor whether it's guaranteed to remain secure)
 	struct broker_req req = { br_ping };
-	require(send(3, &req, sizeof(req), MSG_EOR));
+	require_eq(send(3, &req, sizeof(req), MSG_NOSIGNAL|MSG_EOR), (ssize_t)sizeof(req));
 	struct broker_rsp rsp;
-	require_eq(recv(3, &rsp, sizeof(rsp), 0), (ssize_t)sizeof(rsp));
+	require_eq(recv(3, &rsp, sizeof(rsp), MSG_NOSIGNAL), (ssize_t)sizeof(rsp));
+	//discard the response, we know it's { br_ping, {0,0,0}, "" }, we only care whether we got one at all
 	
 	//revoke filesystem
 	require(chroot("/proc/sys/debug/"));
@@ -262,17 +268,5 @@ printf("e%lu,%i\n",time_us_ne(),(int)pid);
 	
 	_exit(1); // execve never returns nonnegative, and require never returns from negative, but gcc knows neither
 }
-
-
-//void sand_do_the_thing(int pid, int sock);
-//int main(int argc, char ** argv, char ** envp)
-//{
-	//int pid;
-	//int sock;
-	//if (!boot_sand(argv, envp, pid, sock)) return 1;
-	
-	//sand_do_the_thing(pid, sock);
-	//return 0;
-//}
 #endif
 #endif
