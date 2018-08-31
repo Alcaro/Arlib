@@ -74,9 +74,9 @@ def assemble(bpf):
 		("ldxb", "BPF_LDX|BPF_B", "5"),
 		("st",  "BPF_ST", "E"),
 		("stx", "BPF_STX", "E"),
-		("jmp", "BPF_JMP|BPF_JA",  None), # for branches, the third param is whether the label goes to True or False
+		("jmp", "BPF_JMP|BPF_JA",  None), # for branches, the third param is whether it branches if condition is True or False
 		("jeq", "BPF_JMP|BPF_JEQ", True), # the other falls through
-		("jne", "BPF_JMP|BPF_JEQ", False), # JMP goes to both, so None
+		("jne", "BPF_JMP|BPF_JEQ", False), # JMP goes both ways, so None
 		("jlt", "BPF_JMP|BPF_JGE", False),
 		("jle", "BPF_JMP|BPF_JGT", False),
 		("jgt", "BPF_JMP|BPF_JGT", True),
@@ -222,6 +222,7 @@ def assemble(bpf):
 				continue
 			if op == "defines":
 				for line in open(arg).read().split("\n"):
+					line = line.replace("# ", "#")  # accept '# define SYS_exit __NR_exit'
 					if line.startswith("#define"):
 						parts = line.split(None, 2)
 						if len(parts) == 3: # ignore #define _STDIO_H

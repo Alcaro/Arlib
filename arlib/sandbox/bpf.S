@@ -15,6 +15,7 @@ let arg6h = (offsetof(struct seccomp_data, args[5])+4)
 
 #some things are passed to the compiler, like offsetof
 #but some things are handled internally, so gcc gets fewer include files to parse, and to allow this jump ladder to become a tree
+#(okay, the above isn't implemented yet, and I'm not sure if it ever will)
 defines /usr/include/x86_64-linux-gnu/asm/unistd_64.h
 
 ld [arch]

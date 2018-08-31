@@ -224,6 +224,8 @@ jsonparser::event jsonparser::next()
 	return do_error();
 }
 
+
+
 void JSON::construct(jsonparser& p, bool* ok, size_t maxdepth)
 {
 	if (maxdepth == 0)
@@ -231,6 +233,8 @@ void JSON::construct(jsonparser& p, bool* ok, size_t maxdepth)
 		*ok = false;
 		if (ev.action == jsonparser::enter_list || ev.action == jsonparser::enter_map)
 		{
+			// it would be faster to reset the jsonparser somehow,
+			// but performance on hostile inputs isn't really a priority
 			size_t xdepth = 1;
 			while (xdepth)
 			{
@@ -594,6 +598,18 @@ test("JSON container", "string,array,set", "json")
 		JSON("{");
 		JSON("{\"x\"");
 		JSON("{\"x\":");
+	}
+	
+	if (false) // disabled, JSON::construct runs through all 200000 events from the jsonparser which is slow
+	{
+		char spam[200001];
+		for (int i=0;i<100000;i++)
+		{
+			spam[i] = '[';
+			spam[i+100000] = ']';
+		}
+		spam[200000] = '\0';
+		JSON((char*)spam); // must not overflow the stack (pointless cast to avoid some c++ language ambiguity)
 	}
 }
 #endif

@@ -12,8 +12,34 @@
 #include <sys/stat.h>
 #include <sys/resource.h>
 #include <linux/memfd.h> // documented as sys/memfd.h, but that doesn't exist
-#include <linux/ioprio.h> // ioprio_set
+
+//#include <linux/ioprio.h> // ioprio_set - header doesn't exist for me, copying the content
+//these defines are in a file that claims to be GPL, but the userspace ABI/API is not GPL and
+// it's impossible to use ioprio_set without them, so I believe that license tag is incorrect
+// and/or the 'only one possible definition' defense applies
+
+#define IOPRIO_CLASS_SHIFT	(13)
+#define IOPRIO_PRIO_MASK	((1UL << IOPRIO_CLASS_SHIFT) - 1)
+#define IOPRIO_PRIO_CLASS(mask)	((mask) >> IOPRIO_CLASS_SHIFT)
+#define IOPRIO_PRIO_DATA(mask)	((mask) & IOPRIO_PRIO_MASK)
+#define IOPRIO_PRIO_VALUE(class, data)	(((class) << IOPRIO_CLASS_SHIFT) | data)
+
+enum {
+	IOPRIO_CLASS_NONE,
+	IOPRIO_CLASS_RT,
+	IOPRIO_CLASS_BE,
+	IOPRIO_CLASS_IDLE,
+};
+
+enum {
+	IOPRIO_WHO_PROCESS = 1,
+	IOPRIO_WHO_PGRP,
+	IOPRIO_WHO_USER,
+};
+
+
 #include <fcntl.h>
+#ifndef F_ADD_SEALS
 #define F_LINUX_SPECIFIC_BASE 1024
 #define F_ADD_SEALS   (F_LINUX_SPECIFIC_BASE + 9)  // and these only exist in linux/fcntl.h - where fcntl() doesn't exist
 #define F_GET_SEALS   (F_LINUX_SPECIFIC_BASE + 10) // and I can't include both, duplicate definitions
@@ -21,6 +47,7 @@
 #define F_SEAL_SHRINK 0x0002
 #define F_SEAL_GROW   0x0004
 #define F_SEAL_WRITE  0x0008
+#endif
 #include <sys/prctl.h>
 #include <linux/filter.h>
 #include <linux/seccomp.h>
@@ -233,6 +260,7 @@ pid_t sandproc::launch_impl(array<const char*> argv, array<int> stdio_fd)
 	require(syscall(__NR_ioprio_set, IOPRIO_WHO_PROCESS,0, IOPRIO_PRIO_VALUE(IOPRIO_CLASS_IDLE, 0)));
 	
 	//die on parent death
+	//('parent' is parent thread, not the entire process, but Arlib process objects have thread affinity anyways)
 	require(prctl(PR_SET_PDEATHSIG, SIGKILL));
 	
 	//ensure parent is still alive
@@ -260,7 +288,7 @@ pid_t sandproc::launch_impl(array<const char*> argv, array<int> stdio_fd)
 	//0x00007FFF'FFFFF000 isn't mappable, apparently sticking SYSCALL (0F 05) at 0x00007FFF'FFFFFFFE
 	// will return to an invalid address and blow up
 	//http://elixir.free-electrons.com/linux/v4.11/source/arch/x86/include/asm/processor.h#L832
-	//we don't care what the last page is, as long as there is one
+	//doesn't matter what the last page is, as long as there is one
 	char* final_page = (char*)0x00007FFFFFFFE000;
 	require_eq(mmap(final_page+0x1000, 0x1000, PROT_READ, MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED, -1, 0), MAP_FAILED);
 	require_eq(mmap(final_page,        0x1000, PROT_READ, MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED, -1, 0), (void*)final_page);

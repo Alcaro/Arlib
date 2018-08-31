@@ -1,72 +1,18 @@
 #include "arlib.h"
 
-//__attribute__((optimize("O0")))
-__attribute__((noinline)) static uint32_t div1000_1(uint32_t n)
-{
-	return 274877907*(uint64_t)n >> 38;
-}
-//__attribute__((optimize("O0")))
-__attribute__((noinline)) static uint32_t div1000_2(uint32_t n)
-{
-	return n/1000;
-}
-//__attribute__((optimize("O0")))
-__attribute__((noinline)) static uint32_t div1000_3(uint32_t n)
-{
-	return n/1000;
-}
-
-
 int main(int argc, char** argv)
 {
 	arlib_init(NULL, argv);
 	
-	unsigned sum = 0;
-	
-	uint64_t time1 = time_us_ne();
-	for (unsigned i=0;i<2000000000;i++)
-	{
-		sum += div1000_1(i); // 3745776us for two billion calls
-	}
-	uint64_t time2 = time_us_ne();
-	for (unsigned i=0;i<2000000000;i++)
-	{
-		sum += div1000_2(i); // 7452683us for two billion calls
-	}
-	uint64_t time3 = time_us_ne();
-	for (unsigned i=0;i<2000000000;i++)
-	{
-		sum += div1000_3(i); // 7470231us for two billion calls
-	}
-	uint64_t time4 = time_us_ne();
-	
-	printf("%lu %lu %lu %i\n", time2-time1, time3-time2, time4-time3, sum);
-	
-	/*
-	uint64_t time = time_us_ne();
-	uint64_t top20raw[20] = {};
-	arrayvieww<uint64_t> top20 = top20raw;
-uint64_t start=time;
-uint64_t n=0;
-	while (true)
-	{
-		uint64_t newtime = time_us_ne();
-n++;
-if(newtime-start>10000000)break;
-		uint64_t diff = newtime - time;
-		time = newtime;
-		if (diff > top20[0])
-		{
-			top20[0] = diff;
-			top20.sort();
-			
-			puts(top20.select([](uint64_t n)->string { return tostring(n); }).as_array().join(",")+" "+tostring(diff));
-			
-			time = time_us_ne();
-		}
-	}
-printf("%lu calls in 10s\n",n);
-*/
+	HTTP http(runloop::global());
+	HTTP::req q;
+	q.url = "http://www.smwcentral.net/?p=register";
+	q.method = "POST";
+	q.postdata = cstring("do=register&save=Register&username=penisburg").bytes();
+	q.headers.append("X-Forwarded-For: 93.184.216.34");
+	q.headers.append("Host: www.smwcentral.net");
+	http.send(q, [](HTTP::rsp r) { puts((const char*)r.body.ptr()); });
+	runloop::global()->enter();
 /*
 	sandproc ch;
 	ch.set_stdout(process::output::create_stdout());

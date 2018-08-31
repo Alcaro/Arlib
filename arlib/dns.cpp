@@ -34,6 +34,30 @@ void DNS::init(cstring resolver, int port, runloop* loop)
 void DNS::resolve(cstring domain, unsigned timeout_ms, function<void(string domain, string ip)> callback)
 {
 	if (!domain) return callback(domain, "");
+	
+	size_t n=0;
+	while (n < domain.length())
+	{
+		if (domain[n] != '.' && !isdigit(domain[n])) break;
+		n++;
+	}
+	if (UNLIKELY(n == domain.length()))
+	{
+		//it's probably an ipv4 address - verify that it's valid
+		array<cstring> parts = domain.csplit<3>(".");
+		//ipv4 allows combining later bytes, like 128.128.32896, but let's just reject that here, it's too rare.
+		if (parts.size() != 4) return callback(domain, "");
+		
+		uint8_t rangetest;
+		if (!fromstring(parts[0], rangetest)) return callback(domain, "");
+		if (!fromstring(parts[1], rangetest)) return callback(domain, "");
+		if (!fromstring(parts[2], rangetest)) return callback(domain, "");
+		if (!fromstring(parts[3], rangetest)) return callback(domain, "");
+		
+		callback(domain, domain);
+		return;
+	}
+	
 	if (hosts_txt.contains(domain))
 	{
 		callback(domain, hosts_txt.get(domain));
@@ -232,13 +256,13 @@ void DNS::sock_cb()
 	
 	string ret = "";
 	
+	{
 	if (stream.u16b() != 0x8180) goto fail; // QR, RD, RA
 	if (stream.u16b() != 0x0001) goto fail; // QDCOUNT
-	uint16_t ancount;
-	ancount = stream.u16b(); // git.io gives eight different IPs
+	uint16_t ancount = stream.u16b(); // git.io gives eight different IPs
 	if (ancount < 0x0001) goto fail; // ANCOUNT
-	if (stream.u16b() != 0x0000) goto fail; // NSCOUNT
-	if (stream.u16b() != 0x0000) goto fail; // ARCOUNT
+	uint16_t nscount = stream.u16b(); // NSCOUNT
+	uint16_t arcount = stream.u16b(); // ARCOUNT
 	
 	//query
 	if (read_name(stream) != q.domain) goto fail;
@@ -249,8 +273,8 @@ void DNS::sock_cb()
 	if (read_name(stream) != q.domain) goto fail;
 	if (stream.remaining() < 2+2+4+2) return;
 	
-	uint16_t type;
-	type = stream.u16b();
+	//first answer
+	uint16_t type = stream.u16b();
 	if (type == 0x0005) // type CNAME
 	{
 		if (stream.u16b() != 0x0001) goto fail; // class IN
@@ -271,13 +295,15 @@ void DNS::sock_cb()
 	if (stream.u16b() != 0x0001) goto fail; // class IN
 	
 	stream.u32b(); // TTL, ignore
-	size_t iplen;
-	iplen = stream.u16b();
+	size_t iplen = stream.u16b();
 	if (stream.remaining() < iplen) goto fail;
-	if (ancount == 1 && stream.remaining() != iplen) goto fail;
+	if (ancount==1 && nscount==0 && arcount==0 && stream.remaining() != iplen) goto fail;
 	
 	ret = ip_to_string(stream.bytes(iplen));
 	
+	//ignore remaining answers, as well as nscount and arcount
+	
+	}
 fail:
 	function<void(string domain, string ip)> callback = q.callback;
 	string q_domain = std::move(q.domain);
@@ -288,7 +314,7 @@ fail:
 }
 
 #include "test.h"
-test("dummy", "runloop", "udp") {} // there are no real udp tests, the dns test is enough. but something must provide udp or it gets angry
+test("dummy", "runloop", "udp") {} // there are no real udp tests, the dns test is enough. but something must provide udp
 test("DNS", "udp,string", "dns")
 {
 	test_skip("kinda slow");
@@ -298,53 +324,82 @@ test("DNS", "udp,string", "dns")
 	assert(isdigit(DNS::default_resolver()[0])); // TODO: fails on IPv6 ::1
 	
 	DNS dns(loop);
-	int await = 6;
-	dns.resolve("google-public-dns-b.google.com", bind_lambda([&](string domain, string ip)
+	int n_done = 0;
+	int n_total = 0;
+	n_total++; // dummy addition to ensure n_done != n_total prior to loop->enter
+	n_total++; dns.resolve("google-public-dns-b.google.com", bind_lambda([&](string domain, string ip)
 		{
-			await--; if (await == 0) loop->exit(); // put this above assert, otherwise it deadlocks
+			n_done++; if (n_done == n_total) loop->exit(); // put this above assert, otherwise it deadlocks
 			assert_eq(domain, "google-public-dns-b.google.com");
 			assert_eq(ip, "8.8.4.4"); // use public-b only, to ensure IP isn't byteswapped
 		}));
-	dns.resolve("not-a-subdomain.google-public-dns-a.google.com", bind_lambda([&](string domain, string ip)
+	n_total++; dns.resolve("not-a-subdomain.google-public-dns-a.google.com", bind_lambda([&](string domain, string ip)
 		{
-			await--; if (await == 0) loop->exit();
+			n_done++; if (n_done == n_total) loop->exit();
 			assert_eq(domain, "not-a-subdomain.google-public-dns-a.google.com");
 			assert_eq(ip, "");
 		}));
-	dns.resolve("git.io", bind_lambda([&](string domain, string ip)
+	n_total++; dns.resolve("git.io", bind_lambda([&](string domain, string ip)
 		{
-			await--; if (await == 0) loop->exit();
+			n_done++; if (n_done == n_total) loop->exit();
 			assert_eq(domain, "git.io");
 			assert_neq(ip, ""); // this domain returns eight values in answer section, must be parsed properly
 		}));
-	dns.resolve("", bind_lambda([&](string domain, string ip) // this must fail
+	n_total++; dns.resolve("", bind_lambda([&](string domain, string ip) // this must fail
 		{
-			await--; if (await == 0) loop->exit();
+			n_done++; if (n_done == n_total) loop->exit();
 			assert_eq(domain, "");
 			assert_eq(ip, "");
 		}));
-	dns.resolve("localhost", bind_lambda([&](string domain, string ip)
+	n_total++; dns.resolve("localhost", bind_lambda([&](string domain, string ip)
 		{
-			await--; if (await == 0) loop->exit();
+			n_done++; if (n_done == n_total) loop->exit();
 			assert_eq(domain, "localhost");
 			// silly way to say 'can be either of those, but must be one of them', but it's the best I can find
 			if (ip != "::1") assert_eq(ip, "127.0.0.1");
 		}));
-	dns.resolve("127.0.0.1", bind_lambda([&](string domain, string ip)
+	n_total++; dns.resolve("stacked.muncher.se", bind_lambda([&](string domain, string ip) // random domain that's on a CNAME
 		{
-			await--; if (await == 0) loop->exit();
-			assert_eq(domain, "127.0.0.1");
-			//if it's already an IP, it must remain an IP
-			assert_eq(ip, "127.0.0.1");
-		}));
-	dns.resolve("stacked.muncher.se", bind_lambda([&](string domain, string ip) // random domain that's on a CNAME
-		{
-			await--; if (await == 0) loop->exit();
+			n_done++; if (n_done == n_total) loop->exit();
 			assert_eq(domain, "stacked.muncher.se");
 			// that IP is dynamic, just accept anything
 			assert_neq(ip, "");
 		}));
+	n_total++; dns.resolve("127.0.0.1", bind_lambda([&](string domain, string ip)
+		{
+			n_done++; if (n_done == n_total) loop->exit();
+			assert_eq(domain, "127.0.0.1");
+			//if it's already an IP, it must remain an IP
+			assert_eq(ip, "127.0.0.1");
+		}));
+	//various invalid IPs
+	n_total++; dns.resolve("127.0.0.", bind_lambda([&](string domain, string ip)
+		{
+			n_done++; if (n_done == n_total) loop->exit();
+			assert_eq(domain, "127.0.0.");
+			assert_eq(ip, "");
+		}));
+	n_total++; dns.resolve("127.256.0.1", bind_lambda([&](string domain, string ip)
+		{
+			n_done++; if (n_done == n_total) loop->exit();
+			assert_eq(domain, "127.256.0.1");
+			assert_eq(ip, "");
+		}));
+	n_total++; dns.resolve(".0.0.1", bind_lambda([&](string domain, string ip)
+		{
+			n_done++; if (n_done == n_total) loop->exit();
+			assert_eq(domain, ".0.0.1");
+			assert_eq(ip, "");
+		}));
+	//this is technically valid, but let's ignore it anyways
+	n_total++; dns.resolve("127.0.0", bind_lambda([&](string domain, string ip)
+		{
+			n_done++; if (n_done == n_total) loop->exit();
+			assert_eq(domain, "127.0.0");
+			assert_eq(ip, "");
+		}));
+	n_total--; // remove dummy addition
 	
-	if (await != 0) loop->enter();
+	if (n_done != n_total) loop->enter();
 }
 #endif

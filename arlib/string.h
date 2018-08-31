@@ -77,10 +77,9 @@ private:
 	void init_from_nocopy(const char * str)
 	{
 		if (!str) str = "";
-		init_from_nocopy(arrayview<byte>((uint8_t*)str, strlen(str)));
-		if (!inlined()) m_nul = true;
+		init_from_nocopy(arrayview<byte>((uint8_t*)str, strlen(str)), true);
 	}
-	void init_from_nocopy(arrayview<byte> data)
+	void init_from_nocopy(arrayview<byte> data, bool has_nul = false)
 	{
 		const uint8_t * str = data.ptr();
 		uint32_t len = data.size();
@@ -97,7 +96,7 @@ private:
 			
 			m_data = (uint8_t*)str;
 			m_len = len;
-			m_nul = false;
+			m_nul = has_nul;
 		}
 	}
 	void init_from_nocopy(const cstring& other)
@@ -128,6 +127,7 @@ private:
 	class noinit {};
 	cstring(noinit) {}
 	
+	cstring(arrayview<uint8_t> bytes, bool has_nul) { init_from_nocopy(bytes, has_nul); }
 public:
 	cstring() { init_from_nocopy(""); }
 	cstring(const cstring& other) { init_from_nocopy(other); }
@@ -151,7 +151,7 @@ public:
 	{
 		start = realpos(start);
 		end = realpos(end);
-		return cstring(arrayview<byte>(ptr()+start, end-start));
+		return cstring(arrayview<byte>(ptr()+start, end-start), (bytes_hasterm() && (uint32_t)end == length()));
 	}
 	
 	bool contains(cstring other) const
@@ -338,6 +338,23 @@ class string : public cstring {
 		other.m_inline_len = 0;
 	}
 	
+	void reinit_from(const char * str)
+	{
+		if (!str) str = "";
+		reinit_from(arrayview<byte>((uint8_t*)str, strlen(str)));
+	}
+	void reinit_from(arrayview<byte> data);
+	void reinit_from(cstring other)
+	{
+		reinit_from(other.bytes());
+	}
+	void reinit_from(string&& other)
+	{
+		release();
+		memcpy(this, &other, sizeof(*this));
+		other.m_inline_len = 0;
+	}
+	
 	void release()
 	{
 		if (!inlined()) free(m_data);
@@ -420,9 +437,10 @@ public:
 		init_from(chars.reinterpret<uint8_t>());
 	}
 	string(nullptr_t) { init_from(""); }
-	string& operator=(const string& other) { release(); init_from(other); return *this; }
-	string& operator=(string&& other) { release(); init_from(std::move(other)); return *this; }
-	string& operator=(const char * str) { release(); init_from(str); return *this; }
+	string& operator=(const string& other) { reinit_from(other); return *this; }
+	string& operator=(const cstring& other) { reinit_from(other); return *this; }
+	string& operator=(string&& other) { reinit_from(std::move(other)); return *this; }
+	string& operator=(const char * str) { reinit_from(str); return *this; }
 	string& operator=(nullptr_t) { release(); init_from(""); return *this; }
 	~string() { release(); }
 	
@@ -437,10 +455,10 @@ private:
 		charref(string* parent, uint32_t index) : parent(parent), index(index) {}
 		
 	public:
-		charref& operator=(char ch) { parent->setchar(index, ch); return *this; }
-		charref& operator+=(char ch) { parent->setchar(index, parent->getchar(index) + ch); return *this; }
-		charref& operator-=(char ch) { parent->setchar(index, parent->getchar(index) - ch); return *this; }
-		operator char() { return parent->getchar(index); }
+		charref& operator=(uint8_t ch) { parent->setchar(index, ch); return *this; }
+		charref& operator+=(uint8_t ch) { parent->setchar(index, parent->getchar(index) + ch); return *this; }
+		charref& operator-=(uint8_t ch) { parent->setchar(index, parent->getchar(index) - ch); return *this; }
+		operator uint8_t() { return parent->getchar(index); }
 	};
 	friend class charref;
 	
@@ -449,7 +467,7 @@ public:
 	//charref operator[](uint32_t index) { return charref(this, index); }
 	charref operator[](int index) { return charref(this, index); }
 	//char operator[](uint32_t index) const { return getchar(index); }
-	char operator[](int index) const { return getchar(index); }
+	uint8_t operator[](int index) const { return getchar(index); }
 	
 	//Takes ownership of the given pointer. Will free() it when done.
 	static string create_usurp(char * str);
@@ -509,3 +527,4 @@ inline string cstring::upper() const
 bool strtoken(const char * haystack, const char * needle, char separator);
 
 static inline int isualpha(int c) { return c=='_' || isalpha(c); }
+static inline int isualnum(int c) { return c=='_' || isalnum(c); }
