@@ -2448,8 +2448,8 @@ int br_ssl_choose_hash(unsigned bf);
 #else
 #define BR_TARGETS_X86_UP \
 	_Pragma("GCC target(\"sse2,ssse3,sse4.1,aes,pclmul\")")
-#endif
 #define BR_TARGETS_X86_DOWN
+#endif
 #pragma GCC diagnostic ignored "-Wpsabi"
 #endif
 
