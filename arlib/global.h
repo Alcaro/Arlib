@@ -426,7 +426,7 @@ template<typename T> static inline T bitround(T in)
 	//this seems somewhat faster, and more importantly, it's smaller
 	//x64 only because I don't know if it does something stupid on other archs
 	//I'm surprised gcc doesn't detect this pattern and optimize it, it does detect a few others (like byteswap)
-	//special casing every size is because if T is signed, ~(T)0 is -1, and -1 >> N is always -1
+	//special casing every size is because if T is signed, ~(T)0 is -1, and -1 >> N is -1 (and likely also undefined behavior)
 	if (in == 1) return in;
 	if (sizeof(T) == 1) return 1 + ((~(uint8_t )0) >> __builtin_clz(in - 1));
 	if (sizeof(T) == 2) return 1 + ((~(uint16_t)0) >> __builtin_clz(in - 1));
@@ -440,7 +440,7 @@ template<typename T> static inline T bitround(T in)
 	in |= in>>1;
 	in |= in>>2;
 	in |= in>>4;
-	in |= (sizeof(in)>1 ?  8 : 0); // ?: rather than if to avoid 'shift amount out of range' warnings if the condition is false
+	in |= (sizeof(in)>1 ?  8 : 0); // ?: rather than if() to avoid 'shift amount out of range' warnings if the condition is false
 	in |= (sizeof(in)>2 ? 16 : 0); // may be gcc bug, but let's just work around it
 	in |= (sizeof(in)>4 ? 32 : 0);
 	in++;

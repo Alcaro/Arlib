@@ -6,7 +6,7 @@
 #include "../thread.h"
 #include "../base64.h"
 //Possible BearSSL improvements (not all of it is worth the effort; paren is last tested version, some may have been fixed since then):
-//- (0.5) serialization that I didn't have to write myself
+//- (0.6) serialization that I didn't have to write myself
 //- (0.3) official sample code demonstrating how to load /etc/ssl/certs/ca-certificates.crt
 //    preferably putting most of it in BearSSL itself, but seems hard to implement without malloc
 //- (0.3) more bool and int8_t, less int and char
@@ -19,7 +19,7 @@
 //    (not sure if that's the only ones)
 //- (0.4) tools/client.c: typo minium: "ERROR: duplicate minium ClientHello length"
 
-#include "../deps/bearssl-0.5/inc/bearssl.h"
+#include "../deps/bearssl-0.6/inc/bearssl.h"
 
 extern "C" {
 //see bear-ser.c for docs
