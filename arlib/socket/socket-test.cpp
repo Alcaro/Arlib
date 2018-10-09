@@ -7,25 +7,14 @@
 #ifdef ARLIB_TEST
 #include "../os.h"
 
-static void clienttest(cstring target, int port, bool ssl, bool xfail = false, bool unsafe = false)
+static void socket_test_httpfail(socket* sock, bool xfail, runloop* loop)
 {
 	test_skip("too slow");
 	
-	autoptr<runloop> loop = runloop::create();
+	assert(sock);
+	
 	bool timeout = false;
 	loop->set_timer_rel(8000, bind_lambda([&]()->bool { assert_unreachable(); loop->exit(); return false; }));
-	
-	auto creator = socket::create;
-	if (ssl)
-		creator = socket::create_ssl;
-	if (unsafe) 
-#ifdef ARLIB_SSL_OPENSSL
-		creator = socket::create_ssl_noverify;
-#else
-		test_skip_force("unsafe SSL not implemented");
-#endif
-	autoptr<socket> sock = creator(target, port, loop);
-	assert(sock);
 	
 	cstring http_get =
 		"GET / HTTP/1.1\r\n"
@@ -33,7 +22,10 @@ static void clienttest(cstring target, int port, bool ssl, bool xfail = false, b
 		"Connection: close\r\n" // but the response is valid HTTP and that's all we care about
 		"\r\n";
 	
-	assert_eq(sock->send(http_get.bytes()), http_get.length());
+	if (!xfail)
+		assert_eq(sock->send(http_get.bytes()), http_get.length());
+	else
+		assert_eq(sock->send(http_get.bytes()), http_get.length());
 	
 	uint8_t buf[8];
 	size_t n_buf = 0;
@@ -83,6 +75,32 @@ static void clienttest(cstring target, int port, bool ssl, bool xfail = false, b
 	if (!xfail) assert_eq(string(arrayview<byte>(buf)), "HTTP/1.1");
 	
 	assert(!timeout);
+}
+
+//Ensures that the given socket is usable and speaks HTTP. Socket is not usable afterwards; caller is responsible for closing it.
+void socket_test_http(socket* sock, runloop* loop) { socket_test_httpfail(sock, false, loop); }
+//Ensures the socket is not usable.
+void socket_test_fail(socket* sock, runloop* loop) { socket_test_httpfail(sock, true, loop); }
+
+static void clienttest(cstring target, int port, bool ssl, bool xfail = false, bool unsafe = false)
+{
+	test_skip("too slow");
+	
+	autoptr<runloop> loop = runloop::create();
+	
+	auto creator = socket::create;
+	if (ssl)
+		creator = socket::create_ssl;
+	if (unsafe) 
+#ifdef ARLIB_SSL_OPENSSL
+		creator = socket::create_ssl_noverify;
+#else
+		test_skip_force("unsafe SSL not implemented");
+#endif
+	autoptr<socket> sock = creator(target, port, loop);
+	assert(sock);
+	
+	socket_test_httpfail(sock, xfail, loop);
 }
 
 //this IP is www.nic.ad.jp, both lookup and ping time for that one are 300ms

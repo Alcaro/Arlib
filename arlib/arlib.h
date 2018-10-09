@@ -4,8 +4,14 @@
 //- msvc compat: add some define that, if absent, enables every feature
 
 //WARNING: Arlib comes with zero stability guarantees. It can and will change in arbitrary ways, for any reason and at any time.
+
 //if anyone whines about antivirus, https://arstechnica.com/information-technology/2017/01/antivirus-is-bad/
-//or https://blogs.msdn.microsoft.com/oldnewthing/20180615-00/?p=99025
+//  and linked:
+//    https://robert.ocallahan.org/2017/01/disable-your-antivirus-software-except.html
+//    https://twitter.com/justinschuh/status/802491391121260544
+//    https://blog.mozilla.org/nnethercote/2012/02/16/mcafee-is-killing-us/
+//    https://googleprojectzero.blogspot.com/2016/06/how-to-compromise-enterprise-endpoint.html
+//  and https://blogs.msdn.microsoft.com/oldnewthing/20180615-00/?p=99025
 
 #pragma once
 #include "global.h"
@@ -62,5 +68,6 @@
 #include "socket/socket.h"
 #include "dns.h"
 #include "http.h"
+#include "socks5.h"
 #include "websocket.h"
 #endif

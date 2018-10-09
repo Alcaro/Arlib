@@ -440,7 +440,7 @@ socket* socket::wrap_ssl(socket* inner, cstring domain, runloop* loop)
 #ifdef ARLIB_TEST
 #include "../os.h"
 //this is more to initialize this thing before the actual ssl tests than a real test
-//most of them are in a runloop, but initialization takes longer (9-33ms) than the runloop watchdog (3ms)
+//most of the tests are in a runloop, but initialization takes longer (9-33ms) than the runloop watchdog (3ms)
 //this is also why it provides 'tcp' rather than 'ssl';
 // if it provides 'ssl', it'd run alongside the other SSL tests and fail watchdog
 test("BearSSL init", "array,base64", "tcp")

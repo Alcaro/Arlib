@@ -1,7 +1,7 @@
 #ifdef ARLIB_SOCKET
 #pragma once
 #include "../global.h"
-#include "../containers.h"
+#include "../array.h"
 #include "../function.h"
 #include "../string.h"
 #include "../file.h"
@@ -94,6 +94,15 @@ public:
 	// store/provide fds
 	// be destructive, SSL state is only usable once
 	// support erroring out, if serialization isn't implemented
+	
+	
+	// Network byte order.
+	static string ip_to_string(arrayview<byte> bytes);
+	static array<byte> string_to_ip(cstring str);
+	// The buffer must be at least 16 bytes.
+	static int string_to_ip(arrayvieww<byte> out, cstring str);
+	static bool string_to_ip4(arrayvieww<byte> out, cstring str);
+	static bool string_to_ip6(arrayvieww<byte> out, cstring str);
 };
 
 //SSL feature matrix:

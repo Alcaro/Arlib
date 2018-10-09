@@ -196,13 +196,21 @@ int not_quite_main(int argc, char** argv);
 
 #endif
 
+#ifdef ARLIB_SOCKET
+class socket; class runloop;
+//Ensures that the given socket is usable and speaks HTTP. Socket is not usable afterwards; caller is responsible for closing it.
+void socket_test_http(socket* sock, runloop* loop);
+//Ensures the socket is not usable.
+void socket_test_fail(socket* sock, runloop* loop);
+#endif
+
 #ifdef WANT_VALGRIND
-#ifdef __linux__
-#define HAVE_VALGRIND
-#endif
-#ifdef HAVE_VALGRIND
-#include "deps/valgrind/memcheck.h"
-#else
-#define RUNNING_ON_VALGRIND false
-#endif
+# ifdef __linux__
+#  define HAVE_VALGRIND
+# endif
+# ifdef HAVE_VALGRIND
+#  include "deps/valgrind/memcheck.h"
+# else
+#  define RUNNING_ON_VALGRIND false
+# endif
 #endif

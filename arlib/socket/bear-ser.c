@@ -1,14 +1,14 @@
-#include "../deps/bearssl-0.6/inc/bearssl.h"
-
 //This program allows serializing a BearSSL context to a byte stream, allowing passing it between programs, across an exec(), or similar.
 //A serialized context can only be used with the exact BearSSL version it was serialized with, due to T0-relative pointers.
 //Additionally, the serializer itself may break between BearSSL versions; while 0.3->0.4->0.5 didn't need any changes, 0.5->0.6 did.
 
-//This file exports the following two functions and struct:
+#include "../deps/bearssl-0.6/inc/bearssl.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+//This file exports the following two functions and struct:
 
 typedef struct br_frozen_ssl_client_context_ {
 	br_ssl_client_context cc;
