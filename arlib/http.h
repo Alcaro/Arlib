@@ -13,20 +13,20 @@ public:
 		//Every field except 'url' is optional.
 		string url;
 		
-		string method;
+		string method; // GET if postdata is empty, POST if nonempty
 		//These headers are added automatically, if not already present:
 		//Connection: keep-alive
 		//Host: <from url>
 		//Content-Length: <from postdata> (if not GET)
-		//Content-Type: application/x-www-form-urlencoded
-		//           or application/json if postdata starts with [ or {
+		//Content-Type: application/json if postdata starts with [ or {, and method is POST
+		//           or application/x-www-form-urlencoded, if method is POST and body is something else
 		array<string> headers; // TODO: multimap
 		array<byte> postdata;
 		
 		uintptr_t id; // Passed unchanged in the rsp object, and used for cancel(). Otherwise not used.
 		
-		//If the server sends this much data, or hasn't finished in the given time, fail.
-		//They're pretty approximate; a request may succeed if the server sends slightly more than this.
+		//If the server sends this much data (including headers/etc), or hasn't finished in the given time, fail.
+		//They're approximate; a request may succeed if the server sends slightly more than this.
 		uint64_t limit_ms = 5000;
 		size_t limit_bytes = 1048576;
 		
@@ -86,6 +86,9 @@ private:
 	};
 public:
 	
+	//A custom socket creation function, if you want proxy support.
+	void wrap_socks(function<socket*(bool ssl, cstring domain, int port, runloop* loop)> cb) { cb_mksock = cb; }
+	
 	//Multiple requests may be sent to the same object. This will make them use HTTP Keep-Alive.
 	//The requests must be to the same protocol-domain-port tuple.
 	//Failures are reported in the callback.
@@ -113,6 +116,7 @@ public:
 		int port;
 		string path;
 	};
+	//If 'relative' is false, 'out' can be uninitialized. If true, must be fully valid. On failure, the output location is undefined.
 	static bool parseUrl(cstring url, bool relative, location& out);
 	
 	~HTTP();
@@ -141,6 +145,7 @@ private:
 	size_t next_send = 0; // index to requests[] next to sock->send(), or requests.size() if all done / in tosend
 	
 	runloop* loop;
+	function<socket*(bool ssl, cstring domain, int port, runloop* loop)> cb_mksock = socket::create_sslmaybe;
 	autoptr<socket> sock;
 	
 	bool do_timeout();

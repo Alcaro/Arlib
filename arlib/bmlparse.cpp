@@ -237,7 +237,7 @@ static bool bml_parse_inline_node(cstring& data, cstring& node, bool& hasvalue, 
 static bool isendl(char ch)
 {
 	//this 32 is a perf hack
-	if (ch>=32) return false;
+	if (LIKELY(ch>=32)) return false;
 	return (ch=='\r' || ch=='\n' || ch=='\0');
 }
 
@@ -397,7 +397,6 @@ bmlparser::event bmlparser::next()
 #define e_exit bmlparser::exit
 #define e_error bmlparser::error
 #define e_finish bmlparser::finish
-#define e_extract -1
 
 static const char * test1 =
 "node\n"
@@ -427,7 +426,6 @@ static const char * test1 =
 "node\n"
 "  :\n"
 "node";
-
 static bmlparser::event test1e[]={
 	{ e_enter, "node" },
 	{ e_exit },

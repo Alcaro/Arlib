@@ -266,6 +266,11 @@ public:
 	string fromlatin1() const; // Returns UTF-8.
 	string fromwindows1252() const;
 	
+	// Treats the string as UTF-8 and returns the codepoint there. If not UTF-8, not a start index, or out of bounds,
+	// returns U+DC80 through U+DCFF, depending on the byte.
+	// The index is updated to point to the next codepoint. Initialize it to zero; stop when it equals the string's length.
+	uint32_t codepoint_at(uint32_t& index) const;
+	
 	size_t hash() const { return ::hash((char*)ptr(), length()); }
 	
 private:
@@ -482,6 +487,10 @@ public:
 		if (byte >= 0x80 && byte <= 0x9F) return string_windows1252tab[byte-0x80];
 		else return byte;
 	}
+	
+	//Does a bytewise comparison, where end is considered before NUL.
+	//If a comes first, return value is positive; if equal, zero; if b comes first, negative.
+	static int compare(cstring a, cstring b);
 };
 
 inline bool operator==(cstring left,      const char * right) { return left.bytes() == arrayview<byte>((uint8_t*)right,strlen(right)); }
@@ -490,6 +499,10 @@ inline bool operator==(const char * left, cstring right     ) { return operator=
 inline bool operator!=(cstring left,      const char * right) { return !operator==(left, right); }
 inline bool operator!=(cstring left,      cstring right     ) { return !operator==(left, right); }
 inline bool operator!=(const char * left, cstring right     ) { return !operator==(left, right); }
+
+bool operator<(cstring left,      const char * right) = delete;
+bool operator<(cstring left,      cstring right     ) = delete;
+bool operator<(const char * left, cstring right     ) = delete;
 
 inline string operator+(cstring left,      cstring right     ) { string ret=left; ret+=right; return ret; }
 inline string operator+(string&& left,     const char * right) { left+=right; return left; }

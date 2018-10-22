@@ -6,6 +6,16 @@
 
 #ifdef ARLIB_TEST
 
+template<typename T>
+string tostring_dbg(const arrayview<T>& item)
+{
+	return item.join((string)",", [](const T& i){ return tostring(i); });
+}
+template<typename T> string tostring_dbg(const arrayvieww<T>& item) { return tostring_dbg((arrayview<T>)item); }
+template<typename T> string tostring_dbg(const array<T>& item) { return tostring_dbg((arrayview<T>)item); }
+template<typename T>
+string tostring_dbg(const T& item) { return tostring(item); }
+
 class _testdecl {
 public:
 	_testdecl(void(*func)(), const char * filename, int line, const char * name, const char * requires, const char * provides);
@@ -45,7 +55,7 @@ void _assert_eq(const T&  actual,   const char * actual_exp,
 {
 	if (!_test_eq(actual, expected))
 	{
-		_testcmpfail((string)actual_exp+" == "+expected_exp, line, tostring(expected), tostring(actual));
+		_testcmpfail((string)actual_exp+" == "+expected_exp, line, tostring_dbg(expected), tostring_dbg(actual));
 	}
 }
 
@@ -56,7 +66,7 @@ void _assert_neq(const T&  actual,   const char * actual_exp,
 {
 	if (!!_test_eq(actual, expected)) // a!=b implemented as !(a==b)
 	{
-		_testcmpfail((string)actual_exp+" != "+expected_exp, line, tostring(expected), tostring(actual));
+		_testcmpfail((string)actual_exp+" != "+expected_exp, line, tostring_dbg(expected), tostring_dbg(actual));
 	}
 }
 
@@ -67,7 +77,7 @@ void _assert_lt(const T&  actual,   const char * actual_exp,
 {
 	if (!_test_lt(actual, expected))
 	{
-		_testcmpfail((string)actual_exp+" < "+expected_exp, line, tostring(expected), tostring(actual));
+		_testcmpfail((string)actual_exp+" < "+expected_exp, line, tostring_dbg(expected), tostring_dbg(actual));
 	}
 }
 
@@ -78,7 +88,7 @@ void _assert_lte(const T&  actual,   const char * actual_exp,
 {
 	if (!!_test_lt(expected, actual)) // a<=b implemented as !(b<a)
 	{
-		_testcmpfail((string)actual_exp+" <= "+expected_exp, line, tostring(expected), tostring(actual));
+		_testcmpfail((string)actual_exp+" <= "+expected_exp, line, tostring_dbg(expected), tostring_dbg(actual));
 	}
 }
 
@@ -89,7 +99,7 @@ void _assert_gt(const T&  actual,   const char * actual_exp,
 {
 	if (!_test_lt(expected, actual)) // a>b implemented as b<a
 	{
-		_testcmpfail((string)actual_exp+" > "+expected_exp, line, tostring(expected), tostring(actual));
+		_testcmpfail((string)actual_exp+" > "+expected_exp, line, tostring_dbg(expected), tostring_dbg(actual));
 	}
 }
 
@@ -100,7 +110,7 @@ void _assert_gte(const T&  actual,   const char * actual_exp,
 {
 	if (!!_test_lt(actual, expected)) // a>=b implemented as !(a<b)
 	{
-		_testcmpfail((string)actual_exp+" >= "+expected_exp, line, tostring(expected), tostring(actual));
+		_testcmpfail((string)actual_exp+" >= "+expected_exp, line, tostring_dbg(expected), tostring_dbg(actual));
 	}
 }
 
@@ -112,7 +122,8 @@ void _assert_range(const T&  actual, const char * actual_exp,
 {
 	if (_test_lt(actual, min) || _test_lt(max, actual))
 	{
-		_testcmpfail((string)actual_exp+" in ["+min_exp+".."+max_exp+"]", line, "["+tostring(min)+".."+tostring(max)+"]", tostring(actual));
+		_testcmpfail((string)actual_exp+" in ["+min_exp+".."+max_exp+"]", line,
+		             "["+tostring_dbg(min)+".."+tostring_dbg(max)+"]", tostring_dbg(actual));
 	}
 }
 
@@ -198,9 +209,9 @@ int not_quite_main(int argc, char** argv);
 
 #ifdef ARLIB_SOCKET
 class socket; class runloop;
-//Ensures that the given socket is usable and speaks HTTP. Socket is not usable afterwards; caller is responsible for closing it.
+//Ensures that the given socket is usable and speaks HTTP. Socket is not usable afterwards, but caller is responsible for closing it.
 void socket_test_http(socket* sock, runloop* loop);
-//Ensures the socket is not usable.
+//Ensures the socket does not return an answer if the client tries to speak HTTP.
 void socket_test_fail(socket* sock, runloop* loop);
 #endif
 

@@ -16,10 +16,10 @@
 #pragma once
 #include "global.h"
 
+#include "array.h"
 #include "bml.h"
 #include "bytepipe.h"
 #include "bytestream.h"
-#include "containers.h"
 #include "crc32.h"
 #include "endian.h"
 #include "file.h"

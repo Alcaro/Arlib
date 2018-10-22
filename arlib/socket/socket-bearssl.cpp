@@ -415,7 +415,7 @@ public:
 };
 }
 
-socket* socket::wrap_ssl(socket* inner, cstring domain, runloop* loop)
+socket* socket::wrap_ssl_raw(socket* inner, cstring domain, runloop* loop)
 {
 	initialize();
 	if (!certs) return NULL;

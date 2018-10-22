@@ -8,6 +8,12 @@
 #include "init.h"
 #include "runloop.h"
 
+#ifdef __unix__
+#define ESC_ERASE_LINE "\x1B[2K\r"
+#else
+#define ESC_ERASE_LINE "\r                                                                               \r"
+#endif
+
 struct testlist {
 	void(*func)();
 	
@@ -111,7 +117,7 @@ void _test_skip(cstring why)
 	if (result!=err_ok) return;
 	if (!all_tests)
 	{
-		//yes, dead code.
+		//yes, dead code
 		if (all_tests) puts("skipped: "+why);
 		test_throw(err_skip);
 	}
@@ -145,7 +151,7 @@ struct latrec {
 	const char * filename;
 	int line;
 	
-	bool operator<(const latrec& other) { return us < other.us; }
+	bool operator<(const latrec& other) const { return us < other.us; }
 };
 
 latrec max_latencies_us[6];
@@ -197,6 +203,7 @@ static testlist* sort_tests(testlist* unsorted)
 	
 	//ideally, this would pick all tests in a file simultaneously, if possible
 	//but that's annoying to implement even with full Arlib, and this thing doesn't assume Arlib is functional
+	//for now, lamehacked in main()
 	
 	while (unsorted)
 	{
@@ -252,6 +259,21 @@ static testlist* sort_tests(testlist* unsorted)
 	return sorted_head;
 }
 
+static testlist* list_reverse(testlist* list)
+{
+	testlist* ret = NULL;
+	while (list)
+	{
+		testlist* next = list->next;
+		
+		list->next = ret;
+		ret = list;
+		
+		list = next;
+	}
+	return ret;
+}
+
 #ifdef __linux__
 #include <sys/time.h>
 #include <sys/resource.h>
@@ -282,6 +304,8 @@ int main(int argc, char* argv[])
 	arlib_init(args, argv);
 	
 	puts("Sorting tests...");
+	g_testlist = list_reverse(g_testlist); // with gcc's initializer run order, this makes them better ordered
+	
 	testlist* alltests = sort_tests(g_testlist);
 	
 	for (testlist* outer = alltests; outer; outer = outer->next)
@@ -357,7 +381,7 @@ int main(int argc, char* argv[])
 			if (all_tests)
 				printf("Testing %s (%s:%i)... ", cur_test->name, cur_test->filename, cur_test->line);
 			else
-				printf("\r                                        \rTest %i/%i (%s)... ", testnum, numtests, cur_test->name);
+				printf(ESC_ERASE_LINE "Test %i/%i (%s)... ", testnum, numtests, cur_test->name);
 			fflush(stdout);
 			callstack.reset();
 			result = err_ok;
@@ -377,12 +401,12 @@ int main(int argc, char* argv[])
 			cur_test = next;
 		}
 		
-		printf("\rPassed %i, failed %i", count[0], count[1]);
+		printf(ESC_ERASE_LINE "Passed %i, failed %i", count[0], count[1]);
 		if (count[2]) printf(", skipped %i", count[2]);
 		if (count[3]) printf(", inconclusive %i", count[3]);
 		if (count[4]) printf(", expected-fail %i", count[4]);
 		if (n_filtered_tests) printf(", filtered %i", n_filtered_tests);
-		puts("             ");
+		puts("");
 		
 		for (size_t i=1;i<ARRAY_SIZE(max_latencies_us);i++)
 		{

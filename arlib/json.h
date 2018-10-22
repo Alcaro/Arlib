@@ -110,23 +110,24 @@ public:
 
 
 
-class JSON {
+class JSON : nocopy {
 	jsonparser::event ev;
 	array<JSON> chld_list;
 	map<string,JSON> chld_map;
 	
 	void construct(jsonparser& p, bool* ok, size_t maxdepth);
-	void serialize(jsonwriter& w);
+	template<bool sort>
+	void serialize(jsonwriter& w) const;
 	
 public:
 	JSON() : ev(jsonparser::jnull) {}
 	JSON(cstring s) { parse(s); }
-	JSON(const JSON& other) = delete;
 	
 	bool parse(cstring s);
-	string serialize();
+	string serialize() const;
+	string serialize_sorted() const;
 	
-	double num() { ev.action = jsonparser::num; return ev.num; }
+	double& num() { ev.action = jsonparser::num; return ev.num; }
 	string& str() { ev.action = jsonparser::str; return ev.str; }
 	array<JSON>& list() { ev.action = jsonparser::enter_list; return chld_list; }
 	map<string,JSON>& assoc() { ev.action = jsonparser::enter_map; return chld_map; } // 'map' is taken
@@ -181,7 +182,7 @@ public:
 	JSON& operator=(int n) { return operator=((double)n); }
 	JSON& operator=(double n) { ev.action = jsonparser::num; ev.num = n; return *this; }
 	JSON& operator=(cstring s) { ev.action = jsonparser::str; ev.str = s; return *this; }
-	JSON& operator=(string s) { ev.action = jsonparser::str; ev.str = s; return *this; }
+	JSON& operator=(string s) { ev.action = jsonparser::str; ev.str = std::move(s); return *this; }
 	JSON& operator=(const char * s) { ev.action = jsonparser::str; ev.str = s; return *this; }
 	
 	JSON& operator[](int n) { return list()[n]; }

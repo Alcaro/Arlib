@@ -227,7 +227,7 @@ size_t zip::find_file(cstring name)
 	return (size_t)-1;
 }
 
-bool zip::read(cstring name, array<byte>& out, bool permissive, string* error, time_t * time)
+bool zip::read_idx(size_t id, array<byte>& out, bool permissive, string* error, time_t * time)
 {
 	{
 		string discard;
@@ -235,10 +235,9 @@ bool zip::read(cstring name, array<byte>& out, bool permissive, string* error, t
 		else *error = "";
 		
 		out.reset();
-		size_t i = find_file(name);
-		if (i==(size_t)-1) { *error = "file not found"; goto fail; }
+		if (id==(size_t)-1) { *error = "file not found"; goto fail; }
 		
-		zip::file& f = filedat[i];
+		zip::file& f = filedat[id];
 		switch (f.method)
 		{
 			case 0:
@@ -255,12 +254,12 @@ bool zip::read(cstring name, array<byte>& out, bool permissive, string* error, t
 			}
 			default:
 			{
-				*error = "unknown method 0x"+tostringhex(f.method);
+				*error = "unknown compression method 0x"+tostringhex(f.method);
 				goto fail;
 			}
 		}
 		
-		//APPNOTE.TXT specifies some bizarre generator constant, 0xdebb20e3
+		//APPNOTE.TXT specifies some other generator constant, 0xdebb20e3
 		//no idea how to use that, the normal crc32 (0xedb88320) works fine
 		if (crc32(out) != f.crc32) { *error = "bad crc32"; goto fail; }
 		if (time) *time = fromdosdate(f.dosdate);
@@ -272,27 +271,16 @@ fail:
 	return false;
 }
 
-void zip::write(cstring name, arrayview<byte> data, time_t date)
+void zip::replace_idx(size_t id, arrayview<byte> data, time_t date)
 {
-	size_t i = find_file(name);
 	if (!data)
 	{
-		if (i==(size_t)-1) return;
-		else
-		{
-			filenames.remove(i);
-			filedat.remove(i);
-		}
+		filenames.remove(id);
+		filedat.remove(id);
 		return;
 	}
 	
-	if (i==(size_t)-1)
-	{
-		i = filenames.size();
-		filenames.append(name);
-		filedat.append();
-	}
-	file& f = filedat[i];
+	file& f = filedat[id];
 	f.decomplen = data.size();
 	f.crc32 = crc32(data);
 	if (date) f.dosdate = todosdate(date); // else leave unchanged, or leave as 0
@@ -311,6 +299,21 @@ void zip::write(cstring name, arrayview<byte> data, time_t date)
 		f.method = 0;
 		f.data = data;
 	}
+}
+
+void zip::write(cstring name, arrayview<byte> data, time_t date)
+{
+	size_t i = find_file(name);
+	if (!data && i==(size_t)-1) return;
+	if (i==(size_t)-1)
+	{
+		i = filenames.size();
+		filenames.append(name);
+		filedat.append();
+		if (!date) date = time(NULL);
+	}
+	
+	replace_idx(i, data, date);
 }
 
 int zip::fileminver(zip::file& f)

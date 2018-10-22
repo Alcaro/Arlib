@@ -6,6 +6,7 @@
 namespace linq {
 template<typename T, typename Titer> class t_base;
 template<typename T, typename Tsrc, typename Tconv> class t_select;
+template<typename T, typename Tsrc, typename Tconv> class t_select_idx;
 template<typename T, typename Tsrc, typename Tpred> class t_where;
 template<typename T, typename Tsrc> class t_linq;
 }
@@ -42,6 +43,12 @@ public:
 	auto select(Tconv conv) const -> linq::t_linq<T2, linq::t_select<T2, typename alias<Tconv>::src, Tconv>>
 	{
 		return as_linq<void>().select(conv);
+	}
+	template<typename Tconv, typename T2 = typename std::result_of<Tconv(size_t, typename alias<Tconv>::T)>::type>
+	
+	auto select(Tconv conv) const -> linq::t_linq<T2, linq::t_select_idx<T2, typename alias<Tconv>::src, Tconv>>
+	{
+		return as_linq<void>().select_idx(conv);
 	}
 	
 	template<typename Tpred>
@@ -93,6 +100,19 @@ public:
 	T get() { return conv(base.get()); }
 };
 
+template<typename T, typename Tsrc, typename Tconv>
+class t_select_idx : nocopy {
+public:
+	Tsrc base;
+	Tconv conv;
+	size_t n;
+	
+	t_select_idx(Tsrc&& base, Tconv conv) : base(std::move(base)), conv(conv), n(0) {}
+	bool hasValue() { return base.hasValue(); }
+	void moveNext() { base.moveNext(); n++; }
+	T get() { return conv(n, base.get()); }
+};
+
 template<typename T, typename Tsrc, typename Tpred>
 class t_where : nocopy {
 public:
@@ -129,6 +149,12 @@ public:
 	auto select(Tconv conv) -> t_linq<T2, linq::t_select<T2, Tsrc, Tconv>>
 	{
 		return t_linq<T2, linq::t_select<T2, Tsrc, Tconv>>(t_select<T2, Tsrc, Tconv>(std::move(base), std::move(conv)));
+	}
+	
+	template<typename Tconv, typename T2 = typename std::result_of<Tconv(size_t, T)>::type>
+	auto select_idx(Tconv conv) -> t_linq<T2, linq::t_select_idx<T2, Tsrc, Tconv>>
+	{
+		return t_linq<T2, linq::t_select_idx<T2, Tsrc, Tconv>>(t_select_idx<T2, Tsrc, Tconv>(std::move(base), std::move(conv)));
 	}
 	
 	template<typename Tpred>

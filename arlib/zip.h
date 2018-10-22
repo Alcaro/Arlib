@@ -47,7 +47,26 @@ private:
 	static array<byte> unpackfiledat(file& f);
 public:
 	
-	bool read(cstring name, array<byte>& out, bool permissive, string* error, time_t * time = NULL);
+	bool read_idx(size_t id, array<byte>& out, bool permissive, string* error, time_t * time = NULL);
+	bool read_idx(size_t id, array<byte>& out, string* error, time_t * time = NULL)
+	{
+		return read_idx(id, out, false, error, time);
+	}
+	bool read_idx(size_t id, array<byte>& out, time_t * time = NULL)
+	{
+		return read_idx(id, out, NULL, time);
+	}
+	array<byte> read_idx(size_t id, time_t * time = NULL)
+	{
+		array<byte> ret;
+		read_idx(id, ret, time);
+		return ret;
+	}
+	
+	bool read(cstring name, array<byte>& out, bool permissive, string* error, time_t * time = NULL)
+	{
+		return read_idx(find_file(name), out, permissive, error, time);
+	}
 	bool read(cstring name, array<byte>& out, string* error, time_t * time = NULL)
 	{
 		return read(name, out, false, error, time);
@@ -64,6 +83,9 @@ public:
 	}
 	
 	//Writing a blank array deletes the file.
+	//If date is 0 or absent, keeps the date unchanged on the file if it existed, otherwise uses current time.
+	//Deleting an index is not recommended, since that renumbers all other files.
+	void replace_idx(size_t id, arrayview<byte> data, time_t date = 0);
 	void write(cstring name, arrayview<byte> data, time_t date = 0);
 	
 	//Deletes __MACOSX folders and other useless nonsense. Returns whether it did anything.

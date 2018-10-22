@@ -127,7 +127,7 @@ bool Discord::keepalive_cb()
 	return true;
 }
 
-void Discord::ws_str(string msg)
+void Discord::ws_str(cstring msg)
 {
 //printf("d=%i dn=%li t=%li\n",(bool)debug_target,debug_next,time(NULL));
 //if (debug_target && time(NULL) >= debug_next)

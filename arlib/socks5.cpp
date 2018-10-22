@@ -119,6 +119,14 @@ socket* wrap_socks5(const socks5_par& param)
 	else { delete ret; return NULL; }
 }
 
+socket* socks5::connect(bool ssl, cstring domain, int port, runloop* loop)
+{
+	socks5_par par = { loop, socket::create(m_host, m_port, loop), domain, (uint16_t)port };
+	socket* sock = wrap_socks5(par);
+	if (ssl) sock = socket::wrap_ssl(sock, domain, loop);
+	return sock;
+}
+
 #include "test.h"
 
 static void clienttest(cstring target)

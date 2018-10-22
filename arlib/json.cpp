@@ -118,13 +118,24 @@ jsonparser::event jsonparser::next()
 				case 'u':
 				{
 					if (m_pos+4 > m_data.length()) return do_error();
-					string unichar;
-					unichar += m_data[m_pos++];
-					unichar += m_data[m_pos++];
-					unichar += m_data[m_pos++];
-					unichar += m_data[m_pos++];
-					uint16_t codepoint;
-					if (!fromstringhex(unichar, codepoint)) return do_error();
+					
+					uint32_t codepoint;
+					if (!fromstringhex(m_data.substr(m_pos, m_pos+4), codepoint)) return do_error();
+					m_pos += 4;
+					
+					// curse utf16 forever
+					if (codepoint >= 0xD800 && codepoint <= 0xDBFF && m_data[m_pos] == '\\' && m_data[m_pos+1] == 'u')
+					{
+						uint16_t low_sur;
+						if (!fromstringhex(m_data.substr(m_pos+2, m_pos+6), low_sur)) return do_error();
+						
+						if (low_sur >= 0xDC00 && low_sur <= 0xDFFF)
+						{
+							m_pos += 6;
+							codepoint = 0x10000 + ((codepoint-0xD800)<<10) + (low_sur-0xDC00);
+						}
+					}
+					
 					val += string::codepoint(codepoint);
 					break;
 				}
@@ -278,7 +289,8 @@ void JSON::construct(jsonparser& p, bool* ok, size_t maxdepth)
 	if (ev.action == jsonparser::error) *ok = false;
 }
 
-void JSON::serialize(jsonwriter& w)
+template<bool sort>
+void JSON::serialize(jsonwriter& w) const
 {
 	switch (ev.action)
 	{
@@ -302,15 +314,32 @@ void JSON::serialize(jsonwriter& w)
 		break;
 	case jsonparser::enter_list:
 		w.list_enter();
-		for (JSON& j : chld_list) j.serialize(w);
+		for (const JSON& j : chld_list) j.serialize<sort>(w);
 		w.list_exit();
 		break;
 	case jsonparser::enter_map:
 		w.map_enter();
-		for (auto& e : chld_map)
+		if (sort)
 		{
-			w.map_key(e.key);
-			e.value.serialize(w);
+			array<const map<string,JSON>::node*> items;
+			for (const map<string,JSON>::node& e : chld_map)
+			{
+				items.append(&e);
+			}
+			items.sort([](const map<string,JSON>::node* a, const map<string,JSON>::node* b)->bool { return string::compare(b->key, a->key) < 0; });
+			for (const map<string,JSON>::node* e : items)
+			{
+				w.map_key(e->key);
+				e->value.serialize<sort>(w);
+			}
+		}
+		else
+		{
+			for (auto& e : chld_map)
+			{
+				w.map_key(e.key);
+				e.value.serialize<sort>(w);
+			}
 		}
 		w.map_exit();
 		break;
@@ -336,10 +365,17 @@ bool JSON::parse(cstring s)
 	return true;
 }
 
-string JSON::serialize()
+string JSON::serialize() const
 {
 	jsonwriter w;
-	serialize(w);
+	serialize<false>(w);
+	return w.finish();
+}
+
+string JSON::serialize_sorted() const
+{
+	jsonwriter w;
+	serialize<true>(w);
 	return w.finish();
 }
 
@@ -439,13 +475,13 @@ static jsonparser::event test4e[]={
 };
 
 static const char * test5 =
-"{ \"foo\": \"\x80\\u0080\" }\n"
+"{ \"foo\": \"\x80\\u0080\\ud83d\\udca9\" }\n"
 ;
 
 static jsonparser::event test5e[]={
 	{ e_enter_map },
 		{ e_map_key, "foo" },
-		{ e_str, "\x80\xC2\x80" },
+		{ e_str, "\x80\xC2\x80\xF0\x9F\x92\xA9" },
 	{ e_exit_map },
 	{ e_finish }
 };
@@ -598,6 +634,21 @@ test("JSON container", "string,array,set", "json")
 		JSON("{");
 		JSON("{\"x\"");
 		JSON("{\"x\":");
+	}
+	
+	{
+		JSON json;
+		json["a"].num() = 1;
+		json["b"].num() = 2;
+		json["c"].num() = 3;
+		json["d"].num() = 4;
+		json["e"].num() = 5;
+		json["f"].num() = 6;
+		json["g"].num() = 7;
+		json["h"].num() = 8;
+		json["i"].num() = 9;
+		assert_eq(json.serialize_sorted(), R"({"a":1,"b":2,"c":3,"d":4,"e":5,"f":6,"g":7,"h":8,"i":9})");
+		assert_neq(json.serialize(),       R"({"a":1,"b":2,"c":3,"d":4,"e":5,"f":6,"g":7,"h":8,"i":9})");
 	}
 	
 	if (false) // disabled, JSON::construct runs through all 200000 events from the jsonparser which is slow

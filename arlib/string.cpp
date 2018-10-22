@@ -249,6 +249,16 @@ done:
 }
 
 
+int string::compare(cstring a, cstring b)
+{
+	size_t cmplen = min(a.length(), b.length());
+	int ret = memcmp(a.bytes().ptr(), b.bytes().ptr(), cmplen);
+	
+	if (ret) return ret;
+	else return a.length() - b.length();
+}
+
+
 string string::codepoint(uint32_t cp)
 {
 	string ret;
@@ -261,7 +271,7 @@ string string::codepoint(uint32_t cp)
 		ret += (uint8_t)(((cp>> 6)     )|0xC0);
 		ret += (uint8_t)(((cp    )&0x3F)|0x80);
 	}
-	else if (cp>=0xD800 && cp<=0xDFFF) return "\xEF\xBF\xBD";
+	else if (cp>=0xD800 && cp<=0xDFFF) return "\xEF\xBF\xBD"; // curse utf16 forever
 	else if (cp<=0xFFFF)
 	{
 		ret += (uint8_t)(((cp>>12)&0x0F)|0xE0);
@@ -278,7 +288,6 @@ string string::codepoint(uint32_t cp)
 	else return "\xEF\xBF\xBD";
 	return ret;
 }
-
 
 #define X 0xFFFD
 const uint16_t string_windows1252tab[32]={
@@ -307,32 +316,6 @@ static string fromlatin1(cstring in, bool windows1252)
 
 string cstring::fromlatin1()      const { return ::fromlatin1(*this, false); }
 string cstring::fromwindows1252() const { return ::fromlatin1(*this, true); }
-
-
-bool strtoken(const char * haystack, const char * needle, char separator)
-{
-	//token lists are annoyingly complex to parse
-	//I suspect 'people using fixed-size buffers, then extension list grows and app explodes'
-	// isn't the only reason GL_EXTENSIONS string was deprecated from OpenGL
-	size_t nlen = strlen(needle);
-	
-	while (true)
-	{
-		const char * found = strstr(haystack, needle);
-		if (!found) break;
-		
-		if ((found==haystack || found[-1]==separator) && // ensure the match is the start of a word
-				(found[nlen]==separator || found[nlen]=='\0')) // ensure the match is the end of a word
-		{
-			return true;
-		}
-		
-		haystack = strchr(found, separator); // try again, could've found GL_foobar_limited when looking for GL_foobar
-		if (!haystack) return false;
-	}
-	return false;
-}
-
 
 bool cstring::isutf8() const
 {
@@ -374,6 +357,31 @@ bool cstring::isutf8() const
 	}
 	
 	return true;
+}
+
+
+bool strtoken(const char * haystack, const char * needle, char separator)
+{
+	//token lists are annoyingly complex to parse
+	//I suspect 'people using fixed-size buffers, then extension list grows and app explodes'
+	// isn't the only reason GL_EXTENSIONS string was deprecated from OpenGL
+	size_t nlen = strlen(needle);
+	
+	while (true)
+	{
+		const char * found = strstr(haystack, needle);
+		if (!found) break;
+		
+		if ((found==haystack || found[-1]==separator) && // ensure the match is the start of a word
+				(found[nlen]==separator || found[nlen]=='\0')) // ensure the match is the end of a word
+		{
+			return true;
+		}
+		
+		haystack = strchr(found, separator); // try again, could've found GL_foobar_limited when looking for GL_foobar
+		if (!haystack) return false;
+	}
+	return false;
 }
 
 
@@ -670,5 +678,29 @@ test("string", "", "string")
 		assert(!cstring("\xF0\x9F\x80\x78").isutf8());
 		assert(!cstring("\x82\x2C\x63").isutf8());
 		assert(!cstring("\x2C\x92\x63").isutf8());
+	}
+	
+	{
+		cstring a = "a";
+		cstring ab = "ab";
+		cstring ac = "ac";
+		cstring b = "b";
+		
+		assert_eq(string::compare(a,a), 0);
+		assert_lt(string::compare(a,ab), 0);
+		assert_lt(string::compare(a,ac), 0);
+		assert_lt(string::compare(a,b), 0);
+		assert_gt(string::compare(ab,a), 0);
+		assert_eq(string::compare(ab,ab), 0);
+		assert_lt(string::compare(ab,ac), 0);
+		assert_lt(string::compare(ab,b), 0);
+		assert_gt(string::compare(ac,a), 0);
+		assert_gt(string::compare(ac,ab), 0);
+		assert_eq(string::compare(ac,ac), 0);
+		assert_lt(string::compare(ac,b), 0);
+		assert_gt(string::compare(b,a), 0);
+		assert_gt(string::compare(b,ab), 0);
+		assert_gt(string::compare(b,ac), 0);
+		assert_eq(string::compare(b,b), 0);
 	}
 }

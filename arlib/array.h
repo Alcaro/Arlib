@@ -74,7 +74,8 @@ public:
 		return out;
 	}
 	
-	template<typename T2> decltype(T() + T2()) join(T2 between) const
+	template<typename T2>
+	decltype(T() + T2()) join(T2 between) const
 	{
 		if (!this->count) return decltype(T() + T2())();
 		
@@ -83,6 +84,20 @@ public:
 		{
 			out += between;
 			out += this->items[n];
+		}
+		return out;
+	}
+	
+	template<typename T2, typename Tc>
+	T2 join(T2 between, Tc conv) const
+	{
+		if (!this->count) return T2();
+		
+		T2 out = conv(this->items[0]);
+		for (size_t n=1;n < this->count;n++)
+		{
+			out += between;
+			out += conv(this->items[n]);
 		}
 		return out;
 	}
@@ -205,7 +220,9 @@ public:
 	arrayvieww<T> skip(size_t n) { return slice(n, this->count-n); }
 	
 	//stable sort
-	void sort()
+	//comparer should return whether the items are in wrong order and should be swapped
+	template<typename Tless>
+	void sort(const Tless& less)
 	{
 		//insertion sort, without binary search optimization for finding the new position
 		//TODO: less lazy
@@ -214,7 +231,7 @@ public:
 			size_t b;
 			for (b=0;b<a;b++)
 			{
-				if (this->items[a] < this->items[b]) break;
+				if (less(this->items[b], this->items[a])) break;
 			}
 			if (a == b) continue;
 			
@@ -225,7 +242,18 @@ public:
 		}
 	}
 	
+	void sort()
+	{
+		sort([](const T& a, const T& b) { return b < a; });
+	}
+	
 	//unstable sort, not necessarily quicksort
+	template<typename Tless>
+	void qsort(const Tless& less)
+	{
+		sort(less); // TODO: less lazy
+	}
+	
 	void qsort()
 	{
 		sort(); // TODO: less lazy

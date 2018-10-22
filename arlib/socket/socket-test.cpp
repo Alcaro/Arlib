@@ -77,9 +77,7 @@ static void socket_test_httpfail(socket* sock, bool xfail, runloop* loop)
 	assert(!timeout);
 }
 
-//Ensures that the given socket is usable and speaks HTTP. Socket is not usable afterwards; caller is responsible for closing it.
 void socket_test_http(socket* sock, runloop* loop) { socket_test_httpfail(sock, false, loop); }
-//Ensures the socket is not usable.
 void socket_test_fail(socket* sock, runloop* loop) { socket_test_httpfail(sock, true, loop); }
 
 static void clienttest(cstring target, int port, bool ssl, bool xfail = false, bool unsafe = false)
@@ -93,7 +91,10 @@ static void clienttest(cstring target, int port, bool ssl, bool xfail = false, b
 		creator = socket::create_ssl;
 	if (unsafe) 
 #ifdef ARLIB_SSL_OPENSSL
-		creator = socket::create_ssl_noverify;
+		creator = [](cstring domain, int port, runloop* loop) -> socket*
+			{
+				return socket::wrap(socket::wrap_ssl_raw_noverify(socket::create(domain, port, loop), loop), loop);
+			};
 #else
 		test_skip_force("unsafe SSL not implemented");
 #endif

@@ -122,10 +122,10 @@ ifeq ($(OS),linux)
     CONF_LFLAGS += -pthread
   endif
   OBJNAME = linux
-  TESTRUNNER = valgrind --num-callers=100
+  TR = valgrind --num-callers=100
 endif
-ifeq ($(TESTRUNNER),gdb)
-  override TESTRUNNER = gdb --args
+ifeq ($(TR),gdb)
+  override TR = gdb --args
 endif
 
 ifeq ($(OS),windows)
@@ -143,6 +143,7 @@ OPTFLAGS := -Os -fomit-frame-pointer -fmerge-all-constants -fvisibility=hidden
 OPTFLAGS += -fno-unwind-tables -fno-asynchronous-unwind-tables
 OPTFLAGS += -ffunction-sections -fdata-sections
 OPTFLAGS += -fno-ident
+OPTFLAGS += -fno-threadsafe-statics
 OPTFLAGS += -Werror -DNDEBUG -DARLIB_OPT
 OPTLFLAGS := -Wl,--gc-sections,--build-id=none,--hash-style=gnu,--relax
 #OPTLFLAGS += -Wl,--print-map
@@ -367,12 +368,12 @@ ifneq ($(TF),)
   TESTFILTER := --filter="$(TF)"
 endif
 test: obj/arlibtest$(EXESUFFIX)
-	$(TESTRUNNER) obj/arlibtest$(EXESUFFIX) $(TESTFILTER)
+	$(TR) obj/arlibtest$(EXESUFFIX) $(TESTFILTER)
 check: test
 test-all: obj/arlibtest$(EXESUFFIX)
-	$(TESTRUNNER) obj/arlibtest$(EXESUFFIX) --all $(TESTFILTER)
+	$(TR) obj/arlibtest$(EXESUFFIX) --all $(TESTFILTER)
 test-all-twice: obj/arlibtest$(EXESUFFIX)
-	$(TESTRUNNER) obj/arlibtest$(EXESUFFIX) --all --twice $(TESTFILTER)
+	$(TR) obj/arlibtest$(EXESUFFIX) --all --twice $(TESTFILTER)
 endif
 
 

@@ -253,6 +253,12 @@ public:
 		return false;
 	}
 	
+	bool enter(bool& first, cstring name)
+	{
+		if (first && name != thisnode) return false;
+		return enter(first);
+	}
+	
 	template<typename T> void hex(cstring name, T& out)
 	{
 		while (thisnode == name)
@@ -293,7 +299,10 @@ template<typename T> void bmlunserialize_to(cstring bml, T& to)
 	s.read_item(to);
 }
 
-#define ser_enter(s) for (bool serialize_first = true; s.enter(serialize_first);)
+#define ser_enter_1(s,x) for (bool serialize_first = true; s.enter(serialize_first);)
+#define ser_enter_2(s,name) for (bool serialize_first = true; s.enter(serialize_first, name);)
+#define ser_enter_pick(x1,x2,use,...) use(x1,x2)
+#define ser_enter(...) ser_enter_pick(__VA_ARGS__, ser_enter_2, ser_enter_1)
 
 
 

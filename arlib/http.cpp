@@ -46,6 +46,7 @@ bool HTTP::parseUrl(cstring url, bool relative, location& out)
 	else if (!relative) return false;
 	else if (url[0]=='/') out.path = url;
 	else if (url[0]=='?') out.path = out.path.csplit<1>("?")[0] + url;
+	else if (url[0]=='#') out.path = out.path.csplit<1>("#")[0] + url;
 	else out.path = out.path.crsplit<1>("/")[0] + "/" + url;
 	
 	return true;
@@ -210,9 +211,11 @@ newsock:
 		if (state == st_boundary)
 		{
 			//lasthost.proto/domain/port never changes between requests
-			if (lasthost.proto == "https")  sock = socket::create_ssl(lasthost.domain, lasthost.port ? lasthost.port : 443, loop);
-			else if (lasthost.proto == "http") sock = socket::create( lasthost.domain, lasthost.port ? lasthost.port : 80,  loop);
+			int defport;
+			if (lasthost.proto == "http") defport = 80;
+			else if (lasthost.proto == "https") defport = 443;
 			else { RETURN_IF_CALLBACK_DESTRUCTS(resolve_err_v(0, rsp::e_bad_url)); goto newsock; }
+			sock = cb_mksock(defport==443, lasthost.domain, lasthost.port ? lasthost.port : defport, loop);
 		}
 		if (!sock) { RETURN_IF_CALLBACK_DESTRUCTS(resolve_err_v(0, rsp::e_connect)); goto newsock; }
 		sock->callback(bind_this(&HTTP::activity), NULL);

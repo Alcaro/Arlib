@@ -321,7 +321,7 @@ private:
 	void connect();
 	void connect_cb(HTTP::rsp r);
 	
-	void ws_str(string text);
+	void ws_str(cstring text);
 	
 	bool bot;
 	string token;

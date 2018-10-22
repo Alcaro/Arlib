@@ -242,7 +242,7 @@ public:
 	socket* i_connect(cstring domain, cstring ip, int port)
 	{
 		socket* ret = socket_raw::create(connect(ip, port), this->loop);
-		if (ret && this->ssl) ret = socket::wrap_ssl(ret, domain, this->loop);
+		if (ret && this->ssl) ret = socket::wrap_ssl_raw(ret, domain, this->loop);
 		return ret;
 	}
 	
@@ -429,6 +429,17 @@ socket* socket::wrap(socket* inner, runloop* loop)
 {
 	return new socketbuf(inner, loop);
 }
+
+socket* socket::wrap_ssl(socket* inner, cstring domain, runloop* loop)
+{
+	return wrap(wrap_ssl_raw(inner, domain, loop), loop);
+}
+
+socket* socket::create_sslmaybe(bool ssl, cstring domain, int port, runloop* loop)
+{
+	return (ssl ? socket::create_ssl : socket::create)(domain, port, loop);
+}
+
 
 #if 0
 static MAYBE_UNUSED int socketlisten_create_ip4(int port)
