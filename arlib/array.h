@@ -59,8 +59,8 @@ public:
 		this->count = N;
 	}
 	
-	arrayview<T> slice(size_t first, size_t count) { return arrayview<T>(this->items+first, count); }
-	arrayview<T> skip(size_t n) { return slice(n, this->count-n); }
+	arrayview<T> slice(size_t first, size_t count) const { return arrayview<T>(this->items+first, count); }
+	arrayview<T> skip(size_t n) const { return slice(n, this->count-n); }
 	
 	T join() const
 	{
@@ -219,6 +219,16 @@ public:
 	arrayvieww<T> slice(size_t first, size_t count) { return arrayvieww<T>(this->items+first, count); }
 	arrayvieww<T> skip(size_t n) { return slice(n, this->count-n); }
 	
+	void swap(size_t a, size_t b)
+	{
+		if (a == b) return;
+		
+		char tmp[sizeof(T)];
+		memcpy(tmp, this->items+a, sizeof(T));
+		memmove(this->items+b+1, this->items+b, sizeof(T)*(a-b));
+		memcpy(this->items+b, tmp, sizeof(T));
+	}
+	
 	//stable sort
 	//comparer should return whether the items are in wrong order and should be swapped
 	template<typename Tless>
@@ -233,12 +243,7 @@ public:
 			{
 				if (less(this->items[b], this->items[a])) break;
 			}
-			if (a == b) continue;
-			
-			char tmp[sizeof(T)];
-			memcpy(tmp, this->items+a, sizeof(T));
-			memmove(this->items+b+1, this->items+b, sizeof(T)*(a-b));
-			memcpy(this->items+b, tmp, sizeof(T));
+			swap(a, b);
 		}
 	}
 	
@@ -311,6 +316,11 @@ public:
 		other.count = this->count;
 		this->items = newitems;
 		this->count = newcount;
+	}
+	
+	void swap(size_t a, size_t b)
+	{
+		arrayvieww<T>::swap(a, b);
 	}
 	
 private:
@@ -714,7 +724,7 @@ public:
 			break;
 		}
 		
-//printf("%lu->%lu t=%i", prevlen, len, ((prevlen > n_inline)<<1 | (len > n_inline)));
+//printf("%lu->%lu t=%d", prevlen, len, ((prevlen > n_inline)<<1 | (len > n_inline)));
 //size_t bytes;
 //if (len > n_inline) bytes = alloc_size(len);
 //else bytes = sizeof(bits_inline);

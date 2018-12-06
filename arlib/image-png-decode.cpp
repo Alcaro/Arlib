@@ -570,7 +570,7 @@ test("png", "array,imagebase,file", "png")
 	for (size_t i=0;i<tests.size();i++)
 	{
 //puts(tests[i]);
-//printf("\r                                        \r(%i) %s... ", i, (const char*)tests[i]);
+//printf("\r                                        \r(%d) %s... ", i, (const char*)tests[i]);
 		image im;
 		image ref;
 		
@@ -600,7 +600,7 @@ test("png", "array,imagebase,file", "png")
 //puts("\n");
 //for (size_t i=0;i<im.height*im.width;i++)
 //{
-//if(i%im.width==0)puts("");
+//if(i%dm.width==0)puts("");
 //printf("%.8X ",imp[i]);
 //}
 //puts("\n");

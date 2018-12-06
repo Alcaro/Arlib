@@ -7,6 +7,13 @@ struct ser1 {
 	int a;
 	int b;
 	
+//template<typename T> void serialize(T& s) {
+//if(!s.serializing)puts("a:"+s.next());
+//s.item("a", a);
+//if(!s.serializing)puts("b:"+s.next());
+//s.item("b", b);
+//if(!s.serializing)puts("c:"+s.next());
+//}
 	SERIALIZE(a, b);
 };
 
@@ -104,6 +111,20 @@ struct ser11 {
 struct ser12 {
 	map<string,string> data;
 	SERIALIZE(data);
+};
+
+struct ser13 { // can't be bml serialized, json only; 'foo=1 foo=2 foo=3 foo=4' can't keep track of how much is written
+	byte foo[4];
+	bool t;
+	bool f;
+	
+	template<typename T>
+	void serialize(T& s)
+	{
+		s.item("foo", foo);
+		s.item("t", t);
+		s.item("f", f);
+	}
 };
 
 test("BML serialization", "bml", "serialize")
@@ -399,6 +420,112 @@ q
 	}
 }
 
+test("JSON serialization", "json", "serialize")
+{
+	{
+		ser1 item;
+		item.a = 1;
+		item.b = 2;
+		
+		assert_eq(jsonserialize(item), "{\"a\":1,\"b\":2}");
+	}
+	
+	{
+		ser2 item;
+		item.c.a = 1;
+		item.c.b = 2;
+		item.d.a = 3;
+		item.d.b = 4;
+		assert_eq(jsonserialize(item), "{\"c\":{\"a\":1,\"b\":2},\"d\":{\"a\":3,\"b\":4}}");
+	}
+	
+	{
+		ser5 item;
+		item.data.append(1);
+		item.data.append(2);
+		item.data.append(3);
+		assert_eq(jsonserialize(item), "{\"data\":[1,2,3]}");
+	}
+	
+	{
+		ser6 item;
+		item.data.append();
+		item.data.append();
+		item.data[0].a=1;
+		item.data[0].b=2;
+		item.data[1].a=3;
+		item.data[1].b=4;
+		assert_eq(jsonserialize(item), "{\"data\":[{\"a\":1,\"b\":2},{\"a\":3,\"b\":4}]}");
+	}
+	
+	{
+		ser7 item;
+		item.par.data.append(1);
+		item.par.data.append(2);
+		item.par.data.append(3);
+		assert_eq(jsonserialize(item), "{\"par\":{\"data\":[1,2,3]}}");
+	}
+	
+	{
+		ser8 item;
+		item.f = 0xAA;
+		item.g = 0xAAAA;
+		item.h = 0xAAAAAAAA;
+		item.i = 0xAAAAAAAA; // this could have another eight As on linux, but why would I even do that
+		item.j = 0xAAAAAAAAAAAAA000; // rounded due to float precision
+		assert_eq(jsonserialize(item), "{\"f\":170,\"g\":43690,\"h\":2863311530,\"i\":2863311530,\"j\":12297829382473031680}");
+	}
+	
+	{
+		ser9 item;
+		item.foo[0] = 0x12;
+		item.foo[1] = 0x34;
+		item.foo[2] = 0x56;
+		item.foo[3] = 0x78;
+		item.bar.append(0x12);
+		item.bar.append(0x34);
+		item.bar.append(0x56);
+		item.bar.append(0x78);
+		assert_eq(jsonserialize(item), "{\"foo\":\"12345678\",\"bar\":\"12345678\"}");
+	}
+	
+	{
+		ser10 item;
+		item.data = "test";
+		assert_eq(jsonserialize(item), "{\"data\":\"test\"}");
+	}
+	
+	{
+		ser11 item;
+		item.data.add("foo");
+		item.data.add("test");
+		item.data.add("C:/Users/Administrator/My Documents/!TOP SECRET!.docx");
+		//the set is unordered, this can give spurious failures
+		assert_eq(jsonserialize(item), "{\"data\":[\"test\",\"C:/Users/Administrator/My Documents/!TOP SECRET!.docx\",\"foo\"]}");
+	}
+	
+	{
+		ser12 item;
+		item.data.insert("foo", "bar");
+		item.data.insert("test", "C:/Users/Administrator/My Documents/!TOP SECRET!.docx");
+		item.data.insert("C:/Users/Administrator/My Documents/!TOP SECRET!.docx", "test");
+		assert_eq(jsonserialize(item), "{\"data\":{\"test\":\"C:/Users/Administrator/My Documents/!TOP SECRET!.docx\","
+		                              "\"C:/Users/Administrator/My Documents/!TOP SECRET!.docx\":\"test\","
+		                              "\"foo\":\"bar\"}}");
+	}
+	
+	{
+		ser13 item;
+		item.foo[0] = 12;
+		item.foo[1] = 34;
+		item.foo[2] = 56;
+		item.foo[3] = 78;
+		item.t = true;
+		item.f = false;
+		assert_eq(jsonserialize(item), "{\"foo\":[12,34,56,78],\"t\":true,\"f\":false}");
+	}
+}
+
 test("JSON deserialization", "json", "serialize")
 {
 	{
@@ -436,9 +563,11 @@ test("JSON deserialization", "json", "serialize")
 		assert_eq(item.b, 2);
 	}
 	
-	//make sure this one does not give an infinite loop
+	//these pass if they do not give infinite loops or valgrind errors, or otherwise explode
 	{
 		jsonunserialize<ser1>("{ \"a\":1, \"b\":2, \"q\":*, \"a\":3, \"a\":4 }");
+		jsonunserialize<ser6>("{\"data\":[{\"a\":\"a\n[]\"}]}");
+		jsonunserialize<map<string,int>>("{\"aaaaaaaaaaaaaaaa\":1,\"bbbbbbbbbbbbbbbb\":2}");
 	}
 	
 	//the system is allowed to loop, but only if there's bogus or extraneous nodes
@@ -467,8 +596,8 @@ test("JSON deserialization", "json", "serialize")
 	}
 	
 	{
-		//some of these tests make no sense for json...
-		ser7 item = jsonunserialize<ser7>("{ \"par\": { \"data\": [ 1, 2, 3 ] } }");
+		//ensure finish_item() isn't screwing up
+		ser7 item = jsonunserialize<ser7>("{ \"foo\": {\"bar\": {}}, \"par\": { \"data\": [ 1, 2, 3 ] } }");
 		assert_eq(item.par.data.size(), 3);
 		assert_eq(item.par.data[0], 1);
 		assert_eq(item.par.data[1], 2);
@@ -514,9 +643,19 @@ test("JSON deserialization", "json", "serialize")
 		    "{ \"data\": { \"foo\": \"bar\", "
 		                  "\"C:/Users/Administrator/My Documents/!TOP SECRET!.docx\": \"test\", "
 		                  "\"test\": \"C:/Users/Administrator/My Documents/!TOP SECRET!.docx\" } }");
-		assert_eq(item.data.get("foo"), "bar");
-		assert_eq(item.data.get("test"), "C:/Users/Administrator/My Documents/!TOP SECRET!.docx");
-		assert_eq(item.data.get("C:/Users/Administrator/My Documents/!TOP SECRET!.docx"), "test");
+		assert_eq(item.data.get_or("foo", "NONEXISTENT"), "bar");
+		assert_eq(item.data.get_or("test", "NONEXISTENT"), "C:/Users/Administrator/My Documents/!TOP SECRET!.docx");
+		assert_eq(item.data.get_or("C:/Users/Administrator/My Documents/!TOP SECRET!.docx", "NONEXISTENT"), "test");
+	}
+	
+	{
+		ser13 item = jsonunserialize<ser13>("{\"foo\":[12,34,56,78],\"t\":true,\"f\":false}");
+		assert_eq(item.foo[0], 12);
+		assert_eq(item.foo[1], 34);
+		assert_eq(item.foo[2], 56);
+		assert_eq(item.foo[3], 78);
+		assert_eq(item.t, true);
+		assert_eq(item.f, false);
 	}
 }
 #endif

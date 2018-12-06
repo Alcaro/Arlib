@@ -14,7 +14,7 @@ template<typename T, typename Tsrc> class t_linq;
 //'Tbase' is the base class with .begin() and .end(), including template argument.
 //For example: template<typename T> class arrayview : public linqbase<arrayview<T>>
 template<typename Tbase>
-class linqbase : empty {
+class linqbase {
 	//doesn't exist, only used because the real impl() needs a 'this' and decltype doesn't have that
 	//dummy template parameters are to ensure it doesn't refer to Tbase::begin() before Tbase is properly defined
 	template<typename _> static const Tbase& decltype_impl();

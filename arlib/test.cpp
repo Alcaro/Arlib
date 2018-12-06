@@ -52,6 +52,8 @@ enum err_t {
 	err_skip = 2,
 	err_inconclusive = 3,
 	err_expfail = 4,
+	err_tooslow = 5,
+	err_ntype
 };
 static err_t result;
 
@@ -169,7 +171,7 @@ void _test_runloop_latency(uint64_t us)
 
 static void err_print(testlist* err)
 {
-	printf("%s (at %s:%i, requires %s, provides %s)\n", err->name, err->filename, err->line, err->requires, err->provides);
+	printf("%s (at %s:%d, requires %s, provides %s)\n", err->name, err->filename, err->line, err->requires, err->provides);
 }
 
 //whether 'a' must be before 'b'; alternatively, whether 'a' provides something 'b' requires
@@ -366,7 +368,7 @@ int main(int argc, char* argv[])
 	
 	for (int pass = 0; pass < (run_twice ? 2 : 1); pass++)
 	{
-		int count[5]={0};
+		int count[err_ntype]={0};
 		
 		memset(max_latencies_us, 0, sizeof(max_latencies_us));
 		
@@ -379,9 +381,9 @@ int main(int argc, char* argv[])
 			testlist* next = cur_test->next;
 			
 			if (all_tests)
-				printf("Testing %s (%s:%i)... ", cur_test->name, cur_test->filename, cur_test->line);
+				printf("Testing %s (%s:%d)... ", cur_test->name, cur_test->filename, cur_test->line);
 			else
-				printf(ESC_ERASE_LINE "Test %i/%i (%s)... ", testnum, numtests, cur_test->name);
+				printf(ESC_ERASE_LINE "Test %d/%d (%s)... ", testnum, numtests, cur_test->name);
 			fflush(stdout);
 			callstack.reset();
 			result = err_ok;
@@ -391,7 +393,12 @@ int main(int argc, char* argv[])
 				cur_test->func();
 				uint64_t end_time = time_us_ne();
 				uint64_t time_us = end_time - start_time;
-				assert_lt(time_us, all_tests ? 5000*1000 : 500*1000);
+				uint64_t time_lim = (all_tests ? 5000*1000 : 500*1000);
+				if (time_us > time_lim)
+				{
+					printf("too slow: max %uus, got %uus\n", (unsigned)time_lim, (unsigned)time_us);
+					result = err_tooslow;
+				}
 			} catch (err_t e) {
 				result = e;
 			}
@@ -401,11 +408,12 @@ int main(int argc, char* argv[])
 			cur_test = next;
 		}
 		
-		printf(ESC_ERASE_LINE "Passed %i, failed %i", count[0], count[1]);
-		if (count[2]) printf(", skipped %i", count[2]);
-		if (count[3]) printf(", inconclusive %i", count[3]);
-		if (count[4]) printf(", expected-fail %i", count[4]);
-		if (n_filtered_tests) printf(", filtered %i", n_filtered_tests);
+		printf(ESC_ERASE_LINE "Passed %d, failed %d", count[err_ok], count[err_fail]);
+		if (count[err_tooslow]) printf(", too-slow %d", count[err_tooslow]);
+		if (count[err_skip]) printf(", skipped %d", count[err_skip]);
+		if (count[err_inconclusive]) printf(", inconclusive %d", count[err_inconclusive]);
+		if (count[err_expfail]) printf(", expected-fail %d", count[err_expfail]);
+		if (n_filtered_tests) printf(", filtered %d", n_filtered_tests);
 		puts("");
 		
 		for (size_t i=1;i<ARRAY_SIZE(max_latencies_us);i++)
@@ -414,7 +422,7 @@ int main(int argc, char* argv[])
 			if (max_latencies_us[i].us > max_latency_us || i == ARRAY_SIZE(max_latencies_us)-1)
 			{
 				if (!max_latencies_us[i].name) continue; // happens if the runloop is never used
-				printf("Latency %luus at %s (%s:%i)\n",
+				printf("Latency %luus at %s (%s:%d)\n",
 				       (unsigned long)max_latencies_us[i].us,
 				       max_latencies_us[i].name,
 				       max_latencies_us[i].filename,

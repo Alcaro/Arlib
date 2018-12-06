@@ -20,6 +20,7 @@ ARSANDBOX = 0
 #  additional compiler/linker flags needed by this program
 #EXCEPTIONS
 #  set to 1 if needed
+#  however, note that Arlib is not guaranteed exception safe; it may leak memory and otherwise misbehave
 #SOURCES
 #  extra files to compile, in addition to *.cpp
 #  supports .c and .cpp

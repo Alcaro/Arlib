@@ -645,8 +645,8 @@ static void testbml(const char * bml, bmlparser::event* expected)
 	{
 		actual = parser.next();
 		
-//printf("e=%i [%s] [%s]\n", expected->action, (const char*)expected->name, (const char*)expected->value);
-//printf("a=%i [%s] [%s]\n\n", actual.action,  (const char*)actual.name,    (const char*)actual.value);
+//printf("e=%d [%s] [%s]\n", expected->action, (const char*)expected->name, (const char*)expected->value);
+//printf("a=%d [%s] [%s]\n\n", actual.action,  (const char*)actual.name,    (const char*)actual.value);
 		assert_eq(actual.action, expected->action);
 		assert_eq(actual.name, expected->name);
 		assert_eq(actual.value, expected->value);
@@ -667,7 +667,7 @@ static void testbml_error(const char * bml)
 	{
 		bmlparser::event ev = parser.next();
 //if (events==999)
-//printf("a=%i [%s] [%s]\n\n", ev.action, ev.name.data().ptr(), ev.value.data().ptr());
+//printf("a=%d [%s] [%s]\n\n", ev.action, ev.name.data().ptr(), ev.value.data().ptr());
 		if (ev.action == e_error) error = true; // any error is fine
 		if (ev.action == e_enter) depth++;
 		if (ev.action == e_exit) depth--;

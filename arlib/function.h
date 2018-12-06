@@ -268,7 +268,7 @@ public:
     //- it is not sensitive to false negatives - even if the address of EmptyHandler changes, obj==func does not
     //- it is not sensitive to false positives - EmptyHandler is private, and can't be aliased by anything unexpected
     //    (okay, it is sensitive on a pure Harvard architecture, but they're extinct and Modified Harvard is safe.)
-    //- it is sensitive to hostile callers, but if you call bind_ptr(func, (void*)func), you're asking for bugs.
+    //- it is sensitive to hostile callers, but if you call bind_ptr(func, (void*)func), you're asking for trouble.
     function()                    : func(EmptyHandler), obj((void*)EmptyHandler), ref(NULL) {}
     function(const function& rhs) : func(rhs.func), obj(rhs.obj), ref(rhs.ref)
         { add_ref(); }

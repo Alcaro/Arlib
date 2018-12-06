@@ -97,6 +97,17 @@ public:
 	{
 		return us() / 1000;
 	}
+	uint64_t us_reset()
+	{
+		uint64_t new_us = time_us_ne();
+		uint64_t prev_us = start;
+		start = new_us;
+		return new_us - prev_us;
+	}
+	uint64_t ms_reset()
+	{
+		return us_reset() / 1000;
+	}
 };
 
 #ifdef _WIN32 // surprisingly, this is safe - gmtime() returns a thread local

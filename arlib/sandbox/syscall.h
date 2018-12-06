@@ -33,7 +33,7 @@
 
 //ideally, these functions could be inlined into the templates, but that fails due to
 // https://gcc.gnu.org/bugzilla/show_bug.cgi?id=33661 (and duplicates: 36080 64951 66393 80264)
-//it's said that making them volatile fixes it, but that would likely demand the 'correct' initialization order and yield worse code
+//it's said that making the regs volatile fixes it, but that would likely demand the 'correct' initialization order and yield worse code
 static inline long syscall6(long n, long a1, long a2, long a3, long a4, long a5, long a6)
 {
 	//register assignment per http://stackoverflow.com/a/2538212

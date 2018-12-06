@@ -141,11 +141,10 @@ public:
 		set_child_cb();
 	}
 	
-	/*private*/ bool update_from_timer()
+	/*private*/ void update_from_timer()
 	{
 		update();
 		timer_id = 0;
-		return false;
 	}
 	
 	/*private*/ void set_child_cb()
@@ -204,7 +203,7 @@ public:
 		set_child_cb();
 	}
 	
-	int recv(arrayvieww<byte> data)
+	int recv(arrayvieww<byte> data) override
 	{
 		int ret = fixret(SSL_read(ssl, data.ptr(), data.size()));
 //printf("USERREAD(%lu)=%i\n",data.size(),ret);
@@ -223,7 +222,7 @@ public:
 		return ret;
 	}
 	
-	int send(arrayview<byte> data)
+	int send(arrayview<byte> data) override
 	{
 		if (!sock) return -1;
 		
@@ -241,11 +240,11 @@ public:
 	
 	/*private*/ void on_readable() { process_recv(); update(); }
 	/*private*/ void on_writable() { process_send(); update(); }
-	void callback(function<void()> cb_read, function<void()> cb_write)
+	void callback(function<void()> cb_read, function<void()> cb_write) override
 	{
 		this->cb_read = cb_read;
 		this->cb_write = cb_write;
-		if (cb_write) timer_id = loop->set_timer_rel(timer_id, 0, bind_this(&socketssl_impl::update_from_timer));
+		if (cb_write) timer_id = loop->set_idle(timer_id, bind_this(&socketssl_impl::update_from_timer));
 	}
 	
 	~socketssl_impl()

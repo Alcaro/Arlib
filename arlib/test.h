@@ -1,20 +1,51 @@
 #pragma once
 #include "global.h"
 #include "stringconv.h"
+#include "linq.h"
 
 #undef assert
 
 #ifdef ARLIB_TEST
 
 template<typename T>
+string tostring_dbg(const T& item) { return tostring(item); }
+template<typename T>
 string tostring_dbg(const arrayview<T>& item)
 {
-	return item.join((string)",", [](const T& i){ return tostring(i); });
+	return item.join((string)",", [](const T& i){ return tostring_dbg(i); });
 }
 template<typename T> string tostring_dbg(const arrayvieww<T>& item) { return tostring_dbg((arrayview<T>)item); }
 template<typename T> string tostring_dbg(const array<T>& item) { return tostring_dbg((arrayview<T>)item); }
-template<typename T>
-string tostring_dbg(const T& item) { return tostring(item); }
+template<typename Tkey, typename Tvalue>
+string tostring_dbg(const map<Tkey,Tvalue>& item)
+{
+	return "{"+
+		item
+			.select([](const typename map<Tkey,Tvalue>::node& n){ return tostring_dbg(n.key)+" => "+tostring_dbg(n.value); })
+			.as_array()
+			.join(", ")
+		+"}";
+}
+
+/*
+template<typename T> using has_to_string = decltype(declval<T&>().to_string());
+	template<typename T> using has_to_string_free = decltype(to_string(declval<T&>()));
+
+	template<typename T>
+	string convert(T const& t)
+	{
+		if constexpr(is_detected_exact_v<string, has_to_string, T>){
+			return t.to_string();
+		}else if constexpr(is_detected_exact_v<string, has_to_string_free, T>){
+			return to_string(t);
+		}else if constexpr(is_static_castable_v<T, string>){
+			return static_cast<string>(t);
+		}
+		
+		//give up no valid conversion exists, so dump the bytes and maybe that helps debug
+		return dump_bytes(t);
+	}
+*/
 
 class _testdecl {
 public:

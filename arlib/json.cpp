@@ -1,6 +1,8 @@
 #include "json.h"
 #include "stringconv.h"
 
+const JSON JSON::c_null;
+
 static bool l_isspace(char ch)
 {
 	return (ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n');
@@ -493,8 +495,8 @@ static void testjson(cstring json, jsonparser::event* expected)
 	{
 		jsonparser::event actual = parser.next();
 		
-//printf("e=%i [%s] [%lf]\n", expected->action, (const char*)expected->str.c_str(), (expected->action==e_num ? expected->num : -1));
-//printf("a=%i [%s] [%lf]\n\n", actual.action,  (const char*)actual.str.c_str(),    (actual.action==e_num ? actual.num : -1));
+//printf("e=%d [%s] [%lf]\n", expected->action, (const char*)expected->str.c_str(), (expected->action==e_num ? expected->num : -1));
+//printf("a=%d [%s] [%lf]\n\n", actual.action,  (const char*)actual.str.c_str(),    (actual.action==e_num ? actual.num : -1));
 		if (expected)
 		{
 			assert_eq(actual.action, expected->action);
@@ -519,7 +521,7 @@ static void testjson_error(cstring json, bool actually_error = true)
 	{
 		jsonparser::event ev = parser.next();
 //if (events==999)
-//printf("a=%i [%s] [%f]\n", ev.action, ev.str.bytes().ptr(), ev.num);
+//printf("a=%d [%s] [%f]\n", ev.action, ev.str.bytes().ptr(), ev.num);
 		if (ev.action == e_error) error = true; // any error is fine
 		if (ev.action == e_enter_list || ev.action == e_enter_map) depth++;
 		if (ev.action == e_exit_list  || ev.action == e_exit_map)  depth--;

@@ -99,7 +99,8 @@ again:
 	if (next_send > 1) return; // only pipeline two requests at once
 	if (!sock) return;
 	
-	const rsp& r = requests[next_send].r;
+	rsp_i& ri = requests[next_send];
+	const rsp& r = ri.r;
 	if (r.status == rsp::e_canceled)
 	{
 		requests.remove(next_send);
@@ -108,7 +109,7 @@ again:
 	const req& q = r.q;
 	
 	cstring method = q.method;
-	if (!method) method = (q.postdata ? "POST" : "GET");
+	if (!method) method = (q.body ? "POST" : "GET");
 	if (method != "GET" && next_send != 0) return;
 	
 	location loc;
@@ -131,28 +132,27 @@ again:
 	}
 	
 	if (!httpHost) tosend.push("Host: ", loc.domain, "\r\n");
-	if (method!="GET" && !httpContentLength) tosend.push("Content-Length: ", tostring(q.postdata.size()), "\r\n");
+	if (method!="GET" && !httpContentLength) tosend.push("Content-Length: ", tostring(q.body.size()), "\r\n");
 	if (method!="GET" && !httpContentType)
 	{
-		if (q.postdata && (q.postdata[0] == '[' || q.postdata[0] == '{'))
-		{
+		if (q.body && (q.body[0] == '[' || q.body[0] == '{'))
 			tosend.push("Content-Type: application/json\r\n");
-		}
 		else
-		{
 			tosend.push("Content-Type: application/x-www-form-urlencoded\r\n");
-		}
 	}
 	if (!httpConnection) tosend.push("Connection: keep-alive\r\n");
 	
 	tosend.push("\r\n");
 	
-	tosend.push(q.postdata);
+	tosend.push(q.body);
 	
 	bool ok = true;
-	if (sock->send(tosend.pull_buf( )) < 0) ok = false;
-	if (sock->send(tosend.pull_next()) < 0) ok = false;
+	if (ok && (q.flags & req::f_no_retry) && ri.sent_once) ok = false;
+	if (ok && sock->send(tosend.pull_buf( )) < 0) ok = false;
+	if (ok && sock->send(tosend.pull_next()) < 0) ok = false;
 	if (!ok) sock = NULL;
+	
+	ri.sent_once = true;
 	
 	next_send++;
 }
@@ -172,7 +172,7 @@ void HTTP::resolve(size_t id, bool success)
 	i.callback = NULL; // destroy this before the delete_protector
 }
 
-bool HTTP::do_timeout()
+void HTTP::do_timeout()
 {
 	if (requests.size() != 0)
 	{
@@ -182,7 +182,6 @@ bool HTTP::do_timeout()
 	this->timeout_id = 0;
 	
 	activity(); // can delete 'this', don't do anything fancy afterwards
-	return false;
 }
 
 void HTTP::reset_limits()
@@ -190,12 +189,13 @@ void HTTP::reset_limits()
 	this->bytes_in_req = 0;
 	if (requests.size() != 0)
 	{
-		this->timeout_id = loop->set_timer_rel(this->timeout_id, this->requests[0].r.q.limit_ms, bind_this(&HTTP::do_timeout));
+		this->timeout_id = loop->set_timer_once(this->timeout_id, this->requests[0].r.q.limit_ms, bind_this(&HTTP::do_timeout));
 	}
 }
 
 void HTTP::activity()
 {
+	//TODO: replace this state machine with bytepipe::pull_line
 newsock:
 	if (requests.size() == 0)
 	{
@@ -409,7 +409,18 @@ test("URL parser", "", "http")
 	test_url("http://example.com/foo/bar.html?baz", "foo.html",      "http", "example.com", 0, "/foo/foo.html");
 	test_url("http://example.com/foo/bar.html?baz", "?quux",         "http", "example.com", 0, "/foo/bar.html?quux");
 	test_url("http://example.com:80/",                               "http", "example.com", 80, "/");
+	test_url("http://example.com:80/", "http://example.com:8080/",   "http", "example.com", 8080, "/");
 	test_url_fail("http://example.com:80/", ""); // if changing this, also change assert in HTTP::try_compile_req()
+	test_url("http://a.com/foo/bar.html?baz",       "#corge",                "http", "a.com", 80, "/foo/bar.html?baz#corge");
+	test_url("http://a.com/foo/bar.html?baz#corge", "http://b.com/foo.html", "http", "b.com", 80, "/foo.html#corge");
+	test_url("http://a.com/foo/bar.html?baz#corge", "/bar/foo.html",         "http", "a.com", 80, "/bar/foo.html#corge");
+	test_url("http://a.com/foo/bar.html?baz#corge", "foo.html",              "http", "a.com", 80, "/foo/foo.html#corge");
+	test_url("http://a.com/foo/bar.html?baz#corge", "?quux",                 "http", "a.com", 80, "/foo/bar.html?quux#corge");
+	test_url("http://a.com/foo/bar.html?baz#corge", "http://b.com/#grault",  "http", "b.com", 80, "/foo.html#grault");
+	test_url("http://a.com/foo/bar.html?baz#corge", "/bar/foo.html#grault",  "http", "a.com", 80, "/bar/foo.html#grault");
+	test_url("http://a.com/foo/bar.html?baz#corge", "foo.html#grault",       "http", "a.com", 80, "/foo/foo.html#grault");
+	test_url("http://a.com/foo/bar.html?baz#corge", "?quux#grault",          "http", "a.com", 80, "/foo/bar.html?quux#grault");
+	test_url("http://a.com/foo/bar.html?baz#corge", "#grault",               "http", "a.com", 80, "/foo/bar.html?baz#grault");
 }
 
 test("HTTP", "tcp,ssl", "http")
@@ -529,7 +540,7 @@ test("HTTP", "tcp,ssl", "http")
 		HTTP::req rq;
 		rq.url = "http://media.smwcentral.net/Alcaro/test.php";
 		rq.headers.append("Host: media.smwcentral.net");
-		rq.postdata.append('x');
+		rq.body.append('x');
 		
 		HTTP h(loop);
 		h.send(rq, break_runloop);

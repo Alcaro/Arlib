@@ -3,18 +3,18 @@
 
 void string::resize(uint32_t newlen)
 {
-	switch (!inlined()<<1 | (newlen>max_inline))
+	switch (!inlined()<<1 | (newlen>max_inline()))
 	{
 	case 0: // small->small
 		{
 			m_inline[newlen] = '\0';
-			m_inline_len = max_inline-newlen;
+			m_inline_len = max_inline()-newlen;
 		}
 		break;
 	case 1: // small->big
 		{
 			uint8_t* newptr = malloc(bytes_for(newlen));
-			memcpy(newptr, m_inline, max_inline);
+			memcpy(newptr, m_inline, max_inline());
 			newptr[newlen] = '\0';
 			m_data = newptr;
 			m_len = newlen;
@@ -29,7 +29,7 @@ void string::resize(uint32_t newlen)
 			memcpy(m_inline, oldptr, newlen);
 			free(oldptr);
 			m_inline[newlen] = '\0';
-			m_inline_len = max_inline-newlen;
+			m_inline_len = max_inline()-newlen;
 		}
 		break;
 	case 3: // big->big
@@ -47,11 +47,11 @@ void string::init_from(arrayview<byte> data)
 	const uint8_t * str = data.ptr();
 	uint32_t len = data.size();
 	
-	if (len <= max_inline)
+	if (len <= max_inline())
 	{
 		memcpy(m_inline, str, len);
 		m_inline[len] = '\0';
-		m_inline_len = max_inline-len;
+		m_inline_len = max_inline()-len;
 	}
 	else
 	{
@@ -94,7 +94,7 @@ string string::create_usurp(char * str)
 }
 
 
-void string::replace_set(int32_t pos, int32_t len, cstring newdat)
+void string::replace_set(uint32_t pos, uint32_t len, cstring newdat)
 {
 	//if newdat is a cstring backed by this, modifying this invalidates that string, so it's illegal
 	//if newdat equals this, then the memmoves will mess things up
@@ -122,7 +122,7 @@ void string::replace_set(int32_t pos, int32_t len, cstring newdat)
 	memcpy(ptr()+pos, newdat.ptr(), newlength);
 }
 
-string cstring::replace(cstring in, cstring out)
+string cstring::replace(cstring in, cstring out) const
 {
 	size_t outlen = length();
 	
@@ -357,6 +357,70 @@ bool cstring::isutf8() const
 	}
 	
 	return true;
+}
+
+uint32_t cstring::codepoint_at(uint32_t& idx) const
+{
+	const uint8_t * bytes = ptr();
+	uint32_t len = length();
+	if (UNLIKELY(idx == len)) return -1;
+	
+	uint8_t head = bytes[idx++];
+	if (LIKELY(head < 0x80)) return head;
+	
+	if (head <= 0xDF)
+	{
+		if (idx > len-1)
+			goto fail;
+		if (head < 0xC2) // continuation or overlong twobyte
+			goto fail;
+		if ((bytes[idx+0]&0xC0)!=0x80)
+			goto fail;
+		
+		idx += 1;
+		
+		//return (head&0x1F)<<6 | bytes[idx+1]&0x3F;
+		return (head<<6) + (bytes[idx-1]<<0) - ((0xC0<<6) + (0x80<<0));
+	}
+	
+	if (head <= 0xEF)
+	{
+		if (idx > len-2)
+			goto fail;
+		if (head == 0xE0 && bytes[idx+0] < 0xA0) // overlong
+			goto fail;
+		if (head == 0xED && bytes[idx+0] >= 0xA0) // surrogate
+			goto fail;
+		if ((bytes[idx+0]&0xC0)!=0x80)
+			goto fail;
+		if ((bytes[idx+1]&0xC0)!=0x80)
+			goto fail;
+		
+		idx += 2;
+		return (head<<12) + (bytes[idx-2]<<6) + (bytes[idx-1]<<0) - ((0xE0<<12) + (0x80<<6) + (0x80<<0));
+	}
+	
+	if (head <= 0xF4)
+	{
+		if (idx > len-3)
+			goto fail;
+		if (head == 0xF0 && bytes[idx+0] < 0x90) // overlong
+			goto fail;
+		if (head == 0xF4 && bytes[idx+0] >= 0x90) // above U+10FFFF
+			goto fail;
+		if ((bytes[idx+0]&0xC0)!=0x80)
+			goto fail;
+		if ((bytes[idx+1]&0xC0)!=0x80)
+			goto fail;
+		if ((bytes[idx+2]&0xC0)!=0x80)
+			goto fail;
+		
+		idx += 3;
+		return (head<<18) + (bytes[idx-3]<<12) + (bytes[idx-2]<<6) + (bytes[idx-1]<<0) - ((0xF0<<18) + (0x80<<12) + (0x80<<6) + (0x80<<0));
+	}
+	
+fail:
+	return 0xDC00 | head;
 }
 
 
@@ -612,6 +676,15 @@ test("string", "", "string")
 		assert_eq(f, "");
 		assert_eq(g, "");
 		assert_eq(h, "");
+		
+		assert(!a);
+		assert(!b);
+		assert(!c);
+		assert(!d);
+		assert(!e);
+		assert(!f);
+		assert(!g);
+		assert(!h);
 	}
 	
 	{
@@ -702,5 +775,42 @@ test("string", "", "string")
 		assert_gt(string::compare(b,ab), 0);
 		assert_gt(string::compare(b,ac), 0);
 		assert_eq(string::compare(b,b), 0);
+	}
+	
+	{
+		cstring a = "aeø☃💩\xF4\x8F\xBF\xBF\xC0\x80\xED\xA0\x80\xF4\x90\x80\x80";
+		uint32_t n = 0;
+		assert_eq(a.codepoint_at(n), 'a');
+		assert_eq(a.codepoint_at(n), 'e');
+		assert_eq(a.codepoint_at(n), 0xF8);
+		assert_eq(a.codepoint_at(n), 0x2603);
+		assert_eq(a.codepoint_at(n), 0x1F4A9);
+		assert_eq(a.codepoint_at(n), 0x10FFFF);
+		assert_eq(a.codepoint_at(n), 0xDCC0);
+		assert_eq(a.codepoint_at(n), 0xDC80);
+		assert_eq(a.codepoint_at(n), 0xDCED);
+		assert_eq(a.codepoint_at(n), 0xDCA0);
+		assert_eq(a.codepoint_at(n), 0xDC80);
+		assert_eq(a.codepoint_at(n), 0xDCF4);
+		assert_eq(a.codepoint_at(n), 0xDC90);
+		assert_eq(a.codepoint_at(n), 0xDC80);
+		assert_eq(a.codepoint_at(n), 0xDC80);
+		assert_eq(n, a.length());
+	}
+	
+	{
+		cstring a = "💩";
+		uint32_t n = 0;
+		assert_eq(a.codepoint_at(n), 0x1F4A9);
+		assert_eq(n, a.length());
+	}
+	
+	{
+		cstring a = "\xF0\x9F\x92";
+		uint32_t n = 0;
+		assert_eq(a.codepoint_at(n), 0xDCF0);
+		assert_eq(a.codepoint_at(n), 0xDC9F);
+		assert_eq(a.codepoint_at(n), 0xDC92);
+		assert_eq(n, a.length());
 	}
 }

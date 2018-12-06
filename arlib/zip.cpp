@@ -218,7 +218,7 @@ bool zip::init(arrayview<byte> data)
 	return true;
 }
 
-size_t zip::find_file(cstring name)
+size_t zip::find_file(cstring name) const
 {
 	for (size_t i=0;i<filenames.size();i++)
 	{
@@ -227,7 +227,7 @@ size_t zip::find_file(cstring name)
 	return (size_t)-1;
 }
 
-bool zip::read_idx(size_t id, array<byte>& out, bool permissive, string* error, time_t * time)
+bool zip::read_idx(size_t id, array<byte>& out, bool permissive, string* error, time_t * time) const
 {
 	{
 		string discard;
@@ -237,7 +237,7 @@ bool zip::read_idx(size_t id, array<byte>& out, bool permissive, string* error, 
 		out.reset();
 		if (id==(size_t)-1) { *error = "file not found"; goto fail; }
 		
-		zip::file& f = filedat[id];
+		const zip::file& f = filedat[id];
 		switch (f.method)
 		{
 			case 0:
@@ -303,20 +303,22 @@ void zip::replace_idx(size_t id, arrayview<byte> data, time_t date)
 
 void zip::write(cstring name, arrayview<byte> data, time_t date)
 {
-	size_t i = find_file(name);
-	if (!data && i==(size_t)-1) return;
-	if (i==(size_t)-1)
+	size_t id = find_file(name);
+	
+	if (id==(size_t)-1)
 	{
-		i = filenames.size();
+		if (!data) return;
+		
+		id = filenames.size();
 		filenames.append(name);
 		filedat.append();
 		if (!date) date = time(NULL);
 	}
 	
-	replace_idx(i, data, date);
+	replace_idx(id, data, date);
 }
 
-int zip::fileminver(zip::file& f)
+int zip::fileminver(const zip::file& f)
 {
 	if (f.method == 8) return 20;
 	return 10;
@@ -347,7 +349,41 @@ bool zip::clean()
 	return any;
 }
 
-array<byte> zip::pack()
+void zip::repack()
+{
+	for (size_t i=0;i<filedat.size();i++)
+	{
+		array<byte> data = read_idx(i);
+		if (!data) continue;
+		
+		file& f = filedat[i];
+		array<byte> comp;
+		comp.resize(data.size());
+		size_t complen = tdefl_compress_mem_to_mem(comp.ptr(), comp.size(), data.ptr(), data.size(), TDEFL_DEFAULT_MAX_PROBES);
+		if (complen != 0 && complen < f.data.size())
+		{
+			comp.resize(complen);
+			f.method = 8;
+			f.data = std::move(comp);
+		}
+	}
+}
+
+void zip::sort()
+{
+	for (size_t a=0;a<filenames.size();a++)
+	{
+		size_t b;
+		for (b=0;b<a;b++)
+		{
+			if (string::compare(filenames[b], filenames[a]) > 0) break;
+		}
+		filenames.swap(a, b);
+		filedat.swap(a, b);
+	}
+}
+
+array<byte> zip::pack() const
 {
 	array<byte> ret;
 	
@@ -356,7 +392,7 @@ array<byte> zip::pack()
 	{
 		headerstarts.append(ret.size());
 		
-		file& f = filedat[i];
+		const file& f = filedat[i];
 		locfhead h = {
 			/*signature*/   locfhead::signature_expected,
 			/*vermin*/      fileminver(f), // also contains host OS, but not important. and even if it was, pointless field
@@ -379,7 +415,7 @@ array<byte> zip::pack()
 	size_t cdrstart = ret.size();
 	for (size_t i=0;i<filenames.size();i++)
 	{
-		file& f = filedat[i];
+		const file& f = filedat[i];
 		centdirrec cdr = {
 			/*signature*/   centdirrec::signature_expected,
 			/*verused*/      63, // don't think anything really cares about this, just use latest

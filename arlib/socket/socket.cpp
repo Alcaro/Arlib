@@ -331,13 +331,14 @@ public:
 		set_loop();
 	}
 	
-	/*private*/ bool call_cb_immed()
+	/*private*/ void call_cb_immed()
 	{
+		idle_id = loop->set_idle(idle_id, bind_this(&socketbuf::call_cb_immed));
+		
 		if (cb_read) cb_read();
 		if (cb_write) cb_write();
 		
 		set_loop();
-		return true;
 	}
 	
 	/*private*/ void set_loop()
@@ -347,9 +348,12 @@ public:
 		
 		if (cb_write || (cb_read && !child))
 		{
-			if (!idle_id) idle_id = loop->set_timer_rel(idle_id, 0, bind_this(&socketbuf::call_cb_immed));
+			if (!idle_id) idle_id = loop->set_idle(idle_id, bind_this(&socketbuf::call_cb_immed));
 		}
-		else idle_id = loop->remove(idle_id);
+		else
+		{
+			if (idle_id) idle_id = loop->remove(idle_id);
+		}
 	}
 	/*private*/ bool trysend(bool in_runloop)
 	{
@@ -394,7 +398,7 @@ public:
 	
 	~socketbuf()
 	{
-		loop->remove(idle_id);
+		if (idle_id) loop->remove(idle_id);
 	}
 };
 

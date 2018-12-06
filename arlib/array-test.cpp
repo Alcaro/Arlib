@@ -50,6 +50,15 @@ test("array", "", "array")
 		x.sort([](cstring a, cstring b) { return string::compare(b,a) < 0; });
 		assert_eq(x, y);
 	}
+	
+	{
+		array<int> x = { 1,2,3,4,5,6,7,8,9,0 };
+		x = x.slice(3, 6);
+		assert_eq(x.size(), 6);
+		assert_eq(x[0], 4);
+		assert_eq(x[1], 5);
+		assert_eq(x[2], 6);
+	}
 }
 
 

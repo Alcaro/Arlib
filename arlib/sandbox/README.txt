@@ -660,7 +660,7 @@ Each of these would either enable additional functionality, or simplify somethin
 - A way to list existing fds in the process without /proc/self/fd
     My favorite interface would be fcntl(F_NEXTFD), which returns the lowest fd >= this (or error if there is none)
 - A way to list threads in the process without /proc/self/tasks/, and a way to terminate them
-- O_BENEATH or similar (AT_BENEATH/etc <https://lwn.net/Articles/723057/>, maybe?)
+- O_BENEATH or similar (AT_BENEATH/etc <https://lwn.net/Articles/723057/> <https://lwn.net/Articles/767547/>, maybe?)
 
 
 Future - Networking
@@ -810,39 +810,42 @@ auxv can only be cleaned post-execveat(), at which point code execution cannot b
  namespaces, so a namespace-less sandbox would be unable to run a significant fraction of programs.
  (However, the ones it can run may still be interesting.)
 Terminating grandchildren is also necessary, and must be emulated somehow. Not only is CLONE_NEWPID
- the easiest way - I couldn't find any other way at all. CLONE_THREAD confuses waitpid(), and blocks
- execveat() by indirectly requiring CLONE_VM; PR_SET_CHILD_SUBREAPER looks somewhat promising, but
- judging by the readme of <https://github.com/rootmos/dont-fear-the-reaper>, the desired result
- (terminating the subreaper causes termination of its children) will not happen. It is possible to
- loop over all children and terminate them prior to the broker terminating, but only if said code
- always runs - and since the broker cannot be assumed crash-free, that's an unacceptably big 'if'.
- This leaves only one option - disable fork(), further restricting the set of runnable children.
+ the easiest way, but I couldn't find any other way at all. CLONE_THREAD confuses waitpid(), and
+ blocks execveat() by indirectly requiring CLONE_VM; PR_SET_CHILD_SUBREAPER looks somewhat
+ promising, but judging by the readme of <https://github.com/rootmos/dont-fear-the-reaper>, the
+ desired result (terminating the subreaper causes termination of its children) will not happen. It
+ is possible to loop over all children and terminate them prior to the broker terminating, but only
+ if said code always runs - and since the broker cannot be assumed crash-free, that's an
+ unacceptably big 'if'. This leaves only one option - disable fork(), further restricting the set of
+ runnable children.
 chroot is only used to disable the filesystem so execveat .INTERP doesn't do anything strange, and
- since execveat() is banned, no further consideration is needed. It is one less layer of
- defense-in-depth, but one solid layer is enough anyways.
+ since execveat() must be banned for other reasons, no further consideration is needed. It is one
+ less layer of defense-in-depth, but one solid layer is enough anyways.
 
 Therefore, a namespace-less sandbox would be able to run a few programs, but significantly fewer
  than a namespace-enabled one. It would also be a fair bit of code, for a fairly small usecase:
  according to <https://wiki.mozilla.org/Security/Sandbox/Specifics>, 88% of Firefox users have
  access to unprivileged user namespaces; this is biased towards desktop Linux, which may or may not
  reflect the usecases for my sandbox, but I believe it's safe to assume a large majority of users
- support unprivileged namespaces).
+ support unprivileged namespaces.
 
 However, removing namespaces isn't the only way to remove unprivileged namespaces. The alternative
  is adding privilege, i.e. setuid. This would require
 - splitting the launch to a separate process and making it setuid
 - changing effective user ID to caller's UID, to avoid pointless risks (for example, I believe the
     OOM killer deprioritizes root)
-- fiddling with capset() to gain CAP_SYS_ADMIN, CAP_SETUID and CAP_SETGID (alternatively setting SECBIT_KEEP_CAPS before setting EUID)
+- fiddling with capset() to gain CAP_SYS_ADMIN, CAP_SETUID and CAP_SETGID (alternatively setting
+    SECBIT_KEEP_CAPS before setting EUID)
 - clone(CLONE_NEWPID|CLONE_NEWUSER|etc) (which clears capabilities in the calling user namespace,
     leaving the new child fully unprivileged)
 - parent: send child's PID to broker
 - broker: accept PID; reject any further attempts to set PID, only the first one is trustworthy
 - child: await confirmation from broker that child's PID has been recorded, to avoid race conditions
-    (CLONE_STOPPED would work just as well, but it was deleted in Linux 2.6.38 for some reason)
+    (CLONE_STOPPED would work just as well, but it was deleted in Linux 2.6.38 for some unclear
+    reason)
 - child: apply other launcher restrictions, then execve the emulator (otherwise, the setuid binary
     could be abused to exploit the exact vulnerabilities Debian's restrictions are trying to protect
-    from - with the sandbox's restrictive setuid rules, I believe no vulnerabilities are available)
+    from - with the sandbox's restrictive seccomp rules, I believe no vulnerabilities are available)
 which is easier to implement than removing namespaces, and can run as much as the normal one.
  However, it would complicate installation, and, like removing namespaces, would only benefit a
  small fraction of users.

@@ -17,6 +17,7 @@
 #include "global.h"
 
 #include "array.h"
+#include "base64.h"
 #include "bml.h"
 #include "bytepipe.h"
 #include "bytestream.h"

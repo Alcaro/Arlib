@@ -77,7 +77,7 @@ void DNS::resolve(cstring domain, unsigned timeout_ms, function<void(string doma
 	query& q = queries.get_create(trid);
 	q.callback = callback;
 	q.domain = domain;
-	q.timeout_id = loop->set_timer_rel(timeout_ms, bind_lambda([this,trid]()->bool { this->timeout(trid); return false; }));
+	q.timeout_id = loop->set_timer_once(timeout_ms, bind_lambda([this,trid]() { this->timeout(trid); }));
 }
 
 string DNS::read_name(bytestream& stream)

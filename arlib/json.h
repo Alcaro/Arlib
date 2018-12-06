@@ -12,7 +12,7 @@
 */
 //would yield { enter_map } { map_key, "foo" } { enter_list } { num, 1 } { num, 2 } { num, 3 } { exit_list } { exit_map }
 //The parser keeps trying after an { error }, giving you a partial view of the damaged document; however,
-// there are no guarantees on how much you can see, and it is likely for one error to cause many more, or misplaced, nodes.
+// there are no guarantees on how much you can see, and it is likely for one error to cause many more, or yield misplaced nodes.
 //enter/exit types are always paired, even in the presense of errors. However, they may be anywhere;
 // don't place any expectations on event order inside a map.
 //After the document ends, { finish } will be returned forever until the object is deleted.
@@ -85,7 +85,10 @@ public:
 			char c = s[i];
 			if(0);
 			else if (c=='\n') out+="\\n";
+			else if (c=='\r') out+="\\r";
 			else if (c=='\t') out += "\\t";
+			else if (c=='\b') out += "\\b";
+			else if (c=='\f') out += "\\f";
 			else if (c=='"') out += "\\\"";
 			else if (c=='\\') out += "\\\\";
 			else out += c;
@@ -116,21 +119,28 @@ class JSON : nocopy {
 	map<string,JSON> chld_map;
 	
 	void construct(jsonparser& p, bool* ok, size_t maxdepth);
-	template<bool sort>
-	void serialize(jsonwriter& w) const;
+	template<bool sort> void serialize(jsonwriter& w) const;
+	
+	static const JSON c_null;
 	
 public:
 	JSON() : ev(jsonparser::jnull) {}
-	JSON(cstring s) { parse(s); }
+	explicit JSON(cstring s) { parse(s); }
 	
 	bool parse(cstring s);
 	string serialize() const;
 	string serialize_sorted() const;
 	
+	int type() { return ev.action; }
+	
 	double& num() { ev.action = jsonparser::num; return ev.num; }
 	string& str() { ev.action = jsonparser::str; return ev.str; }
 	array<JSON>& list() { ev.action = jsonparser::enter_list; return chld_list; }
 	map<string,JSON>& assoc() { ev.action = jsonparser::enter_map; return chld_map; } // 'map' is taken
+	double num() const { return ev.num; }
+	cstring str() const { return ev.str; }
+	arrayview<JSON> list() const { return chld_list; }
+	const map<string,JSON>& assoc() const { return chld_map; }
 	
 	bool boolean() const
 	{
@@ -150,12 +160,11 @@ public:
 	}
 	
 	operator bool() const { return boolean(); }
-	operator int() const { return ev.num; }
-	operator size_t() const { return ev.num; }
-	operator double() const { return ev.num; }
-	//operator string&() const { return ev.str; }
-	operator cstring() const { return ev.str; }
-	//operator const char *() { return str(); }
+	operator int() const { return num(); }
+	operator size_t() const { return num(); }
+	operator double() const { return num(); }
+	operator const string&() const { return ev.str; }
+	operator cstring() const { return str(); }
 	
 	operator bool() { return boolean(); }
 	operator int() { return num(); }
@@ -164,17 +173,18 @@ public:
 	operator string&() { return str(); }
 	operator cstring() { return str(); }
 	
-	bool operator==(int right) { return num()==right; }
-	bool operator==(size_t right) { return num()==right; }
-	bool operator==(double right) { return num()==right; }
-	bool operator==(const char * right) { return str()==right; }
-	bool operator==(cstring right) { return str()==right; }
+	bool operator==(int right) const { return num()==right; }
+	bool operator==(size_t right) const { return num()==right; }
+	bool operator==(double right) const { return num()==right; }
+	bool operator==(const char * right) const { return str()==right; }
+	bool operator==(cstring right) const { return str()==right; }
 	
-	bool operator!=(int right) { return num()!=right; }
-	bool operator!=(size_t right) { return num()!=right; }
-	bool operator!=(double right) { return num()!=right; }
-	bool operator!=(const char * right) { return str()!=right; }
-	bool operator!=(cstring right) { return str()!=right; }
+	bool operator!=(int right) const { return num()!=right; }
+	bool operator!=(size_t right) const { return num()!=right; }
+	bool operator!=(double right) const { return num()!=right; }
+	bool operator!=(const char * right) const { return str()!=right; }
+	bool operator!=(cstring right) const { return str()!=right; }
+	bool operator!() { return !boolean(); }
 	
 	JSON& operator=(nullptr_t) { ev.action = jsonparser::jnull; return *this; }
 	JSON& operator=(bool b) { ev.action = b ? jsonparser::jtrue : jsonparser::jfalse; return *this; }
@@ -189,10 +199,19 @@ public:
 	JSON& operator[](size_t n) { return list()[n]; }
 	JSON& operator[](const char * s) { return assoc().get_create(s); }
 	JSON& operator[](cstring s) { return assoc().get_create(s); }
+	const JSON& operator[](int n) const { return list()[n]; }
+	const JSON& operator[](size_t n) const { return list()[n]; }
+	const JSON& operator[](const char * s) const { return assoc().get_or(s, c_null); }
+	const JSON& operator[](cstring s) const { return assoc().get_or(s, c_null); }
 	
 	JSON& operator[](const JSON& right)
 	{
 		if (right.ev.action == jsonparser::str) return assoc().get_create(right.ev.str);
+		else return list()[right.ev.num];
+	}
+	const JSON& operator[](const JSON& right) const
+	{
+		if (right.ev.action == jsonparser::str) return assoc().get_or(right.ev.str, c_null);
 		else return list()[right.ev.num];
 	}
 };

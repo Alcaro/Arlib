@@ -105,6 +105,17 @@ bool fromstring(cstring s, bool& out)
 	return false;
 }
 
+string tostring(double val)
+{
+	char ret[1024]; // yes, buffer needs to be this big. https://stackoverflow.com/q/7235456
+	sprintf(ret, "%f", val);
+	char* end = strchr(ret, '\0');
+	while (end > ret && end[-1] == '0') end--;
+	while (end > ret && end[-1] == '.') end--;
+	*end = '\0';
+	return ret;
+}
+
 
 string tostringhex(arrayview<byte> val)
 {
@@ -164,6 +175,7 @@ test("string conversion", "", "string")
 	testcall(testundec<int>("00123", 123));
 	testcall(testundec<int>("000123", 123));
 	testcall(testundec<int>("0", 0));
+	testcall(testundec<int>("09", 9)); // no octal alloweds
 	testcall(testundec<double>("123", 123));
 	testcall(testundec<double>("0123", 123));
 	testcall(testundec<double>("00123", 123));
@@ -256,4 +268,6 @@ test("string conversion", "", "string")
 	assert(!fromstring("9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999"
 	                   "9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999"
 	                   "9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999", d));
+	
+	assert_eq(tostring(1.0f), "1");
 }

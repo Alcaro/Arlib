@@ -270,15 +270,16 @@ template<typename T, typename... Args> static T max(const T& a, Args... args)
 
 
 
-class empty {
-	//MSVC says error C2503: base classes cannot contain zero-sized arrays
-	//GCC says error: flexible array member 'empty::__zero_size' not at end of 'class whatever'
-	//this is only gonna be used on nonzero objects anyways, and they'll optimize the empty base class
-	
-	//int __zero_size[];
-};
+//actually, this entire class is useless, just wastes time in gdb
+//class empty {
+//	//MSVC says error C2503: base classes cannot contain zero-sized arrays
+//	//GCC says error: flexible array member 'empty::__zero_size' not at end of 'class whatever'
+//	//this is only gonna be used on nonzero objects anyways, and they'll optimize the empty base class
+//	
+//	//int __zero_size[];
+//};
 
-class nocopy : empty {
+class nocopy {
 protected:
 	nocopy() {}
 	~nocopy() {}
@@ -292,7 +293,7 @@ protected:
 #endif
 };
 
-class nomove : empty {
+class nomove {
 protected:
 	nomove() {}
 	~nomove() {}
@@ -342,6 +343,29 @@ public:
 	~autofree() { free(ptr); }
 };
 
+template<typename T>
+class refcount {
+	struct inner_t {
+		uint32_t refcount;
+		T item;
+	};
+	inner_t* inner;
+	
+public:
+	refcount() { inner = new inner_t(); inner->refcount = 1; }
+	refcount(const refcount<T>& other) { inner = other.inner; inner->refcount++; }
+	refcount(refcount<T>&& other) { inner = other.inner; other.inner = NULL; }
+	refcount<T>& operator=(T* ptr) = delete;
+	refcount<T>& operator=(autofree<T>&& other) = delete;
+	T* operator->() { return &inner->item; }
+	T& operator*() { return inner->item; }
+	const T* operator->() const { return &inner->item; }
+	const T& operator*() const { return inner->item; }
+	operator T*() { return &inner->item; }
+	operator const T*() const { return &inner->item; }
+	~refcount() { if (inner && 0 == --inner->refcount) delete inner; }
+};
+
 #if __cplusplus < 201103
 class nullptr_t_impl {};
 #define nullptr_t nullptr_t_impl* // random pointer type nobody will ever use
@@ -354,7 +378,8 @@ class iterwrap {
 	
 public:
 	iterwrap(T b, T e) : b(b), e(e) {}
-	template<typename T2> iterwrap(T2 c) : b(c.begin()), e(c.end()) {}
+	template<typename T2> iterwrap(T2& c) : b(c.begin()), e(c.end()) {}
+	template<typename T2> iterwrap(const T2& c) : b(c.begin()), e(c.end()) {}
 	
 	T begin() { return b; }
 	T end() { return e; }

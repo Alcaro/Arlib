@@ -17,18 +17,20 @@
 
 class string;
 
+#define OBJ_SIZE 16 // maximum 120, or the inline length overflows
+                    // (127 would fit, but that requires an extra alignment byte, which throws the sizeof assert)
+                    // minimum 16 (pointer + various members + alignment)
+                    //  (actually minimum 12 on 32bit, but who needs 32bit)
+#define MAX_INLINE (OBJ_SIZE-1) // macros instead of static const to make gdb not print them every time
+
 class cstring {
 	friend class string;
 	
-	static const int obj_size = 16; // maximum 120, or the inline length overflows
-	                                // (127 would fit, but that requires an extra alignment byte, which throws the sizeof assert)
-	                                // minimum 16 (pointer + various members + alignment)
-	                                //  (actually minimum 12 on 32bit, but who needs 32bit)
-	static const int max_inline = obj_size-1;
+	static uint32_t max_inline() { return MAX_INLINE; }
 	
 	union {
 		struct {
-			uint8_t m_inline[max_inline];
+			uint8_t m_inline[MAX_INLINE];
 			
 			//this is how many bytes are unused by the raw string data
 			//if all bytes are used, there are zero unused bytes - which also serves as the NUL
@@ -45,7 +47,7 @@ class cstring {
 	
 	bool inlined() const
 	{
-		static_assert(sizeof(cstring)==obj_size);
+		static_assert(sizeof(cstring)==OBJ_SIZE);
 		
 		return m_inline_len != (uint8_t)-1;
 	}
@@ -59,7 +61,7 @@ class cstring {
 public:
 	uint32_t length() const
 	{
-		if (inlined()) return max_inline-m_inline_len;
+		if (inlined()) return MAX_INLINE-m_inline_len;
 		else return m_len;
 	}
 	
@@ -84,11 +86,11 @@ private:
 		const uint8_t * str = data.ptr();
 		uint32_t len = data.size();
 		
-		if (len <= max_inline)
+		if (len <= MAX_INLINE)
 		{
 			memcpy(m_inline, str, len);
 			m_inline[len] = '\0';
-			m_inline_len = max_inline-len;
+			m_inline_len = MAX_INLINE-len;
 		}
 		else
 		{
@@ -104,26 +106,14 @@ private:
 		memcpy(this, &other, sizeof(*this));
 	}
 	
-	//~0 means end of the string, ~1 is last character
-	//don't try to make -1 the last character, it makes str.substr(x, ~0) blow up
-	int32_t realpos(int32_t pos) const
-	{
-		if (pos >= 0) return pos;
-		else return length()-~pos;
-	}
-	
-	char getchar(int32_t index) const
+	char getchar(uint32_t index) const
 	{
 		//this function is REALLY hot, use the strongest possible optimizations
 		if (inlined()) return m_inline[index];
-		else if ((uint32_t)index < m_len) return m_data[index];
+		else if (index < m_len) return m_data[index];
 		else return '\0'; // for cstring, which isn't necessarily NUL-terminated
 	}
 	
-public:
-	string replace(cstring in, cstring out);
-	
-private:
 	class noinit {};
 	cstring(noinit) {}
 	
@@ -141,12 +131,20 @@ public:
 	cstring& operator=(nullptr_t) { init_from_nocopy(""); return *this; }
 	
 	explicit operator bool() const { return length() != 0; }
-	//operator const char * () const { return ptr_withnul(); }
+	//explicit operator const char * () const { return ptr_withnul(); }
 	
 	char operator[](int index) const { return getchar(index); }
 	
 	//static string create(arrayview<uint8_t> data) { string ret=noinit(); ret.init_from(data.ptr(), data.size()); return ret; }
 	
+	//~0 means end of the string, ~1 is last character
+	//don't try to make -1 the last character, it makes str.substr(x, ~0) blow up
+	//this shorthand exists only for substr()
+	int32_t realpos(int32_t pos) const
+	{
+		if (pos >= 0) return pos;
+		else return length()-~pos;
+	}
 	cstring substr(int32_t start, int32_t end) const
 	{
 		start = realpos(start);
@@ -216,6 +214,8 @@ public:
 	{
 		return (this->length() == other.length() && this->istartswith(other));
 	}
+	
+	string replace(cstring in, cstring out) const;
 	
 	array<cstring> csplit(cstring sep, size_t limit) const;
 	template<size_t limit = SIZE_MAX>
@@ -365,9 +365,8 @@ class string : public cstring {
 		if (!inlined()) free(m_data);
 	}
 	
-	void setchar(int32_t index_, char val)
+	void setchar(uint32_t index, char val)
 	{
-		uint32_t index = realpos(index_);
 		ptr()[index] = val;
 	}
 	
@@ -388,7 +387,7 @@ class string : public cstring {
 		}
 	}
 	
-	void replace_set(int32_t pos, int32_t len, cstring newdat);
+	void replace_set(uint32_t pos, uint32_t len, cstring newdat);
 	
 public:
 	//Resizes the string to a suitable size, then allows the caller to fill it in with whatever. Initial contents are undefined.
@@ -449,7 +448,7 @@ public:
 	string& operator=(nullptr_t) { release(); init_from(""); return *this; }
 	~string() { release(); }
 	
-	explicit operator bool() const { return length() != 0; }
+	operator bool() const { return length() != 0; }
 	operator const char * () const { return ptr_withnul(); }
 	
 private:
@@ -493,6 +492,10 @@ public:
 	static int compare(cstring a, cstring b);
 };
 
+#undef OBJ_SIZE
+#undef MAX_INLINE
+
+
 inline bool operator==(cstring left,      const char * right) { return left.bytes() == arrayview<byte>((uint8_t*)right,strlen(right)); }
 inline bool operator==(cstring left,      cstring right     ) { return left.bytes() == right.bytes(); }
 inline bool operator==(const char * left, cstring right     ) { return operator==(right, left); }
@@ -505,12 +508,14 @@ bool operator<(cstring left,      cstring right     ) = delete;
 bool operator<(const char * left, cstring right     ) = delete;
 
 inline string operator+(cstring left,      cstring right     ) { string ret=left; ret+=right; return ret; }
-inline string operator+(string&& left,     const char * right) { left+=right; return left; }
-inline string operator+(cstring left,      const char * right) { string ret=left; ret+=right; return ret; }
-inline string operator+(string&& left,     cstring right     ) { left+=right; return left; }
+inline string operator+(string&& left,     const char * right) { left+=right; return std::move(left); }
+inline string operator+(cstring left,      const char * right) { string ret=left; ret+=right; return ret; } // a few of those are because Gcc
+inline string operator+(string&& left,     char * right      ) { left+=right; return std::move(left); } // is drunk and would rather cast
+inline string operator+(cstring left,      char * right      ) { string ret=left; ret+=right; return ret; } // left to bool than right to
+inline string operator+(string&& left,     cstring right     ) { left+=right; return std::move(left); } // const char*...
 inline string operator+(const char * left, cstring right     ) { string ret=left; ret+=right; return ret; }
 
-inline string operator+(string&& left, char right) { left+=right; return left; }
+inline string operator+(string&& left, char right) { left+=right; return std::move(left); }
 inline string operator+(cstring left, char right) { string ret=left; ret+=right; return ret; }
 inline string operator+(char left, cstring right) { string ret; ret[0]=left; ret+=right; return ret; }
 
