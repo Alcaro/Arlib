@@ -466,6 +466,7 @@ bool image::init_decode(arrayview<byte> data)
 	this->fmt = ifmt_none;
 	return
 		init_decode_png(data) ||
+		init_decode_jpg(data) ||
 		false;
 }
 

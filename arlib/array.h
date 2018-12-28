@@ -436,6 +436,8 @@ public:
 		return std::move(ret);
 	}
 	
+	T pop_tail() { return std::move(pop(this->count - 1)); }
+	
 	array()
 	{
 		this->items = NULL;

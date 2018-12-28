@@ -258,6 +258,30 @@ int string::compare(cstring a, cstring b)
 	else return a.length() - b.length();
 }
 
+int string::icompare(cstring a, cstring b)
+{
+	int ret_i = a.length() - b.length();
+	
+	size_t cmplen = min(a.length(), b.length());
+	const uint8_t* ab = a.bytes().ptr();
+	const uint8_t* bb = b.bytes().ptr();
+	for (size_t n=0; n<cmplen; n++)
+	{
+		if (ab[n] != bb[n])
+		{
+			if (ret_i == 0) ret_i = ab[n] - bb[n];
+			
+			uint8_t ac = ab[n];
+			uint8_t bc = bb[n];
+			if (ac >= 'a' && ac <= 'z') ac -= 'a'-'A';
+			if (bc >= 'a' && bc <= 'z') bc -= 'a'-'A';
+			if (ac != bc) return ac - bc;
+		}
+	}
+	
+	return ret_i;
+}
+
 
 string string::codepoint(uint32_t cp)
 {
@@ -775,6 +799,25 @@ test("string", "", "string")
 		assert_gt(string::compare(b,ab), 0);
 		assert_gt(string::compare(b,ac), 0);
 		assert_eq(string::compare(b,b), 0);
+	}
+	
+	{
+		cstring strs[] = {
+		  "aBa",
+		  "aBc",
+		  "abc",
+		  "aBcd",
+		  "aBd",
+		  "a_c",
+		};
+		
+		for (size_t a=0;a<ARRAY_SIZE(strs);a++)
+		for (size_t b=0;b<ARRAY_SIZE(strs);b++)
+		{
+			if (a <  b) testctx(strs[a]+" < "+strs[b]) assert_lt(string::icompare(strs[a], strs[b]), 0);
+			if (a == b) testctx(strs[a]+" = "+strs[b]) assert_eq(string::icompare(strs[a], strs[b]), 0);
+			if (a >  b) testctx(strs[a]+" > "+strs[b]) assert_gt(string::icompare(strs[a], strs[b]), 0);
+		}
 	}
 	
 	{

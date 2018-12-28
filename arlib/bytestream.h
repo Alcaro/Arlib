@@ -35,6 +35,8 @@ public:
 	}
 	bool signature(cstring sig)
 	{
+		if (sig.length() > remaining())
+			return false;
 		arrayview<uint8_t> expected = sig.bytes();
 		arrayview<uint8_t> actual = peekbytes(sig.length());
 		if (actual == expected)

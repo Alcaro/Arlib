@@ -420,7 +420,7 @@ static jsonparser::event test2e[]={
 };
 
 static const char * test3 =
-"{ \"foo\": [ true, false, null ] }\n"
+"\r\n\t {\r\n\t \"foo\":\r\n\t [\r\n\t true\r\n\t ,\r\n\t false, null\r\n\t ]\r\n\t }\r\n\t "
 ;
 
 static jsonparser::event test3e[]={

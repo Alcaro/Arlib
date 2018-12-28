@@ -487,9 +487,14 @@ public:
 		else return byte;
 	}
 	
-	//Does a bytewise comparison, where end is considered before NUL.
+	//Does a bytewise comparison, where end is considered before NUL (00).
 	//If a comes first, return value is positive; if equal, zero; if b comes first, negative.
+	//The return value is not guaranteed to be in [-1..1].
+	//It is not even guaranteed that truncation retains the correctness; the function is allowed to return 256.
 	static int compare(cstring a, cstring b);
+	//Like the above, but 0x61-0x7A (a-z) are treated as 0x41-0x5A (A-Z).
+	//If the strings are equal, the comparison is redone, but case sensitively.
+	static int icompare(cstring a, cstring b);
 };
 
 #undef OBJ_SIZE

@@ -157,13 +157,16 @@ struct image : nocopy {
 	//0x? and ?x0 images are undefined behavior, so neither scalex nor scaley can be zero.
 	void init_clone(const image& other, int32_t scalex = 1, int32_t scaley = 1);
 	
-	//Acts like the applicable init_decode_<fmt>.
+	//Acts like the applicable init_decode_<fmt>. Returns false on failure; if this happens, every member is considered uninitialized.
 	bool init_decode(arrayview<byte> data);
 	
 	//Always emits valid argb8888. May (but is not required to) report bargb or xrgb instead,
 	// if inspecting the image header proves it to be degenerate.
 	//Always emits a packed image, where stride = width*byteperpix.
 	bool init_decode_png(arrayview<byte> pngdata);
+	
+	//Always emits a packed 0rgb8888.
+	bool init_decode_jpg(arrayview<byte> jpgdata);
 };
 
 struct font {

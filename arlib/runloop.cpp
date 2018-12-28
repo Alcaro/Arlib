@@ -158,15 +158,6 @@ public:
 	
 	void step(bool wait) override
 	{
-		if (wait && fdinfo.size() == 0 && timerinfo.size() == 0)
-		{
-#ifdef ARLIB_TEST
-			assert_unreachable();
-#else
-			abort();
-#endif
-		}
-		
 		struct timespec now;
 		timespec_now(&now);
 //printf("runloop: time is %lu.%09lu\n", now.tv_sec, now.tv_nsec);
@@ -183,7 +174,7 @@ public:
 			{
 				timerinfo.remove(i);
 				
-				//funny code to avoid (size_t)-1
+				//funny code to avoid (size_t)-1 being greater than timerinfo.size()
 				if (i == timerinfo.size()) break;
 				goto again;
 			}
@@ -197,7 +188,7 @@ public:
 				next_ms = timer.ms;
 				
 				timer.cb(); // WARNING: May invalidate 'timer'. timerinfo[i] remains valid.
-				if (exited) wait = false; // make sure it doesn't block forever if timer callback calls exit()
+				next = 0; // ensure it returns quickly, since it did something
 				if (!timerinfo[i].repeat) timerinfo[i].id = -1;
 			}
 			
@@ -206,6 +197,15 @@ public:
 		
 		if (next == INT_MAX) next = -1;
 		if (!wait) next = 0;
+		
+		if (wait && fdinfo.size() == 0 && next == -1)
+		{
+#ifdef ARLIB_TEST
+			assert(!"runloop is empty and will block forever");
+#else
+			abort();
+#endif
+		}
 		
 		
 		epoll_event ev[16];

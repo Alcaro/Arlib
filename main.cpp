@@ -8,7 +8,7 @@ int main(int argc, char** argv)
 	HTTP::req q;
 	q.url = "http://www.smwcentral.net/?p=register";
 	q.method = "POST";
-	q.postdata = cstring("do=register&save=Register&username=penisburg").bytes();
+	q.body = cstring("do=register&save=Register&username=penisburg").bytes();
 	q.headers.append("X-Forwarded-For: 93.184.216.34");
 	q.headers.append("Host: www.smwcentral.net");
 	http.send(q, [](HTTP::rsp r) { puts((const char*)r.body.ptr()); });

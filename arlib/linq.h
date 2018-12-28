@@ -85,7 +85,7 @@ public:
 	t_base(Titer b, Titer e) : b(b), e(e) {}
 	bool hasValue() { return b != e; }
 	void moveNext() { ++b; }
-	T get() { return *b; }
+	auto get() -> decltype(*std::declval<Titer>()) { return *b; }
 };
 
 template<typename T, typename Tsrc, typename Tconv>
@@ -97,7 +97,7 @@ public:
 	t_select(Tsrc&& base, Tconv conv) : base(std::move(base)), conv(conv) {}
 	bool hasValue() { return base.hasValue(); }
 	void moveNext() { base.moveNext(); }
-	T get() { return conv(base.get()); }
+	auto get() -> decltype(std::declval<Tconv>()(std::declval<Tsrc>().get())) { return conv(base.get()); }
 };
 
 template<typename T, typename Tsrc, typename Tconv>
@@ -110,7 +110,7 @@ public:
 	t_select_idx(Tsrc&& base, Tconv conv) : base(std::move(base)), conv(conv), n(0) {}
 	bool hasValue() { return base.hasValue(); }
 	void moveNext() { base.moveNext(); n++; }
-	T get() { return conv(n, base.get()); }
+	auto get() -> typename std::result_of<Tconv(size_t, T)>::type { return conv(n, base.get()); }
 };
 
 template<typename T, typename Tsrc, typename Tpred>
@@ -119,10 +119,12 @@ public:
 	Tsrc base;
 	Tpred pred;
 	
-	t_where(Tsrc&& base, Tpred pred) : base(std::move(base)), pred(pred) {}
+	void skipFalse() { while (base.hasValue() && !pred(base.get())) base.moveNext(); }
+	
+	t_where(Tsrc&& base, Tpred pred) : base(std::move(base)), pred(pred) { skipFalse(); }
 	bool hasValue() { return base.hasValue(); }
-	void moveNext() { base.moveNext(); while (base.hasValue() && !pred(base.get())) base.moveNext(); }
-	T get() { return base.get(); }
+	void moveNext() { base.moveNext(); skipFalse(); }
+	auto get() -> decltype(std::declval<Tsrc>().get()) { return base.get(); }
 };
 
 template<typename T, typename Tsrc>
@@ -133,7 +135,7 @@ public:
 	t_enum(Tsrc& base) : base(base) {}
 	bool operator!=(const t_enum& other) { return base.hasValue(); }
 	void operator++() { base.moveNext(); }
-	T operator*() { return base.get(); }
+	auto operator*() -> decltype(std::declval<Tsrc>().get()) { return base.get(); }
 };
 
 template<typename T, typename Tsrc> class t_linq : nocopy {
@@ -166,33 +168,53 @@ public:
 	template<typename Tpred>
 	T first(Tpred pred, T otherwise = T())
 	{
-		for (T&& item : *this)
+		for (auto item : *this)
 		{
 			if (pred(item)) return item;
 		}
 		return otherwise;
 	}
 	
-	operator array<T>()
+	T join()
+	{
+		T ret = base.get();
+		base.moveNext();
+		while (base.hasValue())
+		{
+			ret += base.get();
+			base.moveNext();
+		}
+		return ret;
+	}
+	
+	//creepy shit... but gcc demands dependent scopes everywhere to disable this operator for reference T
+	//and having the function exist, even without callers, instantiates array<int&> and throws errors
+	template<typename T3 = int, typename T2 = typename std::enable_if<!std::is_reference<T>::value || sizeof(T3)==-1, T>::type>
+	operator array<T2>()
 	{
 		array<T> ret;
 		for (T&& item : *this) ret.append(item);
 		return ret;
 	}
 	
-	array<T> as_array()
+	template<typename T2 = int>
+	typename std::enable_if<!std::is_reference<T>::value || sizeof(T2)==-1, array<T>>::type
+	as_array()
 	{
 		return *this;
 	}
 	
-	operator set<T>()
+	template<typename T3 = int, typename T2 = typename std::enable_if<!std::is_reference<T>::value || sizeof(T3)==-1, T>::type>
+	operator set<T2>()
 	{
 		set<T> ret;
 		for (T&& item : *this) ret.add(item);
 		return ret;
 	}
 	
-	set<T> as_set()
+	template<typename T2 = int>
+	typename std::enable_if<!std::is_reference<T>::value || sizeof(T2)==-1, set<T>>::type
+	as_set()
 	{
 		return *this;
 	}

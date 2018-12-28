@@ -44,8 +44,6 @@ public:
 	struct rsp {
 		req q;
 		
-		bool success;
-		
 		enum {
 			e_bad_url       = -1, // couldn't parse URL
 			e_different_url = -2, // can't use Keep-Alive between these, create a new http object
@@ -64,9 +62,13 @@ public:
 		array<byte> body;
 		
 		
-		operator arrayvieww<byte>()
+		bool success() const
 		{
-			if (status >= 200 && status <= 299) return body;
+			return (status >= 200 && status <= 299);
+		}
+		operator arrayvieww<byte>() const
+		{
+			if (success()) return body;
 			else return NULL;
 		}
 		//operator string() { return body; } // throws ambiguity errors if enabled
@@ -130,11 +132,11 @@ public:
 	~HTTP();
 	
 private:
-	void resolve(size_t id, bool success);
+	void resolve(size_t id);
 	void resolve_err_v(size_t id, int err)
 	{
 		requests[id].r.status = err;
-		resolve(id, false);
+		resolve(id);
 	}
 	bool resolve_err_f(size_t id, int err) { resolve_err_v(id, err); return false; }
 	

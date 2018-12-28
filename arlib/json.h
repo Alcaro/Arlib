@@ -160,27 +160,31 @@ public:
 	}
 	
 	operator bool() const { return boolean(); }
-	operator int() const { return num(); }
-	operator size_t() const { return num(); }
+	//operator int() const { return num(); }
+	//operator uint32_t() const { return num(); }
+	//operator uint64_t() const { return num(); }
 	operator double() const { return num(); }
 	operator const string&() const { return ev.str; }
 	operator cstring() const { return str(); }
 	
 	operator bool() { return boolean(); }
-	operator int() { return num(); }
-	operator size_t() { return num(); }
+	//operator int() { return num(); }
+	//operator uint32_t() { return num(); }
+	//operator uint64_t() { return num(); }
 	operator double() { return num(); }
 	operator string&() { return str(); }
 	operator cstring() { return str(); }
 	
-	bool operator==(int right) const { return num()==right; }
-	bool operator==(size_t right) const { return num()==right; }
+	//bool operator==(int right) const { return num()==right; }
+	//bool operator==(uint32_t right) const { return num()==right; }
+	//bool operator==(uint64_t right) const { return num()==right; }
 	bool operator==(double right) const { return num()==right; }
 	bool operator==(const char * right) const { return str()==right; }
 	bool operator==(cstring right) const { return str()==right; }
 	
-	bool operator!=(int right) const { return num()!=right; }
-	bool operator!=(size_t right) const { return num()!=right; }
+	//bool operator!=(int right) const { return num()!=right; }
+	//bool operator!=(uint32_t right) const { return num()!=right; }
+	//bool operator!=(uint64_t right) const { return num()!=right; }
 	bool operator!=(double right) const { return num()!=right; }
 	bool operator!=(const char * right) const { return str()!=right; }
 	bool operator!=(cstring right) const { return str()!=right; }
@@ -188,12 +192,22 @@ public:
 	
 	JSON& operator=(nullptr_t) { ev.action = jsonparser::jnull; return *this; }
 	JSON& operator=(bool b) { ev.action = b ? jsonparser::jtrue : jsonparser::jfalse; return *this; }
-	JSON& operator=(size_t n) { return operator=((double)n); }
-	JSON& operator=(int n) { return operator=((double)n); }
+	//JSON& operator=(int n) { return operator=((double)n); }
+	//JSON& operator=(uint32_t n) { return operator=((double)n); }
+	//JSON& operator=(uint64_t n) { return operator=((double)n); }
 	JSON& operator=(double n) { ev.action = jsonparser::num; ev.num = n; return *this; }
 	JSON& operator=(cstring s) { ev.action = jsonparser::str; ev.str = s; return *this; }
 	JSON& operator=(string s) { ev.action = jsonparser::str; ev.str = std::move(s); return *this; }
 	JSON& operator=(const char * s) { ev.action = jsonparser::str; ev.str = s; return *this; }
+	
+#define JSONOPS(T) \
+		operator T() const { return num(); } \
+		operator T() { return num(); } \
+		bool operator==(T right) const { return num()==right; } \
+		bool operator!=(T right) const { return num()!=right; } \
+		JSON& operator=(T n) { return operator=((double)n); }
+	ALLINTS(JSONOPS)
+#undef JSONOPS
 	
 	JSON& operator[](int n) { return list()[n]; }
 	JSON& operator[](size_t n) { return list()[n]; }

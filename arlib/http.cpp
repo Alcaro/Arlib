@@ -16,6 +16,8 @@ bool HTTP::parseUrl(cstring url, bool relative, location& out)
 	}
 	else if (!relative) return false;
 	
+	string hash = out.path.contains("#") ? "#"+out.path.csplit<1>("#")[1] : "";
+	
 	if (url.startswith("//"))
 	{
 		url = url.substr(2, ~0);
@@ -48,6 +50,8 @@ bool HTTP::parseUrl(cstring url, bool relative, location& out)
 	else if (url[0]=='?') out.path = out.path.csplit<1>("?")[0] + url;
 	else if (url[0]=='#') out.path = out.path.csplit<1>("#")[0] + url;
 	else out.path = out.path.crsplit<1>("/")[0] + "/" + url;
+	
+	if (!url.contains("#")) out.path += hash;
 	
 	return true;
 }
@@ -157,10 +161,9 @@ again:
 	next_send++;
 }
 
-void HTTP::resolve(size_t id, bool success)
+void HTTP::resolve(size_t id)
 {
 	rsp_i i = std::move(requests[id]);
-	i.r.success = success;
 	
 	requests.remove(id);
 	if (next_send > id) next_send--;
@@ -208,7 +211,7 @@ newsock:
 	
 	if (!sock)
 	{
-		if (state == st_boundary)
+		if (state == st_boundary || state == st_boundary_retried)
 		{
 			//lasthost.proto/domain/port never changes between requests
 			int defport;
@@ -362,7 +365,7 @@ again:
 	
 req_finish:
 	state = st_boundary;
-	RETURN_IF_CALLBACK_DESTRUCTS(resolve(0, true));
+	RETURN_IF_CALLBACK_DESTRUCTS(resolve(0));
 	try_compile_req();
 	reset_limits();
 	
@@ -402,25 +405,25 @@ static void test_url_fail(cstring url, cstring url2)
 }
 test("URL parser", "", "http")
 {
-	test_url("wss://gateway.discord.gg/?v=5&encoding=json",          "wss", "gateway.discord.gg", 0, "/?v=5&encoding=json");
-	test_url("wss://gateway.discord.gg?v=5&encoding=json",           "wss", "gateway.discord.gg", 0, "/?v=5&encoding=json");
-	test_url("wss://gateway.discord.gg", "?v=5&encoding=json",       "wss", "gateway.discord.gg", 0, "/?v=5&encoding=json");
-	test_url("http://example.com/foo/bar.html?baz", "/bar/foo.html", "http", "example.com", 0, "/bar/foo.html");
-	test_url("http://example.com/foo/bar.html?baz", "foo.html",      "http", "example.com", 0, "/foo/foo.html");
-	test_url("http://example.com/foo/bar.html?baz", "?quux",         "http", "example.com", 0, "/foo/bar.html?quux");
-	test_url("http://example.com:80/",                               "http", "example.com", 80, "/");
-	test_url("http://example.com:80/", "http://example.com:8080/",   "http", "example.com", 8080, "/");
-	test_url_fail("http://example.com:80/", ""); // if changing this, also change assert in HTTP::try_compile_req()
-	test_url("http://a.com/foo/bar.html?baz",       "#corge",                "http", "a.com", 80, "/foo/bar.html?baz#corge");
-	test_url("http://a.com/foo/bar.html?baz#corge", "http://b.com/foo.html", "http", "b.com", 80, "/foo.html#corge");
-	test_url("http://a.com/foo/bar.html?baz#corge", "/bar/foo.html",         "http", "a.com", 80, "/bar/foo.html#corge");
-	test_url("http://a.com/foo/bar.html?baz#corge", "foo.html",              "http", "a.com", 80, "/foo/foo.html#corge");
-	test_url("http://a.com/foo/bar.html?baz#corge", "?quux",                 "http", "a.com", 80, "/foo/bar.html?quux#corge");
-	test_url("http://a.com/foo/bar.html?baz#corge", "http://b.com/#grault",  "http", "b.com", 80, "/foo.html#grault");
-	test_url("http://a.com/foo/bar.html?baz#corge", "/bar/foo.html#grault",  "http", "a.com", 80, "/bar/foo.html#grault");
-	test_url("http://a.com/foo/bar.html?baz#corge", "foo.html#grault",       "http", "a.com", 80, "/foo/foo.html#grault");
-	test_url("http://a.com/foo/bar.html?baz#corge", "?quux#grault",          "http", "a.com", 80, "/foo/bar.html?quux#grault");
-	test_url("http://a.com/foo/bar.html?baz#corge", "#grault",               "http", "a.com", 80, "/foo/bar.html?baz#grault");
+	testcall(test_url("wss://gateway.discord.gg/?v=5&encoding=json",          "wss", "gateway.discord.gg", 0, "/?v=5&encoding=json"));
+	testcall(test_url("wss://gateway.discord.gg?v=5&encoding=json",           "wss", "gateway.discord.gg", 0, "/?v=5&encoding=json"));
+	testcall(test_url("wss://gateway.discord.gg", "?v=5&encoding=json",       "wss", "gateway.discord.gg", 0, "/?v=5&encoding=json"));
+	testcall(test_url("http://example.com/foo/bar.html?baz", "/bar/foo.html", "http", "example.com", 0, "/bar/foo.html"));
+	testcall(test_url("http://example.com/foo/bar.html?baz", "foo.html",      "http", "example.com", 0, "/foo/foo.html"));
+	testcall(test_url("http://example.com/foo/bar.html?baz", "?quux",         "http", "example.com", 0, "/foo/bar.html?quux"));
+	testcall(test_url("http://example.com:80/",                               "http", "example.com", 80, "/"));
+	testcall(test_url("http://example.com:80/", "http://example.com:8080/",   "http", "example.com", 8080, "/"));
+	testcall(test_url_fail("http://example.com:80/", "")); // if changing this, also change assert in HTTP::try_compile_req()
+	testcall(test_url("http://a.com/foo/bar.html?baz",       "#corge",                "http", "a.com", 0, "/foo/bar.html?baz#corge"));
+	testcall(test_url("http://a.com/foo/bar.html?baz#corge", "http://b.com/foo.html", "http", "b.com", 0, "/foo.html#corge"));
+	testcall(test_url("http://a.com/foo/bar.html?baz#corge", "/bar/foo.html",         "http", "a.com", 0, "/bar/foo.html#corge"));
+	testcall(test_url("http://a.com/foo/bar.html?baz#corge", "foo.html",              "http", "a.com", 0, "/foo/foo.html#corge"));
+	testcall(test_url("http://a.com/foo/bar.html?baz#corge", "?quux",                 "http", "a.com", 0, "/foo/bar.html?quux#corge"));
+	testcall(test_url("http://a.com/foo/bar.html?baz#corge", "http://b.com/#grault",  "http", "b.com", 0, "/#grault"));
+	testcall(test_url("http://a.com/foo/bar.html?baz#corge", "/bar/foo.html#grault",  "http", "a.com", 0, "/bar/foo.html#grault"));
+	testcall(test_url("http://a.com/foo/bar.html?baz#corge", "foo.html#grault",       "http", "a.com", 0, "/foo/foo.html#grault"));
+	testcall(test_url("http://a.com/foo/bar.html?baz#corge", "?quux#grault",          "http", "a.com", 0, "/foo/bar.html?quux#grault"));
+	testcall(test_url("http://a.com/foo/bar.html?baz#corge", "#grault",               "http", "a.com", 0, "/foo/bar.html?baz#grault"));
 }
 
 test("HTTP", "tcp,ssl", "http")
@@ -441,7 +444,7 @@ test("HTTP", "tcp,ssl", "http")
 #define CONTENTS3 "hello world 3"
 #define CONTENTS4 "hello world 4"
 //#define T puts(tostring(__LINE__));
-#define T if (__LINE__ > 590)
+//#define T if (__LINE__ >= 590)
 #ifndef T
 #define T /* */
 #endif
@@ -450,7 +453,6 @@ test("HTTP", "tcp,ssl", "http")
 		
 		h.send(HTTP::req(URL), break_runloop);
 		loop->enter();
-		assert(r.success);
 		assert_eq(r.status, 200);
 		assert_eq(r.text(), CONTENTS);
 	}
@@ -460,13 +462,11 @@ test("HTTP", "tcp,ssl", "http")
 		
 		h.send(HTTP::req(URL), break_runloop);
 		loop->enter();
-		assert(r.success);
 		assert_eq(r.status, 200);
 		assert_eq(r.text(), CONTENTS);
 		
 		h.send(HTTP::req(URL), break_runloop);
 		loop->enter();
-		assert(r.success);
 		assert_eq(r.status, 200);
 		assert_eq(r.text(), CONTENTS);
 	}
@@ -478,12 +478,10 @@ test("HTTP", "tcp,ssl", "http")
 		T h.send(HTTP::req(URL), break_runloop);
 		
 		T loop->enter();
-		assert(r.success);
 		assert_eq(r.status, 200);
 		T assert_eq(r.text(), CONTENTS);
 		
 		T loop->enter();
-		assert(r.success);
 		assert_eq(r.status, 200);
 		T assert_eq(r.text(), CONTENTS);
 	}
@@ -496,7 +494,6 @@ test("HTTP", "tcp,ssl", "http")
 			bind_lambda([&](HTTP::rsp inner_r)
 			{
 				loop->exit();
-				assert(inner_r.success);
 				assert_eq(inner_r.status, 200);
 				assert_eq(inner_r.text(), CONTENTS);
 			});
@@ -504,7 +501,6 @@ test("HTTP", "tcp,ssl", "http")
 			bind_lambda([&](HTTP::rsp inner_r)
 			{
 				loop->exit();
-				assert(inner_r.success);
 				assert_eq(inner_r.status, 200);
 				assert_eq(inner_r.text(), CONTENTS2);
 			});
@@ -512,7 +508,6 @@ test("HTTP", "tcp,ssl", "http")
 			bind_lambda([&](HTTP::rsp inner_r)
 			{
 				loop->exit();
-				assert(inner_r.success);
 				assert_eq(inner_r.status, 200);
 				assert_eq(inner_r.text(), CONTENTS3);
 			});
@@ -520,7 +515,6 @@ test("HTTP", "tcp,ssl", "http")
 			bind_lambda([&](HTTP::rsp inner_r)
 			{
 				loop->exit();
-				assert(inner_r.success);
 				assert_eq(inner_r.status, 200);
 				assert_eq(inner_r.text(), CONTENTS4);
 			});
@@ -547,12 +541,10 @@ test("HTTP", "tcp,ssl", "http")
 		h.send(rq, break_runloop);
 		
 		loop->enter();
-		assert(r.success);
 		assert_eq(r.status, 200);
 		assert_eq(r.text(), "{\"post\":\"x\"}");
 		
 		loop->enter();
-		assert(r.success);
 		assert_eq(r.status, 200);
 		assert_eq(r.text(), "{\"post\":\"x\"}");
 	}
@@ -568,12 +560,10 @@ test("HTTP", "tcp,ssl", "http")
 		h.send(rq, break_runloop);
 		
 		loop->enter();
-		assert(r.success);
 		assert_eq(r.status, 200);
 		assert_eq(r.text(), CONTENTS);
 		
 		loop->enter();
-		assert(r.success);
 		assert_eq(r.status, 200);
 		assert_eq(r.text(), CONTENTS); // ensure it tries again
 	}
@@ -581,7 +571,7 @@ test("HTTP", "tcp,ssl", "http")
 	//httpbin response time is super slow, and super erratic
 	//it offers me unmatched flexibility in requesting strange http parameters,
 	// but doubling the test suite runtime isn't worth it
-	//getdiscordusers is chunked as well, I don't need two tests for that
+	//yiram is chunked as well, I don't need two tests for that
 	T if (false)
 	{
 		HTTP::req rq("https://httpbin.org/stream-bytes/128?chunk_size=30&seed=1");
@@ -612,7 +602,6 @@ test("HTTP", "tcp,ssl", "http")
 		h.send(HTTP::req("https://www.smwcentral.net/?p=404"), break_runloop);
 		
 		loop->enter();
-		assert(r.success);
 		assert_eq(r.status, 404);
 		assert_gt(r.body.size(), 8000);
 		assert_eq(r.body[0], '<');
@@ -630,6 +619,18 @@ test("HTTP", "tcp,ssl", "http")
 		// a up-to-4K buffer whose size is checked before parsing its contents
 		assert_gte(r.body.size(), 2000);
 		assert_eq(r.status, HTTP::rsp::e_too_big);
+	}
+	
+	T {
+		HTTP h(loop);
+		h.send(HTTP::req("https://www.smwcentral.net/ajax.php?a=getmap&m=yiram"), break_runloop);
+		
+		loop->enter();
+		assert_eq(r.status, 200);
+		assert_eq(r.header("Transfer-Encoding"), "chunked");
+		assert_gte(r.body.size(), 2000);
+		assert_eq(r.body[0], '[');
+		assert_eq(r.body[r.body.size()-1], ']');
 	}
 	
 	T {

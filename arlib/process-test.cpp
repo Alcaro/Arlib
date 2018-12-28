@@ -251,6 +251,8 @@ test("sandbox", "process", "sandbox")
 		
 		assert_eq(status, 0);
 	}
+	
+	assert(!"ensure pid namespace does not interfere with PR_SET_PDEATHSIG");
 }
 #endif
 #endif

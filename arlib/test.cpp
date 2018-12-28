@@ -60,7 +60,12 @@ static err_t result;
 static array<int> callstack;
 void _teststack_push(int line) { callstack.append(line); }
 void _teststack_pop() { callstack.resize(callstack.size()-1); }
-static string stack(int top)
+
+static array<string> ctxstack;
+int _teststack_pushstr(string text) { ctxstack.append(text); return 1; }
+int _teststack_popstr() { ctxstack.resize(ctxstack.size()-1); return 0; }
+
+static string fmt_callstack(int top)
 {
 	if (top<0) return "";
 	
@@ -72,6 +77,16 @@ static string stack(int top)
 	}
 	
 	return ret+")";
+}
+static string stack(int top)
+{
+	string ret = fmt_callstack(top);
+	
+	for (int i=ctxstack.size()-1;i>=0;i--)
+	{
+		ret += " ("+ctxstack[i]+")";
+	}
+	return ret;
 }
 
 int nothrow_level = 0;
