@@ -263,11 +263,8 @@ public:
 	inline string upper() const;
 	
 	bool isutf8() const; // NUL is considered valid UTF-8. U+D800, overlong encodings, etc are not.
-	string fromlatin1() const; // Returns UTF-8.
-	string fromwindows1252() const;
-	
-	// Treats the string as UTF-8 and returns the codepoint there. If not UTF-8, not a start index, or out of bounds,
-	// returns U+DC80 through U+DCFF, depending on the byte.
+	// Treats the string as UTF-8 and returns the codepoint there. If not UTF-8 or not a start index, returns U+DC80 through U+DCFF.
+	// If out of bounds, returns zero.
 	// The index is updated to point to the next codepoint. Initialize it to zero; stop when it equals the string's length.
 	uint32_t codepoint_at(uint32_t& index) const;
 	
@@ -480,12 +477,6 @@ public:
 	static cstring nul() { return arrayview<byte>((byte*)"", 1); }
 	
 	static string codepoint(uint32_t cp);
-	
-	static uint32_t cpfromwindows1252(uint8_t byte)
-	{
-		if (byte >= 0x80 && byte <= 0x9F) return string_windows1252tab[byte-0x80];
-		else return byte;
-	}
 	
 	//Does a bytewise comparison, where end is considered before NUL (00).
 	//If a comes first, return value is positive; if equal, zero; if b comes first, negative.

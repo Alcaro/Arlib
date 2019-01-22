@@ -43,6 +43,8 @@ void WebSocket::connect(cstring target, arrayview<string> headers)
 
 void WebSocket::activity()
 {
+	break_callback = false;
+	
 	uint8_t bytes[4096];
 	int nbyte = sock->recv(bytes);
 	if (nbyte < 0)
@@ -127,7 +129,7 @@ if(L_DEBUG)puts("RETURN:"+tostringhex(msg.slice(0,headsize))+" "+tostringhex(out
 		else cb_str(out);
 	}
 	
-	if (!sock) // happens if cb_str doesn't like that input and resets websocket
+	if (break_callback) // happens if cb_str doesn't like that input and resets websocket
 	{
 		return;
 	}

@@ -60,6 +60,7 @@ public:
 	file& operator=(file&& f) { delete core; core = f.core; f.core = NULL; return *this; }
 	file(cstring filename, mode m = m_read) : core(NULL) { open(filename, m); }
 	
+	//A path refers to a directory if it ends with a slash, and file otherwise. Directories may not be open()ed.
 	bool open(cstring filename, mode m = m_read)
 	{
 		delete core;
@@ -77,7 +78,6 @@ private:
 	//This one will create the file from the filesystem.
 	//open_impl() can simply return open_impl_fs(filename), or can additionally support stuff like gvfs.
 	static impl* open_impl_fs(cstring filename, mode m);
-	//A path refers to a directory if it ends with a slash, and file otherwise. Directories may not be open()ed.
 	static impl* open_impl(cstring filename, mode m);
 public:
 	

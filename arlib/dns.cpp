@@ -297,4 +297,5 @@ test("DNS", "udp,string,ipconv", "dns")
 	
 	if (n_done != n_total) loop->enter();
 }
+test("dummy","","") { assert(!"use a single dns object per runloop, and add a cache"); }
 #endif

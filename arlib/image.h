@@ -49,6 +49,8 @@ struct image : nocopy {
 	
 	//Converts the image to the given image format.
 	void convert(imagefmt newfmt);
+	//Like the above, but compile-time fixed conversion, to allow dead-code elimination of x. fmt must be equal to src.
+	template<imagefmt src, imagefmt dst> void convert();
 	//Inserts the given image at the given coordinates. If that would place the new image partially outside the target,
 	// the excess pixels are ignored.
 	//Attempting to create impossible values (by rendering ARGB a=80 into BARGB a=0) is undefined behavior.
@@ -119,7 +121,7 @@ struct image : nocopy {
 		return 1 + ((magic >> (fmt*2)) & 3);
 	}
 	
-	//0x? and ?x0 images are undefined behavior.
+	//0x? and ?x0 images are undefined behavior. The pixels are uninitialized.
 	void init_new(uint32_t width, uint32_t height, imagefmt fmt)
 	{
 		size_t stride = byteperpix(fmt)*width;

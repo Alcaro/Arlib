@@ -62,7 +62,7 @@ public:
 //If the program is run under a debugger, this triggers a breakpoint. If not, ignored.
 //Returns whether it did something. The other three do too, but they always do something, if they return at all.
 bool debug_or_ignore();
-//If the program is run under a debugger, this triggers a breakpoint. If not, the program whines to a nearby file.
+//If the program is run under a debugger, this triggers a breakpoint. If not, the program whines to stderr, and a nearby file.
 bool debug_or_print(const char * filename, int line);
 #define debug_or_print() debug_or_print(__FILE__, __LINE__)
 //If the program is run under a debugger, this triggers a breakpoint. If not, the program silently exits.

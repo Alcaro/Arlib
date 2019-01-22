@@ -127,6 +127,23 @@ struct ser13 { // can't be bml serialized, json only; 'foo=1 foo=2 foo=3 foo=4' 
 	}
 };
 
+class almost_int {
+public:
+	uint64_t n;
+	operator string() const { return tostring(n); }
+	//almost_int(cstring str) { fromstring(str, n); }
+	void operator=(cstring str) { fromstring(str, n); }
+};
+struct ser14 {
+	almost_int foo;
+	
+	template<typename T>
+	void serialize(T& s)
+	{
+		s.item("foo", foo);
+	}
+};
+
 test("BML serialization", "bml", "serialize")
 {
 	{
@@ -220,6 +237,12 @@ test("BML serialization", "bml", "serialize")
 		                              " test=\"C:/Users/Administrator/My Documents/!TOP SECRET!.docx\""
 		                              " -C-3A-2FUsers-2FAdministrator-2FMy-20Documents-2F-21TOP-20SECRET-21.docx=test"
 		                              " foo=bar");
+	}
+	
+	{
+		ser14 item;
+		item.foo.n = 1234567890987654321;
+		assert_eq(bmlserialize(item), "foo=1234567890987654321");
 	}
 }
 
@@ -324,6 +347,11 @@ test("BML deserialization", "bml", "serialize")
 		assert_eq(item.data.get("foo"), "bar");
 		assert_eq(item.data.get("test"), "C:/Users/Administrator/My Documents/!TOP SECRET!.docx");
 		assert_eq(item.data.get("C:/Users/Administrator/My Documents/!TOP SECRET!.docx"), "test");
+	}
+	
+	{
+		ser14 item = bmlunserialize<ser14>("foo=1234567890987654321");
+		assert_eq(item.foo.n, 1234567890987654321);
 	}
 	
 	{
@@ -524,6 +552,12 @@ test("JSON serialization", "json", "serialize")
 		item.f = false;
 		assert_eq(jsonserialize(item), "{\"foo\":[12,34,56,78],\"t\":true,\"f\":false}");
 	}
+	
+	{
+		ser14 item;
+		item.foo.n = 1234567890987654321;
+		assert_eq(jsonserialize(item), "{\"foo\":\"1234567890987654321\"}");
+	}
 }
 
 test("JSON deserialization", "json", "serialize")
@@ -656,6 +690,11 @@ test("JSON deserialization", "json", "serialize")
 		assert_eq(item.foo[3], 78);
 		assert_eq(item.t, true);
 		assert_eq(item.f, false);
+	}
+	
+	{
+		ser14 item = jsonunserialize<ser14>("{\"foo\":\"1234567890987654321\"}");
+		assert_eq(item.foo.n, 1234567890987654321);
 	}
 }
 #endif

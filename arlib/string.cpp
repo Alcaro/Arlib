@@ -313,34 +313,6 @@ string string::codepoint(uint32_t cp)
 	return ret;
 }
 
-#define X 0xFFFD
-const uint16_t string_windows1252tab[32]={
-	//00 to 7F map to themselves
-	0x20AC, X,      0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021,
-	0x02C6, 0x2030, 0x0160, 0x2039, 0x0152, X,      0x017D, X,     
-	X,      0x2018, 0x2019, 0x201C, 0x201D, 0x2022, 0x2013, 0x2014,
-	0x02DC, 0x2122, 0x0161, 0x203A, 0x0153, X,      0x017E, 0x0178,
-	//A0 to FF map to themselves
-};
-#undef X
-
-static string fromlatin1(cstring in, bool windows1252)
-{
-	string out;
-	for (size_t i=0;i<in.length();i++)
-	{
-		uint8_t ch = in[i];
-		if (ch < 0x80) out += ch;
-		else if (ch < 0xA0 && windows1252) out += string::codepoint(string::cpfromwindows1252(ch));
-		else if (ch < 0xA0) out += "\xEF\xBF\xBD";
-		else out += string::codepoint(ch);
-	}
-	return out;
-}
-
-string cstring::fromlatin1()      const { return ::fromlatin1(*this, false); }
-string cstring::fromwindows1252() const { return ::fromlatin1(*this, true); }
-
 bool cstring::isutf8() const
 {
 	const uint8_t * bytes = ptr();
@@ -351,7 +323,7 @@ bool cstring::isutf8() const
 		uint8_t head = *bytes++;
 		if (LIKELY(head < 0x80))
 			continue;
-		if (bytes == end)
+		if (UNLIKELY(bytes == end))
 			return false; // continuation needed if above 0x80
 		
 		if (head < 0xC2) // continuation or overlong twobyte
@@ -387,7 +359,7 @@ uint32_t cstring::codepoint_at(uint32_t& idx) const
 {
 	const uint8_t * bytes = ptr();
 	uint32_t len = length();
-	if (UNLIKELY(idx == len)) return -1;
+	if (UNLIKELY(idx == len)) return 0;
 	
 	uint8_t head = bytes[idx++];
 	if (LIKELY(head < 0x80)) return head;
@@ -673,13 +645,6 @@ test("string", "", "string")
 		a = "               b";
 		assert_eq(a.rsplitw().join("."), "...............b");
 		assert_eq(a.rsplitw<1>().join("."), "              .b");
-	}
-	
-	{
-		uint8_t in[] = { 0xF8, 0x80 };
-		cstring instr = arrayview<byte>(in);
-		assert_eq(instr.fromlatin1(), u8"ø\uFFFD");
-		assert_eq(instr.fromwindows1252(), "ø€");
 	}
 	
 	{

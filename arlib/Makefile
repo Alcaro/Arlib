@@ -143,8 +143,8 @@ OPTFLAGS := -Os -fomit-frame-pointer -fmerge-all-constants -fvisibility=hidden
 OPTFLAGS += -fno-unwind-tables -fno-asynchronous-unwind-tables
 OPTFLAGS += -ffunction-sections -fdata-sections
 OPTFLAGS += -fno-ident
-OPTFLAGS += -fno-threadsafe-statics
 OPTFLAGS += -Werror -DNDEBUG -DARLIB_OPT
+OPTFLAGS_CXX := -fno-threadsafe-statics
 OPTLFLAGS := -Wl,--gc-sections,--build-id=none,--hash-style=gnu,--relax
 #OPTLFLAGS += -Wl,--print-map
 ifneq ($(DEBUG),1)
@@ -156,6 +156,7 @@ endif
 CFLAGS += -g
 ifneq ($(OPT),0)
   CONF_CFLAGS += $(OPTFLAGS)
+  CONF_CXXFLAGS += $(OPTFLAGS_CXX)
   CONF_LFLAGS += $(OPTLFLAGS)
   ifeq ($(OPT),spd)
     CONF_CFLAGS += -O3

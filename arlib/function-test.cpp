@@ -73,4 +73,31 @@ test("function", "", "function")
 		function<int(int)> a42w = bind_lambda([](int* xp, int x)->int { return x+*xp; }, &n);
 		assert_eq(a42w(10), 52);
 	}
+	
+	{
+		int n = 42;
+		auto no_bind = []() -> int { return 42; };
+		n++;
+		auto val_bind = [n]() -> int { return n; };
+		n++;
+		auto ref_bind = [&n]() -> int { return n; };
+		n++;
+		
+		assert_eq(no_bind(), 42);
+		assert_eq(val_bind(), 43);
+		assert_eq(ref_bind(), 45);
+		
+		assert_eq(sizeof(no_bind), 1);
+		assert_eq(sizeof(val_bind), sizeof(int));
+		assert_eq(sizeof(ref_bind), sizeof(int&));
+		
+		//assert_eq(std::is_trivially_move_constructible<decltype(no_bind)>::value, true);
+		//assert_eq(std::is_trivially_move_constructible<decltype(val_bind)>::value, true);
+		//assert_eq(std::is_trivially_move_constructible<decltype(ref_bind)>::value, true);
+	}
+}
+
+test("","","")
+{
+assert(!"if lambda is <= size of pointer, and trivially move constructible (i.e. can be moved with memcpy), elide the malloc");
 }

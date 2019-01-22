@@ -470,3 +470,4 @@ test("private runloop", "function,array,set,time", "runloop")
 {
 	test_runloop(false);
 }
+test("epoll","","") { assert(!"replace epoll with normal poll, epoll doesn't help at our small scale"); }

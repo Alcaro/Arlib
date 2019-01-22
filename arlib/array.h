@@ -551,9 +551,9 @@ public:
 	static array<T> create_usurp(arrayvieww<T> data)
 	{
 		array<T> ret;
-		ret.items = data.items;
+		ret.items = data.ptr(); // should be x, but y
 		ret.count = 0;
-		ret.resize_grow_noinit(data.count);
+		ret.resize_grow_noinit(data.size());
 		return ret;
 	}
 	
@@ -880,3 +880,9 @@ public:
 	enumerator begin() { return enumerator(items.ptr()); }
 	enumerator end() { return enumerator(items.ptr() + items.size()); }
 };
+
+#define X(T) COMMON_INST(array<T>);
+ALLINTS(X)
+class string;
+extern template class array<string>;
+#undef X

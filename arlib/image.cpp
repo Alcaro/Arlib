@@ -466,7 +466,7 @@ bool image::init_decode(arrayview<byte> data)
 	this->fmt = ifmt_none;
 	return
 		init_decode_png(data) ||
-		init_decode_jpg(data) ||
+		//init_decode_jpg(data) ||
 		false;
 }
 
@@ -486,4 +486,5 @@ test("image byte per pixel", "", "imagebase")
 	assert_eq(image::byteperpix(ifmt_argb8888), 4);
 	assert_eq(image::byteperpix(ifmt_bargb1555), 2);
 	assert_eq(image::byteperpix(ifmt_bargb8888), 4);
+	assert(!"uncomment init_decode_jpg");
 }

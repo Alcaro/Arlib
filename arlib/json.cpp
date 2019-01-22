@@ -639,7 +639,7 @@ test("JSON container", "string,array,set", "json")
 	}
 	
 	{
-		JSON json;
+		JSONw json;
 		json["a"].num() = 1;
 		json["b"].num() = 2;
 		json["c"].num() = 3;

@@ -473,6 +473,28 @@ template<typename T> static inline T bitround(T in)
 }
 
 
+#define ALLINTS(x) \
+	x(signed char) \
+	x(unsigned char) \
+	x(signed short) \
+	x(unsigned short) \
+	x(signed int) \
+	x(unsigned int) \
+	x(signed long) \
+	x(unsigned long) \
+	x(signed long long) \
+	x(unsigned long long)
+
+#define ALLNUMS(x) \
+	ALLINTS(x) \
+	x(float) \
+	x(double) \
+
+#ifndef COMMON_INST
+#define COMMON_INST(T) extern template class T
+#endif
+
+
 //If an interface defines a function to set some state, and a callback for when this state changes,
 // calling that function will not trigger the state callback.
 //An implementation may, at its sole discretion, choose to define any implementation of undefined
@@ -488,6 +510,6 @@ template<typename T> static inline T bitround(T in)
 
 //This file, and many other parts of Arlib, uses a weird mix between Windows- and Linux-style
 // filenames and paths. This is intentional; the author prefers Linux-style paths and directory
-// structures, but Windows file extensions. .exe is less ambigous than no extension, and Windows'
-// insistence on overloading the escape character is irritating. Since this excludes following
-// any single OS, the rest is personal preference.
+// structures, but Windows file extensions. .exe is less ambigous than no extension, and 'so' is a
+// word while 'dll' is not; however, Windows' insistence on overloading the escape character is
+// irritating. Since this excludes following any single OS, the rest is personal preference.

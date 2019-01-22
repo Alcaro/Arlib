@@ -23,6 +23,8 @@ class WebSocket : nocopy {
 	bool gotFirstLine; // HTTP/1.1 101 Switching Protocols
 	//TODO: Sec-WebSocket-Accept https://developer.mozilla.org/en-US/docs/Web/API/WebSockets_API/Writing_WebSocket_servers
 	
+	bool break_callback;
+	
 	bool L_DEBUG = false; // never set, other than by gdb
 	
 	function<void(cstring)> cb_str;
@@ -52,7 +54,7 @@ public:
 	void callback(function<void(arrayview<byte>)> cb_bin, function<void()> cb_error) { this->cb_bin = cb_bin; this->cb_error = cb_error; }
 	
 	bool isOpen() { return sock; }
-	void reset() { sock = NULL; tosend.reset(); msg.reset(); }
+	void reset() { sock = NULL; tosend.reset(); msg.reset(); break_callback = true; }
 	
 	operator bool() { return isOpen(); }
 };

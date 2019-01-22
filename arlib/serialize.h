@@ -19,6 +19,7 @@
 //	//- array, set, map (if their contents are serializable)
 //	//    map must use integer or string key, nothing funny
 //	//    the serializer may ban array<array<T>> or set<set<T>>, though array<struct_with_array> is fine
+//	//- Any object with a operator string() or operator=(cstring) function (only one needed if only one of serialize/unserialize needed)
 //	//- Any object with a serialize() function (see below)
 //	//The name can be any string.
 //	template<typename T> void item(cstring name, T& item);
@@ -66,11 +67,28 @@ class bmlserialize_impl {
 	bmlwriter w;
 	template<typename T> friend string bmlserialize(T& item);
 	
-	template<typename T> void add_node(cstring name, T& item)
+	template<typename T>
+	typename std::enable_if<
+		std::is_same<
+			decltype(std::declval<T>().serialize(std::declval<bmlserialize_impl&>())),
+			void // it returning void isn't necessary, but I couldn't find a std::can_call
+		>::value>::type
+	add_node(cstring name, T& item)
 	{
 		w.enter(bmlwriter::escape(name), "");
 		item.serialize(*this);
 		w.exit();
+	}
+	
+	template<typename T>
+	typename std::enable_if<
+		std::is_same<
+			decltype(tostring(std::declval<T>())),
+			string
+		>::value>::type
+	add_node(cstring name, T& item)
+	{
+		w.node(bmlwriter::escape(name), tostring(item));
 	}
 	
 	template<typename T> void add_node(cstring name, array<T>& item)
@@ -90,12 +108,6 @@ class bmlserialize_impl {
 	}
 	
 	template<typename T> void add_node(cstring name, array<array<T>>& item) = delete;
-	
-#define LEAF(T) \
-		void add_node(cstring name, T& item) { w.node(bmlwriter::escape(name), tostring(item)); } \
-		void add_node(cstring name, const T& item) { w.node(bmlwriter::escape(name), tostring(item)); }
-	ALLSTRINGABLE(LEAF);
-#undef LEAF
 	
 public:
 	
@@ -156,7 +168,24 @@ class bmlunserialize_impl {
 	template<typename T> friend T bmlunserialize(cstring bml);
 	template<typename T> friend void bmlunserialize_to(cstring bml, T& to);
 	
-	template<typename T> void read_item(T& out)
+	template<typename T>
+	typename std::enable_if<
+		std::is_same<
+			decltype(try_fromstring(std::declval<cstring>(), std::declval<T&>())),
+			void // it returning void isn't necessary, but I couldn't find a std::can_call
+		>::value>::type
+	read_item(T& out)
+	{
+		try_fromstring(thisval, out);
+	}
+	
+	template<typename T>
+	typename std::enable_if<
+		std::is_same<
+			decltype(std::declval<T>().serialize(std::declval<bmlserialize_impl&>())),
+			void
+		>::value>::type
+	read_item(T& out)
 	{
 		while (pdepth >= thisdepth)
 		{
@@ -210,10 +239,6 @@ class bmlunserialize_impl {
 			thisdepth++;
 		}
 	}
-	
-#define LEAF(T) void read_item(T& out) { fromstring(thisval, out); }
-	ALLSTRINGABLE(LEAF);
-#undef LEAF
 	
 public:
 	bmlunserialize_impl(cstring bml) : p(bml) {}
@@ -327,7 +352,7 @@ class jsonserialize_impl {
 	typename std::enable_if<
 		std::is_same<
 			decltype(std::declval<T>().serialize(std::declval<jsonserialize_impl&>())),
-			void // it returning void isn't necessary, but I couldn't find a std::argument_is_well_formed
+			void // it returning void isn't necessary, but I couldn't find a std::can_call
 		>::value>::type
 	add_node(T& inner)
 	{
@@ -413,9 +438,9 @@ public:
 	void comment(cstring c) {}
 	
 	template<typename T> void item(cstring name, T& inner) { w.map_key(name); add_node(inner); }
-	template<typename T> void hex(cstring name, T& inner) { w.map_key(name); add_node_hex(inner); }
+	template<typename T> void hex( cstring name, T& inner) { w.map_key(name); add_node_hex(inner); }
 	template<typename T> void item(cstring name, const T& inner) { w.map_key(name); add_node(inner); }
-	template<typename T> void hex(cstring name, const T& inner) { w.map_key(name); add_node_hex(inner); }
+	template<typename T> void hex( cstring name, const T& inner) { w.map_key(name); add_node_hex(inner); }
 	
 	template<typename T, typename Tc> void item(cstring name, T& inner, Tc& conv)
 	{
@@ -466,19 +491,6 @@ class jsonunserialize_impl {
 			ev = p.next();
 		}
 	}
-	
-	//void finish_item()
-	//{
-	//	if (ev.action == jsonparser::enter_map || ev.action == jsonparser::enter_list)
-	//	{
-	//		while (true)
-	//		{
-	//			ev = p.next();
-	//			finish_item();
-	//			if (ev.action == jsonparser::exit_map || ev.action == jsonparser::exit_list) break;
-	//		}
-	//	}
-	//}
 	
 #define LEAF(T) void read_item(T& out) { if (ev.action == jsonparser::num) out = ev.num; finish_item(); ev = p.next(); }
 	ALLNUMS(LEAF);
@@ -553,6 +565,19 @@ class jsonunserialize_impl {
 			}
 		}
 		else finish_item();
+		ev = p.next();
+	}
+	
+	template<typename T>
+	typename std::enable_if<
+		!std::is_same<
+			decltype(std::declval<T&>() = std::declval<cstring>()),
+			void*
+		>::value>::type
+	read_item(T& out)
+	{
+		if (ev.action == jsonparser::str) out = ev.str;
+		finish_item();
 		ev = p.next();
 	}
 	

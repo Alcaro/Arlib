@@ -40,7 +40,7 @@ public:
 		
 #ifdef AROPENGL_D3DSYNC
 		//Direct3D vsync is an advanced feature that uses WGL_NV_DX_interop and
-		// D3DSWAPEFFECT_FLIPEX to ensure smooth framerate on Windows.
+		//  D3DSWAPEFFECT_FLIPEX to ensure smooth framerate on Windows.
 		//(Despite the name, it works on both Intel, AMD and nVidia.)
 		//Advantages:
 		//- Less stuttering, especially with DWM enabled (at least on some computers, sometimes vsync is already smooth)

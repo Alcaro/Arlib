@@ -5,6 +5,8 @@
 #include <sys/syscall.h>
 #ifdef __NR_execveat // force disable on old kernels
 
+//TODO: perhaps SECCOMP_RET_USER_NOTIF https://lwn.net/Articles/776035/#userspace (needs kernel 5.0, 2019-01-??) would be useful?
+
 #include <sys/user.h>
 #include <sys/wait.h>
 #include <sys/types.h>

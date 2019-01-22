@@ -47,22 +47,31 @@ inline string tostring(bool val) { return val ? "true" : "false"; }
 
 inline string tostring(const char * s) { return s; } // only exists as tostring, fromstring would be a memory leak
 
+template<typename T>
+typename std::enable_if<
+	std::is_convertible<T, string>::value
+	, string>::type
+tostring(const T& val)
+{
+	return (string)val;
+}
+
 
 inline bool fromstring(cstring s, string& out) { out=s; return true; }
 inline bool fromstring(cstring s, cstring& out) { out=s; return true; }
-bool fromstring(   cstring s,   signed char & out);
-bool fromstring(   cstring s, unsigned char & out);
-bool fromstring(   cstring s,   signed short & out);
-bool fromstring(   cstring s, unsigned short & out);
-bool fromstring(   cstring s,   signed int & out);
-bool fromstring(   cstring s, unsigned int & out);
-bool fromstring(   cstring s,   signed long & out);
-bool fromstring(   cstring s, unsigned long & out);
-bool fromstring(   cstring s,   signed long long & out);
-bool fromstring(   cstring s, unsigned long long & out);
-bool fromstring(   cstring s, float& out);
-bool fromstring(   cstring s, double& out);
-bool fromstring(   cstring s, bool& out);
+bool fromstring(cstring s,   signed char & out);
+bool fromstring(cstring s, unsigned char & out);
+bool fromstring(cstring s,   signed short & out);
+bool fromstring(cstring s, unsigned short & out);
+bool fromstring(cstring s,   signed int & out);
+bool fromstring(cstring s, unsigned int & out);
+bool fromstring(cstring s,   signed long & out);
+bool fromstring(cstring s, unsigned long & out);
+bool fromstring(cstring s,   signed long long & out);
+bool fromstring(cstring s, unsigned long long & out);
+bool fromstring(cstring s, float& out);
+bool fromstring(cstring s, double& out);
+bool fromstring(cstring s, bool& out);
 
 bool fromstringhex(cstring s, unsigned char & out);
 bool fromstringhex(cstring s, unsigned short & out);
@@ -74,25 +83,30 @@ string tostringhex(arrayview<byte> val);
 bool fromstringhex(cstring s, arrayvieww<byte> val);
 bool fromstringhex(cstring s, array<byte>& val);
 
-#define ALLINTS(x) \
-	x(signed char) \
-	x(unsigned char) \
-	x(signed short) \
-	x(unsigned short) \
-	x(signed int) \
-	x(unsigned int) \
-	x(signed long) \
-	x(unsigned long) \
-	x(signed long long) \
-	x(unsigned long long)
-
-#define ALLNUMS(x) \
-	ALLINTS(x) \
-	x(float) \
-	x(double) \
-
 #define ALLSTRINGABLE(x) \
 	ALLNUMS(x) \
 	x(string) \
 	x(cstring) \
 	x(bool)
+
+
+//Same as fromstring, but can't report failure; in exchange, it also tries T::operator=(cstring).
+template<typename T>
+typename std::enable_if<
+	std::is_assignable<T, string>::value
+	>::type
+try_fromstring(cstring s, T& out)
+{
+	out = s;
+}
+
+template<typename T>
+typename std::enable_if<
+	std::is_same<
+		decltype(fromstring(std::declval<cstring>(), std::declval<T&>())),
+		bool // it returning bool isn't necessary, but I couldn't find a std::can_call
+	>::value && !std::is_assignable<T, string>::value>::type // extra is_assignable test so try_fromstring(cstring,string&) isn't ambiguous
+try_fromstring(cstring s, T& out)
+{
+	fromstring(s, out);
+}
