@@ -1,18 +1,30 @@
 #include "arlib.h"
 
+void e(const char*w);
+void e(const char*w)
+{
+	image i;
+	puts(w);
+	i.init_decode_jpg(file::readall(file::exepath()+w));
+	for (unsigned y=0;y<i.height;y++)
+	for (unsigned x=0;x<i.width;x++)
+	{
+		printf("%.8X%c",i.pixels32[y*i.stride/4 + x], x==i.width-1 ? '\n' : ' ');
+	}
+}
 int main(int argc, char** argv)
 {
 	arlib_init(NULL, argv);
-	
-	HTTP http(runloop::global());
-	HTTP::req q;
-	q.url = "http://www.smwcentral.net/?p=register";
-	q.method = "POST";
-	q.body = cstring("do=register&save=Register&username=penisburg").bytes();
-	q.headers.append("X-Forwarded-For: 93.184.216.34");
-	q.headers.append("Host: www.smwcentral.net");
-	http.send(q, [](HTTP::rsp r) { puts((const char*)r.body.ptr()); });
-	runloop::global()->enter();
+	e("jpg/black.jpg");
+	e("jpg/white.jpg");
+	e("jpg/whiteleft-blackright.jpg");
+	e("jpg/whitetop-blackbot.jpg");
+	e("jpg/whitetopleft-blackbotright.jpg");
+	e("jpg/whitetopleft-blackbotright-wide.jpg");
+	e("jpg/whitetopleft-blackbotright-tall.jpg");
+	e("jpg/whitetopleft-blackbotright-big.jpg");
+	e("jpg/whitetopleft-blackbotright-loop.jpg");
+
 /*
 	sandproc ch;
 	ch.set_stdout(process::output::create_stdout());

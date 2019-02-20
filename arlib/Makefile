@@ -5,9 +5,6 @@
 #PATH is the source filename, including extension, relative to project root, with slashes replaced with double underscore
 #example: obj/DEFAULT___linux___arlib__file-posix.cpp.o
 
-#TODO: make OPT=1 should enable optimizations, but also assertions and debug symbols; OPT=1 DEBUG=0 or OPT=2 should disable them
-#actually, check which assertions exist, probably safe to disable
-
 #to create a profiled build:
 #make clean
 #make OPT=1 PROFILE=gen
@@ -16,6 +13,8 @@
 #make OPT=1 PROFILE=use
 
 arlib-default: arlib-default2
+
+.SUFFIXES:
 
 ifeq (,$(wildcard arlib/string.cpp))
   $(error wrong build directory, go up one level)
@@ -83,13 +82,26 @@ CXX = g++
 CXXFLAGS = $(CFLAGS)
 LD = g++
 LFLAGS =
+AS = as
+ASFLAGS =
 CCXXFLAGS = -fvisibility=hidden -Wall -Wmissing-declarations -pipe
+ifeq ($(CC_FAMILY),gcc)
+CCXXFLAGS += -fno-semantic-interposition
+endif
 #doesn't seem to do anything, and CFLAGS is used for c++ too which throws warnings all over
 #CFLAGS += -Wmissing-prototypes
 ifneq ($(EXCEPTIONS),1)
   ifneq ($(SELFTEST),1)
     CCXXFLAGS += -fno-exceptions
   endif
+endif
+
+CC_FAMILY := gcc
+ifneq ($(findstring clang,$(CC) $(CXX) $(LD)),)
+CC_FAMILY := clang
+CC = clang
+CXX = clang++
+LD = clang++
 endif
 
 #double gcc bug combo:
@@ -200,6 +212,9 @@ obj/%.c.o: $$(call SOURCENAME,$$@) arlib.h | obj
 obj/%.cpp.o: $$(call SOURCENAME,$$@) arlib.h | obj
 	$(ECHOQ) CXX $<
 	$(Q)$(CXX) $(TRUE_CXXFLAGS) $(CFLAGS_$(call DOMAINNAME,$@)) -c $< -o $@
+obj/%.S.o: $$(call SOURCENAME,$$@) arlib.h | obj
+	$(ECHOQ) AS $<
+	$(Q)$(AS) $(TRUE_ASFLAGS) $(ASFLAGS_$(call DOMAINNAME,$@)) $< -o $@
 
 SOURCES += *.cpp
 SOURCES_ARLIB := arlib/*.cpp
@@ -314,6 +329,14 @@ arlib/deps/bearssl-0.6/build/libbearssl.a:
   endif
 endif
 
+ifneq ($(wildcard resources/*),)
+  SOURCES_ARLIB += obj/resources.cpp
+obj/resources.cpp: arlib/rescompile.py resources/ resources/*
+	$(ECHOQ) rescompile.py
+	$(Q)python3 arlib/rescompile.py || python2 arlib/rescompile.py
+arlib.h: obj/resources.cpp
+endif
+
 SOURCES_NOWARN += arlib/deps/miniz.c
 
 #CFLAGS_ARLIB += $(patsubst %,-D%,$(DEFINES))
@@ -383,7 +406,6 @@ ifeq ($(MAKECMDGOALS),me a sandwich)
 .PHONY: me a sandwich
 me a:
 	@:
-
 sandwich:
 	@[ `id -u` -ne 0 ] && echo "What? Make it yourself." || echo Okay.
 endif

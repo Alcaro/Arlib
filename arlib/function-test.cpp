@@ -75,6 +75,17 @@ test("function", "", "function")
 	}
 	
 	{
+		int a = 2;
+		int b = 3;
+		int c = 5;
+		function<int()> mul = bind_lambda([=]()->int { return a*b*c; });
+		a = 1;
+		b = 1;
+		c = 1;
+		assert_eq(mul(), 2*3*5);
+	}
+	
+	{
 		int n = 42;
 		auto no_bind = []() -> int { return 42; };
 		n++;
@@ -89,15 +100,15 @@ test("function", "", "function")
 		
 		assert_eq(sizeof(no_bind), 1);
 		assert_eq(sizeof(val_bind), sizeof(int));
-		assert_eq(sizeof(ref_bind), sizeof(int&));
+		assert_eq(sizeof(ref_bind), sizeof(int*));
 		
-		//assert_eq(std::is_trivially_move_constructible<decltype(no_bind)>::value, true);
-		//assert_eq(std::is_trivially_move_constructible<decltype(val_bind)>::value, true);
-		//assert_eq(std::is_trivially_move_constructible<decltype(ref_bind)>::value, true);
+		assert_eq(std::is_trivially_move_constructible<decltype(no_bind)>::value, true);
+		assert_eq(std::is_trivially_move_constructible<decltype(val_bind)>::value, true);
+		assert_eq(std::is_trivially_move_constructible<decltype(ref_bind)>::value, true);
 	}
 }
 
 test("","","")
 {
-assert(!"if lambda is <= size of pointer, and trivially move constructible (i.e. can be moved with memcpy), elide the malloc");
+assert(!"rewrite function header to more argument packs; less six-arg limits, self inclusion, and specializations whose errors suck");
 }

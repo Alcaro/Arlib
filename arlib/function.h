@@ -18,7 +18,10 @@
 #define UTIL_CALLBACK_HPP
 
 #include <stddef.h>
+#include <string.h>
 #include <utility>
+
+using std::nullptr_t;
 
 #define UTIL_CALLBACK_HPP_INSIDE
 
@@ -167,6 +170,19 @@ class LambdaBinder {
 			delete h;
 		}
 	};
+	
+	template<typename T> class inlineholder;
+	template<typename Ret, typename... Args>
+	class inlineholder<Ret(Args...)> {
+	public:
+		static Ret
+		call(const void * obj, Args... args)
+		{
+			char l[sizeof(void*)];
+			memcpy(l, &obj, sizeof(Tl));
+			return (*(Tl*)l)(std::forward<Args>(args)...);
+		}
+	};
 public:
 	LambdaBinder(Tl l) : l(std::move(l)) {}
 	
@@ -182,7 +198,18 @@ public:
 	typename std::enable_if<!std::is_convertible<Tl, typename function<Tf>::FuncTypeNp>::value, function<Tf>>::type
 	doIt()
 	{
-		return function<Tf>(&holder<Tf>::call, &holder<Tf>::destruct, new holder<Tf>(l));
+		if (std::is_trivially_move_constructible<Tl>::value &&
+		    std::is_trivially_destructible<Tl>::value &&
+		    sizeof(Tl) <= sizeof(void*))
+		{
+			void* obj = NULL;
+			memcpy(&obj, &l, sizeof(l));
+			return function<Tf>(&inlineholder<Tf>::call, obj);
+		}
+		else
+		{
+			return function<Tf>(&holder<Tf>::call, &holder<Tf>::destruct, new holder<Tf>(l));
+		}
 	}
 	
 	template<typename Tf> operator function<Tf>()

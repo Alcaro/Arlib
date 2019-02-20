@@ -519,43 +519,51 @@ static inline void unpack_pixels(uint32_t width, uint32_t height, uint32_t* pixe
 #include "file.h"
 
 //PngSuite is a good start, but it leaves a lot of stuff untested:
-//(some of these are rare but valid [+], some are invalid [-], some are debatable [?])
+// Prefix key:
+// [+] rare, but it's a valid PNG
+// [-] violates the PNG standard, should be rejected
+// [+?] valid per the spec, but can't be decoded in practice
+// [-?] invalid per spec, but are in otherwise-ignored parts, so it's fine to accept these PNGs
+// [+6] valid per the spec, but the image uses 16bit color; if that's unimplemented, rejecting is fine
+// [-T] invalid per the spec, but it's in the ancillary tRNS chunk; if that's unimplemented, accepting is fine
 //[+] funky but legit sizes like 1*1024 and 1024*1
 //[+] non-square interlaced images, at least 1*n and n*1 for every n<=9, but preferably n*m for all n,m<=9
 //[-] invalid sizes: 32*0px, 2^31*32px, etc (spec says 2^31-1 is max)
-//[?] 2^31-1*2^31-1px image that's technically legal but takes several exabytes of RAM to render
-//[?] 2^31-1*1 image, may provoke a few integer overflows (or out-of-memory)
-//[?] actually, every 2^[20..30]*1 should be tested. and 1*2^[20..30]. and those minus 1
+//[+?] 2^31-1*2^31-1px image that's technically legal but takes several exabytes of RAM to render
+//[+?] 2^31-1*1 image, may provoke a few integer overflows (or out-of-memory)
+//[+?] actually, every 2^[20..30]*1 should be tested. and 1*2^[20..30]. and those minus 1. and 2*?.
 //      valid per spec, but anyone trying to decode them will run out of memory; as such, rejecting is acceptable
-//[?] checksum error in an ancillary chunk
-//      invalid per spec, but skipping unknown chunks is fine, and skipping checksum calculation can be deemed part of skipping unknown chunks
+//[-?] checksum error in an ancillary chunk
+//      invalid per spec, but unknown ancillary chunks must be skipped, and 'skip' can be argued to include skipping checksum calculation
 //[-] PLTE chunk length not divisible by 3
 //[-] PLTE with 0 colors
 //[-] PLTE on grayscale
-//[-] multiple PLTEs (in both RGB and paletted image)
+//[-] multiple PLTEs in paletted image
 //[-] paletted image where some pixels use colors not in the PLTE (4bpp, 9-entry PLTE, but color 12 is used)
+//[-] critical chunks in wrong order
 //[+] overlong PLTE - <=16-color PLTE but 8 bits per pixel
-//[-] overlong PLTE on RGB (257 colors)
+//[+] PLTE in RGB - a recommendation for how to render in low-color contexts, should be ignored by high-color renderers
+//[-?] misplaced PLTE in RGB; ignoring PLTE in RGB means this won't be detected
+//[-?] multiple PLTEs in RGB
+//[-?] 257-color PLTE in RGB
 //[-] paletted image with too long tRNS
-//[+] for bit width 16, a tRNS chunk saying RGB 0x0001*3 is transparent, and image contains (u16[]){1,1,2} that should not be transparent
-//[+] for bit width 16, some filtering shenanigans that yield different results if 16->8bpp conversion is done before filtering
+//[+6] for bit width 16, a tRNS chunk saying RGB 0x0001*3 is transparent, and image contains u16[]{1,1,2} that should not be transparent
+//[+6] for bit width 16, some filtering shenanigans that yield different results if 16->8bpp conversion is done before filtering
 //      (filtering should be able to amplify differences)
 //[+] size-0 tRNS with paletted data
 //      the PNG specification does not mention whether this is allowed; in most RFCs, such special cases tend to follow the general rule,
 //      but this specific RFC calls out one- and zero-byte IDATs as valid, so that's an oversight in the spec. Still, probably valid.
 //[+] tRNS on grayscale (both 4bpp and 8bpp, since my decoder treats them differently)
-//[-] tRNS on gray+alpha / RGBA
-//[-] tRNS with values out of bounds
-//[-] tRNS with wrong size (not multiple of 3, or for types 0 or 2, not 2 resp. 6 bytes)
-//[-] tRNS larger than the palette
-//[-] tRNS before PLTE
-//[-] tRNS after IDAT
-//      since tRNS is ancillary, it's allowed to ignore it and deem those images valid;
-//      however, it is part of the spec, and I have never encountered a PNG decoder without tRNS support
+//[-T] tRNS on gray+alpha / RGBA
+//[-T] tRNS with values out of bounds
+//[-T] tRNS with wrong size (not multiple of 3, or for types 0 or 2, not 2 resp. 6 bytes)
+//[-T] tRNS larger than the palette
+//[-T] tRNS before PLTE
+//[-T] tRNS after IDAT
 //[-] filter type other than 0
 //[-] filter type 0, but some scanlines have filters > 4
 //[-] filter type 0, but some scanlines have filters >= 128 (to make sure they don't treat it as signed)
-//[+] filter != 0 on y=0
+//[+] filter != 0 on y=0 (prior scanline must be treated as all-zero)
 //[+] test whether the Paeth filter breaks ties properly
 //[+] IDAT/ordering shenanigans with bit width < 16
 //[-] actual ordering shenanigans, as opposed to just splitting the IDATs
@@ -564,8 +572,8 @@ static inline void unpack_pixels(uint32_t width, uint32_t height, uint32_t* pixe
 //[-] a chunk of size (uint32_t)-1
 //[+] a size-0 IDAT chunk (completely missing IDAT is tested)
 //[-] IDATs decompressing to too much or too little data
-//[?] garbage bytes after IEND
-//[?] an ancillary chunk after IEND
+//[-?] garbage bytes after IEND
+//[-?] an ancillary chunk after IEND
 //      invalid per spec, but sometimes file length isn't available; as such, ignoring trailing garbage must be deemed acceptable
 //      any such placed chunks must, however, be ignored
 //[-] ancillary chunk before IHDR

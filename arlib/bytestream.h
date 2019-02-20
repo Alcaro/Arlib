@@ -85,6 +85,7 @@ public:
 	size_t remaining() { return end-at; }
 	
 	void seek(size_t pos) { at = start+pos; }
+	void seekrel(ssize_t off) { at += off; }
 	
 	uint32_t u24l()
 	{

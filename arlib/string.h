@@ -259,7 +259,7 @@ public:
 		return substr(start, end);
 	}
 	
-	inline string lower() const;
+	inline string lower() const; // Only considers ASCII.
 	inline string upper() const;
 	
 	bool isutf8() const; // NUL is considered valid UTF-8. U+D800, overlong encodings, etc are not.
@@ -267,6 +267,11 @@ public:
 	// If out of bounds, returns zero.
 	// The index is updated to point to the next codepoint. Initialize it to zero; stop when it equals the string's length.
 	uint32_t codepoint_at(uint32_t& index) const;
+	
+	//Whether the string matches a glob pattern. ? matches any one byte, * matches zero or more bytes.
+	//NUL bytes are treated as any other byte, in both strings.
+	bool matches_glob(cstring pat);
+	bool matches_globi(cstring pat); // Case insensitive. Considers ASCII only, øØ are considered nonequal.
 	
 	size_t hash() const { return ::hash((char*)ptr(), length()); }
 	
@@ -299,8 +304,6 @@ public:
 	c_string c_str() const { return c_string(bytes(), bytes_hasterm()); }
 };
 
-
-extern const uint16_t string_windows1252tab[32]; // placed here so gdb stops printing it every time I inspect a string
 
 class string : public cstring {
 	friend class cstring;
@@ -445,7 +448,7 @@ public:
 	string& operator=(nullptr_t) { release(); init_from(""); return *this; }
 	~string() { release(); }
 	
-	operator bool() const { return length() != 0; }
+	explicit operator bool() const { return length() != 0; }
 	operator const char * () const { return ptr_withnul(); }
 	
 private:
@@ -504,20 +507,17 @@ bool operator<(cstring left,      cstring right     ) = delete;
 bool operator<(const char * left, cstring right     ) = delete;
 
 inline string operator+(cstring left,      cstring right     ) { string ret=left; ret+=right; return ret; }
+inline string operator+(cstring left,      const char * right) { string ret=left; ret+=right; return ret; }
+inline string operator+(string&& left,     cstring right     ) { left+=right; return std::move(left); }
 inline string operator+(string&& left,     const char * right) { left+=right; return std::move(left); }
-inline string operator+(cstring left,      const char * right) { string ret=left; ret+=right; return ret; } // a few of those are because Gcc
-inline string operator+(string&& left,     char * right      ) { left+=right; return std::move(left); } // is drunk and would rather cast
-inline string operator+(cstring left,      char * right      ) { string ret=left; ret+=right; return ret; } // left to bool than right to
-inline string operator+(string&& left,     cstring right     ) { left+=right; return std::move(left); } // const char*...
 inline string operator+(const char * left, cstring right     ) { string ret=left; ret+=right; return ret; }
 
-inline string operator+(string&& left, char right) { left+=right; return std::move(left); }
-inline string operator+(cstring left, char right) { string ret=left; ret+=right; return ret; }
-inline string operator+(char left, cstring right) { string ret; ret[0]=left; ret+=right; return ret; }
-
-inline string operator+(string&& left, int right) = delete;
-inline string operator+(cstring left, int right) = delete;
-inline string operator+(int left, cstring right) = delete;
+//inline explicit string operator+(string&& left, char right) { left+=right; return std::move(left); }
+//inline explicit string operator+(cstring left, char right) { string ret=left; ret+=right; return ret; }
+//inline explicit string operator+(char left, cstring right) { string ret; ret[0]=left; ret+=right; return ret; }
+inline string operator+(string&& left, char right) = delete;
+inline string operator+(cstring left, char right) = delete;
+inline string operator+(char left, cstring right) = delete;
 
 inline string cstring::lower() const
 {

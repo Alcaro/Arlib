@@ -6,10 +6,10 @@ ARTHREAD = 1
 ARWUTF = 0
 ARSOCKET = 1
 #valid values: openssl (default), gnutls, tlse, bearssl, no
-ARSOCKET_SSL = bearssl
+ARSOCKET_SSL = openssl
 #valid values: schannel (default), bearssl, no (others may work, not tested)
 ARSOCKET_SSL_WINDOWS = schannel
-ARSANDBOX = 0
+ARSANDBOX = 1
 
 #honored variables, in addition to the ones listed here:
 #OPT, DEBUG, PROFILE (CLI)

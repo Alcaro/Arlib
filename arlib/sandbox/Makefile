@@ -2,6 +2,15 @@ ifneq ($(OS),linux)
   $(error sandbox is only supported on Linux)
 endif
 
+ifeq ($(CC_FAMILY),clang)
+# Clang 6.0.0 emits 'call memcpy@PLT' all over, despite -ffreestanding.
+# There is no PLT in the emulator, and no flag to not emit memcpy.
+# As such, Clang is currently unusable for the purpose of building the sandbox emulator.
+# (It also rejects %rax, insisting on a plain rax. Finally, it requires a __asm__(".intel_syntax") early in the C++, which confuses gcc.)
+# Broker/launcher are untested, probably fine.
+$(error Clang cannot be used to build the sandbox)
+endif
+
 SOURCES_ARLIB += arlib/sandbox/*.cpp
 DEFINES += ARLIB_SANDBOX
 

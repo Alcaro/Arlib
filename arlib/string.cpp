@@ -90,6 +90,7 @@ string string::create_usurp(char * str)
 	cstring tmp(str);
 	string ret;
 	memcpy(&ret, &tmp, sizeof(string));
+	if (tmp.inlined()) free(str);
 	return ret;
 }
 
@@ -417,6 +418,90 @@ uint32_t cstring::codepoint_at(uint32_t& idx) const
 	
 fail:
 	return 0xDC00 | head;
+}
+
+bool cstring::matches_glob(cstring pat)
+{
+	const uint8_t * s = ptr();
+	const uint8_t * p = pat.ptr();
+	const uint8_t * se = s + length();
+	const uint8_t * pe = p + pat.length();
+	
+	while (s < se && p < pe && *p != '*')
+	{
+		if (*s != *p && *p != '?') return false;
+		s++;
+		p++;
+	}
+	if (p == pe) return s==se;
+	
+	const uint8_t * sp = NULL; // never used uninitialized, but Gcc is dumb
+	const uint8_t * pp = NULL;
+	while (s < se)
+	{
+		if (p < pe && *p == '*')
+		{
+			p++;
+			if (p == pe) return true;
+			pp = p;
+			sp = s+1;
+		}
+		else if (p < pe && s < se && (*p == *s || *p == '?'))
+		{
+			p++;
+			s++;
+		}
+		else
+		{
+			p = pp;
+			s = sp;
+			sp++;
+		}
+	}
+	while (p < pe && *p == '*') p++;
+	return (p == pe);
+}
+
+bool cstring::matches_globi(cstring pat)
+{
+	const uint8_t * s = ptr();
+	const uint8_t * p = pat.ptr();
+	const uint8_t * se = s + length();
+	const uint8_t * pe = p + pat.length();
+	
+	while (s < se && p < pe && *p != '*')
+	{
+		if (tolower(*s) != tolower(*p) && *p != '?') return false;
+		s++;
+		p++;
+	}
+	if (p == pe) return s==se;
+	
+	const uint8_t * sp = NULL; // never used uninitialized, but Gcc is dumb
+	const uint8_t * pp = NULL;
+	while (s < se)
+	{
+		if (p < pe && *p == '*')
+		{
+			p++;
+			if (p == pe) return true;
+			pp = p;
+			sp = s+1;
+		}
+		else if (p < pe && s < se && (tolower(*s) == tolower(*p) || *p == '?'))
+		{
+			p++;
+			s++;
+		}
+		else
+		{
+			p = pp;
+			s = sp;
+			sp++;
+		}
+	}
+	while (p < pe && *p == '*') p++;
+	return (p == pe);
 }
 
 
@@ -820,5 +905,39 @@ test("string", "", "string")
 		assert_eq(a.codepoint_at(n), 0xDC9F);
 		assert_eq(a.codepoint_at(n), 0xDC92);
 		assert_eq(n, a.length());
+	}
+	
+	{
+		char * a = strdup("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+		assert_eq(string::create_usurp(a), "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+		
+		a = strdup("aaaaaaaa");
+		assert_eq(string::create_usurp(a), "aaaaaaaa");
+	}
+	
+	{
+		cstring a = "floating munchers";
+		assert(a.matches_glob("floating munchers"));
+		assert(a.matches_glob("?loating?muncher?"));
+		assert(!a.matches_glob("floating"));
+		assert(!a.matches_glob(""));
+		assert(((cstring)"").matches_glob(""));
+		assert(a.matches_glob("floating*"));
+		assert(a.matches_glob("*"));
+		assert(a.matches_glob("??*??"));
+		assert(a.matches_glob("?????????????????"));
+		assert(a.matches_glob("*?????????????????"));
+		assert(a.matches_glob("??*??*??"));
+		assert(a.matches_glob("?????????????????*"));
+		assert(a.matches_glob("*??*??*??*??*??*??*??*??*?*"));
+		assert(a.matches_glob("*?*?*?*?*?*?*?*?*?*?*?*?*?*?*?*?*?*"));
+		assert(a.matches_glob("**?**?**?**?**?**?**?**?**?**?**?**?**?**?**?**?**?**"));
+		assert(a.matches_glob("*fl*oa*ti*ng* m*un*ch*er*s*"));
+		assert(a.matches_glob("*fl*oa*t*ng* m**ch*er*s*"));
+		assert(a.matches_glob("fl*oa*t*ng* m**ch*r*s"));
+		assert(!a.matches_glob("????????????????"));
+		assert(!a.matches_glob("??????????????????"));
+		assert(((cstring)"test test tests test").matches_glob("test*tests*test"));
+		assert(!((cstring)"test test tests test").matches_glob("test*tests*test*test"));
 	}
 }

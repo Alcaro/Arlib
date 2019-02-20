@@ -3,6 +3,7 @@
 #include "../process.h"
 #include "../file.h"
 #include "../set.h"
+#include "../stringconv.h"
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -22,7 +23,7 @@
 
 #include <sys/syscall.h>
 #include <linux/memfd.h>
-//glibc 2.27 (february 2018) adds this, hopefully this one overrides glibc's one
+//glibc 2.27 (february 2018) adds this, probably won't interfere...
 static inline int memfd_create(const char * name, unsigned int flags) { return syscall(__NR_memfd_create, name, flags); }
 
 void sandproc::filesystem::grant_native_redir(string cpath, string ppath, int max_write)

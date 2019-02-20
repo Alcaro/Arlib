@@ -357,7 +357,7 @@ public:
 		
 		AllocRenderTarget();
 		
-		//the framebuffer must be bound after calling AllocRenderTarget, otherwise the nVidia driver claims the framebuffer is incomplete
+		//the framebuffer must be bound after calling AllocRenderTarget, otherwise the Nvidia driver claims the framebuffer is incomplete
 		//this bug can be fixed by querying the current FBO and binding that, which shouldn't have any effect
 		//the Intel driver is happy with either order, I suspect driver bug of some kind
 		glGenFramebuffers(1, &GL_fboname);

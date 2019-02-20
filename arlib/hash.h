@@ -11,6 +11,8 @@ typename std::enable_if<std::is_class<T>::value, size_t>::type hash(const T& val
 {
 	return val.hash();
 }
+template<typename T>
+size_t hash(T* val) { return hash((size_t)val); }
 static inline size_t hash(const char * val, size_t n)
 {
 	size_t hash = 5381;
@@ -20,10 +22,6 @@ static inline size_t hash(const char * val, size_t n)
 		val++;
 	}
 	return hash;
-}
-static inline size_t hash(const char * val)
-{
-	return hash(val, strlen(val));
 }
 
 

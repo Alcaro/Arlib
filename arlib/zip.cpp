@@ -1,4 +1,4 @@
-#define timegm timegm_goaway
+//#define timegm timegm_goaway
 #include "zip.h"
 #include "test.h"
 #include "crc32.h"
@@ -328,7 +328,7 @@ bool zip::strascii(cstring s)
 {
 	for (size_t i=0;i<s.length();i++)
 	{
-		if (s[i]>=128 || s[i]<32) return false;
+		if (s[i]>=127 || s[i]<32) return false;
 	}
 	return true;
 }

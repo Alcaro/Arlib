@@ -347,7 +347,7 @@ class runloop_blocktest : public runloop {
 		this->end();
 	}
 	
-	uintptr_t set_fd(uintptr_t fd, function<void(uintptr_t)> cb_read, function<void(uintptr_t)> cb_write)
+	uintptr_t set_fd(uintptr_t fd, function<void(uintptr_t)> cb_read, function<void(uintptr_t)> cb_write) override
 	{
 		function<void(uintptr_t)> cb_read_w;
 		function<void(uintptr_t)> cb_write_w;

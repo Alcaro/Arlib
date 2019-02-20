@@ -174,9 +174,9 @@ static bool install_seccomp()
 	static const struct sock_filter filter[] = {
 		#include "bpf.inc"
 	};
-	static_assert(ARRAY_COUNT(filter) < 65536);
+	static_assert(ARRAY_SIZE(filter) < 65536);
 	static const struct sock_fprog prog = {
-		.len = (unsigned short)ARRAY_COUNT(filter),
+		.len = (unsigned short)ARRAY_SIZE(filter),
 		.filter = (sock_filter*)filter,
 	};
 	require(prctl(PR_SET_NO_NEW_PRIVS, 1, 0,0,0));
@@ -194,11 +194,11 @@ static int execveat(int dirfd, const char * pathname, char * const argv[], char 
 pid_t sandproc::launch_impl(const char * program, array<const char*> argv, array<int> stdio_fd)
 {
 	// can't override argv[0] in sandbox, ld-linux won't understand that
-	// if you REALLY need a fake argv[0], redirect the chosen executable via sandbox policy
+	// if you need a fake argv[0], redirect the chosen executable via sandbox policy
 	if (program != argv[0])
 		return -1;
 	
-	argv.prepend("[Arlib-sandbox]"); // ld-linux thinks it's argv[0] and discards the real one
+	argv.prepend("[arlib-sandbox]"); // ld-linux thinks it's argv[0] and discards the real one
 	
 	//fcntl is banned by seccomp, so this goes early
 	//putting it before clone() allows sharing it between sandbox children

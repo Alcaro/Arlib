@@ -20,6 +20,8 @@
 #include <sys/resource.h>
 #include <sys/utsname.h>
 
+//__asm__(".intel_syntax");
+
 //gcc recognizes various function names and reads attributes (such as extern) from the headers, force it not to
 namespace mysand { namespace {
 #undef errno
@@ -637,11 +639,6 @@ struct kabi_sigaction {
 static inline int rt_sigaction(int sig, const struct sigaction * act, struct sigaction * oact, size_t sigsetsize)
 {
 	return syscall4(__NR_rt_sigaction, sig, (long)act, (long)oact, sigsetsize);
-}
-
-static inline int rt_sigprocmask(int how, const sigset_t* nset, sigset_t* oset, size_t sigsetsize)
-{
-	return syscall4(__NR_rt_sigprocmask, how, (long)nset, (long)oset, sigsetsize);
 }
 
 static inline void set_sighand(int sig, void(*handler)(int, siginfo_t*, void*), int flags)

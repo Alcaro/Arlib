@@ -13,7 +13,7 @@ public:
 		//Every field except 'url' is optional.
 		string url;
 		
-		string method; // GET if body is empty, POST if nonempty
+		string method; // defaults to GET if body is empty, POST if nonempty
 		//These headers are added automatically, if not already present:
 		//Connection: keep-alive
 		//Host: <from url>
@@ -29,7 +29,6 @@ public:
 		uint32_t flags = 0;
 		
 		// Passed unchanged in the rsp object, and used for cancel(). Otherwise not used.
-		// Duplicates are allowed if cancel() is not used.
 		uintptr_t id = 0;
 		
 		//If the server sends this much data (including headers/etc), or hasn't finished in the given time, fail.
@@ -101,12 +100,12 @@ public:
 	
 	//Multiple requests may be sent to the same object. This will make them use HTTP Keep-Alive.
 	//The requests must be to the same protocol-domain-port tuple.
-	//Failures are reported in the callback.
-	//Callbacks will be called in an arbitrary order. If there's more than one request, use different callbacks or vary the ID.
+	//Failures are reported in the callback. Results are not guaranteed to be reported in any particular order.
 	void send(req q, function<void(rsp)> callback);
-	//If the HTTP object is currently trying to send a request with this ID, it's canceled.
-	//Callback won't be called, and unless request has already been sent, it won't be.
-	//If multiple have that ID, undefined which of them is canceled. Returns whether anything happened.
+	//If the HTTP object is currently trying to send a request with this ID, it's cancelled.
+	//The callback won't be called, and unless the request has already been sent, it won't be.
+	//If multiple have that ID, at least one is canceled; it's unspecified which, or if one or multiple are removed.
+	//Returns whether anything happened.
 	bool cancel(uintptr_t id);
 	
 	//Discards any unfinished requests, errors, and similar.

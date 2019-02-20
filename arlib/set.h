@@ -378,7 +378,7 @@ public:
 	}
 	Tvalue& operator[](const Tkey& key) // C# does this better...
 	{
-		return *get_or_null(key);
+		return get(key);
 	}
 	
 	Tvalue& insert(const Tkey& key)

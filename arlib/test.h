@@ -207,8 +207,6 @@ void _assert_range(const T&  actual, const char * actual_exp,
 #define test_expfail(x) do { _test_expfail(x); } while(0)
 #define test_nothrow(x) do { _test_nothrow(+1); x; _test_nothrow(-1); } while(0)
 
-#define WANT_VALGRIND
-
 #define main not_quite_main
 int not_quite_main(int argc, char** argv);
 
@@ -250,13 +248,11 @@ void socket_test_http(socket* sock, runloop* loop);
 void socket_test_fail(socket* sock, runloop* loop);
 #endif
 
-#ifdef WANT_VALGRIND
-# ifdef __linux__
-#  define HAVE_VALGRIND
-# endif
-# ifdef HAVE_VALGRIND
-#  include "deps/valgrind/memcheck.h"
-# else
-#  define RUNNING_ON_VALGRIND false
-# endif
+#ifdef __linux__
+# define HAVE_VALGRIND
+#endif
+#ifdef HAVE_VALGRIND
+# include "deps/valgrind/memcheck.h"
+#else
+# define RUNNING_ON_VALGRIND false
 #endif

@@ -123,7 +123,10 @@ public:
 	endian_core(T val) : val(val) {}
 	endian_core(arrayview<byte> bytes)
 	{
-		memcpy(&val, bytes.ptr(), sizeof(val));
+		static_assert(sizeof(endian_core) == sizeof(T));
+		
+		// these 'this' should be &val, but that makes Clang throw warnings about misaligned pointers
+		memcpy(this, bytes.ptr(), sizeof(val));
 	}
 	
 	operator T() const
@@ -138,8 +141,8 @@ public:
 		else val = end_swap(newval);
 	}
 	
-	arrayvieww<byte> bytes() { return arrayvieww<byte>((byte*)&val, sizeof(val)); }
-	arrayview<byte> bytes() const { return arrayview<byte>((byte*)&val, sizeof(val)); }
+	arrayvieww<byte> bytes() { return arrayvieww<byte>((byte*)this, sizeof(val)); }
+	arrayview<byte> bytes() const { return arrayview<byte>((byte*)this, sizeof(val)); }
 }
 #ifdef __GNUC__
 __attribute__((__packed__))

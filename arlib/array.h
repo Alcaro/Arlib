@@ -17,14 +17,15 @@ protected:
 	size_t count;
 	
 protected:
-	static const bool trivial_cons = std::is_trivial<T>::value; // constructor is memset(0)
+	//must be functions, Clang won't like it otherwise
+	static bool trivial_cons() { return std::is_trivial<T>::value; } // constructor is memset(0)
 #if __GNUC__ >= 5
-	static const bool trivial_copy = std::is_trivially_copyable<T>::value; // copy constructor is memcpy
+	static bool trivial_copy() { return std::is_trivially_copyable<T>::value; } // copy constructor is memcpy
 #else
-	static const bool trivial_copy = trivial_cons;
+	static bool trivial_copy() { return trivial_cons(); }
 #endif
 	//static const bool trivial_comp = std::has_unique_object_representations<T>::value;
-	static const bool trivial_comp = std::is_integral<T>::value; // equality comparison is memcmp
+	static bool trivial_comp() { return std::is_integral<T>::value; } // equality comparison is memcmp
 	//don't care about destructor being trivial
 	
 public:
@@ -75,7 +76,7 @@ public:
 	}
 	
 	template<typename T2>
-	decltype(T() + T2()) join(T2 between) const
+	decltype(std::declval<T>() + std::declval<T2>()) join(T2 between) const
 	{
 		if (!this->count) return decltype(T() + T2())();
 		
@@ -143,7 +144,7 @@ public:
 	bool operator==(arrayview<T> other) const
 	{
 		if (size() != other.size()) return false;
-		if (this->trivial_comp)
+		if (this->trivial_comp())
 		{
 			return memcmp(ptr(), other.ptr(), sizeof(T)*size())==0;
 		}
@@ -294,7 +295,7 @@ template<typename T> class array : public arrayvieww<T> {
 	{
 		this->count = other.size(); // I can't access non-this instances of my base class, so let's just use the public interface.
 		this->items = malloc(sizeof(T)*bitround(this->count));
-		if (this->trivial_copy)
+		if (this->trivial_copy())
 		{
 			memcpy(this->items, other.ptr(), sizeof(T)*this->count);
 		}
@@ -350,7 +351,7 @@ private:
 		if (this->count >= count) return;
 		size_t prevcount = this->count;
 		resize_grow_noinit(count);
-		if (this->trivial_cons)
+		if (this->trivial_cons())
 		{
 			memset(this->items+prevcount, 0, sizeof(T)*(count-prevcount));
 		}
@@ -387,7 +388,7 @@ public:
 	void reserve(size_t len) { resize_grow(len); }
 	void reserve_noinit(size_t len)
 	{
-		if (this->trivial_cons) resize_grow_noinit(len);
+		if (this->trivial_cons()) resize_grow_noinit(len);
 		else resize_grow(len);
 	}
 	
@@ -526,7 +527,7 @@ public:
 			dst = this->items+prevcount;
 		}
 		
-		if (this->trivial_copy)
+		if (this->trivial_copy())
 		{
 			memcpy(dst, src, sizeof(T)*othercount);
 		}
@@ -883,6 +884,7 @@ public:
 
 #define X(T) COMMON_INST(array<T>);
 ALLINTS(X)
+#undef X
+
 class string;
 extern template class array<string>;
-#undef X

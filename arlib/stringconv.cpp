@@ -175,7 +175,7 @@ test("string conversion", "", "string")
 	testcall(testundec<int>("00123", 123));
 	testcall(testundec<int>("000123", 123));
 	testcall(testundec<int>("0", 0));
-	testcall(testundec<int>("09", 9)); // no octal alloweds
+	testcall(testundec<int>("09", 9)); // no octal allowed
 	testcall(testundec<double>("123", 123));
 	testcall(testundec<double>("0123", 123));
 	testcall(testundec<double>("00123", 123));

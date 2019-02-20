@@ -90,8 +90,16 @@ typedef uint8_t byte; // TODO: remove
 #include <dirent.h>
 #include <signal.h>
 #endif
+
 #undef NULL
 #define NULL nullptr
+
+#if __cplusplus < 201103
+class nullptr_t_impl {};
+#define nullptr_t nullptr_t_impl* // random pointer type nobody will ever use
+#else
+using std::nullptr_t;
+#endif
 
 //some magic stolen from http://blogs.msdn.com/b/the1/archive/2004/05/07/128242.aspx
 //C++ can be so messy sometimes...
@@ -366,11 +374,6 @@ public:
 	~refcount() { if (inner && 0 == --inner->refcount) delete inner; }
 };
 
-#if __cplusplus < 201103
-class nullptr_t_impl {};
-#define nullptr_t nullptr_t_impl* // random pointer type nobody will ever use
-#endif
-
 template<typename T>
 class iterwrap {
 	T b;
@@ -493,6 +496,10 @@ template<typename T> static inline T bitround(T in)
 #ifndef COMMON_INST
 #define COMMON_INST(T) extern template class T
 #endif
+
+//For cases where Gcc thinks a variable is used uninitialized, but it isn't in practice.
+//Usage: int foo KNOWN_INIT(0), where argument is any valid value for that type
+#define KNOWN_INIT(x) = x
 
 
 //If an interface defines a function to set some state, and a callback for when this state changes,

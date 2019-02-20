@@ -110,10 +110,13 @@ public:
 	}
 };
 
-#ifdef _WIN32 // surprisingly, this is safe - gmtime() returns a thread local
+#ifdef _WIN32 // this is safe, gmtime() returns a thread local
 #define gmtime_r(a,b) (*(b)=*gmtime(a))
 #endif
 
+#if 0 // this function exists on all platforms I've seen
 #undef timegm
+#define timegm timegm_local
 //similar to mktime, but UTC timezone
-extern "C" time_t timegm(struct tm * t);
+time_t timegm(struct tm * t);
+#endif
