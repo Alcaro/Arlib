@@ -1,29 +1,30 @@
 #include "arlib.h"
 
-void e(const char*w);
-void e(const char*w)
+inline void e(const char*w)
 {
-	image i;
-	puts(w);
-	i.init_decode_jpg(file::readall(file::exepath()+w));
-	for (unsigned y=0;y<i.height;y++)
-	for (unsigned x=0;x<i.width;x++)
-	{
-		printf("%.8X%c",i.pixels32[y*i.stride/4 + x], x==i.width-1 ? '\n' : ' ');
-	}
+	//image i;
+	//puts(w);
+	//i.init_decode_jpg(file::readall(file::exepath()+w));
+	//for (unsigned y=0;y<i.height;y++)
+	//for (unsigned x=0;x<i.width;x++)
+	//{
+		//printf("%.8X%c",i.pixels32[y*i.stride/4 + x], x==i.width-1 ? '\n' : ' ');
+	//}
 }
 int main(int argc, char** argv)
 {
-	arlib_init(NULL, argv);
-	e("jpg/black.jpg");
-	e("jpg/white.jpg");
-	e("jpg/whiteleft-blackright.jpg");
-	e("jpg/whitetop-blackbot.jpg");
-	e("jpg/whitetopleft-blackbotright.jpg");
-	e("jpg/whitetopleft-blackbotright-wide.jpg");
-	e("jpg/whitetopleft-blackbotright-tall.jpg");
-	e("jpg/whitetopleft-blackbotright-big.jpg");
-	e("jpg/whitetopleft-blackbotright-loop.jpg");
+	//arlib_init(NULL, argv);
+	//e("jpg/black.jpg");
+	//e("jpg/white.jpg");
+	//e("jpg/whiteleft-blackright.jpg");
+	//e("jpg/whitetop-blackbot.jpg");
+	//e("jpg/whitetopleft-blackbotright.jpg");
+	//e("jpg/whitetopleft-blackbotright-wide.jpg");
+	//e("jpg/whitetopleft-blackbotright-tall.jpg");
+	//e("jpg/whitetopleft-blackbotright-big.jpg");
+	//e("jpg/whitetopleft-blackbotright-loop.jpg");
+	
+	puts(tostringhex(crc32(cstring("floating muncher").bytes())));
 
 /*
 	sandproc ch;

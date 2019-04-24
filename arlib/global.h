@@ -106,7 +106,7 @@ using std::nullptr_t;
 template<typename T, size_t N> char(&ARRAY_SIZE_CORE(T(&x)[N]))[N];
 #define ARRAY_SIZE(x) (sizeof(ARRAY_SIZE_CORE(x)))
 
-//yep, C++ is definitely a mess. based on https://github.com/swansontec/map-macro with some changes:
+//just to make C++ an even bigger mess. based on https://github.com/swansontec/map-macro with some changes:
 //- namespaced all child macros, renamed main one
 //- merged https://github.com/swansontec/map-macro/pull/3
 //- merged http://stackoverflow.com/questions/6707148/foreach-macro-on-macros-arguments#comment62878935_13459454, plus ifdef
@@ -213,18 +213,47 @@ typedef void* anyptr;
 #endif
 
 
+#ifdef ARLIB_TESTRUNNER
+void _test_malloc();
+void _test_free();
+void free_test(void* ptr);
+#define free free_test
+#else
+#define _test_malloc()
+#define _test_free()
+#endif
+
 void malloc_fail(size_t size);
 
-inline anyptr malloc_check(size_t size) { void* ret = malloc(size); if (size && !ret) malloc_fail(size); return ret; }
-inline anyptr try_malloc(size_t size) { return malloc(size); }
+inline anyptr malloc_check(size_t size)
+{
+	_test_malloc();
+	void* ret = malloc(size);
+	if (size && !ret) malloc_fail(size);
+	return ret;
+}
+inline anyptr try_malloc(size_t size) { _test_malloc(); return malloc(size); }
 #define malloc malloc_check
 
-inline anyptr realloc_check(anyptr ptr, size_t size) { void* ret = realloc(ptr, size); if (size && !ret) malloc_fail(size); return ret; }
-inline anyptr try_realloc(anyptr ptr, size_t size) { return realloc(ptr, size); }
+inline anyptr realloc_check(anyptr ptr, size_t size)
+{
+	if ((void*)ptr) _test_free();
+	if (size) _test_malloc();
+	void* ret = realloc(ptr, size);
+	if (size && !ret) malloc_fail(size);
+	return ret;
+}
+inline anyptr try_realloc(anyptr ptr, size_t size) { if ((void*)ptr) _test_free(); if (size) _test_malloc(); return realloc(ptr, size); }
 #define realloc realloc_check
 
-inline anyptr calloc_check(size_t size, size_t count) { void* ret = calloc(size, count); if (size && count && !ret) malloc_fail(size*count); return ret; }
-inline anyptr try_calloc(size_t size, size_t count) { return calloc(size, count); }
+inline anyptr calloc_check(size_t size, size_t count)
+{
+	_test_malloc();
+	void* ret = calloc(size, count);
+	if (size && count && !ret) malloc_fail(size*count);
+	return ret;
+}
+inline anyptr try_calloc(size_t size, size_t count) { _test_malloc(); _test_free(); return calloc(size, count); }
 #define calloc calloc_check
 
 inline void malloc_assert(bool cond) { if (!cond) malloc_fail(0); }
@@ -289,8 +318,7 @@ template<typename T, typename... Args> static T max(const T& a, Args... args)
 
 class nocopy {
 protected:
-	nocopy() {}
-	~nocopy() {}
+	nocopy() = default; // do not use {}, it optimizes poorly
 	nocopy(const nocopy&) = delete;
 	const nocopy& operator=(const nocopy&) = delete;
 #if !defined(_MSC_VER) || _MSC_VER >= 1900 // error C2610: is not a special member function which can be defaulted
@@ -303,8 +331,7 @@ protected:
 
 class nomove {
 protected:
-	nomove() {}
-	~nomove() {}
+	nomove() = default;
 	nomove(const nomove&) = delete;
 	const nomove& operator=(const nomove&) = delete;
 	nomove(nomove&&) = delete;
@@ -436,10 +463,10 @@ public:
 
 //Acts like strstr, with the obvious difference.
 #ifdef _WIN32 // linux has this already
-void* memmem(const void * haystack, size_t haystacklen, const void * needle, size_t needlelen);
+void* memmem(const void * haystack, size_t haystacklen, const void * needle, size_t needlelen) __attribute__((pure));
 #endif
 //Returns distance to first difference, or 'len' if that's smaller.
-size_t memcmp_d(const void * a, const void * b, size_t len);
+size_t memcmp_d(const void * a, const void * b, size_t len) __attribute__ ((pure));
 
 
 //msvc:
@@ -498,15 +525,24 @@ template<typename T> static inline T bitround(T in)
 #endif
 
 //For cases where Gcc thinks a variable is used uninitialized, but it isn't in practice.
-//Usage: int foo KNOWN_INIT(0), where argument is any valid value for that type
+//Usage: int foo KNOWN_INIT(0)
 #define KNOWN_INIT(x) = x
+
+//Attach this attribute to the tail loop after a SIMD loop, so the compiler won't try to vectorize something with max 4 iterations.
+//(Neither compiler seems to acknowledge 'don't unroll' as 'don't vectorize', and Gcc doesn't have a 'don't vectorize' at all.)
+#ifdef __clang__
+#define SIMD_LOOP_TAIL _Pragma("clang loop unroll(disable) vectorize(disable)")
+#elif __GNUC__ >= 8
+#define SIMD_LOOP_TAIL _Pragma("GCC unroll 0")
+#else
+#define SIMD_LOOP_TAIL // nop
+#endif
 
 
 //If an interface defines a function to set some state, and a callback for when this state changes,
 // calling that function will not trigger the state callback.
 //An implementation may, at its sole discretion, choose to define any implementation of undefined
-// behaviour. After all, any result, including something well defined, is a valid interpretation of
-// undefined behaviour. The user may, of course, not rely on that.
+// behaviour, including reasonable ones. The user may, of course, not rely on that.
 //Any function that starts with an underscore may only be called by the module that implements that
 // function. ("Module" is defined as "anything whose compilation is controlled by the same #ifdef,
 // or the file implementing an interface, whichever makes sense"; for example, window-win32-* is the
@@ -520,3 +556,9 @@ template<typename T> static inline T bitround(T in)
 // structures, but Windows file extensions. .exe is less ambigous than no extension, and 'so' is a
 // word while 'dll' is not; however, Windows' insistence on overloading the escape character is
 // irritating. Since this excludes following any single OS, the rest is personal preference.
+
+//Documentation is mandatory: if any question about the object's usage is not answered by reading
+// the header, there's a bug (either more docs are needed, or the thing is badly designed). However,
+// 'documentation' includes the function and parameter names, not just comments; there is only one
+// plausible behavior for cstring::length(), so additional comments would just be noise.
+// https://i.redd.it/3adwp98dswi21.jpg

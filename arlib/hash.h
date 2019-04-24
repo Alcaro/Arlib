@@ -23,6 +23,11 @@ static inline size_t hash(const char * val, size_t n)
 	}
 	return hash;
 }
+// this one is kinda silly beside the generic pointer hasher, but needed for map<string,int>::get("foo") to behave properly
+static inline size_t hash(const char * val)
+{
+	return hash(val, strlen(val));
+}
 
 
 //implementation from https://stackoverflow.com/a/263416

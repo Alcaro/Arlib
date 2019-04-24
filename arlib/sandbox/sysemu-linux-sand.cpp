@@ -641,6 +641,7 @@ static inline int rt_sigaction(int sig, const struct sigaction * act, struct sig
 	return syscall4(__NR_rt_sigaction, sig, (long)act, (long)oact, sigsetsize);
 }
 
+extern "C" void restore_rt();
 static inline void set_sighand(int sig, void(*handler)(int, siginfo_t*, void*), int flags)
 {
 	struct sigaction act;
@@ -648,8 +649,7 @@ static inline void set_sighand(int sig, void(*handler)(int, siginfo_t*, void*), 
 	//sa_restorer is mandatory; judging by kernel source, this is to allow nonexecutable stack
 	//(should've put it in VDSO, but I guess this syscall is older than VDSO)
 	act.sa_flags = SA_SIGINFO | SA_RESTORER | flags;
-	//and for some reason, I get runtime relocations if I try accessing it from C++, so let's switch language
-	__asm__("lea %0, [%%rip+restore_rt]" : "=r"(act.sa_restorer));
+	act.sa_restorer = restore_rt;
 	memset(&act.sa_mask, 0, sizeof(act.sa_mask));
 	rt_sigaction(sig, &act, NULL, sizeof(act.sa_mask));
 }

@@ -111,6 +111,16 @@ static inline uint32_t end_le24_to_nat(uint32_t val) { return end_swap24(val); }
 static inline uint32_t end_be24_to_nat(uint32_t val) { return val; }
 #endif
 
+//read unaligned
+inline uint8_t  readu_le8( const uint8_t* in) { uint8_t  ret; memcpy(&ret, in, sizeof(ret)); return end_nat_to_le(ret); }
+inline uint8_t  readu_be8( const uint8_t* in) { uint8_t  ret; memcpy(&ret, in, sizeof(ret)); return end_nat_to_be(ret); }
+inline uint16_t readu_le16(const uint8_t* in) { uint16_t ret; memcpy(&ret, in, sizeof(ret)); return end_nat_to_le(ret); }
+inline uint16_t readu_be16(const uint8_t* in) { uint16_t ret; memcpy(&ret, in, sizeof(ret)); return end_nat_to_be(ret); }
+inline uint32_t readu_le32(const uint8_t* in) { uint32_t ret; memcpy(&ret, in, sizeof(ret)); return end_nat_to_le(ret); }
+inline uint32_t readu_be32(const uint8_t* in) { uint32_t ret; memcpy(&ret, in, sizeof(ret)); return end_nat_to_be(ret); }
+inline uint64_t readu_le64(const uint8_t* in) { uint64_t ret; memcpy(&ret, in, sizeof(ret)); return end_nat_to_le(ret); }
+inline uint64_t readu_be64(const uint8_t* in) { uint64_t ret; memcpy(&ret, in, sizeof(ret)); return end_nat_to_be(ret); }
+
 #ifdef _MSC_VER
 #pragma pack(push,1)
 #endif
