@@ -35,7 +35,7 @@ string puny_decode_label(cstring puny)
 		if (prefix == 0) return "";
 		while (inpos < prefix)
 		{
-			if (puny[inpos] < 32 || puny[inpos] >= 128) return "";
+			if ((uint8_t)puny[inpos] < 32 || (uint8_t)puny[inpos] >= 128) return "";
 			output.append(puny[inpos]);
 			inpos++;
 		}

@@ -25,6 +25,16 @@ int main(int argc, char** argv)
 	//e("jpg/whitetopleft-blackbotright-loop.jpg");
 	
 	puts(tostringhex(crc32(cstring("floating muncher").bytes())));
+	
+	array<string> foo = {
+		"73819702_p10_master1200.jpg","73819702_p4_master1200.jpg","73819702_p2_master1200.jpg","73819702_p23_master1200.jpg",
+		"73819702_p21_master1200.jpg","73819702_p24_master1200.jpg","73819702_p3_master1200.jpg","73819702_p1_master1200.jpg",
+		"73819702_p26_master1200.jpg","73819702_p25_master1200.jpg","73819702_p17_master1200.jpg"
+		};
+	puts(foo.join(","));
+	foo.sort(string::less);
+	puts(foo.join(","));
+	
 
 /*
 	sandproc ch;

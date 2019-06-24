@@ -344,19 +344,40 @@ TRUE_CFLAGS := -std=c99 $(CCXXFLAGS) $(CONF_CFLAGS) $(CFLAGS)
 # C++ version policy: I will switch to a newer version of C++ only if it adds something that
 # - considerably simplifies existing code (everything is doable without that, some things are less painful than others)
 # - works on the default compiler on current Debian stable, latest Ubuntu LTS, and whatever other computers I have at the moment
-# - is enabled and non-experimental on a finalized -std= version (C++11 is final, C++0x isn't)
-# Once I do switch, I will use every feature of that edition, as long as my compilers support them.
-# The following features would qualify for the first clause above:
-#   Template lambdas (for the PNG decoder)
-#   template<auto val> (for function<> member binder, that macro sucks. Though bind_this will always be a macro)
+# - is functional and non-experimental on a finalized -std= version (c++11 is final, c++0x isn't)
+#    it's fine if not every part of that language version is supported in that compiler version
+# I will not switch C++ version because a dependency needs that. Instead, I'll reinvent or clone the dependency.
+# C++14 offers one useful feature, which is not big enough to switch for:
+#   std::<trait>_v (rather than std::<trait>::value)
+# C++17 offers plenty of useful features, and I will switch once Debian 10 releases with a GCC newer than 6.3 on July 6:
+#   template<auto val> (for the function<> member binder, that macro sucks. Though bind_this will likely always be a macro)
+#   Guaranteed copy elision
+#   constexpr if (for the min function, and probably a few others)
+#   Structured binding (auto [ x, y ] = foo())
+#   __has_include (for valgrind.h)
+# The following features would be useful; if enough of them show up, I will switch:
+#   C++2a template lambdas (for the PNG decoder)
+#   C++2a designated initializers (foo_t foo { .a = 42, .b = 123 })
+#   C++2a down with typename
+#   C++2a [[likely]]
+#   C++2a [[no_unique_address]]
+#   C++2a ban non-power-of-two integers
+#   C++2a consteval
+#   C++2a void foo(auto arg) (shorthand for template<typename T> void foo(T arg))
+#   [[trivially_relocatable]] http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2019/p1144r3.html
+#   Lambdas without braces/return; function<int(int)> foo = [](int i) => i*2;
+#   Zero-overhead deterministic exceptions http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2018/p0709r0.pdf
+#   String literals as template parameters http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2017/p0424r2.pdf
 #   Compile-time reflection (that SERIALIZE macro is a little too limited)
-#   Single-implementation interfaces (public functions and nothing else in header, member variables hidden)
-#  and the following may or may not be usable, depending on the exact details:
-#   Coroutines (more useful for bsnes than for me; some of my callbacks could become coroutines, but I don't yet know how many)
-#   Modules (it's very easy to produce a shitty module system; I don't know if the proposed C++ one is good)
-#  Most other stuff I've seen proposed is uninteresting, or too minor to be useful.
-# I'm not interested in library features, since most of them are clunky and have bad constant factors. The compiler-magic ones,
-#  like std::move, enable_if, and type traits, are as slim as they could be, and optimize to nothing. They're useful.
+#   Single-implementation interfaces (public functions and nothing else in header, member variables hidden; useful for the GUI classes)
+#     the $class proposal would most likely permit this, as well as most or all of the reflection I want
+#   Demote or, and, bitand, etc from keyword to predefined macro (or even better, banish them to the <ciso646> they should've never left)
+# The following may or may not be usable, depending on the exact details:
+#   C++2a coroutines (more useful for bsnes than for me; some of my callbacks could become coroutines, but I don't yet know how many)
+#   C++2a modules (it's very easy to produce a bad module system, I don't know if this one avoids the pitfalls)
+# Most other stuff I've seen proposed is uninteresting.
+# I'm not interested in library features. Most of them lack important functionality, have bad constant factors, and bloat the binary.
+# The compiler-magic ones, like std::move and type traits, do one thing and do it well, and optimize to nothing. I use them.
 TRUE_CXXFLAGS := -std=c++11 -fno-rtti $(CCXXFLAGS) $(CONF_CXXFLAGS) $(CXXFLAGS)
 TRUE_LFLAGS := $(LFLAGS) -fvisibility=hidden $(CONF_LFLAGS)
 
@@ -390,6 +411,7 @@ DOMAINS += DEFAULT NOWARN
 #this discards unneeded object files, including global constructors and unneeded -l dependencies, which --gc-sections doesn't touch
 #therefore, global constructors in Arlib are prohibited from having any effect outside their own .cpp file
 #(does not apply to the main program, nor to tests)
+#--start-lib could replace this .a on gold and lld, but ld.bfd doesn't support that option
 USE_AR_OPT := 0
 ifeq ($(SELFTEST),)
 ifneq ($(OPT),0)
@@ -423,11 +445,10 @@ obj/%.cpp.o: $$(call SOURCENAME,$$@) arlib.h | obj
 obj/%.S.o: $$(call SOURCENAME,$$@) arlib.h | obj
 	$(ECHOQ) AS $<
 	$(Q)$(AS) $(TRUE_ASFLAGS) $(ASFLAGS_$(call DOMAINNAME,$@)) $< -o $@
-#do not make generic (obj/%.a.o), that hits some ridiculous unkillable 'chain of implicit rules'
+#do not make this rule generic (obj/%.a.o), that hits some ridiculous unkillable 'chain of implicit rules'
 # clause that deletes and refuses to rebuild object files
 #https://www.gnu.org/software/make/manual/html_node/Chained-Rules.html
 #if genericity is needed, stamp out the rules with eval
-#(no other domain should contain removable global constructors, so probably not needed)
 obj/$(OBJNAME)-arlib.a: $(foreach src,$(foreach word,$(SOURCES_ARLIB),$(wild2)),$(call OBJMANGLE,ARLIB,$(src)))
 	$(ECHOQ) AR $@
 	$(Q)$(AR) rcs $@ $+

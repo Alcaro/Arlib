@@ -108,7 +108,7 @@ bool image::init_decode_png(arrayview<byte> pngdata)
 	if (bits_per_sample >= 32 || color_type > 6 || comp_meth != 0 || filter_meth != 0 || interlace_meth > 1) goto fail;
 	if (bits_per_sample > 8) goto fail; // bpp=16 is allowed by the png standard, but not by this program
 	static const uint32_t bpp_allowed[7] = { 0x00010116, 0x00000000, 0x00010100, 0x00000116, 0x00010100, 0x00000000, 0x00010100 };
-	if (((bpp_allowed[color_type]>>bits_per_sample)&1) == false) goto fail;
+	if (((bpp_allowed[color_type]>>bits_per_sample)&1) == false) goto fail; // this also rejects types 1 and 5
 	
 	uint32_t palette[256];
 	unsigned palettelen = 0;
@@ -645,7 +645,7 @@ test("png", "array,imagebase,file", "png")
 {
 	test_skip("kinda slow");
 	
-	array<string> tests = file::listdir(file::cwd()+"arlib/test/png/");
+	array<string> tests = file::listdir("arlib/test/png/");
 	assert_gt(tests.size(), 100); // make sure the tests exist, no vacuous truths allowed
 	
 	//TODO: check https://code.google.com/p/imagetestsuite/ and figure out why it disagrees with pngout on whether they're valid

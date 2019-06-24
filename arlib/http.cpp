@@ -270,10 +270,14 @@ again:
 			
 			if (state == st_status)
 			{
-				if (fragment.startswith("HTTP/1."))
+				if (fragment.length() > 10 && fragment.startswith("HTTP/1.") && fragment[8] == ' ')
 				{
 					string status_i = fragment.split<2>(" ")[1];
-					fromstring(status_i, r.status);
+					if (!fromstring(status_i, r.status) || r.status < 100 || r.status > 599)
+					{
+						sock = NULL;
+						return resolve_err_v(0, rsp::e_not_http);
+					}
 					state = st_header;
 				}
 				else

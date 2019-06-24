@@ -22,6 +22,14 @@ public:
 	static int n_adders;
 };
 int adder::n_adders = 0;
+
+template<typename Tr, typename... Ta>
+void assert_decompose(function<Tr(Ta...)> fn, bool allowed = true)
+{
+	Tr(*func)(void*, Ta...);
+	void* ctx;
+	assert_eq(fn.try_decompose(&func, &ctx), allowed);
+}
 }
 
 test("function", "", "function")
@@ -40,11 +48,13 @@ test("function", "", "function")
 	test_nomalloc {
 		function<int()> r42w = r42;
 		assert_eq(r42w(), 42);
+		assert_decompose(r42w);
 	}
 	
 	test_nomalloc {
 		function<int(int)> a42w = add42;
 		assert_eq(a42w(10), 52);
+		assert_decompose(a42w);
 	}
 	
 	test_nomalloc {
@@ -52,6 +62,7 @@ test("function", "", "function")
 		function<int(int)> a42w = a42.wrap();
 		assert_eq(a42w(10), 52);
 		assert_eq(adder::n_adders, 1);
+		assert_decompose(a42w);
 	}
 	assert_eq(adder::n_adders, 0);
 	
@@ -60,6 +71,7 @@ test("function", "", "function")
 		function<int(int)> a42w = a42.wrapc();
 		assert_eq(a42w(10), 52);
 		assert_eq(adder::n_adders, 1);
+		assert_decompose(a42w);
 	}
 	assert_eq(adder::n_adders, 0);
 	
@@ -70,19 +82,22 @@ test("function", "", "function")
 		a42w(&a, 10);
 		assert_eq(a, 62);
 		assert_eq(adder::n_adders, 1);
+		assert_decompose(a42w);
 	}
 	assert_eq(adder::n_adders, 0);
 	
-	{ // bind_ptr_del allocates
-		function<int(int)> a42w = bind_ptr_del(&adder::add, new adder(42));
-		assert_eq(a42w(10), 52);
-		assert_eq(adder::n_adders, 1);
-	}
-	assert_eq(adder::n_adders, 0);
+	//various weird things not used in practice; I'll reenable if needed
+	//{ // bind_ptr_del allocates
+	//	function<int(int)> a42w = bind_ptr_del(&adder::add, new adder(42));
+	//	assert_eq(a42w(10), 52);
+	//	assert_eq(adder::n_adders, 1);
+	//}
+	//assert_eq(adder::n_adders, 0);
 	
 	test_nomalloc {
 		function<int(int)> a42w = bind_lambda([](int x)->int { return x+42; });
 		assert_eq(a42w(10), 52);
+		assert_decompose(a42w);
 	}
 	
 	test_nomalloc {
@@ -90,6 +105,7 @@ test("function", "", "function")
 		function<int(int)> a42w = bind_lambda([=](int x)->int { return x+n; });
 		n = -42;
 		assert_eq(a42w(10), 52);
+		assert_decompose(a42w);
 	}
 	
 	test_nomalloc {
@@ -97,9 +113,9 @@ test("function", "", "function")
 		function<int(int)> a42w = bind_lambda([&](int x)->int { return x+n; });
 		n = 42;
 		assert_eq(a42w(10), 52);
+		assert_decompose(a42w);
 	}
 	
-	//various weird things not used in practice; I'll reenable if needed
 	//test_nomalloc {
 	//	int n = 42;
 	//	function<int(int)> a42w = bind_lambda([](int* xp, int x)->int { return x+*xp; }, &n);
@@ -115,6 +131,7 @@ test("function", "", "function")
 		b = 1;
 		c = 1;
 		assert_eq(mul(), 2*3*5);
+		assert_decompose(mul, false);
 	}
 	
 	test_nomalloc {
@@ -123,6 +140,7 @@ test("function", "", "function")
 		inc(&a);
 		inc(&a);
 		assert_eq(a, 3);
+		assert_decompose(inc);
 	}
 	
 	test_nomalloc {

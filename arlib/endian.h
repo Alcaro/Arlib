@@ -48,17 +48,17 @@
 #if defined(__GNUC__)
 //This one is mostly useless (GCC detects the pattern and optimizes it).
 //However, MSVC doesn't, so I need the intrinsics. Might as well use both sets.
-static inline uint8_t  end_swap8 (uint8_t n) { return n; }
+static inline uint8_t  end_swap8( uint8_t  n)  { return n; }
 static inline uint16_t end_swap16(uint16_t n) { return __builtin_bswap16(n); }
 static inline uint32_t end_swap32(uint32_t n) { return __builtin_bswap32(n); }
 static inline uint64_t end_swap64(uint64_t n) { return __builtin_bswap64(n); }
 #elif defined(_MSC_VER)
-static inline uint8_t  end_swap8 (uint8_t n) { return n; }
+static inline uint8_t  end_swap8( uint8_t  n) { return n; }
 static inline uint16_t end_swap16(uint16_t n) { return _byteswap_ushort(n); }
 static inline uint32_t end_swap32(uint32_t n) { return _byteswap_ulong(n); }
 static inline uint64_t end_swap64(uint64_t n) { return _byteswap_uint64(n); }
 #else
-static inline uint8_t  end_swap8 (uint8_t n) { return n; }
+static inline uint8_t  end_swap8( uint8_t  n) { return n; }
 static inline uint16_t end_swap16(uint16_t n) { return n>>8 | n<<8; }
 static inline uint32_t end_swap32(uint32_t n)
 {
@@ -79,7 +79,7 @@ static inline uint32_t end_swap24(uint32_t n)
 	return end_swap32(n) >> 8;
 }
 
-static inline uint8_t  end_swap(uint8_t  n) { return end_swap8 (n); }
+static inline uint8_t  end_swap(uint8_t  n) { return end_swap8( n); }
 static inline uint16_t end_swap(uint16_t n) { return end_swap16(n); }
 static inline uint32_t end_swap(uint32_t n) { return end_swap32(n); }
 static inline uint64_t end_swap(uint64_t n) { return end_swap64(n); }

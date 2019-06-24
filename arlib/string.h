@@ -5,14 +5,12 @@
 #include <string.h>
 #include <ctype.h>
 
-//A string is a mutable sequence of bytes. It usually represents UTF-8 text, but can be arbitrary binary data, including NULs.
+//A string is a mutable byte container. It usually represents UTF-8 text, but can be arbitrary binary data, including NULs.
 //All string:: functions taking or returning a char* assume/guarantee NUL termination. Anything using uint8_t* does not.
 
-//cstring is an immutable sequence of bytes that does not own its storage. It can also be called stringview.
-
-//If the string contains no NULs (not even at the end), it's considered 'weak proper'.
-//If the string contains no control characters other than \t\r\n, and is valid UTF-8, it's considered 'proper'.
-//Many string users expect some level of properity.
+//cstring is an immutable sequence of bytes that does not own its storage.
+//In most contexts, it's called stringview, but I feel that's too long.
+//cstring is short for 'const string&'; long ago, cstring was just a typedef.
 
 
 class string;
@@ -41,7 +39,7 @@ class cstring {
 			uint8_t* m_data;
 			uint32_t m_len;
 			bool m_nul; // whether the string is properly terminated (always true for string, possibly false for cstring)
-			uint8_t reserved; // matches the last byte of the inline data; never ever access this
+			uint8_t reserved; // reserve space for the last byte of the inline data; never ever access this
 		};
 	};
 	
@@ -283,6 +281,7 @@ public:
 	// If not UTF-8 or not a start index, returns U+DC80 through U+DCFF. Callers are welcome to treat this as an error.
 	// The index is updated to point to the next codepoint. Initialize it to zero; stop when it equals the string's length.
 	// If index is out of bounds, returns zero and does not advance index.
+	// If the string contains 00s, this function will treat it as U+0000. Callers are welcome to explicitly reject that.
 	uint32_t codepoint_at(uint32_t& index) const;
 	
 	//Whether the string matches a glob pattern. ? in 'pat' matches any one byte, * matches zero or more bytes.
@@ -508,6 +507,20 @@ public:
 	static int icompare3(cstring a, cstring b);
 	static bool less(cstring a, cstring b) { return compare3(a, b) < 0; }
 	static bool iless(cstring a, cstring b) { return icompare3(a, b) < 0; }
+	
+	//Natural comparison; "8" < "10". Other than that, same as above.
+	//Exact rules:
+	//  Strings are compared component by component. A component is either a digit sequence, or a non-digit. 8 < 10, 2 = 02.
+	//  - and . are not part of the digit sequence. -1 < -2, 1.2 < 1.03.
+	//  If the strings are otherwise equal, repeat the comparison, but with 2 < 02. If still equal, let A < a.
+	//Correct sorting is a1 a2 a02 a2a a2a1 a02a2 a2a3 a2b a02b A3A A3a a3A a3a A03A A03a a03A a03a a10 a11 aa
+	static int natcompare3(cstring a, cstring b) { return string::natcompare3(a, b, false); }
+	static int inatcompare3(cstring a, cstring b) { return string::natcompare3(a, b, true); }
+	static bool natless(cstring a, cstring b) { return natcompare3(a, b) < 0; }
+	static bool inatless(cstring a, cstring b) { return inatcompare3(a, b) < 0; }
+private:
+	static int natcompare3(cstring a, cstring b, bool case_insensitive);
+public:
 };
 
 #undef OBJ_SIZE

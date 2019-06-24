@@ -2,7 +2,7 @@
 
 //Inspired by
 // http://www.codeproject.com/Articles/136799/ Lightweight Generic C++ Callbacks (or, Yet Another Delegate Implementation)
-//but rewritten using C++11 features, to remove code duplication and 6-arg limits, and improve error messages.
+//but rewritten using C++11 features, to remove code duplication and 6-arg limits, and improve error messages
 
 #include <stddef.h>
 #include <string.h>
@@ -97,7 +97,7 @@ class function<Tr(Ta...)> {
 			auto wrap = [](void* ctx, Ta... args)
 			{
 				alignas(Tl) char l[sizeof(void*)];
-				memcpy(l, &ctx, sizeof(Tl));
+				memcpy(l, &ctx, sizeof(void*));
 				return (*(Tl*)l)(std::forward<Ta>(args)...);
 			};
 			init_ptr(wrap, obj);
@@ -168,40 +168,50 @@ public:
 	Tr operator()(Ta... args) const { return func(ctx, std::forward<Ta>(args)...); }
 private:
 	//to make null objects callable, 'func' must be a valid function
-	//I can not:
-	//- use the lowest bits - requires mask at call time, and confuses the optimizer
-	//- compare it to a static null function, I don't trust the compiler to merge it correctly
-	//- use a function defined in a .cpp file - this is a single-header library and I want it to remain that way
-	//nor can I use NULL/whatever in 'obj', because foreign code can find that argument just as easily as this one can
-	//solution: set obj=func=empty for null functions
-	//- empty doesn't use obj, it can be whatever
-	//- it is not sensitive to false negatives - even if the address of empty changes, obj==func does not
-	//- it is not sensitive to false positives - empty is private, and can't be aliased by anything unexpected
-	//    (okay, it is sensitive on a pure Harvard architecture, but they're extinct and Modified Harvard is safe.)
-	//- it is sensitive to hostile callers, but if you call bind_ptr(func, (void*)func), you're asking for trouble.
+	//empty() is weak, so it deduplicates, checking for that is easy
+	//but empty() could also be deduplicated with some explicit binding that's optimized out, so we need something else too
+	//for example, obj=func=empty
+	//this will give false positives if
+	//(1) the function is created from a lambda
+	//(2) the lambda value-binds a size_t
+	//(3) the size_t is random-looking or uninitialized, and just accidentally happens to be same as 'empty'
+	//(4) the lambda does nothing and is optimized out - in particular, it does not use its bound variable
+	//(5) the compiler does not optimize out the unused bind
+	//(6) the compiler merges the lambda with 'empty'
+	//(7) the callee does anything significant with a falsy function - more than just not calling it
+	//many of which are extremely unlikely. In particular, the combination 2+4 seems quite impossible to me.
+	//Alternatively, you could craft a false positive by abusing decompose(), but if you do that, you're asking for trouble.
 	bool isTrue() const
 	{
-		return ((void*)func != ctx);
+		return (func != empty || (void*)func != ctx);
 	}
 public:
 	explicit operator bool() const { return isTrue(); }
 	bool operator!() const { return !isTrue(); }
 	
-	//Splits a function into a function pointer and a context argument.
-	//Calling the pointer, with the context as first argument, is equivalent to calling the function object
+	//Splits a function object into a function pointer and a context argument.
+	//Calling the pointer, with the context as first argument, is equivalent to calling the function object directly
 	// (modulo a few move constructor calls).
-	//WARNING: Explodes if the function object owns any memory.
-	//This happens if it refers to a lambda binding more than sizeof(void*) bytes, or if it's created with bind_ptr_del.
-	//In typical cases (a lambda binding 'this' or nothing, or a member function), this is safe.
-	void decompose(Tfp* func, void** ctx)
+	//
+	//WARNING: If the object owns memory, it must remain alive during any use of ctx.
+	//This function assumes you don't want to keep this object alive.
+	//Therefore, if you call this on something that should stay alive, you'll get a crash.
+	//
+	//The function object owns memory if it refers to a lambda binding more than sizeof(void*) bytes.
+	//In typical cases (a member function, or a lambda binding 'this' or nothing), this is safe.
+	//If you want to decompose but keep the object alive, use try_decompose.
+	Tfp decompose(void** ctx)
 	{
 		if (ref) abort();
-		*func = this->func;
 		*ctx = this->ctx;
+		return this->func;
 	}
 	
-	//WARNING: If the function object owns memory, it must remain alive during any call to func/ctx.
-	//If it requires this guarantee, it returns false; true means safe.
+	//Like the above, but assumes you will keep the object alive, so it always succeeds.
+	//Potentially useful to skip a level of indirection when wrapping a C callback into an Arlib
+	// class, but should be avoided under most circumstances. Direct use of a C API can know what's
+	// being bound, and can safely use the above instead.
+	//Returns true if the function object is safe, i.e. doesn't actually need to remain alive.
 	bool try_decompose(Tfp* func, void** ctx)
 	{
 		*func = this->func;
@@ -220,7 +230,9 @@ public:
 };
 
 //std::function can work without this extra class in C++11, but only by doing another level of indirection at runtime
-//C++17 template<auto fn> could do it without lamehacks, except still needs to get 'this' from somewhere
+//C++17 template<auto fn> could probably do it without lamehacks, except still needs to get 'this' from somewhere
+//bind_ptr could probably be rewritten to fn_wrap<decltype(fn), fn>(ptr),
+// but that would force the function->arguments unpacker somewhere else, making the function so complex it doesn't solve anything
 //callers should prefer a lambda with a [this] capture
 template<typename Tc, typename Tr, typename... Ta>
 class memb_rewrap {
@@ -231,15 +243,6 @@ public:
 		return {
 			[](Tc* ctx, Ta... args)->Tr { return (ctx->*fn)(std::forward<Ta>(args)...); },
 			ctx };
-	}
-	
-	template<Tr(Tc::*fn)(Ta...)>
-	function<Tr(Ta...)> get_del(Tc* ctx)
-	{
-		return {
-			[](Tc* ctx, Ta... args)->Tr { return (ctx->*fn)(std::forward<Ta>(args)...); },
-			ctx,
-			[](void* ctx) { delete (Tc*)ctx; } };
 	}
 };
 template<typename Tc, typename Tr, typename... Ta>
@@ -259,15 +262,6 @@ public:
 			[](const Tc* ctx, Ta... args)->Tr { return (ctx->*fn)(std::forward<Ta>(args)...); },
 			ctx };
 	}
-	
-	template<Tr(Tc::*fn)(Ta...) const>
-	function<Tr(Ta...)> get_del(const Tc* ctx)
-	{
-		return {
-			[](const Tc* ctx, Ta... args)->Tr { return (ctx->*fn)(std::forward<Ta>(args)...); },
-			ctx,
-			[](void* ctx) { delete (Tc*)ctx; } };
-	}
 };
 template<typename Tc, typename Tr, typename... Ta>
 memb_rewrap_const<Tc, Tr, Ta...>
@@ -276,16 +270,11 @@ fn_wrap(Tr(Tc::*)(Ta...) const)
 	return memb_rewrap_const<Tc, Tr, Ta...>();
 }
 
-//#define bind_free(fn)
-#define bind_ptr(fn, ptr) (fn_wrap(fn).get<fn>(ptr)) // can't replace with fn_wrap<decltype(fn), fn>(ptr), what would it return?
-#define bind_ptr_del(fn, ptr) (fn_wrap(fn).get_del<fn>(ptr))
-//#define bind_ptr_del_exp(fn, ptr, destructor)
+#define bind_ptr(fn, ptr) (fn_wrap(fn).get<fn>(ptr))
 #define bind_this(fn) bind_ptr(fn, this) // reminder: bind_this(&classname::function), not bind_this(function)
-//#define bind_this_del(fn) bind_ptr_del(fn, this)
-//#define bind_this_del_exp(fn, destructor) bind_ptr_del_exp(fn, destructor, this)
 
 //while the function template can be constructed from a lambda, I want bind_lambda(...).decompose(...) to work
-//so just #define bind_lambda(...) { __VA_ARGS__ } is insufficient
+//so I need something slightly more complex than #define bind_lambda(...) { __VA_ARGS__ }
 template<typename Tl, typename Tr, typename... Ta>
 function<Tr(Ta...)> bind_lambda_core(Tl&& l, Tr (Tl::*f)(Ta...) const)
 {
