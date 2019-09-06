@@ -178,10 +178,9 @@ void HTTP::resolve(size_t id)
 void HTTP::do_timeout()
 {
 	if (requests.size() != 0)
-	{
 		requests[0].r.status = rsp::e_timeout;
-	}
 	
+	sock_cancel();
 	this->timeout_id = 0;
 	
 	activity(); // can delete 'this', don't do anything fancy afterwards

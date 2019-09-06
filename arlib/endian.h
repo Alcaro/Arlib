@@ -120,7 +120,17 @@ inline uint32_t readu_le32(const uint8_t* in) { uint32_t ret; memcpy(&ret, in, s
 inline uint32_t readu_be32(const uint8_t* in) { uint32_t ret; memcpy(&ret, in, sizeof(ret)); return end_nat_to_be(ret); }
 inline uint64_t readu_le64(const uint8_t* in) { uint64_t ret; memcpy(&ret, in, sizeof(ret)); return end_nat_to_le(ret); }
 inline uint64_t readu_be64(const uint8_t* in) { uint64_t ret; memcpy(&ret, in, sizeof(ret)); return end_nat_to_be(ret); }
+inline uint8_t  readu_le8( arrayview<byte> in) { return readu_le8( in.ptr()); }
+inline uint8_t  readu_be8( arrayview<byte> in) { return readu_be8( in.ptr()); }
+inline uint16_t readu_le16(arrayview<byte> in) { return readu_le16(in.ptr()); }
+inline uint16_t readu_be16(arrayview<byte> in) { return readu_be16(in.ptr()); }
+inline uint32_t readu_le32(arrayview<byte> in) { return readu_le32(in.ptr()); }
+inline uint32_t readu_be32(arrayview<byte> in) { return readu_be32(in.ptr()); }
+inline uint64_t readu_le64(arrayview<byte> in) { return readu_le64(in.ptr()); }
+inline uint64_t readu_be64(arrayview<byte> in) { return readu_be64(in.ptr()); }
 
+//this one is usually used to represent various on-disk or on-wire structures, which aren't necessarily properly aligned
+//it's a performance penalty, but if that's significant, the data should be converted to native types
 #ifdef _MSC_VER
 #pragma pack(push,1)
 #endif
@@ -138,6 +148,8 @@ public:
 		// these 'this' should be &val, but that makes Clang throw warnings about misaligned pointers
 		memcpy(this, bytes.ptr(), sizeof(val));
 	}
+	arrayvieww<byte> bytes() { return arrayvieww<byte>((byte*)this, sizeof(val)); }
+	arrayview<byte> bytes() const { return arrayview<byte>((byte*)this, sizeof(val)); }
 	
 	operator T() const
 	{
@@ -150,9 +162,6 @@ public:
 		if (little == (ENDIAN==END_LITTLE)) val = newval;
 		else val = end_swap(newval);
 	}
-	
-	arrayvieww<byte> bytes() { return arrayvieww<byte>((byte*)this, sizeof(val)); }
-	arrayview<byte> bytes() const { return arrayview<byte>((byte*)this, sizeof(val)); }
 }
 #ifdef __GNUC__
 __attribute__((__packed__))
@@ -167,6 +176,7 @@ __attribute__((__packed__))
 //This one doesn't optimize properly. While it does get unrolled, it remains as four byte loads, and some shift/or.
 template<typename T, bool little> class endian_core
 {
+	__attribute__((aligned(sizeof(T))))
 	uint8_t m_bytes[sizeof(T)];
 	
 public:

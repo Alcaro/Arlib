@@ -68,8 +68,8 @@ int _teststack_popstr() { ctxstack.resize(ctxstack.size()-1); return 0; }
 static size_t n_malloc = 0;
 static size_t n_free = 0;
 static size_t n_malloc_block = 0;
-void _test_malloc() { if (UNLIKELY(n_malloc_block)) { if (result == err_ok) test_nothrow(assert(false)); } n_malloc++; }
-void _test_free()   { if (UNLIKELY(n_malloc_block)) { if (result == err_ok) test_nothrow(assert(false)); } n_free++; }
+void _test_malloc() { if (UNLIKELY(n_malloc_block)) { if (result == err_ok) test_nothrow(assert(!"can't malloc here")); } n_malloc++; }
+void _test_free() { n_free++; }
 int _test_blockmalloc() { n_malloc_block++; return 1; }
 int _test_unblockmalloc() { n_malloc_block--; return 0; }
 
@@ -392,6 +392,7 @@ int main(int argc, char* argv[])
 		numtests_iter = numtests_iter->next;
 	}
 	
+	bool show_verbose = (all_tests || numtests < 8);
 	for (int pass = 0; pass < (run_twice ? 2 : 1); pass++)
 	{
 		int count[err_ntype]={0};
@@ -406,7 +407,7 @@ int main(int argc, char* argv[])
 			testnum++;
 			testlist* next = cur_test->next;
 			
-			if (all_tests)
+			if (show_verbose)
 				printf("Testing %s (%s:%d)... ", cur_test->name, cur_test->filename, cur_test->line);
 			else
 				printf(ESC_ERASE_LINE "Test %d/%d (%s)... ", testnum, numtests, cur_test->name);
@@ -421,20 +422,21 @@ int main(int argc, char* argv[])
 			try {
 				uint64_t start_time = time_us_ne();
 				cur_test->func();
-				//assert_eq(n_malloc, n_free);
+				if (pass == 2)
+					assert_eq(n_malloc, n_free);
 				uint64_t end_time = time_us_ne();
 				uint64_t time_us = end_time - start_time;
 				uint64_t time_lim = (all_tests ? 5000*1000 : 500*1000);
 				if (time_us > time_lim)
 				{
 					printf("too slow: max %uus, got %uus\n", (unsigned)time_lim, (unsigned)time_us);
-					result = err_tooslow;
+					throw err_tooslow;
 				}
 			} catch (err_t e) {
 				result = e;
 			}
 			
-			if (all_tests && result == err_ok) puts("pass");
+			if (show_verbose && result == err_ok) puts("pass");
 			count[result]++;
 			cur_test = next;
 		}

@@ -77,18 +77,18 @@ class function<Tr(Ta...)> {
 	}
 	
 	template<typename Tl>
-	typename std::enable_if< std::is_convertible<Tl, Tfpr>::value>::type
+	typename std::enable_if< std::is_convertible_v<Tl, Tfpr>>::type
 	init_lambda(Tl lambda)
 	{
 		init_free(lambda);
 	}
 	
 	template<typename Tl>
-	typename std::enable_if<!std::is_convertible<Tl, Tfpr>::value>::type
+	typename std::enable_if<!std::is_convertible_v<Tl, Tfpr>>::type
 	init_lambda(Tl lambda)
 	{
-		if (std::is_trivially_move_constructible<Tl>::value &&
-		    std::is_trivially_destructible<Tl>::value &&
+		if (std::is_trivially_move_constructible_v<Tl> &&
+		    std::is_trivially_destructible_v<Tl> &&
 		    sizeof(Tl) <= sizeof(void*))
 		{
 			void* obj = NULL;
@@ -133,7 +133,7 @@ public:
 	template<typename Tl>
 	function(Tl lambda,
 	         typename std::enable_if< // no is_invocable_r until c++17
-	            std::is_convertible<decltype(std::declval<Tl>()(std::declval<Ta>()...)), Tr>::value
+	            std::is_convertible_v<decltype(std::declval<Tl>()(std::declval<Ta>()...)), Tr>
 	         , dummy>::type ignore = dummy())
 	{
 		init_lambda(std::forward<Tl>(lambda));
@@ -143,7 +143,7 @@ public:
 	function(Tl lambda,
 	         Tc* ctx,
 	         typename std::enable_if<
-	            std::is_convertible<decltype(std::declval<Tl>()(std::declval<Tc*>(), std::declval<Ta>()...)), Tr>::value
+	            std::is_convertible_v<decltype(std::declval<Tl>()(std::declval<Tc*>(), std::declval<Ta>()...)), Tr>
 	         , dummy>::type ignore = dummy())
 	{
 		this->func = (Tfp)(Tr(*)(Tc*, Ta...))lambda;
@@ -155,7 +155,7 @@ public:
 	         Tc* ctx,
 	         void(*destruct)(void* ctx),
 	         typename std::enable_if<
-	            std::is_convertible<decltype(std::declval<Tl>()(std::declval<Tc*>(), std::declval<Ta>()...)), Tr>::value
+	            std::is_convertible_v<decltype(std::declval<Tl>()(std::declval<Tc*>(), std::declval<Ta>()...)), Tr>
 	         , dummy>::type ignore = dummy())
 	{
 		this->func = (Tfp)(Tr(*)(Tc*, Ta...))lambda;
@@ -200,11 +200,15 @@ public:
 	//The function object owns memory if it refers to a lambda binding more than sizeof(void*) bytes.
 	//In typical cases (a member function, or a lambda binding 'this' or nothing), this is safe.
 	//If you want to decompose but keep the object alive, use try_decompose.
-	Tfp decompose(void** ctx)
+	struct binding {
+		Tfp func;
+		void* ctx;
+		operator bool() { return func; }
+	};
+	binding decompose()
 	{
 		if (ref) abort();
-		*ctx = this->ctx;
-		return this->func;
+		return binding{ func, ctx };
 	}
 	
 	//Like the above, but assumes you will keep the object alive, so it always succeeds.
@@ -212,11 +216,15 @@ public:
 	// class, but should be avoided under most circumstances. Direct use of a C API can know what's
 	// being bound, and can safely use the above instead.
 	//Returns true if the function object is safe, i.e. doesn't actually need to remain alive.
-	bool try_decompose(Tfp* func, void** ctx)
+	struct try_binding {
+		bool safe;
+		Tfp func;
+		void* ctx;
+		operator bool() { return safe; }
+	};
+	try_binding try_decompose()
 	{
-		*func = this->func;
-		*ctx = this->ctx;
-		return !ref;
+		return try_binding{ !ref, func, ctx };
 	}
 	
 	//TODO: reenable, and add a bunch of static asserts that every type (including return) is either unchanged,
@@ -233,6 +241,7 @@ public:
 //C++17 template<auto fn> could probably do it without lamehacks, except still needs to get 'this' from somewhere
 //bind_ptr could probably be rewritten to fn_wrap<decltype(fn), fn>(ptr),
 // but that would force the function->arguments unpacker somewhere else, making the function so complex it doesn't solve anything
+//and there's no need to do that, anyways; this one works, everything else is irrelevant
 //callers should prefer a lambda with a [this] capture
 template<typename Tc, typename Tr, typename... Ta>
 class memb_rewrap {
@@ -291,3 +300,4 @@ bind_lambda(Tl&& l)
 {
 	return bind_lambda_core<Tl>(std::move(l), &Tl::operator());
 }
+auto decompose_lambda(auto in) { return bind_lambda(std::move(in)).decompose(); }

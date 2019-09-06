@@ -57,27 +57,27 @@ public:
 	}
 	uint16_t u16l()
 	{
-		return end_nat_to_le(bytes(2).reinterpret<uint16_t>()[0]);
+		return readu_le16(bytes(2).ptr());
 	}
 	uint16_t u16b()
 	{
-		return end_nat_to_be(bytes(2).reinterpret<uint16_t>()[0]);
+		return readu_be16(bytes(2).ptr());
 	}
 	uint32_t u32l()
 	{
-		return end_nat_to_le(bytes(4).reinterpret<uint32_t>()[0]);
+		return readu_le32(bytes(4).ptr());
 	}
 	uint32_t u32b()
 	{
-		return end_nat_to_be(bytes(4).reinterpret<uint32_t>()[0]);
+		return readu_be32(bytes(4).ptr());
 	}
 	uint32_t u32lat(size_t pos)
 	{
-		return end_nat_to_le(*(uint32_t*)(start+pos));
+		return readu_le32(start+pos);
 	}
 	uint32_t u32bat(size_t pos)
 	{
-		return end_nat_to_be(*(uint32_t*)(start+pos));
+		return readu_be32(start+pos);
 	}
 	
 	size_t tell() { return at-start; }
@@ -85,7 +85,7 @@ public:
 	size_t remaining() { return end-at; }
 	
 	void seek(size_t pos) { at = start+pos; }
-	void seekrel(ssize_t off) { at += off; }
+	void skip(ssize_t off) { at += off; }
 	
 	uint32_t u24l()
 	{
@@ -159,11 +159,44 @@ public:
 		buf += valn.bytes();
 	}
 	
+	void f32l(float val)
+	{
+		static_assert(sizeof(float) == 4);
+		uint32_t ival;
+		memcpy(&ival, &val, sizeof(float));
+		ival = end_nat_to_le(ival);
+		buf += arrayview<byte>((uint8_t*)&ival, sizeof(uint32_t));
+	}
+	void f32b(float val)
+	{
+		static_assert(sizeof(float) == 4);
+		uint32_t ival;
+		memcpy(&ival, &val, sizeof(float));
+		ival = end_nat_to_be(ival);
+		buf += arrayview<byte>((uint8_t*)&ival, sizeof(uint32_t));
+	}
+	void f64l(double val)
+	{
+		static_assert(sizeof(double) == 8);
+		uint64_t ival;
+		memcpy(&ival, &val, sizeof(double));
+		ival = end_nat_to_le(ival);
+		buf += arrayview<byte>((uint8_t*)&ival, sizeof(uint64_t));
+	}
+	void f64b(double val)
+	{
+		static_assert(sizeof(double) == 8);
+		uint64_t ival;
+		memcpy(&ival, &val, sizeof(double));
+		ival = end_nat_to_be(ival);
+		buf += arrayview<byte>((uint8_t*)&ival, sizeof(uint64_t));
+	}
+	
 	arrayview<byte> peek()
 	{
 		return buf;
 	}
-	array<byte> out()
+	array<byte> finish()
 	{
 		return std::move(buf);
 	}

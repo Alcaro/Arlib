@@ -3,28 +3,31 @@
 //this is not done here, to allow recvmsg/sendmsg to be redefined
 //#include <sys/socket.h>
 
-//kernel features that aren't used yet, but may be useful:
-//[5.1 / april 2019] pidfd_send_signal
-//[5.2 / unreleased] clone(CLONE_PIDFD)
-//[no patch?] select() on pidfd, and reading exit status
+//kernel features that aren't used yet, but may be useful here, or the underlying process module:
+//[5.0 / march 2019] SECCOMP_RET_USER_NOTIF - one SIGSYS/sigreturn less, but seems less powerful. Worth investigating, at least.
+//[5.1 / may 2019] pidfd_send_signal
+//[5.2 / july 2019] clone(CLONE_PIDFD)
+//[5.3 / unreleased] select() on pidfd, and reading exit status
 //  these three would allow deleting the SIGCHLD handler, killing some nasty code and likely fixing a few corner cases
 //[5.3? / unmerged] close_range() / close_from() / nextfd()
 //  simplifies my closefrom(), current one is pretty ugly
+//[5.4? / unmerged] CLONE_WAIT_PID
+//  makes waitpid(-1) not care about that child, allowing use of GSubprocess
 //[unmerged] AT_BENEATH
-//  can only be used for readonly open, max_write is mandatory
 //  this will improve performance by not involving broker for the vast majority of open()s
 //  it's still open/openat/sigreturn, but it's way better than open/sendto/recvfrom/openat/sendmsg/recvmsg/sigreturn
-//[unavailable] various BPF thingies
+//  can only be used for readonly open, max_write is mandatory
+//[unavailable] eBPF
 //  moving some policy from broker to BPF would be an improvement
 //  but to my knowledge, non-classic BPF is still root only (CLONE_NEWUSER isn't enough)
 
 //minimum kernel version policy is similar to minimum C++ version: it must work on latest Debian stable and Ubuntu LTS
 //however, syscalls can be runtime tested with fallbacks; any released kernel is acceptable
 //currently, the minimum kernel is 4.6 (may 2016), to use CLONE_NEWCGROUP
-//the maximum kernel feature used is 4.6, there's nothing optional
+//the maximum kernel feature used is 4.6, nothing optional is used (optional simplifications don't really simplify anyways)
 
-//openat() is currently risk-free, if used with AT_BENEATH
-//however, only one of openat() and pidfd is acceptable
+//allowing openat() is currently risk-free, if used with AT_BENEATH
+//however, only one of openat() and pidfd can be exposed to children, since openat(pidfd) grants access to various weird things
 
 enum broker_req_t {
 	br_nop,       // [req only] does nothing, doesn't respond (unused)
