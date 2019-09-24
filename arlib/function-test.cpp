@@ -27,15 +27,9 @@ template<typename Tr, typename... Ta>
 void assert_decompose(function<Tr(Ta...)> fn, bool allowed = true)
 {
 	Tr(*no_func)(void*, Ta...) = nullptr;
-	auto [ safe, func, ctx ] = fn.try_decompose();
-	assert_eq(safe, allowed);
-	assert_neq(func, no_func);
-	if (allowed)
-	{
-		auto [ func2, ctx2 ] = fn.decompose();
-		assert(func2 == func);
-		assert(ctx2 == ctx);
-	}
+	auto parts = fn.try_decompose();
+	assert_eq(parts.safe, allowed);
+	assert_neq(parts.fp, no_func);
 }
 }
 

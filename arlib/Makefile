@@ -122,7 +122,9 @@ endif
 # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=53431
 CCXXFLAGS += -Wno-comment
 #every Arlib class is memmovable, I'm not interested in 99999 gcc warnings
-CONF_CXXFLAGS += -Wno-class-memaccess
+ifeq ($(CC_FAMILY),gcc)
+  CONF_CXXFLAGS += -Wno-class-memaccess
+endif
 
 EXESUFFIX =
 CONF_CXXFLAGS += $(CONF_CFLAGS)
@@ -143,7 +145,12 @@ ifeq ($(OS),linux)
     CONF_LFLAGS += -pthread
   endif
   OBJNAME = linux
-  TR = valgrind --num-callers=100
+  TR = valgrind --num-callers=100 --leak-check=full
+  ifeq ($(ARGUI),1)
+    # Gtk leaves over 9000 'possibly lost' objects around. not interested
+    TR += --show-possibly-lost=no
+    #envs G_SLICE=always-malloc G_DEBUG=gc-friendly look useful, but don't make any difference in practice
+  endif
 endif
 ifeq ($(TR),gdb)
   override TR = gdb --args
@@ -357,12 +364,6 @@ TRUE_CFLAGS := -std=c99 $(CCXXFLAGS) $(CONF_CFLAGS) $(CFLAGS)
 # - is functional and non-experimental in a finalized -std= version (c++11 is final, c++0x isn't)
 #    it's fine if not every part of that language version is supported in that compiler version
 # I will not switch C++ version because a dependency needs that. Instead, I'll reinvent or clone the dependency.
-# C++17 offers plenty of useful features, which I will switch to once I find where they belong
-#   template<auto val> (for the function<> member binder, that macro sucks. Though bind_this will likely always be a macro)
-#   Guaranteed copy elision
-#   constexpr if (for the min and bitround functions, and probably a few others)
-#   Structured binding (auto [ x, y ] = foo() - use in function::decompose)
-#   __has_include (for valgrind.h)
 # The following features would be useful; if enough of them show up, I will switch:
 #   C++2a template lambdas (for the PNG decoder)
 #   C++2a designated initializers (foo_t foo { .a = 42, .b = 123 })
@@ -389,7 +390,16 @@ TRUE_CFLAGS := -std=c99 $(CCXXFLAGS) $(CONF_CFLAGS) $(CFLAGS)
 TRUE_CXXFLAGS := -std=c++17 -fno-rtti $(CCXXFLAGS) $(CONF_CXXFLAGS) $(CXXFLAGS)
 TRUE_LFLAGS := $(LFLAGS) -fvisibility=hidden $(CONF_LFLAGS)
 
-#On Windows, cleaning up the object directory is expected to be done with 'del /q obj\*' in a batch script.
+obj:
+	mkdir obj
+
+ifeq ($(OS),windows)
+clean:
+	del /q obj\*
+
+clean-prof:
+	del /q obj\*.o
+else
 clean:
 	rm -f obj/*
 
@@ -399,9 +409,7 @@ clean-prof:
 superclean: clean
 	rm -f arlib/deps/bearssl-0.6/build/obj/*
 	rm -f arlib/deps/bearssl-0.6/build/libbearssl.a
-
-obj:
-	mkdir obj
+endif
 
 #ARLIB_H := $(patsubst %,\#define %$(LF),$(DEFINES))
 #arlib.h: Makefile
