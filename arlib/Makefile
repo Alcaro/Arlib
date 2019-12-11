@@ -1,9 +1,9 @@
 #object filename structure:
 #obj/RULE___OBJNAME___PATH.o
-#RULE is the set of build flags for this file, probably DEFAULT
+#RULE is the set of build flags for this file, probably DEFAULT or ARLIB
 #OBJNAME is the OBJNAME= make parameter, or a default value
 #PATH is the source filename, including extension, relative to project root, with slashes replaced with double underscore
-#example: obj/DEFAULT___linux___arlib__file-posix.cpp.o
+#example: obj/ARLIB___linux___arlib__file-posix.cpp.o
 
 #to create a profiled build:
 #make clean
@@ -13,8 +13,6 @@
 #make OPT=1 PROFILE=use
 
 #TODO: if a config script is needed,
-#arlib-default: arlib-default2 obj/config-$(OBJNAME).mk
-#
 #obj/config-$(OBJNAME).mk:
 #	truncate -s0 obj/config-$(OBJNAME).mk
 #	
@@ -22,13 +20,16 @@
 #		echo ARGUI := gtk3 >> obj/config-$(OBJNAME).mk && \
 #		echo CFLAGS += `pkg-config --cflags gtk+-3.0` >> obj/config-$(OBJNAME).mk || \
 #		true
-# 
-#-include obj/config-$(OBJNAME).mk
+#
+#and find some way to auto include the correct one
+#(config depends on platform, so it must have OBJNAME)
 
-arlib-default: arlib-default2
+all: arlib-default
 
 MAKEFLAGS := Rr
 .SUFFIXES:
+.SECONDEXPANSION:
+.DELETE_ON_ERROR:
 
 ifeq (,$(wildcard arlib/string.cpp))
   $(error wrong build directory, go up one level)
@@ -70,7 +71,7 @@ else
   endif
 endif
 
-ifneq ($(filter $(MAKECMDGOALS),test test-all test-all-twice check),)
+ifneq ($(filter $(MAKECMDGOALS),test test-all test-all-twice test-cg check),)
   SELFTEST = 1
   EXCEPTIONS = 1
 endif
@@ -110,7 +111,7 @@ ifneq ($(EXCEPTIONS),1)
     CONF_LFLAGS += -static-libgcc
   endif
 else
-  OPTFLAGS += -fno-enforce-eh-specs
+  OPTFLAGS_CXX += -fno-enforce-eh-specs
 endif
 
 CC_FAMILY := gcc
@@ -241,9 +242,6 @@ DOMAINNAME = $(firstword $(subst ___,$(SPACE),$(patsubst obj/%.o,%,$1)))
 
 CFLAGS_DEFAULT ?=
 CFLAGS_NOWARN += -w
-
-.SECONDEXPANSION:
-.DELETE_ON_ERROR:
 
 SOURCES += *.cpp
 SOURCES_ARLIB := arlib/*.cpp
@@ -389,6 +387,7 @@ TRUE_CFLAGS := -std=c99 $(CCXXFLAGS) $(CONF_CFLAGS) $(CFLAGS)
 #   C++2a ban non-twos-complement signed
 #   C++2a consteval
 #   C++2a void foo(auto arg) (shorthand for template<typename T> void foo(T arg) - simplifies function::bind_member)
+#   C++17 <charconv> in libc (not libstdc++)
 #   [[trivially_relocatable]] http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2019/p1144r3.html
 #   Lambdas without braces/return; function<int(int)> foo = [](int i) => i*2; (useful for LINQ)
 #   Zero-overhead deterministic exceptions http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2018/p0709r0.pdf
@@ -397,6 +396,8 @@ TRUE_CFLAGS := -std=c99 $(CCXXFLAGS) $(CONF_CFLAGS) $(CFLAGS)
 #   Single-implementation interfaces (public functions and nothing else in header, member variables hidden; useful for the GUI classes)
 #     the $class proposal would most likely permit this, as well as most or all of the reflection I want
 #   Demote or, and, bitand, etc from keyword to predefined macro (or even better, banish them to the <ciso646> they should've never left)
+#   std::embed http://open-std.org/JTC1/SC22/WG21/docs/papers/2018/p1040r0.html
+#   Allow int x(int y=0); int x(int y=0) { return y*2; } (only if default value is identical on both ends, of course)
 # The following may or may not be usable, depending on the exact details:
 #   C++2a coroutines (more useful for bsnes than for me; some of my callbacks could become coroutines, but I don't yet know how many)
 #   C++2a modules (it's very easy to produce a bad module system, I don't know if this one avoids the pitfalls)
@@ -460,8 +461,7 @@ ifeq ($(USE_AR_OPT),1)
 endif
 OBJS += $(sort $(OBJS_LATE))
 
-all: $(OUTNAME)
-arlib-default2: $(OUTNAME)
+arlib-default: $(OUTNAME)
 
 
 obj/%.c.o: $$(call SOURCENAME,$$@) arlib.h | obj
@@ -502,6 +502,10 @@ test-all: obj/arlibtest$(EXESUFFIX)
 	$(TR) obj/arlibtest$(EXESUFFIX) --all $(TESTFILTER)
 test-all-twice: obj/arlibtest$(EXESUFFIX)
 	$(TR) obj/arlibtest$(EXESUFFIX) --all --twice $(TESTFILTER)
+test-cg: obj/arlibtest$(EXESUFFIX)
+	-rm obj/callgrind.log
+	valgrind --tool=callgrind --dump-instr=yes --callgrind-out-file=obj/callgrind.log obj/arlibtest$(EXESUFFIX) $(TESTFILTER)
+	kcachegrind obj/callgrind.log
 endif
 
 

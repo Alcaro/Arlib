@@ -55,7 +55,8 @@ void DNS::resolve(cstring domain, unsigned timeout_ms, function<void(string doma
 	uint8_t discard[16];
 	if (socket::string_to_ip(discard, domain)) return callback(domain, domain);
 	
-	if (hosts_txt.contains(domain)) return callback(domain, hosts_txt.get(domain));
+	string* hosts_result = hosts_txt.get_or_null(domain);
+	if (hosts_result) return callback(domain, *hosts_result);
 	
 	bytestreamw packet;
 	
@@ -276,7 +277,7 @@ test("DNS", "udp,string,ipconv", "dns")
 		{
 			n_done++; if (n_done == n_total) loop->exit();
 			assert_eq(domain, "git.io");
-			assert_neq(ip, ""); // this domain returns eight values in answer section, must be parsed properly
+			assert_ne(ip, ""); // this domain returns eight values in answer section, must be parsed properly
 		}));
 	n_total++; dns.resolve("", bind_lambda([&](string domain, string ip) // this must fail
 		{
@@ -296,7 +297,7 @@ test("DNS", "udp,string,ipconv", "dns")
 			n_done++; if (n_done == n_total) loop->exit();
 			assert_eq(domain, "stacked.muncher.se");
 			// not gonna hardcode that IP, just accept anything
-			assert_neq(ip, "");
+			assert_ne(ip, "");
 		}));
 	n_total++; dns.resolve("127.0.0.1", bind_lambda([&](string domain, string ip)
 		{

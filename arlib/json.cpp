@@ -1,7 +1,32 @@
 #include "json.h"
 #include "stringconv.h"
+#ifdef __SSE2__
+#include <emmintrin.h>
+#endif
+#ifdef _MSC_VER
+#error test, especially whether msvc uses __SSE2__
+#endif
 
-const JSON JSON::c_null;
+// TODO: find some better place for this
+// if input is 0, undefined behavior
+static inline int ctz32(uint32_t in)
+{
+#if defined(__GNUC__)
+	return __builtin_ctz(in);
+#elif defined(_MSC_VER)
+	DWORD n;
+	_BitScanForward(&n, in);
+	return n;
+#else
+	int ret = 0;
+	while (!(in&1)) // could use some bithacks, but compilers not identifying as msvc nor gcc are just about extinct
+	{
+		ret++;
+		in >>= 1;
+	}
+	return ret;
+#endif
+}
 
 static bool l_isspace(char ch)
 {
@@ -11,15 +36,15 @@ static bool l_isspace(char ch)
 uint8_t jsonparser::nextch()
 {
 again: ;
-	uint8_t ret = m_data[m_pos++];
+	uint8_t ret = *(m_data++);
 	if (ret >= 33) return ret;
 	if (l_isspace(ret)) goto again;
-	if (m_pos > m_data.length())
+	if (m_data > m_data_end)
 	{
-		m_pos--;
+		m_data--;
 		return '\0';
 	}
-	return '\1'; // just some arbitrary invalid character
+	return '\1'; // all pre-space non-whitespace is invalid, doesn't matter which one to return
 }
 
 //returns false if the input is invalid
@@ -41,7 +66,7 @@ bool jsonparser::skipcomma(size_t depth)
 	}
 	if (ch == ']' || ch == '}')
 	{
-		m_pos--;
+		m_data--;
 		return true;
 	}
 	return false;
@@ -81,7 +106,7 @@ jsonparser::event jsonparser::next()
 	if (m_need_value && (ch == ']' || ch == '}'))
 	{
 		m_need_value = false;
-		m_pos--;
+		m_data--;
 		return do_error();
 	}
 	m_need_value = false;
@@ -96,22 +121,64 @@ jsonparser::event jsonparser::next()
 			is_key = true;
 		}
 		string val;
+		
+		//most strings don't contain escapes - special case them
+		const uint8_t * fast_iter = m_data;
+#ifdef __SSE2__
+		while (fast_iter+16 <= m_data_end)
+		{
+			__m128i chs = _mm_loadu_si128((__m128i*)fast_iter);
+			
+			__m128i bad1 = _mm_cmplt_epi8(_mm_xor_si128(chs, _mm_set1_epi8(0x80)), _mm_set1_epi8((int8_t)(0x20^0x80)));
+			__m128i bad2 = _mm_or_si128(_mm_cmpeq_epi8(chs, _mm_set1_epi8(0x22)), _mm_cmpeq_epi8(chs, _mm_set1_epi8(0x5C)));
+			__m128i bad = _mm_or_si128(bad1, bad2);
+			int mask = _mm_movemask_epi8(bad); // always in uint16 range, but gcc doesn't know that; keeping it as int optimizes better
+			if (mask == 0)
+			{
+				fast_iter += 16;
+				continue;
+			}
+			fast_iter += ctz32(mask);
+			val = string(arrayview<byte>(m_data, fast_iter-m_data));
+			m_data = fast_iter;
+			if (LIKELY(*m_data == '"'))
+			{
+				m_data++;
+				goto skip_escape_parse;
+			}
+			break;
+		}
+		//just take the slow path for the last 16 bytes of the document
+#else
 		while (true)
 		{
-			uint8_t ch = m_data[m_pos++];
-			if (ch < 32)
+			uint8_t ch = *fast_iter;
+			if (UNLIKELY(ch < 32 || ch == '\\' || ch == '"'))
 			{
-				m_pos--;
-				return do_error();
+				val = string(arrayview<byte>(m_data, fast_iter-m_data));
+				m_data = fast_iter;
+				if (LIKELY(ch == '"'))
+				{
+					m_data++;
+					goto skip_escape_parse;
+				}
+				break;
 			}
+			fast_iter++;
+		}
+#endif
+		
+		while (true)
+		{
+			uint8_t ch = *(m_data++);
 			if (ch == '\\')
 			{
-				uint8_t esc = m_data[m_pos++];
+				uint8_t esc = *(m_data++);
 				switch (esc)
 				{
-				case '"': val += '"'; break;
-				case '\\': val += '\\'; break;
-				case '/': val += '/'; break;
+				case '"': val +=  '"'; break;
+				case '\\':val += '\\'; break;
+				case '/': val +=  '/'; break;
 				case 'b': val += '\b'; break;
 				case 'f': val += '\f'; break;
 				case 'n': val += '\n'; break;
@@ -119,46 +186,53 @@ jsonparser::event jsonparser::next()
 				case 't': val += '\t'; break;
 				case 'u':
 				{
-					if (m_pos+4 > m_data.length()) return do_error();
+					if (m_data+4 > m_data_end) return do_error();
 					
 					uint32_t codepoint;
-					if (!fromstringhex(m_data.substr(m_pos, m_pos+4), codepoint)) return do_error();
-					m_pos += 4;
+					if (!fromstringhex(arrayview<byte>(m_data, 4), codepoint)) return do_error();
+					m_data += 4;
 					
 					// curse utf16 forever
-					if (codepoint >= 0xD800 && codepoint <= 0xDBFF && m_data[m_pos] == '\\' && m_data[m_pos+1] == 'u')
+					if (codepoint >= 0xD800 && codepoint <= 0xDBFF && m_data[0] == '\\' && m_data[1] == 'u')
 					{
 						uint16_t low_sur;
-						if (!fromstringhex(m_data.substr(m_pos+2, m_pos+6), low_sur)) return do_error();
+						if (!fromstringhex(arrayview<byte>(m_data+2, 4), low_sur)) return do_error();
 						
 						if (low_sur >= 0xDC00 && low_sur <= 0xDFFF)
 						{
-							m_pos += 6;
+							m_data += 6;
 							codepoint = 0x10000 + ((codepoint-0xD800)<<10) + (low_sur-0xDC00);
 						}
 					}
+					// else leave as is, string::codepoint will return fffd
 					
 					val += string::codepoint(codepoint);
 					break;
 				}
 				default:
-					m_pos--;
+					m_data--;
 					return do_error();
 				}
 				continue;
 			}
 			if (ch == '"') break;
+			if (ch < 32)
+			{
+				m_data--;
+				return do_error();
+			}
 			val += ch;
 		}
+	skip_escape_parse:
 		if (is_key)
 		{
 			if (nextch() != ':') return do_error();
-			return { map_key, val };
+			return { map_key, std::move(val) };
 		}
 		else
 		{
 			if (!skipcomma()) return do_error();
-			return { str, val };
+			return { str, std::move(val) };
 		}
 	}
 	if (ch == '[')
@@ -190,45 +264,45 @@ jsonparser::event jsonparser::next()
 	}
 	if (ch == '-' || isdigit(ch))
 	{
-		m_pos--;
-		size_t start = m_pos;
-		if (m_data[m_pos] == '-') m_pos++;
-		if (m_data[m_pos] == '0') m_pos++;
+		m_data--;
+		const uint8_t * start = m_data;
+		if (*m_data == '-') m_data++;
+		if (*m_data == '0') m_data++;
 		else
 		{
-			if (!isdigit(m_data[m_pos])) return do_error();
-			while (isdigit(m_data[m_pos])) m_pos++;
+			if (!isdigit(*m_data)) return do_error();
+			while (isdigit(*m_data)) m_data++;
 		}
-		if (m_data[m_pos] == '.')
+		if (*m_data == '.')
 		{
-			m_pos++;
-			if (!isdigit(m_data[m_pos])) return do_error();
-			while (isdigit(m_data[m_pos])) m_pos++;
+			m_data++;
+			if (!isdigit(*m_data)) return do_error();
+			while (isdigit(*m_data)) m_data++;
 		}
-		if (m_data[m_pos] == 'e' || m_data[m_pos] == 'E')
+		if (*m_data == 'e' || *m_data == 'E')
 		{
-			m_pos++;
-			if (m_data[m_pos] == '+' || m_data[m_pos] == '-') m_pos++;
-			if (!isdigit(m_data[m_pos])) return do_error();
-			while (isdigit(m_data[m_pos])) m_pos++;
+			m_data++;
+			if (*m_data == '+' || *m_data == '-') m_data++;
+			if (!isdigit(*m_data)) return do_error();
+			while (isdigit(*m_data)) m_data++;
 		}
 		
 		double d;
-		if (!fromstring(m_data.substr(start, m_pos), d)) return do_error();
+		if (!fromstring(arrayview<byte>(start, m_data-start), d)) return do_error();
 		if (!skipcomma()) return do_error();
 		return { num, d };
 	}
-	if (ch == 't' && m_data[m_pos++]=='r' && m_data[m_pos++]=='u' && m_data[m_pos++]=='e')
+	if (ch == 't' && *(m_data++)=='r' && *(m_data++)=='u' && *(m_data++)=='e')
 	{
 		if (!skipcomma()) return do_error();
 		return { jtrue };
 	}
-	if (ch == 'f' && m_data[m_pos++]=='a' && m_data[m_pos++]=='l' && m_data[m_pos++]=='s' && m_data[m_pos++]=='e')
+	if (ch == 'f' && *(m_data++)=='a' && *(m_data++)=='l' && *(m_data++)=='s' && *(m_data++)=='e')
 	{
 		if (!skipcomma()) return do_error();
 		return { jfalse };
 	}
-	if (ch == 'n' && m_data[m_pos++]=='u' && m_data[m_pos++]=='l' && m_data[m_pos++]=='l')
+	if (ch == 'n' && *(m_data++)=='u' && *(m_data++)=='l' && *(m_data++)=='l')
 	{
 		if (!skipcomma()) return do_error();
 		return { jnull };
@@ -238,6 +312,60 @@ jsonparser::event jsonparser::next()
 }
 
 
+
+string jsonwriter::strwrap(cstring s)
+{
+	const uint8_t * sp = s.bytes().ptr();
+	const uint8_t * spe = sp + s.length();
+	
+	string out = "\"";
+	const uint8_t * previt = sp;
+	for (const uint8_t * it = sp; it < spe; it++)
+	{
+#ifdef __SSE2__
+		if (spe-it >= 16)
+		{
+			__m128i chs = _mm_loadu_si128((__m128i*)it);
+			
+			__m128i bad1 = _mm_cmplt_epi8(_mm_xor_si128(chs, _mm_set1_epi8(0x80)), _mm_set1_epi8((int8_t)(0x20^0x80)));
+			__m128i bad2 = _mm_or_si128(_mm_cmpeq_epi8(chs, _mm_set1_epi8(0x22)), _mm_cmpeq_epi8(chs, _mm_set1_epi8(0x5C)));
+			__m128i bad3 = _mm_or_si128(bad2, _mm_cmpeq_epi8(chs, _mm_set1_epi8(0x7F)));
+			__m128i bad = _mm_or_si128(bad1, bad3);
+			int mask = _mm_movemask_epi8(bad);
+			if (mask == 0)
+			{
+				it += 16-1; // -1 for the it++ above
+				continue;
+			}
+			it += ctz32(mask);
+		}
+#endif
+		
+		uint8_t c = *it;
+		// DEL is legal according to nst/JSONTestSuite, but let's avoid it anyways
+		if (c < 32 || c == '"' || c == '\\' || c == 0x7F)
+		{
+			out += arrayview<byte>(previt, it-previt);
+			previt = it+1;
+			
+			if(0);
+			else if (c=='\n') out += "\\n";
+			else if (c=='\r') out += "\\r";
+			else if (c=='\t') out += "\\t";
+			else if (c=='\b') out += "\\b";
+			else if (c=='\f') out += "\\f";
+			else if (c=='\"') out += "\\\"";
+			else if (c=='\\') out += "\\\\";
+			else out += "\\u"+tostringhex<4>(c);
+		}
+	}
+	out += arrayview<byte>(previt, spe-previt);
+	return out+"\"";
+}
+
+
+
+JSON JSON::c_null;
 
 void JSON::construct(jsonparser& p, bool* ok, size_t maxdepth)
 {
@@ -291,6 +419,29 @@ void JSON::construct(jsonparser& p, bool* ok, size_t maxdepth)
 	if (ev.action == jsonparser::error) *ok = false;
 }
 
+bool JSON::parse(cstring s)
+{
+	// it would not do to have some function changing the value of null for everybody else
+	// this check is only needed here; all of JSON's other members are conceptually const, though most aren't marked as such
+	if (this == &c_null)
+		abort();
+	
+	chld_list.reset();
+	chld_map.reset();
+	
+	jsonparser p(s);
+	ev = p.next();
+	bool ok = true;
+	construct(p, &ok, 1000);
+	jsonparser::event lastev = p.next();
+	if (!ok || lastev.action != jsonparser::finish)
+	{
+		ev.action = jsonparser::error;
+		return false;
+	}
+	return true;
+}
+
 template<bool sort>
 void JSON::serialize(jsonwriter& w) const
 {
@@ -328,7 +479,7 @@ void JSON::serialize(jsonwriter& w) const
 			{
 				items.append(&e);
 			}
-			items.sort([](const map<string,JSON>::node* a, const map<string,JSON>::node* b) { return string::less(a->key, b->key); });
+			items.ssort([](const map<string,JSON>::node* a, const map<string,JSON>::node* b) { return string::less(a->key, b->key); });
 			for (const map<string,JSON>::node* e : items)
 			{
 				w.map_key(e->key);
@@ -349,34 +500,16 @@ void JSON::serialize(jsonwriter& w) const
 	}
 }
 
-bool JSON::parse(cstring s)
+string JSON::serialize(int indent) const
 {
-	chld_list.reset();
-	chld_map.reset();
-	
-	jsonparser p(s);
-	ev = p.next();
-	bool ok = true;
-	construct(p, &ok, 1000);
-	jsonparser::event lastev = p.next();
-	if (!ok || lastev.action != jsonparser::finish)
-	{
-		ev.action = jsonparser::error;
-		return false;
-	}
-	return true;
-}
-
-string JSON::serialize() const
-{
-	jsonwriter w;
+	jsonwriter w(indent);
 	serialize<false>(w);
 	return w.finish();
 }
 
-string JSON::serialize_sorted() const
+string JSON::serialize_sorted(int indent) const
 {
-	jsonwriter w;
+	jsonwriter w(indent);
 	serialize<true>(w);
 	return w.finish();
 }
@@ -436,8 +569,9 @@ static jsonparser::event test3e[]={
 };
 
 static const char * test4 =
-"{ \"a\": [ { \"b\": [ 1, 2 ], \"c\": [ 3, 4 ] }, { \"d\": [ 5, 6 ], \"e\": [ 7, 8 ] } ],\n"
-"  \"f\": [ { \"g\": [ 9, 0 ], \"h\": [ 1, 2 ] }, { \"i\": [ 3, \"\xC3\xB8\" ], \"j\": [ {}, \"x\\nx\" ] } ] }"
+"{ \"a\": [ { \"b\": [ 1, 2 ], \"c\": [ 3, 4 ] }, { \"d\": [ 5, 6 ], "
+"\"e\": [ \"this is a 31 byte string aaaaaa\", \"this is a 32 byte string aaaaaaa\", \"this is a 33 byte string aaaaaaaa\" ] } ],\n"
+"  \"f\": [ { \"g\": [ 7, 8 ], \"h\": [ 9, 1 ] }, { \"i\": [ 2, \"\xC3\xB8\" ], \"j\": [ {}, \"x\\nx\x7fx\" ] } ] }"
 ;
 
 static jsonparser::event test4e[]={
@@ -454,22 +588,26 @@ static jsonparser::event test4e[]={
 				{ e_map_key, "d" },
 				{ e_enter_list }, { e_num, 5 }, { e_num, 6 }, { e_exit_list },
 				{ e_map_key, "e" },
-				{ e_enter_list }, { e_num, 7 }, { e_num, 8 }, { e_exit_list },
+				{ e_enter_list },
+					{ e_str, "this is a 31 byte string aaaaaa" },
+					{ e_str, "this is a 32 byte string aaaaaaa" },
+					{ e_str, "this is a 33 byte string aaaaaaaa" },
+				{ e_exit_list },
 			{ e_exit_map },
 		{ e_exit_list },
 		{ e_map_key, "f" },
 		{ e_enter_list },
 			{ e_enter_map },
 				{ e_map_key, "g" },
-				{ e_enter_list }, { e_num, 9 }, { e_num, 0 }, { e_exit_list },
-				{ e_map_key, "h" },
-				{ e_enter_list }, { e_num, 1 }, { e_num, 2 }, { e_exit_list },
+				{ e_enter_list }, { e_num, 7 }, { e_num, 8 }, { e_exit_list },
+				{ e_map_key, "h" }, // don't use [9,0], { e_num, 0 } is ambiguous between double/char* ctors because c++ null is drunk
+				{ e_enter_list }, { e_num, 9 }, { e_num, 1 }, { e_exit_list },
 			{ e_exit_map },
 			{ e_enter_map },
 				{ e_map_key, "i" },
-				{ e_enter_list }, { e_num, 3 }, { e_str, "\xC3\xB8" }, { e_exit_list },
+				{ e_enter_list }, { e_num, 2 }, { e_str, "\xC3\xB8" }, { e_exit_list },
 				{ e_map_key, "j" },
-				{ e_enter_list }, { e_enter_map }, { e_exit_map }, { e_str, "x\nx" }, { e_exit_list },
+				{ e_enter_list }, { e_enter_map }, { e_exit_map }, { e_str, "x\nx\x7fx" }, { e_exit_list },
 			{ e_exit_map },
 		{ e_exit_list },
 	{ e_exit_map },
@@ -477,13 +615,13 @@ static jsonparser::event test4e[]={
 };
 
 static const char * test5 =
-"{ \"foo\": \"\x80\\u0080\\ud83d\\udca9\" }\n"
+"{ \"foo\": \"\xC2\x80\\u0080\\ud83d\\udca9\" }\n"
 ;
 
 static jsonparser::event test5e[]={
 	{ e_enter_map },
 		{ e_map_key, "foo" },
-		{ e_str, "\x80\xC2\x80\xF0\x9F\x92\xA9" },
+		{ e_str, "\xC2\x80\xC2\x80\xF0\x9F\x92\xA9" },
 	{ e_exit_map },
 	{ e_finish }
 };
@@ -650,7 +788,7 @@ test("JSON container", "string,array,set", "json")
 		json["h"].num() = 8;
 		json["i"].num() = 9;
 		assert_eq(json.serialize_sorted(), R"({"a":1,"b":2,"c":3,"d":4,"e":5,"f":6,"g":7,"h":8,"i":9})");
-		assert_neq(json.serialize(),       R"({"a":1,"b":2,"c":3,"d":4,"e":5,"f":6,"g":7,"h":8,"i":9})");
+		assert_ne(json.serialize(),        R"({"a":1,"b":2,"c":3,"d":4,"e":5,"f":6,"g":7,"h":8,"i":9})");
 	}
 	
 	{

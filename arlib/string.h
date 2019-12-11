@@ -12,7 +12,6 @@
 //In most contexts, it's called stringview, but I feel that's too long.
 //Long ago, cstring was just a typedef to 'const string&', hence its name.
 
-
 class string;
 
 #define OBJ_SIZE 16 // maximum 120, or the inline length overflows
@@ -33,7 +32,7 @@ class cstring {
 			//this is how many bytes are unused by the raw string data
 			//if all bytes are used, there are zero unused bytes - which also serves as the NUL
 			//if not inlined, it's -1
-			uint8_t m_inline_len;
+			int8_t m_inline_len;
 		};
 		struct {
 			uint8_t* m_data;
@@ -43,11 +42,11 @@ class cstring {
 		};
 	};
 	
-	bool inlined() const
+	forceinline bool inlined() const
 	{
 		static_assert(sizeof(cstring)==OBJ_SIZE);
 		
-		return m_inline_len != (uint8_t)-1;
+		return m_inline_len >= 0;
 	}
 	
 	const uint8_t * ptr() const
@@ -65,7 +64,10 @@ public:
 	
 	arrayview<byte> bytes() const
 	{
-		return arrayview<byte>(ptr(), length());
+		if (inlined())
+			return arrayview<byte>(m_inline, MAX_INLINE-m_inline_len);
+		else
+			return arrayview<byte>(m_data, m_len);
 	}
 	//If this is true, bytes()[bytes().length()] is '\0'. If false, it's undefined behavior.
 	bool bytes_hasterm() const
@@ -74,6 +76,11 @@ public:
 	}
 	
 private:
+	forceinline void init_empty()
+	{
+		m_inline_len = MAX_INLINE;
+		m_inline[0] = '\0';
+	}
 	void init_from_nocopy(const char * str)
 	{
 		if (!str) str = "";
@@ -113,20 +120,19 @@ private:
 	}
 	
 	class noinit {};
-	cstring(noinit) {}
+	forceinline cstring(noinit) {}
 	
 	cstring(arrayview<uint8_t> bytes, bool has_nul) { init_from_nocopy(bytes, has_nul); }
 public:
-	cstring() { init_from_nocopy(""); }
+	cstring() { init_empty(); }
 	cstring(const cstring& other) { init_from_nocopy(other); }
 	cstring(const char * str) { init_from_nocopy(str); }
-	//cstring(const uint8_t * str, uint32_t len) { init_from(str, len); }
 	cstring(arrayview<uint8_t> bytes) { init_from_nocopy(bytes); }
 	cstring(arrayview<char> chars) { init_from_nocopy(chars.reinterpret<uint8_t>()); }
-	cstring(nullptr_t) { init_from_nocopy(""); }
+	cstring(nullptr_t) { init_empty(); }
 	cstring& operator=(const cstring& other) { init_from_nocopy(other); return *this; }
 	cstring& operator=(const char * str) { init_from_nocopy(str); return *this; }
-	cstring& operator=(nullptr_t) { init_from_nocopy(""); return *this; }
+	cstring& operator=(nullptr_t) { init_empty(); return *this; }
 	
 	explicit operator bool() const { return length() != 0; }
 	//explicit operator const char * () const { return ptr_withnul(); }
@@ -289,6 +295,38 @@ public:
 	//template<size_t limit>
 	//array<string> rsplitw() const { return rsplitw(limit); }
 	
+private:
+	// Input: Three pointers, start <= at <= end. The found match must be within the incoming at..end.
+	// Output: Set at/end.
+	array<cstring> csplit(bool(*find)(const uint8_t * start, const uint8_t * & at, const uint8_t * & end), size_t limit) const;
+	
+public:
+	template<typename T>
+	std::enable_if_t<sizeof(std::declval<T>().match(nullptr,nullptr)), array<cstring>>
+	csplit(T regex, size_t limit) const
+	{
+		return csplit([](const uint8_t * start, const uint8_t * & at, const uint8_t * & end)->bool {
+			auto cap = T::match((char*)start, (char*)at, (char*)end);
+			if (!cap) return false;
+			at = (uint8_t*)cap[0].start;
+			end = (uint8_t*)cap[0].end;
+			return true;
+		}, limit);
+	}
+	template<size_t limit = SIZE_MAX, typename T>
+	std::enable_if_t<sizeof(std::declval<T>().match(nullptr,nullptr)), array<cstring>>
+	csplit(T regex) const { return csplit(regex, limit); }
+	
+	template<typename T>
+	std::enable_if_t<sizeof(std::declval<T>().match(nullptr,nullptr)), array<string>>
+	split(T regex, size_t limit) const
+	{
+		return csplit(regex, limit).template cast<string>();
+	}
+	template<size_t limit = SIZE_MAX, typename T>
+	std::enable_if_t<sizeof(std::declval<T>().match(nullptr,nullptr)), array<string>>
+	split(T regex) const { return split(regex, limit); }
+	
 	cstring trim() const
 	{
 		const uint8_t * chars = ptr();
@@ -308,12 +346,16 @@ public:
 	// The index is updated to point to the next codepoint. Initialize it to zero; stop when it equals the string's length.
 	// If index is out of bounds, returns zero and does not advance index.
 	// If the string contains 00s, this function will treat it as U+0000. Callers are welcome to explicitly reject that.
-	uint32_t codepoint_at(uint32_t& index) const;
+	int32_t codepoint_at(uint32_t& index, int32_t eof = 0) const;
 	
 	//Whether the string matches a glob pattern. ? in 'pat' matches any one byte, * matches zero or more bytes.
 	//NUL bytes are treated as any other byte, in both strings.
-	bool matches_glob(cstring pat) const __attribute__((pure));
-	bool matches_globi(cstring pat) const __attribute__((pure)); // Case insensitive. Considers ASCII only, øØ are considered nonequal.
+	bool matches_glob(cstring pat) const __attribute__((pure)) { return matches_glob(pat, false); }
+	// Case insensitive. Considers ASCII only, øØ are considered nonequal.
+	bool matches_globi(cstring pat) const __attribute__((pure)) { return matches_glob(pat, true); }
+private:
+	bool matches_glob(cstring pat, bool case_insensitive) const __attribute__((pure));
+public:
 	
 	size_t hash() const { return ::hash((char*)ptr(), length()); }
 	
@@ -343,6 +385,7 @@ private:
 		~c_string() { if (do_free) free(ptr); }
 	};
 public:
+	bool contains_nul() const { return memchr(ptr(), '\0', length()); }
 	//no operator const char *, a cstring doesn't necessarily have a NUL terminator
 	c_string c_str() const { return c_string(bytes(), bytes_hasterm()); }
 };
@@ -363,7 +406,7 @@ class string : public cstring {
 	}
 	const uint8_t * ptr() const
 	{
-		return (uint8_t*)cstring::ptr();
+		return cstring::ptr();
 	}
 	
 	void resize(uint32_t newlen);
@@ -376,14 +419,18 @@ class string : public cstring {
 		init_from(arrayview<byte>((uint8_t*)str, strlen(str)));
 	}
 	void init_from(arrayview<byte> data);
-	void init_from(cstring other)
+	void init_from_large(const uint8_t * str, uint32_t len);
+	void init_from(const cstring& other)
 	{
-		init_from(other.bytes());
+		if (other.inlined())
+			memcpy(this, &other, sizeof(*this));
+		else
+			init_from_large(other.m_data, other.m_len);
 	}
 	void init_from(string&& other)
 	{
 		memcpy(this, &other, sizeof(*this));
-		other.init_from("");
+		other.init_empty();
 	}
 	
 	void reinit_from(const char * str)
@@ -408,26 +455,33 @@ class string : public cstring {
 		if (!inlined()) free(m_data);
 	}
 	
-	void setchar(uint32_t index, char val)
-	{
-		ptr()[index] = val;
-	}
-	
 	void append(arrayview<uint8_t> newdat)
 	{
-		if (newdat.ptr() >= (uint8_t*)ptr() && newdat.ptr() < (uint8_t*)ptr()+length())
+		// cache these four, for performance
+		uint8_t* p1 = ptr();
+		const uint8_t* p2 = newdat.ptr();
+		uint32_t l1 = length();
+		uint32_t l2 = newdat.size();
+		
+		if (UNLIKELY(p2 >= p1 && p2 < p1+l1))
 		{
-			uint32_t offset = newdat.ptr() - ptr();
-			uint32_t oldlength = length();
-			resize(oldlength + newdat.size());
-			memcpy(ptr() + oldlength, ptr() + offset, newdat.size());
+			uint32_t offset = p2-p1; // technically UB to do this after resizing; nobody's gonna care, but might as well
+			resize(l1+l2);
+			p1 = ptr();
+			memcpy(p1+l1, p1+offset, l2);
 		}
 		else
 		{
-			uint32_t oldlength = length();
-			resize(oldlength + newdat.size());
-			memcpy(ptr() + oldlength, newdat.ptr(), newdat.size());
+			resize(l1+l2);
+			memcpy(ptr()+l1, p2, l2);
 		}
+	}
+	
+	void append(uint8_t newch)
+	{
+		uint32_t oldlength = length();
+		resize(oldlength + 1);
+		ptr()[oldlength] = newch;
 	}
 	
 	void replace_set(uint32_t pos, uint32_t len, cstring newdat);
@@ -456,65 +510,45 @@ public:
 	
 	string& operator+=(char right)
 	{
-		uint8_t tmp = right;
-		append(arrayview<uint8_t>(&tmp, 1));
+		append((uint8_t)right);
 		return *this;
 	}
 	
 	string& operator+=(uint8_t right)
 	{
-		append(arrayview<uint8_t>(&right, 1));
+		append(right);
 		return *this;
 	}
 	
-	// for other integer types, fail
+	// for other integer types, fail (other other integer types will be ambiguous)
 	string& operator+=(int right) = delete;
 	string& operator+=(unsigned right) = delete;
 	
 	
-	string() : cstring(noinit()) { init_from(""); }
+	string() : cstring(noinit()) { init_empty(); }
 	string(const string& other) : cstring(noinit()) { init_from(other); }
 	string(string&& other) : cstring(noinit()) { init_from(std::move(other)); }
 	string(const char * str) : cstring(noinit()) { init_from(str); }
 	string(cstring other) : cstring(noinit()) { init_from(other); }
-	//string(const uint8_t * str, uint32_t len) { init_from(str, len); }
 	string(arrayview<uint8_t> bytes) : cstring(noinit()) { init_from(bytes); }
 	string(arrayview<char> chars) : cstring(noinit())
 	{
 		init_from(chars.reinterpret<uint8_t>());
 	}
-	string(nullptr_t) { init_from(""); }
+	string(nullptr_t) { init_empty(); }
 	string& operator=(const string& other) { reinit_from(other); return *this; }
 	string& operator=(const cstring& other) { reinit_from(other); return *this; }
 	string& operator=(string&& other) { reinit_from(std::move(other)); return *this; }
 	string& operator=(const char * str) { reinit_from(str); return *this; }
-	string& operator=(nullptr_t) { release(); init_from(""); return *this; }
+	string& operator=(nullptr_t) { release(); init_empty(); return *this; }
 	~string() { release(); }
 	
 	explicit operator bool() const { return length() != 0; }
 	operator const char * () const { return ptr_withnul(); }
 	
-private:
-	class charref : nocopy {
-		friend class string;
-		string* parent;
-		uint32_t index;
-		charref(string* parent, uint32_t index) : parent(parent), index(index) {}
-		
-	public:
-		charref& operator=(uint8_t ch) { parent->setchar(index, ch); return *this; }
-		charref& operator+=(uint8_t ch) { parent->setchar(index, parent->getchar(index) + ch); return *this; }
-		charref& operator-=(uint8_t ch) { parent->setchar(index, parent->getchar(index) - ch); return *this; }
-		operator uint8_t() { return parent->getchar(index); }
-	};
-	friend class charref;
-	
-public:
-	//Reading the NUL terminator is fine. Writing the terminator extends the string. Poking beyond the NUL is undefined.
-	//charref operator[](uint32_t index) { return charref(this, index); }
-	charref operator[](int index) { return charref(this, index); }
-	//char operator[](uint32_t index) const { return getchar(index); }
-	uint8_t operator[](int index) const { return getchar(index); }
+	//Reading the NUL terminator is fine. Writing the terminator, or poking beyond the NUL, is undefined behavior.
+	uint8_t& operator[](int index) { return ptr()[index]; }
+	uint8_t operator[](int index) const { return ptr()[index]; }
 	
 	//Takes ownership of the given pointer. Will free() it when done.
 	static string create_usurp(char * str);
@@ -522,10 +556,11 @@ public:
 	//Returns a string containing a single NUL.
 	static cstring nul() { return arrayview<byte>((byte*)"", 1); }
 	
+	//Returns U+FFFD for invalid UTF16-reserved inputs. 0 yields a NUL byte.
 	static string codepoint(uint32_t cp);
 	
 	//3-way comparison. If a comes first, return value is negative; if equal, zero; if b comes first, positive.
-	//Comparison is bytewise. End is considered before NUL (00).
+	//Comparison is bytewise. End goes before NUL, so the empty string comes before everything else.
 	//The return value is not guaranteed to be in [-1..1]. It's not even guaranteed to fit in anything smaller than int.
 	static int compare3(cstring a, cstring b);
 	//Like the above, but 0x61-0x7A (a-z) are treated as 0x41-0x5A (A-Z).

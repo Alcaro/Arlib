@@ -1,16 +1,15 @@
 #include "file.h"
 
 #ifdef __unix__
-#include <unistd.h>
-//#include <sys/types.h>
-#include <sys/stat.h>
+#include <dirent.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
-
-#include <sys/types.h>
-#include <fcntl.h>
 #include <sys/mman.h>
-#include <errno.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 //static void window_cwd_enter(const char * dir);
 //static void window_cwd_leave();
@@ -188,13 +187,18 @@ array<string> file::listdir(cstring path)
 	dirent* ent;
 	while ((ent = readdir(dir)))
 	{
-		if (!strcmp(ent->d_name, ".") || !strcmp(ent->d_name, "..")) continue;
+		// don't use strcmp, its constant overhead is suboptimal at best
+		if (UNLIKELY(ent->d_name[0] == '.'))
+		{
+			if (ent->d_name[1] == '\0') continue;
+			if (ent->d_name[1] == '.' && ent->d_name[2] == '\0') continue;
+		}
 		
 		string childpath = path + ent->d_name;
 		struct stat st;
 		stat(childpath, &st);
 		if (S_ISDIR(st.st_mode)) childpath += "/";
-		ret.append(childpath);
+		ret.append(std::move(childpath));
 	}
 	closedir(dir);
 	return ret;

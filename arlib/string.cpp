@@ -55,15 +55,20 @@ void string::init_from(arrayview<byte> data)
 	}
 	else
 	{
-		m_inline_len = -1;
-		
-		m_data = malloc(bytes_for(len));
-		memcpy(m_data, str, len);
-		m_data[len]='\0';
-		
-		m_len = len;
-		m_nul = true;
+		init_from_large(str, len);
 	}
+}
+
+void string::init_from_large(const uint8_t * str, uint32_t len)
+{
+	m_inline_len = -1;
+	
+	m_data = malloc(bytes_for(len));
+	memcpy(m_data, str, len);
+	m_data[len]='\0';
+	
+	m_len = len;
+	m_nul = true;
 }
 
 void string::reinit_from(arrayview<byte> data)
@@ -302,6 +307,34 @@ done:
 //	return ret;
 //}
 
+array<cstring> cstring::csplit(bool(*find)(const uint8_t * start, const uint8_t * & at, const uint8_t * & end), size_t limit) const
+{
+	array<cstring> ret;
+	
+	const uint8_t * data = ptr();
+	const uint8_t * dataend = ptr()+length();
+	
+	const uint8_t * gstart = data;
+	const uint8_t * at = gstart;
+	
+	while (ret.size() < limit && at < dataend)
+	{
+		const uint8_t * mat = at;
+		const uint8_t * mend = dataend;
+		if (!find(data, mat, mend) || (gstart == mat && mat == mend))
+		{
+			at++;
+			continue;
+		}
+		
+		ret.append(arrayview<uint8_t>(gstart, mat-gstart));
+		gstart = mend;
+		at = gstart;
+	}
+	if (gstart != dataend)
+		ret.append(arrayview<uint8_t>(gstart, dataend-gstart));
+	return ret;
+}
 
 int string::compare3(cstring a, cstring b)
 {
@@ -478,7 +511,7 @@ bool cstring::isutf8() const
 			return false;
 		if (head < 0xF5) // fourbyte
 			goto cont3;
-		return false; // U+140000 or above, fivebyte, or otherwise invalid
+		return false; // fivebyte, U+140000 or above, or otherwise invalid
 		
 		cont3:
 			if (bytes == end || ((*bytes++) & 0xC0) != 0x80) return false;
@@ -491,11 +524,11 @@ bool cstring::isutf8() const
 	return true;
 }
 
-uint32_t cstring::codepoint_at(uint32_t& idx) const
+int32_t cstring::codepoint_at(uint32_t& idx, int32_t eof) const
 {
 	const uint8_t * bytes = ptr();
 	uint32_t len = length();
-	if (UNLIKELY(idx == len)) return 0;
+	if (UNLIKELY(idx == len)) return eof;
 	
 	uint8_t head = bytes[idx++];
 	if (LIKELY(head < 0x80)) return head;
@@ -506,12 +539,11 @@ uint32_t cstring::codepoint_at(uint32_t& idx) const
 			goto fail;
 		if (head < 0xC2) // continuation or overlong twobyte
 			goto fail;
-		if ((bytes[idx+0]&0xC0)!=0x80)
+		if ((bytes[idx+0]&0xC0) != 0x80)
 			goto fail;
 		
 		idx += 1;
 		
-		//return (head&0x1F)<<6 | bytes[idx+1]&0x3F;
 		return (head<<6) + (bytes[idx-1]<<0) - ((0xC0<<6) + (0x80<<0));
 	}
 	
@@ -548,30 +580,24 @@ uint32_t cstring::codepoint_at(uint32_t& idx) const
 			goto fail;
 		
 		idx += 3;
-		return (head<<18) + (bytes[idx-3]<<12) + (bytes[idx-2]<<6) + (bytes[idx-1]<<0) - ((0xF0<<18) + (0x80<<12) + (0x80<<6) + (0x80<<0));
+		return (head<<18) + (bytes[idx-3]<<12) + (bytes[idx-2]<<6) + (bytes[idx-1]<<0) - ((0xF0<<18)+(0x80<<12)+(0x80<<6)+(0x80<<0));
 	}
 	
 fail:
 	return 0xDC00 | head;
 }
 
-bool cstring::matches_glob(cstring pat) const
+bool cstring::matches_glob(cstring pat, bool case_insensitive) const
 {
 	const uint8_t * s = ptr();
 	const uint8_t * p = pat.ptr();
 	const uint8_t * se = s + length();
 	const uint8_t * pe = p + pat.length();
 	
-	while (s < se && p < pe && *p != '*')
-	{
-		if (*s != *p && *p != '?') return false;
-		s++;
-		p++;
-	}
-	if (p == pe) return s==se;
-	
-	const uint8_t * sp = NULL; // never used uninitialized, but Gcc is dumb
-	const uint8_t * pp = NULL;
+	const uint8_t * sp = se; // weirdo trick to not need a special case for the part before first asterisk
+	const uint8_t * pp = p;
+	if (p == pe)
+		return (s == se);
 	while (s < se)
 	{
 		if (p < pe && *p == '*')
@@ -581,49 +607,7 @@ bool cstring::matches_glob(cstring pat) const
 			pp = p;
 			sp = s+1;
 		}
-		else if (p < pe && s < se && (*p == *s || *p == '?'))
-		{
-			p++;
-			s++;
-		}
-		else
-		{
-			p = pp;
-			s = sp;
-			sp++;
-		}
-	}
-	while (p < pe && *p == '*') p++;
-	return (p == pe);
-}
-
-bool cstring::matches_globi(cstring pat) const
-{
-	const uint8_t * s = ptr();
-	const uint8_t * p = pat.ptr();
-	const uint8_t * se = s + length();
-	const uint8_t * pe = p + pat.length();
-	
-	while (s < se && p < pe && *p != '*')
-	{
-		if (tolower(*s) != tolower(*p) && *p != '?') return false;
-		s++;
-		p++;
-	}
-	if (p == pe) return s==se;
-	
-	const uint8_t * sp = NULL; // never used uninitialized, but Gcc is dumb
-	const uint8_t * pp = NULL;
-	while (s < se)
-	{
-		if (p < pe && *p == '*')
-		{
-			p++;
-			if (p == pe) return true;
-			pp = p;
-			sp = s+1;
-		}
-		else if (p < pe && s < se && (tolower(*s) == tolower(*p) || *p == '?'))
+		else if (p < pe && s < se && (*p == *s || *p == '?' || (case_insensitive && tolower(*p) == tolower(*s))))
 		{
 			p++;
 			s++;
@@ -774,16 +758,17 @@ test("string", "array", "string")
 		assert_eq(a.replace("1", ""), "abcdefgh");
 		assert_eq(a.replace("1", "@"), "@abc@de@fgh@");
 		assert_eq(a.replace("1", "@@"), "@@abc@@de@@fgh@@");
-		assert_eq(cstring("aaaaaaaa").replace("aa","aba"), "abaabaabaaba");
+		assert_eq(cstring("aaaaaaaaa").replace("aa","aba"), "abaabaabaabaa");
 	}
 	
 	{
-		//this has thrown valgrind errors due to derpy allocations
 		string a = "abcdefghijklmnopqrstuvwxyz";
-		string b = a; // needs an extra reference
+		string b = a;
 		a += "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 		assert_eq(a, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ");
 		assert_eq(b, "abcdefghijklmnopqrstuvwxyz");
+		a = a;
+		a = a.substr(0, ~1);
 	}
 	
 	{
@@ -836,6 +821,8 @@ test("string", "array", "string")
 		a = "aaaaaaaaaaaaaaab";
 		assert_eq(a.rsplit<1>("aa").join("."), "aaaaaaaaaaaaa.b");
 		assert_eq(a.rsplit<1>("x").join("."), "aaaaaaaaaaaaaaab");
+		
+		assert_eq(((cstring)"").split(",").size(), 1);
 	}
 	
 	//{
@@ -893,14 +880,14 @@ test("string", "array", "string")
 	}
 	
 	{
-		cstring a(NULL);
-		cstring b = NULL;
-		cstring c; c = NULL;
-		cstring d((const char*)NULL);
-		string e(NULL);
-		string f = NULL;
-		string g; g = NULL;
-		string h((const char*)NULL);
+		cstring a(nullptr);
+		cstring b = nullptr;
+		cstring c; c = nullptr;
+		cstring d((const char*)nullptr);
+		string e(nullptr);
+		string f = nullptr;
+		string g; g = nullptr;
+		string h((const char*)nullptr);
 		
 		assert_eq(a, "");
 		assert_eq(b, "");
@@ -1003,8 +990,7 @@ test("string", "array", "string")
 			if (a <  b) testctx(strs[a]+" < "+strs[b]) assert_lt(string::compare3(strs[a], strs[b]), 0);
 			if (a == b) testctx(strs[a]+" = "+strs[b]) assert_eq(string::compare3(strs[a], strs[b]), 0);
 			if (a >  b) testctx(strs[a]+" > "+strs[b]) assert_gt(string::compare3(strs[a], strs[b]), 0);
-			if (a <  b) testctx(strs[a]+" < "+strs[b]) assert(string::less(strs[a], strs[b]));
-			else       testctx(strs[a]+" >= "+strs[b]) assert(!string::less(strs[a], strs[b]));
+			testctx(strs[a]+" <=> "+strs[b]) assert_eq(string::less(strs[a], strs[b]), a<b);
 		}
 	}
 	
@@ -1024,8 +1010,7 @@ test("string", "array", "string")
 			if (a <  b) testctx(strs[a]+" < "+strs[b]) assert_lt(string::icompare3(strs[a], strs[b]), 0);
 			if (a == b) testctx(strs[a]+" = "+strs[b]) assert_eq(string::icompare3(strs[a], strs[b]), 0);
 			if (a >  b) testctx(strs[a]+" > "+strs[b]) assert_gt(string::icompare3(strs[a], strs[b]), 0);
-			if (a <  b) testctx(strs[a]+" < "+strs[b]) assert(string::iless(strs[a], strs[b]));
-			else       testctx(strs[a]+" >= "+strs[b]) assert(!string::iless(strs[a], strs[b]));
+			testctx(strs[a]+" <=> "+strs[b]) assert_eq(string::iless(strs[a], strs[b]), a<b);
 		}
 	}
 	
@@ -1071,8 +1056,7 @@ test("string", "array", "string")
 			if (a <  b) testctx(strs[a]+" < "+strs[b]) assert_lt(string::natcompare3(strs[a], strs[b]), 0);
 			if (a == b) testctx(strs[a]+" = "+strs[b]) assert_eq(string::natcompare3(strs[a], strs[b]), 0);
 			if (a >  b) testctx(strs[a]+" > "+strs[b]) assert_gt(string::natcompare3(strs[a], strs[b]), 0);
-			if (a <  b) testctx(strs[a]+" < " +strs[b]) assert( string::natless(strs[a], strs[b]));
-			else        testctx(strs[a]+" >= "+strs[b]) assert(!string::natless(strs[a], strs[b]));
+			testctx(strs[a]+" <=> "+strs[b]) assert_eq(string::natless(strs[a], strs[b]), a<b);
 		}
 	}
 	
@@ -1136,8 +1120,7 @@ test("string", "array", "string")
 			if (a <  b) testctx(strs[a]+" < "+strs[b]) assert_lt(string::inatcompare3(strs[a], strs[b]), 0);
 			if (a == b) testctx(strs[a]+" = "+strs[b]) assert_eq(string::inatcompare3(strs[a], strs[b]), 0);
 			if (a >  b) testctx(strs[a]+" > "+strs[b]) assert_gt(string::inatcompare3(strs[a], strs[b]), 0);
-			if (a <  b) testctx(strs[a]+" < " +strs[b]) assert( string::inatless(strs[a], strs[b]));
-			else        testctx(strs[a]+" >= "+strs[b]) assert(!string::inatless(strs[a], strs[b]));
+			testctx(strs[a]+" <=> "+strs[b]) assert_eq(string::inatless(strs[a], strs[b]), a<b);
 		}
 	}
 	
@@ -1233,5 +1216,7 @@ test("string", "array", "string")
 		assert(!a.matches_glob("??????????????????"));
 		assert(((cstring)"test test tests test").matches_glob("test*tests*test"));
 		assert(!((cstring)"test test tests test").matches_glob("test*tests*test*test"));
+		assert(((cstring)"AAAAAAAAAA").matches_globi("a*???a**a"));
+		assert(!((cstring)"stacked").matches_glob("foobar*"));
 	}
 }

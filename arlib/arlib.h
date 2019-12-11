@@ -15,36 +15,41 @@
 
 #pragma once
 #include "global.h"
+#include "linqbase.h"
 
+#include "hash.h"
 #include "array.h"
+#include "function.h"
+#include "string.h"
+#include "set.h"
+#include "endian.h"
+#include "intwrap.h"
+
 #include "base64.h"
-#include "bml.h"
 #include "bytepipe.h"
 #include "bytestream.h"
 #include "crc32.h"
-#include "endian.h"
 #include "file.h"
-#include "function.h"
+#include "linq.h"
+#include "os.h"
+#include "random.h"
+#include "stringconv.h"
+
+//no ifdef on this one, it contains some dummy implementations if threads are disabled
+#include "thread/thread.h"
+
+#include "bml.h"
 #include "html.h"
 #include "image.h"
 #include "init.h"
-#include "intwrap.h"
 #include "json.h"
-#include "linq.h"
-#include "os.h"
 #include "process.h"
-#include "random.h"
 #include "regex.h"
 #include "runloop.h"
 #include "safeint.h"
 #include "serialize.h"
-#include "stringconv.h"
-#include "string.h"
 #include "test.h"
 #include "zip.h"
-
-//no ifdef on this one, it contains some dummy implementations if threads are disabled
-#include "thread/thread.h"
 
 #if !defined(ARGUI_NONE) && !defined(ARGUI_WINDOWS) && !defined(ARGUI_GTK3)
 #define ARGUI_NONE

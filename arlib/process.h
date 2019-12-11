@@ -5,6 +5,10 @@
 #include "runloop.h"
 #include "bytepipe.h"
 
+#ifdef __unix__
+#include <signal.h>
+#endif
+
 //On Linux, you must be careful about creating child processes through other functions. Make sure
 // they don't fight over any process-global resources.
 //More specifically, all SIGCHLD handlers must chain to the previous one, using the three-argument sigaction function;
@@ -13,7 +17,7 @@
 //From what I can gather, g_spawn_*(), popen() and system() are safe.
 //  However, g_child_watch_*() and GSubprocess are not; they install a SIGCHLD handler and discard the old one.
 //I have not analyzed Qt.
-class process : nocopy {
+class process : public nocopy {
 public:
 	class input;
 	class output;
