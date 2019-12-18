@@ -183,7 +183,7 @@ void arlib_init(argparse& args, char** argv)
 	
 	srand(time(NULL));
 #ifndef ARGUI_NONE
-	arlib_init_gui(args, argv);
+	_arlib_init_gui(args, argv);
 #else
 	args.parse(argv);
 #endif

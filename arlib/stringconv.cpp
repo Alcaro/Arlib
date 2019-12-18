@@ -60,36 +60,22 @@ FROMFUNCHEX(unsigned long,  unsigned long, strtoul)
 FROMFUNC(     signed long long,   signed long long, strtoll)
 FROMFUNCHEX(unsigned long long, unsigned long long, strtoull)
 
-static bool fromstring_float(cstring s, double& out, double(*strtod_l)(const char*,char**))
+template<typename T, T(*strtod)(const char*,char**)>
+bool fromstring_float(cstring s, T& out)
 {
+	out = 0;
 	auto tmp_s = s.c_str();
 	const char * tmp_cp = tmp_s;
 	if (*tmp_cp != '-' && !isdigit(*tmp_cp)) return false;
 	char * tmp_cpo;
-	out = strtod_l(drop0x(tmp_cp), &tmp_cpo);
+	out = strtod(drop0x(tmp_cp), &tmp_cpo);
 	if (tmp_cpo != tmp_cp + s.length()) return false;
 	if (!isdigit(tmp_cpo[-1])) return false;
 	if (out == HUGE_VAL || out == -HUGE_VAL) return false;
 	return true;
 }
-
-bool fromstring(cstring s, double& out)
-{
-	out = 0;
-	double ret;
-	if (!fromstring_float(s, ret, strtod)) return false;
-	out = ret;
-	return true;
-}
-
-bool fromstring(cstring s, float& out)
-{
-	out = 0;
-	double ret;
-	if (!fromstring_float(s, ret, [](const char * str, char** str_end)->double { return strtof(str, str_end); })) return false;
-	out = ret;
-	return true;
-}
+bool fromstring(cstring s, double& out) { return fromstring_float<double, strtod>(s, out); }
+bool fromstring(cstring s, float& out) { return fromstring_float<float, strtof>(s, out); }
 
 bool fromstring(cstring s, bool& out)
 {
@@ -109,17 +95,72 @@ bool fromstring(cstring s, bool& out)
 	return false;
 }
 
-string tostring(double val)
+// Removes unnecessary zeroes (trailing in fraction, leading in exponent) from a number from printf %#f or %#e.
+static void flatten_zeroes(char* str)
 {
-	char ret[512]; // max double is about 1.79 * 10^308, give it space for that and a little more https://stackoverflow.com/q/7235456
-	sprintf(ret, "%f", val);
-	char* end = strchr(ret, '\0');
-	while (end > ret && end[-1] == '0') end--;
-	while (end > ret && end[-1] == '.') end--;
+	char* e = strchr(str, 'e');
+	char* end = e ? e : strchr(str, '\0');
+	while (end[-1] == '0') end--;
+	if (end[-1] == '.') end--;
+	
+	if (e)
+	{
+		*(end++) = *(e++); // e
+		*(end++) = *(e++); // + or -
+		if (*e == '0') e++;
+		while (*e) *(end++) = *(e++);
+	}
 	*end = '\0';
-	return ret;
 }
-
+template<typename T, typename Ti, T(*strtod)(const char*,char**), int minprec>
+string tostring_float(T f)
+{
+	static_assert(std::numeric_limits<T>::is_iec559);
+	static_assert(sizeof(T) == sizeof(Ti));
+	
+	if (isnan(f)) return "nan";
+	if (isinf(f)) return "-inf" + !signbit(f);
+	
+	char fmt[] = "%#.*e";
+	if ((fabs(f) >= (T)0.000001 && fabs(f) < (T)10000000000000000.0) || f==0.0)
+		fmt[4] = 'f'; // decimal notation
+	
+	int prec = minprec - log10(f);
+	if (prec < 0) prec = 0;
+	if (prec > minprec) prec = minprec;
+	if (!isnormal(f)) prec = 0;
+	
+	while (true)
+	{
+		char ret[64];
+		sprintf(ret, fmt, prec, f);
+		T parsed = strtod(ret, nullptr);
+		if (parsed != f)
+		{
+			Ti f_i;
+			memcpy(&f_i, &f, sizeof(f_i));
+			Ti parsed_i;
+			memcpy(&parsed_i, &parsed, sizeof(parsed_i));
+			if (f_i-1 == parsed_i)
+			{
+				char* last = strchr(ret, 'e');
+				if (!last) last = strchr(ret, '\0');
+				last[-1]++; // ignore if that's a 9 and overflows; it would've been caught on the previous digit
+				parsed = strtod(ret, nullptr);
+			}
+		}
+		if (parsed == f)
+		{
+			flatten_zeroes(ret);
+			return ret;
+		}
+		// it's possible to do a binary search instead, but all likely inputs only have a few digits anyways,
+		// so better keep it simple
+		prec++;
+	}
+}
+string tostring(double f) { return tostring_float<double, uint64_t, strtod, 14>(f); }
+string tostring(float f) { return tostring_float<float, uint32_t, strtof, 5>(f); }
 
 string tostringhex(arrayview<byte> val)
 {
@@ -295,4 +336,75 @@ test("string conversion", "", "string")
 	                    "64809941164205702637090279242767544565229087538682506419718265533447265625", d));
 	assert_ne(d, 0); // smallest possible subnormal float
 	assert_eq(d/2, 0); // halving it rounds to zero
+	
+	// ensure float->string is the shortest possible string that roundtrips, like Python
+	// exception: unlike Python, I always use decimal notation in the range 0.000001 to 10000000000000000, and scientific elsewhere
+	// I also skip the period if the fractional part is zero
+	assert_eq(tostring(1.0), "1");
+	assert_eq(tostring(3.0), "3");
+	assert_eq(tostring(10.0), "10");
+	assert_eq(tostring(123.0), "123");
+	assert_eq(tostring(0.1), "0.1");
+	assert_eq(tostring(0.2), "0.2");
+	assert_eq(tostring(0.3), "0.3");
+	assert_eq(tostring(0.1+0.2), "0.30000000000000004");
+	assert_eq(tostring(0.7-0.4), "0.29999999999999993");
+	assert_eq(tostring(-0.1), "-0.1");
+	assert_eq(tostring(0.9999999999999999), "0.9999999999999999"); // next is 1
+	assert_eq(tostring(4.999999999999999), "4.999999999999999"); // next is 5
+	assert_eq(tostring(9.999999999999998), "9.999999999999998"); // next is 10
+	assert_eq(tostring(999999999999999.9), "999999999999999.9"); // largest non-integer where next is a power of 10
+	assert_eq(tostring(2251799813685247.8), "2251799813685247.8"); // prev is .5000, next is integer
+	assert_eq(tostring(2251799813685247.2), "2251799813685247.2"); // another few where both rounding directions are equally far
+	assert_eq(tostring(2251799813685246.8), "2251799813685246.8"); // should round last digit to even
+	assert_eq(tostring(2251799813685246.2), "2251799813685246.2");
+	assert_eq(tostring(4503599627370495.5), "4503599627370495.5"); // largest non-integer
+	assert_eq(tostring(4503599627370494.5), "4503599627370494.5"); // second largest non-integer, to ensure it rounds properly
+	assert_eq(tostring(399999999999999.94), "399999999999999.94"); // next is integer, prev's fraction doesn't start with 9
+	assert_eq(tostring(0.6822871999174), "0.6822871999174"); // glitchy in C# ToString R, no reason not to test
+	assert_eq(tostring(0.6822871999174001), "0.6822871999174001");
+	assert_eq(tostring(0.0), "0");
+	assert_eq(tostring(-0.0), "-0");
+	assert_eq(tostring(1.0/0.0), "inf");
+	assert_eq(tostring(-1.0/0.0), "-inf");
+	assert_eq(tostring(0.0/0.0), "nan");
+	assert_eq(tostring((double)0.1f), "0.10000000149011612");
+	assert_eq(tostring(1.7976931348623157081452742373170e+308), "1.7976931348623157e+308"); // max possible double
+	assert_eq(tostring(1.7976931348623155085612432838451e+308), "1.7976931348623155e+308"); // second largest
+	assert_eq(tostring(-1.7976931348623157e+308), "-1.7976931348623157e+308"); // longest possible double (one of them, at least)
+	assert_eq(tostring(5e-324), "5e-324"); // smallest possible
+	assert_eq(tostring(1e-323), "1e-323"); // second smallest
+	assert_eq(tostring(0.00000099999999999999974298987501), "9.999999999999997e-7"); // the scientific notation cutoff points
+	assert_eq(tostring(0.00000099999999999999995474811183), "0.000001");
+	assert_eq(tostring(0.00000100000000000000016650634864), "0.0000010000000000000002");
+	assert_eq(tostring( 9999999999999998.0), "9999999999999998");
+	assert_eq(tostring(10000000000000000.0), "1e+16");
+	assert_eq(tostring(10000000000000002.0), "1.0000000000000002e+16");
+	assert_eq(tostring(7.14169434645052e-92), "7.14169434645052e-92");
+	assert_eq(tostring(-0.01), "-0.01");
+	assert_eq(tostring(-0.000001), "-0.000001");
+	assert_eq(tostring(-0.0000001), "-1e-7");
+	assert_eq(tostring(-1.0), "-1");
+	assert_eq(tostring(-1000.0), "-1000");
+	assert_eq(tostring(-10.01), "-10.01");
+	assert_eq(tostring(-1000000000000000.0), "-1000000000000000");
+	assert_eq(tostring(-10000000000000000.0), "-1e+16");
+	
+	assert_eq(tostring(0.1f), "0.1");
+	assert_eq(tostring(0.0000000000000000000000000000000000000000000014012984643248170709f), "1e-45"); // smallest positive float
+	assert_eq(tostring(340282346638528859811704183484516925440.0f), "3.4028235e+38"); // max possible float
+	assert_eq(tostring(340282326356119256160033759537265639424.0f), "3.4028233e+38"); // second largest
+	assert_eq(tostring(7.038531e-26f), "7.038531e-26");
+	assert_eq(tostring(9.99e-43f), "9.99e-43");
+	assert_eq(tostring(4.7019785e-38f), "4.7019785e-38");
+	assert_eq(tostring(9.40397e-38f), "9.40397e-38");
+	assert_eq(tostring(0.000001f), "0.000001");
+	assert_eq(tostring(0.00024414061044808477163314819336f), "0.00024414061");
+	assert_eq(tostring(0.00024414062500000000000000000000f), "0.00024414062");
+	assert_eq(tostring(0.00024414065410383045673370361328f), "0.00024414065");
+	assert_eq(tostring(0.00000002980718250000791158527136f), "2.9807183e-8");
+	assert_eq(tostring(33554448.0f), "33554448");
+	assert_eq(tostring(1.262177373e-29f), "1.2621774e-29"); // middle is tricky to round correctly
+	assert_eq(tostring(1.262177448e-29f), "1.2621775e-29"); // rounding to 8 digits is 774, but the correct answer is 8 digits
+	assert_eq(tostring(1.262177598e-29f), "1.2621776e-29"); // (the other two are just the two closest, for human readers)
 }
