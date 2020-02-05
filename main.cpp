@@ -1,8 +1,8 @@
 #include "arlib.h"
-#include <fcntl.h>
-#include <unistd.h>
-#include <sys/wait.h>
-#include <sys/ptrace.h>
+//#include <fcntl.h>
+//#include <unistd.h>
+//#include <sys/wait.h>
+//#include <sys/ptrace.h>
 
 inline void e(const char*w)
 {
@@ -17,7 +17,10 @@ inline void e(const char*w)
 }
 int main(int argc, char** argv)
 {
-	arlib_init(NULL, argv);
+	argparse args;
+	array<string> child;
+	args.add("", &child);
+	arlib_init(args, argv);
 	
 	//e("jpg/black.jpg");
 	//e("jpg/white.jpg");
@@ -117,11 +120,12 @@ int main(int argc, char** argv)
 		//size_t swflen = readu_le32(swf+
 	}
 	*/
-
+	
+#ifdef ARLIB_SANDBOX
 	sandproc ch(runloop::global());
 	ch.set_stdout(process::output::create_stdout());
 	ch.set_stderr(process::output::create_stderr());
-	ch.fs_grant_syslibs(argv[1]);
+	ch.fs_grant_syslibs(child[0]);
 	ch.fs_grant_cwd(100);
 	
 	//for gcc
@@ -151,7 +155,8 @@ int main(int argc, char** argv)
 	
 	ch.onexit([&](int lstatus) { runloop::global()->exit(); });
 	
-	ch.launch(argv[1], arrayview<const char*>(argv+2, argc-2).cast<string>());
+	ch.launch(child[0], child.skip(1));
 	runloop::global()->enter();
+#endif
 	return 0;
 }

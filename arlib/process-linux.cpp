@@ -201,7 +201,7 @@ namespace sigchld {
 	}
 }
 #ifdef ARLIB_TESTRUNNER
-int process::sigchld_fd_test_runner_only()
+int process::_sigchld_fd_runloop_only()
 {
 	synchronized(sigchld::mut)
 	{
@@ -261,7 +261,7 @@ bool process::closefrom(int lowfd)
 				abort();
 			if (fd>=0 && fd!=dfd && fd>=lowfd)
 			{
-#ifdef ARLIB_TEST_ARLIB
+#ifdef ARLIB_TEST
 				if (fd >= 1024) continue; // shut up, Valgrind
 #endif
 				close(fd); // seems like close() can't fail, per https://lwn.net/Articles/576478/
