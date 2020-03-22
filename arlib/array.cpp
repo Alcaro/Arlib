@@ -143,7 +143,7 @@ test("array", "", "array")
 	{
 		//passes if it does not leak memory
 		class glutton {
-			array<byte> food;
+			array<uint8_t> food;
 		public:
 			glutton() { food.resize(1000); }
 		};
@@ -183,9 +183,9 @@ test("array", "", "array")
 	{
 		array<int> x = { 1, 2, 3, 4, 5 };
 		x.swap(1,3);
-		assert_eq(tostring_dbg(x), "1,4,3,2,5");
+		assert_eq(tostring_dbg(x), "[1,4,3,2,5]");
 		x.swap(3,1);
-		assert_eq(tostring_dbg(x), "1,2,3,4,5");
+		assert_eq(tostring_dbg(x), "[1,2,3,4,5]");
 	}
 }
 

@@ -8,7 +8,7 @@
 //A string is a mutable byte container. It usually represents UTF-8 text, but can be arbitrary binary data, including NULs.
 //All string functions taking or returning a char* assume/guarantee NUL termination. Anything using uint8_t* does not.
 
-//cstring is an immutable sequence of bytes that does not own its storage. If the storage is modified, the cstring may not be used.
+//cstring is an immutable sequence of bytes that does not own its storage; it usually points to a string constant, or part of a string.
 //In most contexts, it's called stringview, but I feel that's too long.
 //Long ago, cstring was just a typedef to 'const string&', hence its name.
 
@@ -62,14 +62,15 @@ public:
 		else return m_len;
 	}
 	
-	arrayview<byte> bytes() const
+	arrayview<uint8_t> bytes() const
 	{
 		if (inlined())
-			return arrayview<byte>(m_inline, MAX_INLINE-m_inline_len);
+			return arrayview<uint8_t>(m_inline, MAX_INLINE-m_inline_len);
 		else
-			return arrayview<byte>(m_data, m_len);
+			return arrayview<uint8_t>(m_data, m_len);
 	}
-	//If this is true, bytes()[bytes().length()] is '\0'. If false, it's undefined behavior.
+	//If this is true, bytes()[bytes().size()] is '\0'. If false, it's undefined behavior.
+	//this[this->length()] is always '\0', even if this is false.
 	bool bytes_hasterm() const
 	{
 		return (inlined() || m_nul);
@@ -84,16 +85,16 @@ private:
 	void init_from_nocopy(const char * str)
 	{
 		if (!str) str = "";
-		init_from_nocopy(arrayview<byte>((uint8_t*)str, strlen(str)), true);
+		init_from_nocopy(arrayview<uint8_t>((uint8_t*)str, strlen(str)), true);
 	}
-	void init_from_nocopy(arrayview<byte> data, bool has_nul = false)
+	void init_from_nocopy(arrayview<uint8_t> data, bool has_nul = false)
 	{
 		const uint8_t * str = data.ptr();
 		uint32_t len = data.size();
 		
 		if (len <= MAX_INLINE)
 		{
-			memcpy(m_inline, str, len);
+			for (uint32_t i=0;i<len;i++) m_inline[i] = str[i]; // this optimizes way better than memcpy for some reason
 			m_inline[len] = '\0';
 			m_inline_len = MAX_INLINE-len;
 		}
@@ -108,7 +109,7 @@ private:
 	}
 	void init_from_nocopy(const cstring& other)
 	{
-		memcpy(this, &other, sizeof(*this));
+		*this = other;
 	}
 	
 	char getchar(uint32_t index) const
@@ -153,7 +154,7 @@ public:
 	{
 		start = realpos(start);
 		end = realpos(end);
-		return cstring(arrayview<byte>(ptr()+start, end-start), (bytes_hasterm() && (uint32_t)end == length()));
+		return cstring(arrayview<uint8_t>(ptr()+start, end-start), (bytes_hasterm() && (uint32_t)end == length()));
 	}
 	
 	bool contains(cstring other) const
@@ -337,8 +338,11 @@ public:
 		return substr(start, end);
 	}
 	
-	inline string lower() const; // Only considers ASCII.
-	inline string upper() const;
+	string lower() const; // Only considers ASCII. "ägg".upper() is äGG, not ÄGG.
+	string upper() const;
+	
+	// Whether the string contains one or more embedded NUL bytes.
+	bool contains_nul() const;
 	
 	bool isutf8() const; // NUL is considered valid UTF-8. U+D800, overlong encodings, etc are not.
 	// Treats the string as UTF-8 and returns the codepoint there.
@@ -367,7 +371,7 @@ private:
 		bool do_free;
 	public:
 		
-		c_string(arrayview<byte> data, bool has_term)
+		c_string(arrayview<uint8_t> data, bool has_term)
 		{
 			if (has_term)
 			{
@@ -387,7 +391,6 @@ private:
 		~c_string() { if (do_free) free(ptr); }
 	};
 public:
-	bool contains_nul() const { return memchr(ptr(), '\0', length()); }
 	//no operator const char *, a cstring doesn't necessarily have a NUL terminator
 	c_string c_str() const { return c_string(bytes(), bytes_hasterm()); }
 };
@@ -418,9 +421,9 @@ class string : public cstring {
 	void init_from(const char * str)
 	{
 		if (!str) str = "";
-		init_from(arrayview<byte>((uint8_t*)str, strlen(str)));
+		init_from(arrayview<uint8_t>((uint8_t*)str, strlen(str)));
 	}
-	void init_from(arrayview<byte> data);
+	void init_from(arrayview<uint8_t> data);
 	void init_from_large(const uint8_t * str, uint32_t len);
 	void init_from(const cstring& other)
 	{
@@ -438,9 +441,9 @@ class string : public cstring {
 	void reinit_from(const char * str)
 	{
 		if (!str) str = "";
-		reinit_from(arrayview<byte>((uint8_t*)str, strlen(str)));
+		reinit_from(arrayview<uint8_t>((uint8_t*)str, strlen(str)));
 	}
-	void reinit_from(arrayview<byte> data);
+	void reinit_from(arrayview<uint8_t> data);
 	void reinit_from(cstring other)
 	{
 		reinit_from(other.bytes());
@@ -467,7 +470,7 @@ class string : public cstring {
 		
 		if (UNLIKELY(p2 >= p1 && p2 < p1+l1))
 		{
-			uint32_t offset = p2-p1; // technically UB to do this after resizing; nobody's gonna care, but might as well
+			uint32_t offset = p2-p1;
 			resize(l1+l2);
 			p1 = ptr();
 			memcpy(p1+l1, p1+offset, l2);
@@ -491,10 +494,10 @@ class string : public cstring {
 public:
 	//Resizes the string to a suitable size, then allows the caller to fill it in with whatever. Initial contents are undefined.
 	//The returned pointer may only be used until the first subsequent use of the string, including read-only operations.
-	arrayvieww<byte> construct(uint32_t len)
+	arrayvieww<uint8_t> construct(uint32_t len)
 	{
 		resize(len);
-		return arrayvieww<byte>(ptr(), len);
+		return arrayvieww<uint8_t>(ptr(), len);
 	}
 	
 	string& operator+=(const char * right)
@@ -555,10 +558,10 @@ public:
 	
 	//Takes ownership of the given pointer. Will free() it when done.
 	static string create_usurp(char * str);
-	static string create_usurp(array<byte>&& in) { return string(std::move(in)); }
+	static string create_usurp(array<uint8_t>&& in) { return string(std::move(in)); }
 	
 	//Returns a string containing a single NUL.
-	static cstring nul() { return arrayview<byte>((byte*)"", 1); }
+	static cstring nul() { return arrayview<uint8_t>((uint8_t*)"", 1); }
 	
 	//Returns U+FFFD for UTF16-reserved inputs. 0 yields a NUL byte.
 	static string codepoint(uint32_t cp);
@@ -592,7 +595,7 @@ public:
 #undef MAX_INLINE
 
 
-inline bool operator==(cstring left,      const char * right) { return left.bytes() == arrayview<byte>((uint8_t*)right,strlen(right)); }
+inline bool operator==(cstring left,      const char * right) { return left.bytes() == arrayview<uint8_t>((uint8_t*)right,strlen(right)); }
 inline bool operator==(cstring left,      cstring right     ) { return left.bytes() == right.bytes(); }
 inline bool operator==(const char * left, cstring right     ) { return operator==(right, left); }
 inline bool operator!=(cstring left,      const char * right) { return !operator==(left, right); }
@@ -605,37 +608,28 @@ bool operator<(const char * left, cstring right     ) = delete;
 
 inline string operator+(cstring left,      cstring right     ) { string ret=left; ret+=right; return ret; }
 inline string operator+(cstring left,      const char * right) { string ret=left; ret+=right; return ret; }
-inline string operator+(string&& left,     cstring right     ) { left+=right; return std::move(left); }
-inline string operator+(string&& left,     const char * right) { left+=right; return std::move(left); }
+inline string operator+(string&& left,     cstring right     ) { left+=right; return left; }
+inline string operator+(string&& left,     const char * right) { left+=right; return left; }
 inline string operator+(const char * left, cstring right     ) { string ret=left; ret+=right; return ret; }
 
-//inline explicit string operator+(string&& left, char right) { left+=right; return std::move(left); }
+//inline explicit string operator+(string&& left, char right) { left+=right; return left; }
 //inline explicit string operator+(cstring left, char right) { string ret=left; ret+=right; return ret; }
 //inline explicit string operator+(char left, cstring right) { string ret; ret[0]=left; ret+=right; return ret; }
 inline string operator+(string&& left, char right) = delete;
 inline string operator+(cstring left, char right) = delete;
 inline string operator+(char left, cstring right) = delete;
 
-inline string cstring::lower() const
-{
-	string ret = *this;
-	uint8_t * chars = ret.ptr();
-	for (size_t i=0;i<length();i++) chars[i] = tolower(chars[i]);
-	return ret;
-}
-
-inline string cstring::upper() const
-{
-	string ret = *this;
-	uint8_t * chars = ret.ptr();
-	for (size_t i=0;i<length();i++) chars[i] = toupper(chars[i]);
-	return ret;
-}
-
 //Checks if needle is one of the 'separator'-separated words in the haystack. The needle may not contain 'separator' or be empty.
 //For example, haystack "GL_EXT_FOO GL_EXT_BAR GL_EXT_QUUX" (with space as separator) contains needles
 // 'GL_EXT_FOO', 'GL_EXT_BAR' and 'GL_EXT_QUUX', but not 'GL_EXT_QUU'.
 bool strtoken(const char * haystack, const char * needle, char separator);
 
-static inline int isualpha(int c) { return c=='_' || isalpha(c); }
-static inline int isualnum(int c) { return c=='_' || isalnum(c); }
+static inline int isualpha(int c) { return (c == '_' || ((c&~0x20) >= 'A' && (c&~0x20) <= 'Z')); }
+static inline int isualnum(int c) { return isualpha(c) || (c >= '0' && c <= '9'); }
+
+template<typename T>
+cstring arrayview<T>::get_or(size_t n, const char * def) const
+{
+	if (n < count) return items[n];
+	else return def;
+};

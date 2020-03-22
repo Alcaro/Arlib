@@ -16,7 +16,7 @@
 //  probably not possible without c++2a coroutines - keep it until then
 
 #define socket socket_t
-class socket : nocopy {
+class socket : nomove {
 public:
 	//Always succeeds immediately, doing the real work asynchronously.
 	//If the server doesn't exist or doesn't respond, reports a broken connection.
@@ -61,20 +61,20 @@ public:
 	// This is how most callers treat them anyways, no need to push a bunch of special cases into the callers.
 	//send() buffers everything internally, and always uses every byte.
 	//For UDP sockets, partial reads or writes aren't possible; you always get one or zero packets.
-	virtual int recv(arrayvieww<byte> data) = 0;
-	int recv(array<byte>& data)
+	virtual int recv(arrayvieww<uint8_t> data) = 0;
+	int recv(array<uint8_t>& data)
 	{
 		if (data.size()==0)
 		{
 			data.resize(4096);
-			int bytes = recv((arrayvieww<byte>)data);
+			int bytes = recv((arrayvieww<uint8_t>)data);
 			if (bytes >= 0) data.resize(bytes);
 			else data.resize(0);
 			return bytes;
 		}
-		else return recv((arrayvieww<byte>)data);
+		else return recv((arrayvieww<uint8_t>)data);
 	}
-	virtual int send(arrayview<byte> data) = 0;
+	virtual int send(arrayview<uint8_t> data) = 0;
 	
 	//It is safe to call this multiple times.
 	//If there's still data available for reading on the socket, the callbacks will be called again.
@@ -95,12 +95,37 @@ public:
 	
 	
 	// Network byte order.
-	static string ip_to_string(arrayview<byte> bytes);
-	static array<byte> string_to_ip(cstring str);
+	static string ip_to_string(arrayview<uint8_t> bytes);
+	static array<uint8_t> string_to_ip(cstring str);
 	// The buffer must be at least 16 bytes. Returns bytes actually used (4 or 16, or 0 for error).
-	static int string_to_ip(arrayvieww<byte> out, cstring str);
-	static bool string_to_ip4(arrayvieww<byte> out, cstring str);
-	static bool string_to_ip6(arrayvieww<byte> out, cstring str);
+	static int string_to_ip(arrayvieww<uint8_t> out, cstring str);
+	static bool string_to_ip4(arrayvieww<uint8_t> out, cstring str);
+	static bool string_to_ip6(arrayvieww<uint8_t> out, cstring str);
+	
+	static bool ip_to_sockaddr(struct sockaddr_storage * sa, arrayview<uint8_t> bytes);
+};
+
+class socketlisten : nomove {
+#ifdef __unix__
+	socketlisten(int fd, runloop* loop, function<void(autoptr<socket>)> callback);
+	int fd;
+#endif
+	
+#ifdef _WIN32
+	socketlisten(intptr_t sock, runloop* loop, function<void(autoptr<socket>)> callback);
+	
+	intptr_t fd;
+	HANDLE waiter = CreateEvent(NULL, true, false, NULL);
+#endif
+	
+	runloop* loop;
+	function<void(socket*)> callback;
+	
+public:
+	static socketlisten* create(cstring ip, int port, runloop* loop, function<void(autoptr<socket>)> callback);
+	static socketlisten* create(int port, runloop* loop, function<void(autoptr<socket>)> callback);
+	
+	~socketlisten();
 };
 
 //SSL feature matrix:

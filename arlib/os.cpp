@@ -32,7 +32,7 @@
 
 bool dylib::init(const char * filename)
 {
-	if (handle) abort();
+	deinit();
 	//synchronized(dylib_lock)
 	{
 		handle = dlopen(filename, RTLD_LAZY);
@@ -73,7 +73,7 @@ static mutex dylib_lock;
 
 static HANDLE dylib_init(const char * filename, bool uniq)
 {
-	synchronized(dylib_lock)
+	synchronized(dylib_lock) // two threads racing on SetDllDirectory is bad news
 	{
 		HANDLE handle;
 		
@@ -104,17 +104,17 @@ bool dylib::init(const char * filename)
 	return handle;
 }
 
-bool dylib::init_uniq(const char * filename)
-{
-	deinit();
-	handle = dylib_init(filename, true);
-	return handle;
-}
-
-bool dylib::init_uniq_force(const char * filename)
-{
-	return init_uniq(filename);
-}
+//bool dylib::init_uniq(const char * filename)
+//{
+//	deinit();
+//	handle = dylib_init(filename, true);
+//	return handle;
+//}
+//
+//bool dylib::init_uniq_force(const char * filename)
+//{
+//	return init_uniq(filename);
+//}
 
 void* dylib::sym_ptr(const char * name)
 {
@@ -245,6 +245,14 @@ bool debug_or_abort()
 
 
 #ifdef _WIN32
+// Returns a*b/c, but gives the correct answer if a*b doesn't fit in uint64_t.
+// (Still gives wrong answer if a*b/c doesn't fit, or if b*c > UINT64_MAX.)
+static uint64_t muldiv64(uint64_t a, uint64_t b, uint64_t c)
+{
+	// doing it in __int128 would be easier, but that ends up calling __udivti3 which is a waste of time.
+	return (a/c*b) + (a%c*b/c);
+}
+
 uint64_t time_us_ne()
 {
 	////this one has an accuracy of 10ms by default
@@ -257,7 +265,7 @@ uint64_t time_us_ne()
 	
 	LARGE_INTEGER timer_now;
 	QueryPerformanceCounter(&timer_now);
-	return 1000000*timer_now.QuadPart/timer_freq.QuadPart;
+	return muldiv64(timer_now.QuadPart, 1000000, timer_freq.QuadPart);
 }
 uint64_t time_ms_ne()
 {
@@ -384,14 +392,19 @@ test("time", "", "time")
 	uint64_t time2_une_fu = time_us_ne();
 	assert_range(time2_une_fu, time2_une_fm-1100,    time2_une_fm+1500);
 	
+#ifdef __unix__
 	assert_range(time2_u_fm-time_u_fm, 40000, 60000);
 	assert_range(time2_u_fu-time_u_fu, 40000, 60000);
+#else
+	assert_range(time2_u_fm-time_u_fm, 40000, 70000); // Windows time is low resolution by default
+	assert_range(time2_u_fu-time_u_fu, 40000, 70000);
+#endif
 	assert_range(time2_une_fm-time_une_fm, 40000, 60000);
 	assert_range(time2_une_fu-time_une_fu, 40000, 60000);
 }
 
 void not_a_function(); // linker error if the uses aren't optimized out
-DECL_DYLIB_T(libc_t, fread, isalpha, mktime, not_a_function);
+DECL_DYLIB_T(libc_t, not_a_function, fread, isalpha, mktime);
 DECL_DYLIB_PREFIX_T(libc_f_t, f, open, read, close);
 
 test("dylib", "", "dylib")

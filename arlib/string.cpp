@@ -1,5 +1,8 @@
 #include "string.h"
 #include "test.h"
+#ifdef __SSE2__
+#include <emmintrin.h>
+#endif
 
 void string::resize(uint32_t newlen)
 {
@@ -42,7 +45,7 @@ void string::resize(uint32_t newlen)
 	}
 }
 
-void string::init_from(arrayview<byte> data)
+void string::init_from(arrayview<uint8_t> data)
 {
 	const uint8_t * str = data.ptr();
 	uint32_t len = data.size();
@@ -71,7 +74,7 @@ void string::init_from_large(const uint8_t * str, uint32_t len)
 	m_nul = true;
 }
 
-void string::reinit_from(arrayview<byte> data)
+void string::reinit_from(arrayview<uint8_t> data)
 {
 	const uint8_t * str = data.ptr();
 	uint32_t len = data.size();
@@ -448,13 +451,46 @@ int string::natcompare3(cstring a, cstring b, bool case_insensitive)
 	return 0;
 }
 
+string cstring::lower() const
+{
+	string ret = *this;
+	uint8_t * chars = ret.ptr();
+	for (size_t i=0;i<length();i++) chars[i] = tolower(chars[i]);
+	return ret;
+}
+
+string cstring::upper() const
+{
+	string ret = *this;
+	uint8_t * chars = ret.ptr();
+	for (size_t i=0;i<length();i++) chars[i] = toupper(chars[i]);
+	return ret;
+}
+
+bool cstring::contains_nul() const
+{
+#ifdef __SSE2__
+	static_assert(sizeof(cstring) == 16);
+	if (inlined())
+	{
+		int iszero = _mm_movemask_epi8(_mm_cmpeq_epi8(_mm_loadu_si128((__m128i*)this), _mm_setzero_si128()));
+		// m_inline[0] becomes the 0001 bit, [1] -> 0002, etc
+		// m_inline_len is number of bytes at the end of the object we don't care about, not counting the NUL terminator
+		// iszero << m_inline_len puts the NUL at the 0x8000 bit; if anything lower is also true, that's a NUL in the input
+		return ((iszero << m_inline_len) & 0x7FFF);
+	}
+	else return memchr(m_data, '\0', m_len);
+#else
+	return memchr(ptr(), '\0', length());
+#endif
+}
 
 string string::codepoint(uint32_t cp)
 {
 	if (cp <= 0x7F)
 	{
 		uint8_t ret[] = { (uint8_t)cp };
-		return string(arrayview<byte>(ret));
+		return string(arrayview<uint8_t>(ret));
 	}
 	else if (cp <= 0x07FF)
 	{
@@ -462,7 +498,7 @@ string string::codepoint(uint32_t cp)
 			(uint8_t)(((cp>> 6)     )|0xC0),
 			(uint8_t)(((cp    )&0x3F)|0x80),
 		};
-		return string(arrayview<byte>(ret));
+		return string(arrayview<uint8_t>(ret));
 	}
 	else if (cp >= 0xD800 && cp <= 0xDFFF)
 		return "\xEF\xBF\xBD"; // curse utf16 forever
@@ -473,7 +509,7 @@ string string::codepoint(uint32_t cp)
 			(uint8_t)(((cp>>6 )&0x3F)|0x80),
 			(uint8_t)(((cp    )&0x3F)|0x80),
 		};
-		return string(arrayview<byte>(ret));
+		return string(arrayview<uint8_t>(ret));
 	}
 	else if (cp <= 0x10FFFF)
 	{
@@ -483,7 +519,7 @@ string string::codepoint(uint32_t cp)
 			(uint8_t)(((cp>>6 )&0x3F)|0x80),
 			(uint8_t)(((cp    )&0x3F)|0x80),
 		};
-		return string(arrayview<byte>(ret));
+		return string(arrayview<uint8_t>(ret));
 	}
 	else return "\xEF\xBF\xBD";
 }
@@ -634,7 +670,7 @@ string cstring::leftPad (size_t len, uint8_t ch) const {
 	if (len >= length()) return *this;
 	len -= length();
 	
-	array<byte> pad;
+	array<uint8_t> pad;
 	pad.resize(len);
 	memset(pad.ptr(), ch, len);
 	return cstring(pad) + *this;
@@ -805,7 +841,7 @@ test("string", "array", "string")
 	}
 	
 	{
-		arrayview<byte> a((uint8_t*)"123", 3);
+		arrayview<uint8_t> a((uint8_t*)"123", 3);
 		string b = "["+string(a)+"]";
 		string c = "["+cstring(a)+"]";
 		assert_eq(b, "[123]");
@@ -948,7 +984,7 @@ test("string", "array", "string")
 	}
 	
 	{
-		array<byte> src = cstring("floating munchers").bytes();
+		array<uint8_t> src = cstring("floating munchers").bytes();
 		string dst = src; // ensure it chooses the arrayview<uint8_t> overload
 		assert_eq(dst, "floating munchers");
 		assert_eq(src, dst.bytes());
@@ -962,11 +998,11 @@ test("string", "array", "string")
 	}
 	
 	{
-		cstring a(arrayview<byte>((byte*)"\0", 1));
+		cstring a(arrayview<uint8_t>((uint8_t*)"\0", 1));
 		assert_eq(a.length(), 1);
 		assert_eq(a[0], '\0');
 		
-		cstring b(arrayview<byte>((byte*)"\0\0\0", 3));
+		cstring b(arrayview<uint8_t>((uint8_t*)"\0\0\0", 3));
 		assert_eq(b.length(), 3);
 		assert_eq(b.replace(a, "ee"), "eeeeee");
 	}
@@ -974,7 +1010,7 @@ test("string", "array", "string")
 	{
 		assert(cstring().isutf8());
 		assert(cstring("abc").isutf8());
-		assert(cstring(arrayview<byte>((byte*)"\0", 1)).isutf8());
+		assert(cstring(arrayview<uint8_t>((uint8_t*)"\0", 1)).isutf8());
 		assert(cstring("\xC2\xA9").isutf8());
 		assert(cstring("\xE2\x82\xAC").isutf8());
 		assert(cstring("\xF0\x9F\x80\xB0").isutf8());
@@ -1252,5 +1288,39 @@ test("string", "array", "string")
 		assert(!((cstring)"test test tests test").matches_glob("test*tests*test*test"));
 		assert(((cstring)"AAAAAAAAAA").matches_globi("a*???a**a"));
 		assert(!((cstring)"stacked").matches_glob("foobar*"));
+	}
+	
+	{
+		const char * tests[] = {
+			"",
+			"_",
+			"a",
+			"aaaa_aa",
+			"aaaa_aaa",
+			"_______________",
+			"aaaaaaaaaaaaaaa",
+			"aaaaaaaaaaaaaa_",
+			"_aaaaaaaaaaaaaa",
+			"aaaaaaaaaaaaaaaa",
+			"aaaaaaaaaaaaaaa_",
+			"_aaaaaaaaaaaaaaa",
+		};
+		
+		for (const char * test : tests)
+		{
+			testctx(test) {
+				bool nul = false;
+				string a = test;
+				for (int i : range(strlen(test)))
+				{
+					if (a[i] == '_')
+					{
+						nul = true;
+						a[i] = '\0';
+					}
+				}
+				assert_eq(a.contains_nul(), nul);
+			}
+		}
 	}
 }

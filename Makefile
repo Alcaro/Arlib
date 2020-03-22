@@ -14,7 +14,6 @@ ARSANDBOX = 1
 
 # Currently not supported on Windows.
 ARGUI = 0
-ARSOCKET = 0
 ARSANDBOX = 0
 
 # For Windows, Arlib can target either XP or 7. Latter is recommended; XP support slows down some things and disables some functionality.
@@ -31,7 +30,7 @@ ARXPSUPPORT = 1
 #EXCEPTIONS
 #  set to 1 if needed
 #  not recommended: many parts of Arlib are not guaranteed exception safe, exception support inhibits many optimizations,
-#  and it requires libgcc_s_sjlj-1.dll and libstdc++-6.dll on Windows
+#  and it adds a few hundred kilobytes on Windows
 #  (tests throw exceptions on failure, and automatically enable them)
 #SOURCES
 #  extra files to compile, in addition to *.cpp
@@ -62,3 +61,4 @@ include arlib/Makefile
 #    maybe the make test script is in arlib/, not ./
 #test all SSLs at once, rename socketssl_impl to socketssl_tlse and ifdef socketssl::create
 #  maybe always compile all SSLs, rely on --gc-sections to wipe the unused ones
+#    except that screws up if gnutls headers aren't installed

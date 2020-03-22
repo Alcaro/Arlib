@@ -15,12 +15,27 @@ inline void e(const char*w)
 		//printf("%.8X%c",i.pixels32[y*i.stride/4 + x], x==i.width-1 ? '\n' : ' ');
 	//}
 }
+
 int main(int argc, char** argv)
 {
+#ifdef ARLIB_SANDBOX
 	argparse args;
 	array<string> child;
 	args.add("", &child);
 	arlib_init(args, argv);
+#else
+	arlib_init(NULL, argv);
+#endif
+	
+	runloop* loop = runloop::global();
+	HTTP h(loop);
+	HTTP::rsp r;
+	function<void(HTTP::rsp)> break_runloop = bind_lambda([&](HTTP::rsp inner_r) { r = std::move(inner_r); loop->exit(); });
+	h.send(HTTP::req("https://floating.muncher.se/"), break_runloop);
+	loop->enter();
+	puts(r.text()+"");
+	
+	//puts(tostring(3.141592653589793238462));
 	
 	//e("jpg/black.jpg");
 	//e("jpg/white.jpg");
@@ -98,13 +113,13 @@ int main(int argc, char** argv)
 			uint16_t tag = bs.u16l();
 			uint16_t tag_type = tag >> 6;
 			uint32_t tag_length = tag & 0x3F;
-
+			
 			if(tag_length >= 63){
 				tag_length = (int32_t)bs.u32l();
 			}
-
+			
 			bs.skip(tag_length);
-
+			
 			//Perfect place to scan all tag types and extract fonts and pictures
 			if(tag_type == 0 || bs.tell() >= swflen){
 				break;
@@ -137,7 +152,7 @@ int main(int argc, char** argv)
 	ch.fs_grant("/usr/lib/");
 	ch.fs_hide("/usr/gnu/");
 	ch.fs_grant("/lib/");
-	ch.fs_hide("/usr");
+	ch.fs_hide("/usr/");
 	ch.fs_hide("/usr/local/include/");
 	ch.fs_grant("/usr/include/");
 	ch.fs_hide("/usr/x86_64-linux-gnu/");

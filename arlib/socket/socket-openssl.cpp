@@ -1,4 +1,5 @@
 #include "socket.h"
+#include"../test.h"
 
 #ifdef ARLIB_SSL_OPENSSL
 #include "../thread.h"
@@ -21,7 +22,7 @@ RUN_ONCE_FN(initialize)
 static bool validate_hostname(const char * hostname, const X509 * server_cert);
 #endif
 
-class socketssl_impl : public socket {
+class socketssl_openssl : public socket {
 public:
 	runloop* loop;
 	autoptr<socket> sock;
@@ -35,7 +36,7 @@ public:
 	function<void()> cb_read;
 	function<void()> cb_write;
 	
-	DECL_TIMER(timer, socketssl_impl);
+	DECL_TIMER(timer, socketssl_openssl);
 	MAKE_DESTRUCTIBLE_FROM_CALLBACK();
 	
 #if OPENSSL_VERSION_NUMBER < 0x10002000 // < 1.0.2
@@ -43,7 +44,7 @@ public:
 	string domain;
 #endif
 	
-	socketssl_impl(socket* parent, cstring domain, runloop* loop, bool permissive)
+	socketssl_openssl(socket* parent, cstring domain, runloop* loop, bool permissive)
 	{
 		this->loop = loop;
 		
@@ -145,8 +146,8 @@ public:
 	{
 		if (sock)
 		{
-			sock->callback(                  bind_this(&socketssl_impl::on_readable),
-			          BIO_pending(to_sock) ? bind_this(&socketssl_impl::on_writable) : NULL);
+			sock->callback(                  bind_this(&socketssl_openssl::on_readable),
+			          BIO_pending(to_sock) ? bind_this(&socketssl_openssl::on_writable) : NULL);
 		}
 	}
 	
@@ -162,9 +163,11 @@ public:
 		{
 			if (buflen > 4096) buflen = 4096;
 			
-			int bytes = sock->send(arrayview<byte>((uint8_t*)buf, buflen));
+			int bytes = sock->send(arrayview<uint8_t>((uint8_t*)buf, buflen));
+printf("(send %d crypt)",bytes);fflush(stdout);
 //printf("SOCKWRITE(%li)=%i\n",buflen,bytes);
 			if (bytes < 0) sock = NULL;
+else puts(tostringhex_dbg(arrayview<uint8_t>((uint8_t*)buf,bytes)));
 			if (bytes > 0)
 			{
 				uint8_t discard[4096];
@@ -185,7 +188,9 @@ public:
 		int bytes = sock->recv(buf);
 //VALGRIND_PRINTF_BACKTRACE
 //printf("SOCKREAD(4096)=%i\n",bytes);
+printf("(recv %d crypt)",bytes);fflush(stdout);
 		if (bytes < 0) sock = NULL;
+else puts(tostringhex_dbg(arrayview<uint8_t>(buf,bytes)));
 		if (bytes > 0)
 		{
 			int bytes2 = BIO_write(from_sock, buf, bytes);
@@ -197,7 +202,7 @@ public:
 		set_child_cb();
 	}
 	
-	int recv(arrayvieww<byte> data) override
+	int recv(arrayvieww<uint8_t> data) override
 	{
 		int ret = fixret(SSL_read(ssl, data.ptr(), data.size()));
 //printf("USERREAD(%lu)=%i\n",data.size(),ret);
@@ -216,7 +221,7 @@ public:
 		return ret;
 	}
 	
-	int send(arrayview<byte> data) override
+	int send(arrayview<uint8_t> data) override
 	{
 		if (!sock) return -1;
 		
@@ -238,10 +243,10 @@ public:
 	{
 		this->cb_read = cb_read;
 		this->cb_write = cb_write;
-		if (cb_write) timer.set_idle(bind_this(&socketssl_impl::update));
+		if (cb_write) timer.set_idle(bind_this(&socketssl_openssl::update));
 	}
 	
-	~socketssl_impl()
+	~socketssl_openssl()
 	{
 		if (sock)
 		{
@@ -259,7 +264,7 @@ socket* socket::wrap_ssl_raw(socket* inner, cstring domain, runloop* loop)
 	initialize();
 	if (!ctx) return NULL;
 	if (!inner) return NULL;
-	return new socketssl_impl(inner, domain, loop, false);
+	return new socketssl_openssl(inner, domain, loop, false);
 }
 
 socket* socket::wrap_ssl_raw_noverify(socket* inner, runloop* loop)
@@ -267,7 +272,7 @@ socket* socket::wrap_ssl_raw_noverify(socket* inner, runloop* loop)
 	initialize();
 	if (!ctx) return NULL;
 	if (!inner) return NULL;
-	return new socketssl_impl(inner, "", loop, true);
+	return new socketssl_openssl(inner, "", loop, true);
 }
 
 #include "../test.h"

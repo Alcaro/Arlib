@@ -24,7 +24,7 @@ static inline bool unpack_pixels_plte(uint32_t width, uint32_t height, uint32_t*
 template<int color_type, int bpp_in>
 static inline void unpack_pixels(uint32_t width, uint32_t height, uint32_t* pixels, uint8_t* source, size_t sourcestride);
 
-bool image::init_decode_png(arrayview<byte> pngdata)
+bool image::init_decode_png(arrayview<uint8_t> pngdata)
 {
 	struct pngchunk : public bytestream {
 		uint32_t type;
@@ -32,7 +32,7 @@ bool image::init_decode_png(arrayview<byte> pngdata)
 	};
 	class pngreader : public bytestream {
 	public:
-		pngreader(arrayview<byte> bytes) : bytestream(bytes) {}
+		pngreader(arrayview<uint8_t> bytes) : bytestream(bytes) {}
 		
 		uint32_t peektype()
 		{
@@ -122,7 +122,11 @@ bool image::init_decode_png(arrayview<byte> pngdata)
 		palettelen = PLTE.len/3;
 		for (unsigned i=0;i<palettelen;i++)
 		{
-			palette[i] = 0xFF000000 | PLTE.u24b();
+			uint32_t color = 0xFF000000;
+			color |= PLTE.u8()<<16; // could've been cleaner if order of evaluation wasn't implementation defined...
+			color |= PLTE.u8()<<8;
+			color |= PLTE.u8();
+			palette[i] = color;
 		}
 	}
 	

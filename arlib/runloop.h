@@ -2,8 +2,7 @@
 #include "global.h"
 
 // TODO: rewrite this thing
-// - windows support (lots of WSA stuff, like WSACreateEvent and WSAOVERLAPPED, are just the normal structs with weird prefixes)
-// - creating a socket should be async, this DNS-then-forward wrapper is silly
+// - creating a socket should be async, this DNS-then-forward wrapper is silly (socks5 should be async too)
 // - backpressure; socketbuf is flawed at best, socket::write must be async
 // - concurrency pushback; object X may only handle one concurrent event
 //     for example a GUI program that sends HTTP requests; nested GUI event handling is impossible to reason about
@@ -15,19 +14,22 @@
 //   - object X may handle multiple fds
 //   - object X may call into object Y, which also handles events
 //   - all relevant overhead must be optimized out as far as possible
+//   - an async function must be cancellable, without leaking anything important
 //   proposed solution:
 //     there is such a thing as an async context, which contains zero or more sockets
 //     an async context is usually idle, meaning it's trying to read all its sockets
 //     while the handler is running (including waiting for an async write), incoming data on those sockets is ignored
 //     you can also submit a function<async void()> to a context, which marks that context busy and runs the function
+//       TODO: what if it's busy already?
 //     timers and gui events do not belong in an async context, and cannot be async
 //   this can be done by giving async functions a lock argument, whose dtor releases the context, unless moved into a lambda capture
 //   however, that is very error prone, and requires nesting lambdas forever
-//   it'd be a lot easier with c++20 coroutines ...whenever gcc learns that...
+//   it'd be a lot easier with c++20 coroutines, which will probably be available in gcc 11, and most likely to me in apr 2022
+//   cancellation can probably be done by running that coro and forcing the object to return failure, unless coros allow something better
 // - make socket handler less easy to screw up
 //     for example, if a HTTP handler reads only half of the output from a SSL socket, its ready callback must run again immediately
 //     this is currently SSL's responsibility, and the exact rules are pretty subtle - I doubt I did it right everywhere
-//   proposed solution: sockets have is_ready() function, and runloop loops that as necessary
+//   proposed solution: sockets have an is_ready() function, and runloop loops that as necessary
 // - decide if I want the runloop in a thread local variable, instead of passing it around and calling runloop::global everywhere
 //   advantages: less boilerplate; no need to store runloop pointers everywhere; DECL_TIMER becomes trivial
 //   disadvantages: TLS is tricky, especially regarding destructors; it's a global variable; may complicate testing
@@ -58,7 +60,7 @@ public:
 //#error as well as adding/removing sources
 //#error the current system causes way too many issues with the sockets violating the API
 	
-#ifndef _WIN32 // fd isn't a defined concept on windows
+#ifdef __unix__
 	//The callback argument is the fd, to allow one object to maintain multiple fds.
 	//A fd can only be used once per runloop. If that fd is already there, it's removed prior to binding the new callbacks.
 	//If only one callback is provided, events of the other kind are ignored.
@@ -67,8 +69,8 @@ public:
 	//To remove it, pass NULL for both callbacks.
 	virtual void set_fd(uintptr_t fd, function<void(uintptr_t)> cb_read, function<void(uintptr_t)> cb_write = NULL) = 0;
 #else
-	//TODO: figure out sockets and gui events on windows (do I need any other fds?)
-	//virtual uintptr_t set_socket(socket* sock, function<void()> cb_read, function<void()> cb_write) = 0;
+	//Accepts anything WaitForSingleObject does. It's caller's job to define sensible HANDLEs. Like on Linux, passing NULL removes it.
+	virtual void set_object(HANDLE h, function<void(HANDLE)> cb) = 0;
 #endif
 	
 #ifdef ARLIB_THREAD
@@ -88,7 +90,8 @@ public:
 	//TODO: Slots, objects where there's no reason to have more than one per runloop (like DNS),
 	// so they can be shared among runloop users
 	
-	//Executes the mainloop until ->exit() is called. Recommended for most programs.
+	// Executes the runloop until ->exit() is called. Recommended for most programs.
+	// The runloop may dispatch a few events after exit(), but will exit as soon as possible.
 	virtual void enter() = 0;
 	virtual void exit() = 0;
 	
