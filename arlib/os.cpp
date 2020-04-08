@@ -32,7 +32,7 @@
 
 bool dylib::init(const char * filename)
 {
-	deinit();
+	if (handle) abort();
 	//synchronized(dylib_lock)
 	{
 		handle = dlopen(filename, RTLD_LAZY);
@@ -71,16 +71,18 @@ void dylib::deinit()
 #ifdef _WIN32
 static mutex dylib_lock;
 
-static HANDLE dylib_init(const char * filename, bool uniq)
+bool dylib::init(const char * filename)
 {
+	if (handle) abort();
+	
 	synchronized(dylib_lock) // two threads racing on SetDllDirectory is bad news
 	{
 		HANDLE handle;
 		
-		if (uniq)
-		{
-			if (GetModuleHandleEx(0, filename, (HMODULE*)&handle)) return NULL;
-		}
+		//if (uniq)
+		//{
+		//	if (GetModuleHandleEx(0, filename, (HMODULE*)&handle)) return NULL;
+		//}
 		
 		//this is so weird dependencies, for example winpthread-1.dll, can be placed beside the dll where they belong
 		char * filename_copy = strdup(filename);
@@ -90,17 +92,9 @@ static HANDLE dylib_init(const char * filename, bool uniq)
 		SetDllDirectory(filename_copy);
 		free(filename_copy);
 		
-		handle = (dylib*)LoadLibrary(filename);
+		handle = LoadLibrary(filename);
 		SetDllDirectory(NULL);
-		
-		return handle;
 	}
-}
-
-bool dylib::init(const char * filename)
-{
-	deinit();
-	handle = dylib_init(filename, false);
 	return handle;
 }
 
@@ -290,7 +284,7 @@ uint64_t time_ms()
 
 //these functions calculate n/1000 and n/1000000, respectively
 //-O2 optimizes this automatically, but I want -Os on most of the program, only speed-optimizing the hottest spots
-//this is one of said hotspots; the size penalty is tiny (2 bytes, 4 for both), and it's about twice as fast
+//this is one of said hotspots; the size penalty is tiny (4 bytes, 8 for both), and it's about twice as fast
 //attribute optimize -O2 is ignored
 static inline uint32_t div1000(uint32_t n)
 {

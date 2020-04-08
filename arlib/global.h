@@ -23,8 +23,6 @@
 #    define _WIN32_WINNT _WIN32_WINNT_WS03 // _WIN32_WINNT_WINXP excludes SetDllDirectory, so I need to put it at 0x0502
 #    define NTDDI_VERSION NTDDI_WS03 // actually NTDDI_WINXPSP2, but MinGW sddkddkver.h gets angry about that
 #  endif
-//the namespace pollution this causes is massive, but without it, there's a bunch of functions that
-// just tail call kernel32.dll. With it, they can be inlined.
 #  define WIN32_LEAN_AND_MEAN
 #  ifndef NOMINMAX
 #   define NOMINMAX
@@ -37,8 +35,8 @@
 #  endif
 #  ifdef __MINGW32__
 // mingw *really* wants to define its own printf/scanf, which adds ~20KB random stuff to the binary
-// extra kilobytes is the opposite of what I want, and I want harder, so here's some shenanigans
-// (on some 32bit mingw versions, it also adds a dependency on libgcc_s_sjlj-1.dll - I want that even less)
+// (on some 32bit mingw versions, it also adds a dependency on libgcc_s_sjlj-1.dll)
+// extra kilobytes and dlls is the opposite of what I want, and my want is stronger, so here's some shenanigans
 // comments say libstdc++ demands a POSIX printf, but I don't use libstdc++'s text functions, so I don't care
 // msvcrt strtod also rounds wrong sometimes, but only for unrealistic inputs, so I don't care about that either
 #    define __USE_MINGW_ANSI_STDIO 0 // first, trigger a warning if it's enabled already - probably wrong include order
@@ -56,6 +54,8 @@ double strtod_arlib(const char * str, char** str_end);
 long double strtold_arlib(const char * str, char** str_end);
 #  endif
 #  define STRICT
+//the namespace pollution this causes is massive, but without it, there's a bunch of functions that
+// just tail call kernel32.dll. With it, they can be inlined.
 #  include <windows.h>
 #  undef STRICT
 #endif
@@ -489,30 +489,27 @@ size_t memcmp_d(const void * a, const void * b, size_t len) __attribute__((pure)
 //typedef unsigned __int64 uint64_t;
 //typedef unsigned int size_t;
 
-//undefined behavior if 'in' is 0 or negative, or if the output would be out of range
-//TODO: investigate replacing this with std::ceil2 or std::bit_ceil
+//undefined behavior if 'in' is negative, or if the output would be out of range (signed input types are fine)
+//returns 1 if input is 0
 template<typename T> static inline T bitround(T in)
 {
-#if defined(__GNUC__) && defined(__x86_64__)
-	//this seems somewhat faster, and more importantly, it's smaller
-	//x64 only because I don't know if it does something stupid on other archs
-	//I'm surprised gcc doesn't detect this pattern and optimize it, it does detect a few others (like byteswap)
-	//special casing every size is because if T is signed, ~(T)0 is -1, and -1 >> N is -1 (and likely also undefined behavior)
-	if (in == 1) return in;
-	if (sizeof(T) == 1) return 1 + ((~(uint8_t )0) >> __builtin_clz(in - 1));
-	if (sizeof(T) == 2) return 1 + ((~(uint16_t)0) >> __builtin_clz(in - 1));
-	if (sizeof(T) == 4) return 1 + ((~(uint32_t)0) >> __builtin_clz(in - 1));
-	if (sizeof(T) == 8) return 1 + ((~(uint64_t)0) >> __builtin_clzll(in-1));
+#if defined(__GNUC__)
+	static_assert(sizeof(unsigned) == 4);
+	static_assert(sizeof(unsigned long long) == 8);
+	
+	if (in <= 1) return 1;
+	if (sizeof(T) <= 4) return 2u << (__builtin_clz(in - 1) ^ 31); // clz on x86 is bsr^31, so this compiles to bsr^31^31,
+	if (sizeof(T) == 8) return 2ull<<(__builtin_clzll(in-1) ^ 63); // which optimizes better than the usual 1<<(32-clz) bit_ceil
+	
 	abort();
 #endif
-	//TODO: https://stackoverflow.com/q/355967 for msvc
 	
-	in--;
+	in -= (bool)in; // so bitround(0) becomes 1, rather than integer overflow and back to 0
 	in |= in>>1;
 	in |= in>>2;
 	in |= in>>4;
-	if constexpr (sizeof(in) > 1) in |= in>>8;  // silly ifs to avoid 'shift amount out of range' warnings if the condition is false
-	if constexpr (sizeof(in) > 2) in |= in>>16; // arguably a gcc bug, but hard to avoid false positives
+	if constexpr (sizeof(in) > 1) in |= in>>8; // silly ifs to avoid 'shift amount out of range' warnings
+	if constexpr (sizeof(in) > 2) in |= in>>16;
 	if constexpr (sizeof(in) > 4) in |= in>>32;
 	in++;
 	return in;
@@ -580,22 +577,24 @@ public:
 
 class range_iter_t {
 	size_t n;
+	size_t step;
 public:
-	range_iter_t(size_t n) : n(n) {}
-	bool operator!=(const range_iter_t& other) { return n != other.n; }
-	void operator++() { n++; }
+	range_iter_t(size_t n, size_t step) : n(n), step(step) {}
+	bool operator!=(const range_iter_t& other) { return n < other.n; }
+	forceinline void operator++() { n += step; }
 	size_t operator*() { return n; }
 };
 class range_t {
-	size_t a;
-	size_t b;
+	size_t start;
+	size_t stop;
+	size_t step;
 public:
-	range_t(size_t a, size_t b) : a(a), b(b) {}
-	range_iter_t begin() const { return a; }
-	range_iter_t end() const { return b; }
+	range_t(size_t start, size_t stop, size_t step) : start(start), stop(stop), step(step) {}
+	range_iter_t begin() const { return { start, step }; }
+	range_iter_t end() const { return { stop, 0 }; }
 };
-static inline range_t range(size_t n) { return range_t(0, n); }
-static inline range_t range(size_t a, size_t b) { return range_t(a, b); }
+static inline range_t range(size_t stop) { return range_t(0, stop, 1); }
+static inline range_t range(size_t start, size_t stop, size_t step = 1) { return range_t(start, stop, step); }
 
 //If an interface defines a function to set some state, and a callback for when this state changes,
 // calling that function will not trigger the state callback.

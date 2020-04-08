@@ -15,7 +15,7 @@ class cstring;
 template<typename T> class arrayview : public linqbase<arrayview<T>> {
 protected:
 	T * items = NULL; // not const, despite not necessarily being writable; this makes arrayvieww/array a lot simpler
-	size_t count = 0; // initialized here 
+	size_t count = 0;
 	
 protected:
 	//must be functions, Clang won't like it otherwise
@@ -111,8 +111,7 @@ public:
 	//WARNING: Keep track of endianness if using this.
 	template<typename T2> arrayview<T2> reinterpret() const
 	{
-		//reject reinterpret<string>()
-		//TODO: allow litend/etc, and T=string T2=cstring
+		//reject reinterpret<string>() and other tricky stuff
 		static_assert(std::is_fundamental_v<T>);
 		static_assert(std::is_fundamental_v<T2>);
 		
@@ -245,29 +244,30 @@ public:
 	}
 	
 	//stable sort
+	//less() is guaranteed to only be called with a later than b in the input
 	template<typename Tless>
 	void ssort(const Tless& less)
 	{
 		//insertion sort
 		for (size_t a=1;a<this->count;a++)
 		{
-			if (less(this->items[a-1], this->items[a]))
+			if (!less(this->items[a], this->items[a-1]))
 				continue;
 			
 			size_t probe = 1;
-			while (probe < a && !less(this->items[a-probe], this->items[a]))
+			while (probe < a && less(this->items[a], this->items[a-probe]))
 				probe *= 2;
 			
 			size_t min = a-probe;
 			probe /= 2;
 			while (probe)
 			{
-				if (min+probe > a || less(this->items[min+probe], this->items[a]))
+				if (min+probe > a || !less(this->items[a], this->items[min+probe]))
 					min += probe;
 				probe /= 2;
 			}
 			
-			if (min > a || less(this->items[min], this->items[a]))
+			if (min > a || !less(this->items[a], this->items[min]))
 				min++;
 			
 			size_t newpos = min;
@@ -347,9 +347,7 @@ private:
 	void resize_grow_noinit(size_t count)
 	{
 		if (this->count >= count) return;
-		size_t bufsize_pre = bitround(this->count);
-		size_t bufsize_post = bitround(count);
-		if (bufsize_pre != bufsize_post) this->items = realloc(this->items, sizeof(T)*bufsize_post);
+		if (count > bitround(this->count) || !this->items) this->items = realloc(this->items, sizeof(T)*bitround(count));
 		this->count = count;
 	}
 	
@@ -359,9 +357,8 @@ private:
 	void resize_shrink_noinit(size_t count)
 	{
 		if (this->count <= count) return;
-		size_t bufsize_pre = bitround(this->count);
-		size_t bufsize_post = bitround(count);
-		if (bufsize_pre != bufsize_post) this->items = realloc(this->items, sizeof(T)*bufsize_post);
+		size_t new_bufsize = bitround(count);
+		if (this->count > new_bufsize) this->items = realloc(this->items, sizeof(T)*new_bufsize);
 		this->count = count;
 	}
 	
@@ -599,15 +596,20 @@ inline array<T2> arrayview<T>::cast() const
 	return ret;
 }
 
-//Sized (or static) array - saves an allocation for string.split<N>. Other than that, not very useful.
+//Sized (or static) array - saves an allocation when returning fixed-size arrays, like string.split<N> or pack_le32
 template<typename T, size_t N> class sarray {
 	T storage[N];
 public:
 	sarray() {}
+	// One argument per member - useful for parameter packs and fixed-size items.
 	template<typename... Ts> sarray(Ts... args) : storage{ (T)args... }
 	{
 		static_assert(sizeof...(Ts) == N);
 	}
+	
+	// Undefined behavior unless the input is the correct size or larger.
+	sarray(arrayview<T> ptr) { memcpy(storage, ptr.ptr(), sizeof(storage)); }
+	
 	T& operator[](size_t n) { return storage[n]; }
 	const T& operator[](size_t n) const { return storage[n]; }
 	operator arrayvieww<T>() { return storage; }
@@ -814,7 +816,7 @@ extern template class array<cstring>;
 class string;
 extern template class array<string>;
 
-// TODO: find proper names - I can't use bytes, lots of objects use that as a function name
+// TODO: find better names - I can't use bytes, lots of objects use that as a function name
 using bytesr = arrayview<uint8_t>;
 using bytesw = arrayvieww<uint8_t>;
 using bytearray = array<uint8_t>;

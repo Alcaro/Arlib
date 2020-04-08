@@ -1,4 +1,3 @@
-//#define timegm timegm_goaway
 #include "zip.h"
 #include "test.h"
 #include "crc32.h"
@@ -39,13 +38,13 @@ public:
 	
 	operator T() const
 	{
-		if (little == LSB_FIRST_V) return val;
+		if (little == END_LITTLE) return val;
 		else return end_swap(val);
 	}
 	
 	void operator=(T newval)
 	{
-		if (little == LSB_FIRST_V) val = newval;
+		if (little == END_LITTLE) val = newval;
 		else val = end_swap(newval);
 	}
 }

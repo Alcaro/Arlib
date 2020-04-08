@@ -29,7 +29,7 @@ enum imagefmt {
 	// ifmt_bargb1555 = ifmt_argb1555, // there are only two possible alphas for 1555, so argb and bargb are the same
 	
 	// alias formats are down here because C enums are 'special'
-	ifmt_argb8888 = (LSB_FIRST_V ? ifmt_bgra8888_by : ifmt_argb8888_by),
+	ifmt_argb8888 = (END_LITTLE ? ifmt_bgra8888_by : ifmt_argb8888_by),
 	ifmt_bargb1555 = ifmt_argb1555,
 	
 	//an image is considered 'degenerate' if the full power of the format isn't used

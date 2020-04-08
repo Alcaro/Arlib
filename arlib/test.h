@@ -29,41 +29,6 @@
 void _test_runloop_latency(uint64_t us);
 #endif
 
-template<typename T>
-string tostring_dbg(const T& item) { return tostring(item); }
-template<typename T>
-string tostring_dbg(const arrayview<T>& item)
-{
-	return "[" + item.join((string)",", [](const T& i){ return tostring_dbg(i); }) + "]";
-}
-template<typename T> string tostring_dbg(const arrayvieww<T>& item) { return tostring_dbg((arrayview<T>)item); }
-template<typename T> string tostring_dbg(const array<T>& item) { return tostring_dbg((arrayview<T>)item); }
-template<typename Tkey, typename Tvalue>
-string tostring_dbg(const map<Tkey,Tvalue>& item)
-{
-	return "{"+
-		item
-			.select([](const typename map<Tkey,Tvalue>::node& n){ return tostring_dbg(n.key)+" => "+tostring_dbg(n.value); })
-			.as_array()
-			.join(", ")
-		+"}";
-}
-
-template<typename T>
-string tostringhex_dbg(const T& item) { return tostringhex(item); }
-static inline string tostringhex_dbg(const arrayview<uint8_t>& item)
-{
-	string ret = tostringhex(item)+" ";
-	for (char c : item)
-	{
-		if (c >= 0x20 && c <= 0x7e) ret += c;
-		else ret += '.';
-	}
-	return ret;
-}
-static inline string tostringhex_dbg(const arrayvieww<uint8_t>& item) { return tostringhex_dbg((arrayview<uint8_t>)item); }
-static inline string tostringhex_dbg(const array<uint8_t>& item) { return tostringhex_dbg((arrayview<uint8_t>)item); }
-
 #ifdef ARLIB_TEST
 class _testdecl {
 public:

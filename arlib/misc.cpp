@@ -76,6 +76,7 @@ extern "C" void __cxa_pure_virtual() { puts("__cxa_pure_virtual"); abort(); }
 
 test("bitround", "", "")
 {
+	assert_eq(bitround((unsigned)0), 1);
 	assert_eq(bitround((unsigned)1), 1);
 	assert_eq(bitround((unsigned)2), 2);
 	assert_eq(bitround((unsigned)3), 4);
@@ -83,6 +84,7 @@ test("bitround", "", "")
 	assert_eq(bitround((unsigned)640), 1024);
 	assert_eq(bitround((unsigned)0x7FFFFFFF), 0x80000000);
 	assert_eq(bitround((unsigned)0x80000000), 0x80000000);
+	assert_eq(bitround((signed)0), 1);
 	assert_eq(bitround((signed)1), 1);
 	assert_eq(bitround((signed)2), 2);
 	assert_eq(bitround((signed)3), 4);
@@ -90,6 +92,26 @@ test("bitround", "", "")
 	assert_eq(bitround((signed)640), 1024);
 	assert_eq(bitround((signed)0x3FFFFFFF), 0x40000000);
 	assert_eq(bitround((signed)0x40000000), 0x40000000);
+	assert_eq(bitround<uint8_t>(0), 1);
+	assert_eq(bitround<uint8_t>(1), 1);
+	assert_eq(bitround<uint8_t>(2), 2);
+	assert_eq(bitround<uint8_t>(3), 4);
+	assert_eq(bitround<uint8_t>(4), 4);
+	assert_eq(bitround<uint16_t>(0), 1);
+	assert_eq(bitround<uint16_t>(1), 1);
+	assert_eq(bitround<uint16_t>(2), 2);
+	assert_eq(bitround<uint16_t>(3), 4);
+	assert_eq(bitround<uint16_t>(4), 4);
+	assert_eq(bitround<uint32_t>(0), 1);
+	assert_eq(bitround<uint32_t>(1), 1);
+	assert_eq(bitround<uint32_t>(2), 2);
+	assert_eq(bitround<uint32_t>(3), 4);
+	assert_eq(bitround<uint32_t>(4), 4);
+	assert_eq(bitround<uint64_t>(0), 1);
+	assert_eq(bitround<uint64_t>(1), 1);
+	assert_eq(bitround<uint64_t>(2), 2);
+	assert_eq(bitround<uint64_t>(3), 4);
+	assert_eq(bitround<uint64_t>(4), 4);
 }
 
 test("test_nomalloc", "", "")
