@@ -17,6 +17,10 @@
 #define UNLIKELY(expr)  (expr)
 #endif
 
+#if __cplusplus < 201703L
+#error need C++17
+#endif
+
 template<typename T> class function;
 template<typename Tr, typename... Ta>
 class function<Tr(Ta...)> {

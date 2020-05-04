@@ -1,8 +1,6 @@
 #include "string.h"
 #include "test.h"
-#ifdef __SSE2__
-#include <emmintrin.h>
-#endif
+#include "simd.h"
 
 void string::resize(uint32_t newlen)
 {

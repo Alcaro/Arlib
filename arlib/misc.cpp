@@ -1,4 +1,5 @@
 #include "global.h"
+#include "endian.h"
 #include <new>
 
 #if __FLT_EVAL_METHOD__ != 0
@@ -140,4 +141,10 @@ test("using_fn", "", "")
 	x = 0;
 	assert_eq(y(), 42);
 	assert_eq(x, 2);
+}
+test("endian", "", "")
+{
+	union { uint8_t a[2]; uint16_t b; } c;
+	c.b = 0x0100;
+	assert_eq(c.a[0], END_BIG);
 }

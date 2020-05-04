@@ -410,16 +410,22 @@ public:
 	
 	T& insert(size_t index, T&& item)
 	{
+		char tmp[sizeof(T)]; // in case 'item' points into the current array
+		new(&tmp) T(std::move(item));
+		
 		resize_grow_noinit(this->count+1);
 		memmove(this->items+index+1, this->items+index, sizeof(T)*(this->count-1-index));
-		new(&this->items[index]) T(std::move(item));
+		memcpy(&this->items[index], tmp, sizeof(T));
 		return this->items[index];
 	}
 	T& insert(size_t index, const T& item)
 	{
+		char tmp[sizeof(T)]; // in case 'item' points into the current array
+		new(&tmp) T(item);
+		
 		resize_grow_noinit(this->count+1);
 		memmove(this->items+index+1, this->items+index, sizeof(T)*(this->count-1-index));
-		new(&this->items[index]) T(item);
+		memcpy(&this->items[index], tmp, sizeof(T));
 		return this->items[index];
 	}
 	T& insert(size_t index)

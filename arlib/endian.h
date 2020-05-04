@@ -1,6 +1,5 @@
 #pragma once
 #include "global.h"
-#include "intwrap.h"
 #include "array.h"
 #include <stdint.h>
 
@@ -20,17 +19,18 @@
 //writeu_{le,be}{8,16,32,64}()
 //  The inverse of readu; writes an X-endian uintN_t into the given pointer. Accepts unaligned input.
 //pack_{le,be}{8,16,32,64}()
-//  Like the above, but instead of taking a pointer, it returns an sarray<uint8_t,N>.
+//  Like writeu, but instead of taking a pointer, it returns an sarray<uint8_t,N>.
 
 // first line is for GCC 4.6 and Clang 3.2, second is for MSVC
 #if (defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__) || \
-    defined(_M_IX86) || defined(_M_AMD64) || defined(_M_ARM) || defined(_M_ARM64)
+    defined(_M_IX86) || defined(_M_AMD64) || defined(_M_ARM) || defined(_M_ARM64) || defined(_M_ALPHA)
+// per https://devblogs.microsoft.com/oldnewthing/20170814-00/?p=96806, a u16 on _M_ALPHA at 0x1357 has the low byte at 0x1357 -> LE
 # define END_LITTLE 1
 #elif (defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__) || \
     defined(_M_PPC)
 # define END_BIG 1
 #else
-// MSVC can run on _M_ALPHA and _M_IA64 too, but they're both bi-endian; need to find what mode MSVC runs them at
+// MSVC can run on _M_IA64 too, but I don't know its endian
 # error "unknown platform, can't determine endianness"
 #endif
 
@@ -124,6 +124,7 @@ inline void writeu_le32(uint8_t* target, uint32_t n) { n = end_nat_to_le(n); mem
 inline void writeu_be32(uint8_t* target, uint32_t n) { n = end_nat_to_be(n); memcpy(target, &n, 4); }
 inline void writeu_le64(uint8_t* target, uint64_t n) { n = end_nat_to_le(n); memcpy(target, &n, 8); }
 inline void writeu_be64(uint8_t* target, uint64_t n) { n = end_nat_to_be(n); memcpy(target, &n, 8); }
+
 inline sarray<uint8_t,1> pack_le8( uint8_t  n) { sarray<uint8_t,1> ret; writeu_le8( ret.ptr(), n); return ret; }
 inline sarray<uint8_t,1> pack_be8( uint8_t  n) { sarray<uint8_t,1> ret; writeu_be8( ret.ptr(), n); return ret; }
 inline sarray<uint8_t,2> pack_le16(uint16_t n) { sarray<uint8_t,2> ret; writeu_le16(ret.ptr(), n); return ret; }

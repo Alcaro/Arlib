@@ -77,8 +77,6 @@ bool dylib::init(const char * filename)
 	
 	synchronized(dylib_lock) // two threads racing on SetDllDirectory is bad news
 	{
-		HANDLE handle;
-		
 		//if (uniq)
 		//{
 		//	if (GetModuleHandleEx(0, filename, (HMODULE*)&handle)) return NULL;
@@ -285,7 +283,7 @@ uint64_t time_ms()
 //these functions calculate n/1000 and n/1000000, respectively
 //-O2 optimizes this automatically, but I want -Os on most of the program, only speed-optimizing the hottest spots
 //this is one of said hotspots; the size penalty is tiny (4 bytes, 8 for both), and it's about twice as fast
-//attribute optimize -O2 is ignored
+//attribute optimize -O2 makes no difference
 static inline uint32_t div1000(uint32_t n)
 {
 	return 274877907*(uint64_t)n >> 38;

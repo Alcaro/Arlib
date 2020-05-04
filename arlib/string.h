@@ -161,9 +161,9 @@ public:
 	{
 		return memmem(this->ptr(), this->length(), other.ptr(), other.length()) != NULL;
 	}
-	size_t indexof(cstring other) const
+	size_t indexof(cstring other, size_t start = 0) const
 	{
-		uint8_t* ptr = (uint8_t*)memmem(this->ptr(), this->length(), other.ptr(), other.length());
+		uint8_t* ptr = (uint8_t*)memmem(this->ptr()+start, this->length()-start, other.ptr(), other.length());
 		if (ptr) return ptr - this->ptr();
 		else return (size_t)-1;
 	}

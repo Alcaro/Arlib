@@ -201,6 +201,13 @@ test("array", "", "array")
 		x.ssort([&](int a, int b) { n_comp++; return a<b; });
 		assert_lte(n_comp, x.size());
 	}
+	
+	{
+		array<int> x;
+		x.insert(0, 42);
+		for (int i : range(50))
+			x.insert(i, x[i]); // passes if Valgrind is happy
+	}
 }
 
 

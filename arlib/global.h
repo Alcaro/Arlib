@@ -5,12 +5,12 @@
 #endif
 #define _strdup strdup //and windows is being windows as usual
 
-//these aren't needed with modern compilers, according to
+//these shouldn't be needed with modern compilers, according to
 //https://stackoverflow.com/questions/8132399/how-to-printf-uint64-t-fails-with-spurious-trailing-in-format
-//but it's wrong, it's needed even on gcc 8.1.0
-#define __STDC_LIMIT_MACROS //how many of these stupid things exist
-#define __STDC_FORMAT_MACROS // if I include a header, it's because I want to use its contents
-#define __STDC_CONSTANT_MACROS
+//but mingw 8.1.0 needs it anyways for whatever reason
+#define __STDC_LIMIT_MACROS
+#define __STDC_FORMAT_MACROS
+#define __STDC_CONSTANT_MACROS // why are they so many?
 #define _USE_MATH_DEFINES // needed for M_PI on windows
 
 #ifdef _WIN32
@@ -22,10 +22,11 @@
 #    undef _WIN32_WINNT
 #    define _WIN32_WINNT _WIN32_WINNT_WS03 // _WIN32_WINNT_WINXP excludes SetDllDirectory, so I need to put it at 0x0502
 #    define NTDDI_VERSION NTDDI_WS03 // actually NTDDI_WINXPSP2, but MinGW sddkddkver.h gets angry about that
+#    define _WIN32_IE _WIN32_IE_IE60SP2
 #  endif
 #  define WIN32_LEAN_AND_MEAN
 #  ifndef NOMINMAX
-#   define NOMINMAX
+#    define NOMINMAX
 #  endif
 #  define strcasecmp _stricmp
 #  define strncasecmp _strnicmp
@@ -46,7 +47,7 @@
 #    undef strtof
 #    define strtof strtof_arlib // third, redefine these functions, they pull in mingw's scanf
 #    undef strtod               // (strtod not acting like scanf is creepy, anyways)
-#    define strtod strtod_arlib // this is why stdlib.h is chosen, rather than cstdbool - they live in stdlib.h
+#    define strtod strtod_arlib // this is why stdlib.h is chosen, rather than some random tiny c++ header like cstdbool
 #    undef strtold
 #    define strtold strtold_arlib
 float strtof_arlib(const char * str, char** str_end);
@@ -127,7 +128,7 @@ template<typename T> typename std::enable_if<sizeof(T)==0, T&>::type ARRAY_SIZE_
 //- namespaced all child macros, renamed main one
 //- merged https://github.com/swansontec/map-macro/pull/3
 //- merged http://stackoverflow.com/questions/6707148/foreach-macro-on-macros-arguments#comment62878935_13459454, plus ifdef
-//explanation on what this magic does: http://jhnet.co.uk/articles/cpp_magic
+//explanation on what this nonsense does: http://jhnet.co.uk/articles/cpp_magic
 #define PPFE_EVAL0(...) __VA_ARGS__
 #define PPFE_EVAL1(...) PPFE_EVAL0(PPFE_EVAL0(PPFE_EVAL0(__VA_ARGS__)))
 #define PPFE_EVAL2(...) PPFE_EVAL1(PPFE_EVAL1(PPFE_EVAL1(__VA_ARGS__)))

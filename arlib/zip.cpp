@@ -13,6 +13,50 @@
 
 
 //TODO: simplify and delete this one
+//should use bytestream, possibly via something serialize.h-like
+
+
+//Given class U, where U supports operator T() and operator=(T), intwrap<U> enables all the integer operators.
+//Most are already supported by casting to the integer type, but this one adds the assignment operators too.
+template<typename U, typename T = U> class intwrap : public U {
+	T get() { return *this; }
+	void set(T val) { this->U::operator=(val); }
+public:
+	//no operator T(), that goes to the parent
+	T operator++(int) { T r = get(); set(r+1); return r; }
+	T operator--(int) { T r = get(); set(r-1); return r; }
+	intwrap<U,T>& operator++() { set(get()+1); return *this; }
+	intwrap<U,T>& operator--() { set(get()-1); return *this; }
+	//intwrap<U,T>& operator  =(const T i) { set(        i); return *this; } // can't really implement this in terms of itself
+	intwrap<U,T>& operator +=(const T i) { set(get() + i); return *this; }
+	intwrap<U,T>& operator -=(const T i) { set(get() - i); return *this; }
+	intwrap<U,T>& operator *=(const T i) { set(get() * i); return *this; }
+	intwrap<U,T>& operator /=(const T i) { set(get() / i); return *this; }
+	intwrap<U,T>& operator %=(const T i) { set(get() % i); return *this; }
+	intwrap<U,T>& operator &=(const T i) { set(get() & i); return *this; }
+	intwrap<U,T>& operator |=(const T i) { set(get() | i); return *this; }
+	intwrap<U,T>& operator ^=(const T i) { set(get() ^ i); return *this; }
+	intwrap<U,T>& operator<<=(const T i) { set(get()<< i); return *this; }
+	intwrap<U,T>& operator>>=(const T i) { set(get()>> i); return *this; }
+	
+	intwrap() {}
+	intwrap(T i) { set(i); }
+	template<typename T1> intwrap(T1 v1) : U(v1) {}
+	template<typename T1, typename T2> intwrap(T1 v1, T2 v2) : U(v1, v2) {}
+	template<typename T1, typename T2, typename T3> intwrap(T1 v1, T2 v2, T3 v3) : U(v1, v2, v3) {}
+};
+
+template<typename T> struct int_inherit_core {
+	T item;
+	operator T() { return item; }
+	void operator=(T newval) { item=newval; }
+	int_inherit_core(T item) : item(item) {}
+};
+//This allows inheriting from something that acts like a plain int.
+//Why doesn't raw C++ allow that? Would it cause too much pains with people creating unsigned iostreams?
+template<typename T> class int_inherit : public intwrap<int_inherit_core<T> > {
+	int_inherit(T item) : intwrap<int_inherit_core<T> >(item) {}
+};
 
 //this one is usually used to represent various on-disk or on-wire structures, which aren't necessarily properly aligned
 //it's a performance penalty, but if that's significant, the data should be converted to native types
@@ -394,9 +438,9 @@ int zip::fileminver(const zip::file& f)
 
 bool zip::strascii(cstring s)
 {
-	for (size_t i=0;i<s.length();i++)
+	for (uint8_t c : s.bytes())
 	{
-		if (s[i]>=127 || s[i]<32) return false;
+		if (c>=127 || c<32) return false;
 	}
 	return true;
 }
@@ -485,7 +529,7 @@ array<uint8_t> zip::pack() const
 	{
 		const file& f = filedat[i];
 		centdirrec cdr = {
-			/*signature*/   centdirrec::signature_expected,
+			/*signature*/    centdirrec::signature_expected,
 			/*verused*/      63, // don't think anything really cares about this, just use latest
 			/*vermin*/       fileminver(f),
 			/*bitflags*/     strascii(filenames[i]) ? 0 : 1<<11,
@@ -558,15 +602,6 @@ const uint8_t zipbytes[433] = {
 	0x00
 };
 
-template<typename T, typename U> bool member(arrayview<T> data, U item)
-{
-	for (size_t i=0;i<data.size();i++)
-	{
-		if (data[i] == item) return true;
-	}
-	return false;
-}
-
 test("DOS timestamp conversion", "", "zip")
 {
 	time_t unix = 1481402470; // 2016-12-10 20:41:10
@@ -595,9 +630,9 @@ test("ZIP reading", "file", "zip")
 	
 	arrayview<string> files = z.files();
 	assert_eq(files.size(), 3);
-	assert(member(files, "empty.txt"));
-	assert(member(files, "hello.txt"));
-	assert(member(files, "inner.zip"));
+	assert(files.contains("empty.txt"));
+	assert(files.contains("hello.txt"));
+	assert(files.contains("inner.zip"));
 	
 	time_t t;
 	assert_eq(z.read("empty.txt").size(), 0);
@@ -609,8 +644,8 @@ test("ZIP reading", "file", "zip")
 	
 	files = z2.files();
 	assert_eq(files.size(), 2);
-	assert(member(files, "empty.txt"));
-	assert(member(files, "hello.txt"));
+	assert(files.contains("empty.txt"));
+	assert(files.contains("hello.txt"));
 	
 	assert_eq(z2.read("empty.txt").size(), 0);
 	assert_eq(string(z2.read("hello.txt")), "hello world");
@@ -645,9 +680,9 @@ test("ZIP writing", "file", "zip")
 	
 	arrayview<string> files = z2.files();
 	assert_eq(files.size(), 3);
-	assert(member(files, "hello2.txt"));
-	assert(member(files, "hello.txt"));
-	assert(member(files, "inner.zip"));
+	assert(files.contains("hello2.txt"));
+	assert(files.contains("hello.txt"));
+	assert(files.contains("inner.zip"));
 	
 	z2.sort();
 	assert_eq(z2.files()[0], "hello.txt");

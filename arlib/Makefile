@@ -104,7 +104,7 @@ else
   DEBUG ?= 0
 endif
 
-CCXXFLAGS = -fvisibility=hidden -Wall -Wmissing-declarations -Wimplicit-fallthrough -Wvla -pipe
+CCXXFLAGS = -fvisibility=hidden -Wall -Wmissing-declarations -Wimplicit-fallthrough -Wvla -Walloca -pipe
 #to silence for (size_t unused : range(42)) - delete this once gcc starts making more sense
 CCXXFLAGS += -Wno-unused-variable -Wno-unused-but-set-variable
 #doesn't seem to do anything
@@ -128,10 +128,6 @@ ifneq ($(findstring clang,$(CC) $(CXX) $(LD)),)
   CC = clang
   CXX = clang++
   LD = clang++
-endif
-
-ifeq ($(CC_FAMILY),gcc)
-  CCXXFLAGS += -fno-semantic-interposition
 endif
 
 #double gcc bug combo:
@@ -200,7 +196,7 @@ ifeq ($(OS),windows)
 #obj/resource$(OBJNAME).o: ico/*
 #	$(RC) $(RCFLAGS) ico/minir.rc obj/resource$(OBJNAME).o
   OBJNAME := $(OBJNAME)windows
-#surprisingly, this is still needed as of gcc 8.1.0 (to check, objdump -x | grep DllCharacteristics, 0x0100 bit is nxcompat)
+#surprisingly, this is still not default as of mingw 8.1.0 (to check, objdump -x | grep DllCharacteristics, 0x0100 bit is nxcompat)
   CONF_LFLAGS += -Wl,--nxcompat
   ifeq ($(ARXPSUPPORT),1)
     DEFINES += _WIN32_WINNT=_WIN32_WINNT_WINXP
@@ -368,8 +364,6 @@ ifeq ($(ARSOCKET),1)
     CONF_LFLAGS += -lws2_32 -liphlpapi
     ifdef ARSOCKET_SSL_WINDOWS
       ARSOCKET_SSL := $(ARSOCKET_SSL_WINDOWS)
-    else
-      ARSOCKET_SSL := schannel
     endif
   endif
   

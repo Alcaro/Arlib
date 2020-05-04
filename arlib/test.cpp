@@ -73,10 +73,10 @@ int _teststack_popstr() { ctxstack.resize(ctxstack.size()-1); return 0; }
 
 static size_t n_malloc = 0;
 static size_t n_free = 0;
-static size_t n_malloc_block = 0;
+static int n_malloc_block = 0;
 void _test_malloc()
 {
-	if (UNLIKELY(n_malloc_block))
+	if (UNLIKELY(n_malloc_block > 0))
 	{
 		n_malloc_block = 0; // failing usually allocates
 		if (result == err_ok) test_fail("can't malloc here");
@@ -109,9 +109,9 @@ static string stack(cstring file, int top)
 {
 	string ret = fmt_callstack(file, top);
 	
-	for (int i=ctxstack.size()-1;i>=0;i--)
+	for (cstring ctx : ctxstack)
 	{
-		ret += " ("+ctxstack[i]+")";
+		ret += " ("+ctx+")";
 	}
 	return ret;
 }
@@ -447,6 +447,7 @@ int main(int argc, char* argv[])
 				uint64_t time_lim = (all_tests ? 5000*1000 : 500*1000);
 				runloop_blocktest_recycle(runloop::global());
 				runloop::global()->assert_empty();
+				assert_eq(n_malloc_block, 0);
 				if (time_us > time_lim)
 				{
 					printf("too slow: max %uus, got %uus\n", (unsigned)time_lim, (unsigned)time_us);
