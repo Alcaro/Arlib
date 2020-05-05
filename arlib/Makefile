@@ -183,11 +183,22 @@ ifeq ($(OS),windows)
   endif
   ifeq ($(ARTYPE),hybrid)
     # an exe can export symbols, but its imports are ignored, so trying to call malloc() just segfaults
-    # it may be possible by marking it as native subsystem, not win32, but that has 99999 side effects
     # DllMain and TLS callbacks are ignored too, so imports cannot be resolved that way
+    # marking i as native subsystem (not win32) may work, but that has 99999 side effects
     # tested on both XP and Wine
-    # https://github.com/wine-mirror/wine/blob/master/dlls/ntdll/loader.c#L1849
-    # (this decision may be revisited if I make my own process startup code, if I ever do)
+    # https://github.com/wine-mirror/wine/blob/ba1495f7c2c3cff3db9ce99600bfc8ddfa365387/dlls/ntdll/loader.c#L2563
+    # todo list to lift this restriction:
+    # - make my own process startup code
+    #    probably fairly straightforward, just tedious
+    #    if process startup is a lot trickier than dll startup, I could use mingw for the exe path and homemade for the dll path
+    # - find the address of LoadLibrary and GetProcAddress from what's effectively shellcode
+    #    also seems tedious but not hard
+    #    grab PEB via TEB
+    #    inspect LdrData to find kernel32 or ntdll (ntdll if imports are utf16, kernel32 if something else)
+    #    parse its export table
+    # - need to figure out destructors; both global variables, and dlls loaded by this one
+    #    ntdll!LdrRegisterDllNotification probably
+    # - each valid first-call entry point must call the process startup code
     $(error unsupportable configuration)
   endif
 #  OBJ += obj/resource$(OBJNAME).o

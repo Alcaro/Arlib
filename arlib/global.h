@@ -478,9 +478,11 @@ public:
 //#endif
 
 //Acts like strstr, with the obvious difference.
-#ifdef _WIN32 // linux has this already
-void* memmem(const void * haystack, size_t haystacklen, const void * needle, size_t needlelen) __attribute__((pure));
+#if defined(_WIN32) || defined(__x86_64__) // Windows doesn't have this; Linux does, but libc is poorly optimized on x64.
+void* memmem_arlib(const void * haystack, size_t haystacklen, const void * needle, size_t needlelen) __attribute__((pure));
+#define memmem memmem_arlib
 #endif
+
 //Returns distance to first difference, or 'len' if that's smaller.
 size_t memcmp_d(const void * a, const void * b, size_t len) __attribute__((pure));
 

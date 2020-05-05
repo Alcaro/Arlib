@@ -126,6 +126,36 @@ public:
 	}
 };
 
+class benchmark {
+	timer t;
+	
+	uint32_t iterations = 0;
+	uint32_t us = 1000000;
+public:
+	benchmark() {}
+	benchmark(uint32_t us) : us(us) {}
+	
+	operator bool()
+	{
+		iterations++;
+		if (!(iterations & (iterations-1)))
+		{
+			uint32_t us_actual = t.us();
+			if (us_actual > us || (iterations == 1024 && us_actual > 50000))
+			{
+				us = us_actual;
+				return false;
+			}
+		}
+		return true;
+	}
+	
+	double per_second()
+	{
+		return (double)iterations * 1000000 / us;
+	}
+};
+
 #ifdef _WIN32
 #define gmtime_r(a,b) (*(b)=*gmtime(a)) // this is safe, gmtime() returns a thread local
 time_t timegm(struct tm * t); // similar to mktime, but UTC timezone
