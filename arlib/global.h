@@ -86,6 +86,7 @@ template<typename T> class using_holder {
 	bool doit;
 public:
 	using_holder(T fn) : fn(std::move(fn)), doit(true) {}
+	using_holder(const using_holder&) = delete;
 	using_holder(using_holder&& other) : fn(std::move(other.fn)), doit(true) { other.doit = false; }
 	~using_holder() { if (doit) fn(); }
 };
@@ -121,7 +122,7 @@ using std::nullptr_t;
 //some magic stolen from http://blogs.msdn.com/b/the1/archive/2004/05/07/128242.aspx
 //C++ can be so messy sometimes...
 template<typename T, size_t N> char(&ARRAY_SIZE_CORE(T(&x)[N]))[N];
-template<typename T> typename std::enable_if<sizeof(T)==0, T&>::type ARRAY_SIZE_CORE(T& x); // for size-zero arrays
+template<typename T> typename std::enable_if<sizeof(T)==0, T&>::type ARRAY_SIZE_CORE(T& x); // size-zero arrays are a special case
 #define ARRAY_SIZE(x) (sizeof(ARRAY_SIZE_CORE(x)))
 
 //just to make C++ an even bigger mess. based on https://github.com/swansontec/map-macro with some changes:

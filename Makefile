@@ -6,7 +6,7 @@ AROPENGL = 0
 ARTHREAD = 1
 ARWUTF = 0
 ARSOCKET = 1
-#valid values: openssl (default), gnutls, tlse, bearssl, no
+#valid values: openssl (default), gnutls, bearssl, no
 ARSOCKET_SSL = openssl
 #valid values: schannel (default), bearssl, no (others may work, not tested)
 ARSOCKET_SSL_WINDOWS = schannel
@@ -59,6 +59,6 @@ include arlib/Makefile
 #./test (bash? python?)
 #  make test calls some python script, which calls the makefile with new arguments? the current setup is fairly stupid
 #    maybe the make test script is in arlib/, not ./
-#test all SSLs at once, rename socketssl_impl to socketssl_tlse and ifdef socketssl::create
+#test all SSLs at once, rename socketssl_impl to socketssl_openssl/etc and ifdef socketssl::create
 #  maybe always compile all SSLs, rely on --gc-sections to wipe the unused ones
 #    except that screws up if gnutls headers aren't installed

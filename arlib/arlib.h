@@ -6,8 +6,8 @@
 //     of every operation, even if unused and unnecessary.
 // - std:: headers are huge, and compile time acts accordingly. Again, removing unnecessary features
 //     and guarantees helps.
-// - I care a lot about binary size and easy distribution (no DLLs) on Windows, and including the
-//     C++ standard library would often triple the program size.
+// - I care a lot about binary size and easy distribution (one single file, no DLLs) on Windows, and
+//     including the C++ standard library would often triple the program size.
 // - And, most importantly, every feature I implement is a feature I fully understand, so I can
 //     debug it, debug other instances of the same protocol or format, know which edge cases are
 //     likely to cause bugs (for example to write a test suite, or research potential security

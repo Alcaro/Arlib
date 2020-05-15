@@ -399,9 +399,6 @@ ifeq ($(ARSOCKET),1)
     OBJS_LATE += arlib/deps/bearssl-0.6/build/libbearssl.a
 arlib/deps/bearssl-0.6/build/libbearssl.a:
 	$(MAKE) -C arlib/deps/bearssl-0.6/ CFLAGS='$(OPTFLAGS) -fpic' lib
-  else ifeq ($(ARSOCKET_SSL),tlse)
-    CFLAGS_ARLIB += -DARLIB_SSL_TLSE
-    SOURCES_NOWARN += arlib/deps/tlse.c
   else
     $(error unknown SSL library)
   endif

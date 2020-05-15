@@ -129,15 +129,14 @@ public:
 };
 
 //SSL feature matrix:
-//                      | OpenSSL | SChannel | GnuTLS | BearSSL | TLSe | Comments
-//Basic functionality   | Yes     | No       | No     | Yes     | No   | Many are bitrotted (likely easy to fix)
-//Nonblocking           | Yes     | ?        | Yes    | Yes     | Yes  | OpenSSL supports nonblocking, but not blocking
-//Permissive (expired)  | Yes     | ?        | Yes    | No      | No
-//Permissive (bad root) | Yes     | ?        | Yes    | Yes     | No
-//Permissive (bad name) | Yes     | ?        | Yes    | No      | No
-//Serialize             | No      | No       | No     | Yes*    | No*  | TLSe claims to support it, but seems to be server-only
-//                                                                     | BearSSL is homemade and will need rewrites if upstream changes
-//Server                | No      | No       | No     | No      | No   | Likely possible on everything, I'm just lazy
-//Reputable author      | Yes     | Yes      | Yes    | Yes     | No   | Not saying TLSe is bad, just that I don't know
-//Binary size           | 4       | 2.5      | 4      | 80      | 169  | In kilobytes, estimated; DLLs not included
+//                      | OpenSSL | SChannel | GnuTLS | BearSSL | Comments
+//Basic functionality   | Yes     | No       | No     | Yes     | Many are bitrotted (likely easy to fix)
+//Nonblocking           | Yes     | ?        | Yes    | Yes     | OpenSSL supports nonblocking, but not blocking
+//Permissive (expired)  | Yes     | ?        | Yes    | No      |
+//Permissive (bad root) | Yes     | ?        | Yes    | Yes     |
+//Permissive (bad name) | Yes     | ?        | Yes    | No      |
+//Serialize             | No      | No       | No     | Yes*    | BearSSL is homemade and will need rewrites if upstream changes
+//Server                | No      | No       | No     | No      | Likely possible on everything, I'm just lazy
+//Reputable author      | Yes     | Yes      | Yes    | Yes     |
+//Binary size           | 4       | 2.5      | 4      | 80      | In kilobytes, estimated; DLLs not included
 #endif

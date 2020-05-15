@@ -11,6 +11,10 @@
 # define __SSE2__
 #endif
 
+#if defined(__i386__) || defined(__x86_64__)
+# define MAYBE_SSE2
+#endif
+
 #ifdef __SSE2__
 # include <emmintrin.h>
 

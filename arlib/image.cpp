@@ -43,8 +43,7 @@ void image::insert(int32_t x, int32_t y, const image& other)
 
 //newalpha can be 0 to set alpha to 0, 0xFF000000 to set alpha to 255, or -1 to not change alpha
 //  other newalpha are undefined behavior
-//alpha in the target must be known equal to the value implied by newalpha;
-//  the functions are allowed to copy alpha from target instead
+//alpha in the target must be known equal to the value implied by newalpha
 template<bool checksrcalpha, uint32_t newalpha>
 static inline void image_insert_noov_8888_to_8888(image& target, int32_t x, int32_t y, const image& source);
 template<uint32_t newalpha> // 0x??000000 to overwrite the alpha channel, -1 to calculate properly
