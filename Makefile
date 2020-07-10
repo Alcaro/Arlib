@@ -1,6 +1,6 @@
 PROGRAM = arlibtest
-#valid values: exe, dll, hybrid (usable as both exe and dll; Linux only)
-ARTYPE = exe
+#valid values: exe, dll, hybrid (usable as both exe and dll)
+ARTYPE = hybrid
 ARGUI = 1
 AROPENGL = 0
 ARTHREAD = 1

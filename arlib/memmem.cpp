@@ -181,6 +181,8 @@ void* memmem_arlib(const void * haystack, size_t haystacklen, const void * needl
 	return (void*)memmem_rollhash((uint8_t*)haystack, haystacklen, (uint8_t*)needle, needlelen);
 }
 
+#define memmem memmem_arlib
+
 
 
 #ifdef ARLIB_TEST
@@ -274,7 +276,7 @@ static void test1(const char * haystack, const char * needle)
 
 test("memmem", "", "string")
 {
-	// do_bench = true;
+	//do_bench = true;
 	
 	if (do_bench)
 		puts("\nlibc     | Arlib");

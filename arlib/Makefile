@@ -105,7 +105,7 @@ else
 endif
 
 CCXXFLAGS = -fvisibility=hidden -Wall -Wmissing-declarations -Wimplicit-fallthrough -Wvla -Walloca -pipe
-#to silence for (size_t unused : range(42)) - delete this once gcc starts making more sense
+#to silence for (size_t unused : range(42)) - delete this once gcc stops complaining
 CCXXFLAGS += -Wno-unused-variable -Wno-unused-but-set-variable
 #doesn't seem to do anything
 #CFLAGS += -Wmissing-prototypes
@@ -182,24 +182,8 @@ ifeq ($(OS),windows)
     CONF_LFLAGS += -shared
   endif
   ifeq ($(ARTYPE),hybrid)
-    # an exe can export symbols, but its imports are ignored, so trying to call malloc() just segfaults
-    # DllMain and TLS callbacks are ignored too, so imports cannot be resolved that way
-    # marking i as native subsystem (not win32) may work, but that has 99999 side effects
-    # tested on both XP and Wine
-    # https://github.com/wine-mirror/wine/blob/ba1495f7c2c3cff3db9ce99600bfc8ddfa365387/dlls/ntdll/loader.c#L2563
-    # todo list to lift this restriction:
-    # - make my own process startup code
-    #    probably fairly straightforward, just tedious
-    #    if process startup is a lot trickier than dll startup, I could use mingw for the exe path and homemade for the dll path
-    # - find the address of LoadLibrary and GetProcAddress from what's effectively shellcode
-    #    also seems tedious but not hard
-    #    grab PEB via TEB
-    #    inspect LdrData to find kernel32 or ntdll (ntdll if imports are utf16, kernel32 if something else)
-    #    parse its export table
-    # - need to figure out destructors; both global variables, and dlls loaded by this one
-    #    ntdll!LdrRegisterDllNotification probably
-    # - each valid first-call entry point must call the process startup code
-    $(error unsupportable configuration)
+    DEFINES += ARLIB_HYBRID_DLL
+    $(warning hybrid DLL is a poorly tested configuration, prepare for bugs)
   endif
 #  OBJ += obj/resource$(OBJNAME).o
 #  RC = windres
@@ -219,7 +203,7 @@ ifeq ($(OS),windows)
   ifeq ($(shell echo ^^),^)
     HOST_OS := windows
   else
-    # building non-windows binaries on a windows host is not supported (Cygwin or WSL compiling for themselves will probbaly work)
+    # building non-windows binaries on a windows host is not supported (Cygwin or WSL compiling for themselves will probably work)
     # why would you do such a thing, anyways?
     $(warning non-cmd windows detected; if SHELL $(SHELL) is something other than sh.exe, makefile should check for that instead)
   endif
@@ -405,8 +389,15 @@ arlib/deps/bearssl-0.6/build/libbearssl.a:
 endif
 
 ifneq ($(wildcard resources/*),)
+  ifneq ($(wildcard resources/*.icon*),)
+    ifeq ($(OS),windows)
+      OBJS += arlib/icons_$(OBJNAME).o
+arlib/icons_$(OBJNAME).o:
+	windres obj/icons.rc obj/icons_$(OBJNAME).o
+    endif
+  endif
   SOURCES_ARLIB += obj/resources.cpp
-obj/resources.cpp: arlib/rescompile.py resources/ resources/*
+obj/resources.cpp: arlib/rescompile.py resources resources/*
 	python3 arlib/rescompile.py
 arlib.h: obj/resources.cpp
 endif
@@ -421,9 +412,12 @@ TRUE_CFLAGS := -std=c99 $(CCXXFLAGS) $(CONF_CFLAGS) $(CFLAGS)
 # - works on the default compiler on current Debian stable, latest Ubuntu LTS, whatever compiler I use for Windows
 #    (currently mingw-w64 8.1.0), and whatever other computers I have at the moment
 #    working on additional compilers (for example Clang) is recommended, but not mandatory
-# - is functional and non-experimental in a finalized -std= version (c++11 is final, c++0x isn't)
+# - is functional and non-experimental in a finalized -std= version (c++11 is final, c++0x isn't, -fcoroutines isn't)
 #    it's fine if not every part of that language version is supported in that compiler version
-# I will not switch C++ version because a dependency needs that. Instead, I'll fork or reinvent the dependency.
+# If someone cares about older C++ versions, I will accept PRs and not intentionally break it, as long as
+# - it doesn't uglify anything too much; most modern C++ features aren't indispensable, but the lambdas are staying
+# - there is no performance penalty if compiled under modern C++; this may be accomplished with #if __cplusplus > 12345, if necessary
+# - said someone maintains it, and does not expect me to; I will forget what's C++11 and what isn't at random intervals
 # The following features would be useful; if enough of them show up, I will switch:
 #   C++2a template lambdas (for the PNG decoder)
 #   C++2a designated initializers (foo_t foo = { .a = 42, .b = 123 })
@@ -433,10 +427,10 @@ TRUE_CFLAGS := -std=c99 $(CCXXFLAGS) $(CONF_CFLAGS) $(CFLAGS)
 #   C++2a down with typename http://wg21.link/p0634r3
 #   C++2a [[likely]]
 #   C++2a [[no_unique_address]]
-#   C++2a ban non-twos-complement signed
+#   C++2a ban non-twos-complement signed - will probably enable various other C++ improvements
 #   C++2a void foo(auto arg) (shorthand for template<typename T> void foo(T arg) - simplifies function::bind_member)
 #   C++2a coroutines, for runloop-related stuff
-#   C++17 <charconv> in libc (not libstdc++) - will speed up tostring(float), and probably simplify it too
+#   C++17 <charconv>, to speed up tostring(float) (though I'll need to keep the current one around, for Windows)
 #   [[trivially_relocatable]] http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2019/p1144r3.html
 #   Lambdas without braces/return; function<int(int)> mul2 = [](int i) => i*2; (useful for LINQ)
 #   Zero-overhead deterministic exceptions http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2018/p0709r0.pdf
@@ -447,10 +441,11 @@ TRUE_CFLAGS := -std=c99 $(CCXXFLAGS) $(CONF_CFLAGS) $(CFLAGS)
 #   std::embed http://open-std.org/JTC1/SC22/WG21/docs/papers/2018/p1040r0.html, to get rid of rescompile.py's assembly shenanigans
 #     may allow some other optimizations/simplifications too
 #   Allow int x(int y=0); int x(int y=0) { return y*2; } (only if default value is identical on both ends, of course)
-#   Ranges TS - not because I want it as is, but because it'll get rid of the unused variable warning from for (size_t n : range(42))
+#   Something to get rid of the unused variable warning from for (size_t n : range(42)) - Ranges TS, maybe?
+#   Overloading operator[] depending on whether it's a read or write access, int x = std::map[key_t] mutating is silly
 # The following may or may not be usable, depending on the exact details:
 #   C++2a modules (it's very easy to produce a bad module system, I don't know if this one avoids the pitfalls)
-# Other stuff I've seen proposed is uninteresting, though I haven't seen all proposals.
+# Other stuff I've seen proposed is uninteresting to me, though I haven't seen all proposals.
 # I'm not interested in library features. Most of them lack important functionality, have bad constant factors, and bloat the binary.
 # The compiler-magic ones, like std::move and type traits, do one thing and do it well, and optimize to nothing. I use them.
 TRUE_CXXFLAGS := -std=c++17 -fno-rtti $(CCXXFLAGS) $(CONF_CXXFLAGS) $(CXXFLAGS)

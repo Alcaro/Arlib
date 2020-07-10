@@ -240,9 +240,9 @@ test("BML serialization", "bml", "serialize")
 		item.data.add("foo");
 		item.data.add("test");
 		item.data.add("C:/Users/Administrator/My Documents/!TOP SECRET!.docx");
-		//the set is unordered, this can give spurious failures
+		//sets are unordered, this can give spurious failures
 		if (sizeof(size_t) == 8)
-			assert_eq(bmlserialize(item), "data=test\ndata=\"C:/Users/Administrator/My Documents/!TOP SECRET!.docx\"\ndata=foo");
+			assert_eq(bmlserialize(item), "data=\"C:/Users/Administrator/My Documents/!TOP SECRET!.docx\"\ndata=test\ndata=foo");
 		else
 			assert_eq(bmlserialize(item), "data=\"C:/Users/Administrator/My Documents/!TOP SECRET!.docx\"\ndata=foo\ndata=test");
 	}
@@ -254,8 +254,8 @@ test("BML serialization", "bml", "serialize")
 		item.data.insert("C:/Users/Administrator/My Documents/!TOP SECRET!.docx", "test");
 		if (sizeof(size_t) == 8)
 			assert_eq(bmlserialize(item), "data"
-			                              " test=\"C:/Users/Administrator/My Documents/!TOP SECRET!.docx\""
 			                              " -C-3A-2FUsers-2FAdministrator-2FMy-20Documents-2F-21TOP-20SECRET-21.docx=test"
+			                              " test=\"C:/Users/Administrator/My Documents/!TOP SECRET!.docx\""
 			                              " foo=bar");
 		else
 			assert_eq(bmlserialize(item), "data"
@@ -557,7 +557,7 @@ test("JSON serialization", "json", "serialize")
 		item.data.add("C:/Users/Administrator/My Documents/!TOP SECRET!.docx");
 		//the set is unordered, this can give spurious failures
 		if (sizeof(size_t) == 8)
-			assert_eq(jsonserialize(item), "{\"data\":[\"test\",\"C:/Users/Administrator/My Documents/!TOP SECRET!.docx\",\"foo\"]}");
+			assert_eq(jsonserialize(item), "{\"data\":[\"C:/Users/Administrator/My Documents/!TOP SECRET!.docx\",\"test\",\"foo\"]}");
 		else
 			assert_eq(jsonserialize(item), "{\"data\":[\"C:/Users/Administrator/My Documents/!TOP SECRET!.docx\",\"foo\",\"test\"]}");
 	}
@@ -568,8 +568,8 @@ test("JSON serialization", "json", "serialize")
 		item.data.insert("test", "C:/Users/Administrator/My Documents/!TOP SECRET!.docx");
 		item.data.insert("C:/Users/Administrator/My Documents/!TOP SECRET!.docx", "test");
 		if (sizeof(size_t) == 8)
-			assert_eq(jsonserialize(item), "{\"data\":{\"test\":\"C:/Users/Administrator/My Documents/!TOP SECRET!.docx\","
-			                              "\"C:/Users/Administrator/My Documents/!TOP SECRET!.docx\":\"test\","
+			assert_eq(jsonserialize(item), "{\"data\":{\"C:/Users/Administrator/My Documents/!TOP SECRET!.docx\":\"test\","
+			                              "\"test\":\"C:/Users/Administrator/My Documents/!TOP SECRET!.docx\","
 			                              "\"foo\":\"bar\"}}");
 		else
 			assert_eq(jsonserialize(item), "{\"data\":{\"C:/Users/Administrator/My Documents/!TOP SECRET!.docx\":\"test\","

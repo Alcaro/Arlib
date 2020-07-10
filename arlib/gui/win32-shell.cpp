@@ -2,7 +2,6 @@
 #ifdef ARGUI_WINDOWS
 #include <windows.h>
 #include <commctrl.h>
-#include <ctype.h>
 
 //TODO: check if DwmEnableMMCSS does anything useful
 

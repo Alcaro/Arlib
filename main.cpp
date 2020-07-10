@@ -16,6 +16,33 @@ inline void e(const char*w)
 	//}
 }
 
+#ifdef _WIN32
+__attribute__((constructor))
+static void x1()
+{
+	puts("ctor");
+}
+__attribute__((destructor))
+static void x2()
+{
+	puts("dtor");
+}
+
+extern uint32_t __cpu_model[4];
+
+DLLEXPORT void y();
+void y()
+{
+	uint32_t g[4] = {__cpu_model[0],__cpu_model[1],__cpu_model[2],__cpu_model[3]};
+	uint32_t* b = __cpu_model;
+	auto* c = GetProcAddress;
+	arlib_hybrid_dll_init();
+	puts("y()");
+	printf("%x,%x,%x,%x,%p %p\n",g[0],g[1],g[2],g[3],c,b);
+	printf("%x,%x,%x,%x,%p %p\n",__cpu_model[0],__cpu_model[1],__cpu_model[2],__cpu_model[3],GetProcAddress,__cpu_model);
+}
+#endif
+
 int main(int argc, char** argv)
 {
 #ifdef ARLIB_SANDBOX
@@ -27,13 +54,27 @@ int main(int argc, char** argv)
 	arlib_init(NULL, argv);
 #endif
 	
-	runloop* loop = runloop::global();
-	HTTP h(loop);
-	HTTP::rsp r;
-	function<void(HTTP::rsp)> break_runloop = bind_lambda([&](HTTP::rsp inner_r) { r = std::move(inner_r); loop->exit(); });
-	h.send(HTTP::req("https://floating.muncher.se/"), break_runloop);
-	loop->enter();
-	puts(r.text()+"");
+#ifdef _WIN32
+	puts("Begin");
+	{
+		dylib d;
+		printf("init=%d\n", d.init("test.dll"));
+		void(*d_y)() = d.sym_func("y");
+		printf("sym=%p\n", d_y);
+		y();
+		if (d_y) d_y();
+		puts("Unload");
+	}
+	puts("End");
+#endif
+	
+	//runloop* loop = runloop::global();
+	//HTTP h(loop);
+	//HTTP::rsp r;
+	//function<void(HTTP::rsp)> break_runloop = bind_lambda([&](HTTP::rsp inner_r) { r = std::move(inner_r); loop->exit(); });
+	//h.send(HTTP::req("https://floating.muncher.se/"), break_runloop);
+	//loop->enter();
+	//puts(r.text()+"");
 	
 	//puts(tostring(3.141592653589793238462));
 	

@@ -384,7 +384,7 @@ test("time", "", "time")
 	uint64_t time2_une_fu = time_us_ne();
 	assert_range(time2_une_fu, time2_une_fm-1100,    time2_une_fm+1500);
 	
-#ifdef __unix__
+#ifndef _WIN32
 	assert_range(time2_u_fm-time_u_fm, 40000, 60000);
 	assert_range(time2_u_fu-time_u_fu, 40000, 60000);
 #else
@@ -396,7 +396,7 @@ test("time", "", "time")
 }
 
 void not_a_function(); // linker error if the uses aren't optimized out
-DECL_DYLIB_T(libc_t, not_a_function, fread, isalpha, mktime);
+DECL_DYLIB_T(libc_t, not_a_function, fread, mktime, atoi);
 DECL_DYLIB_PREFIX_T(libc_f_t, f, open, read, close);
 
 test("dylib", "", "dylib")
@@ -413,10 +413,9 @@ test("dylib", "", "dylib")
 	assert(!libc.init(libc_so));
 	assert(f.init(libc_so));
 	assert(libc.fread); // these guys must exist, despite not_a_function failing
-	assert(libc.isalpha);
 	assert(libc.mktime);
-	assert(libc.isalpha('a'));
-	assert(!libc.isalpha('1'));
+	assert(libc.atoi);
+	assert_eq(libc.atoi("123"), 123);
 	assert(!libc.not_a_function);
 	assert(f.read == libc.fread);
 }

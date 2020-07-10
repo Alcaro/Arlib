@@ -13,7 +13,7 @@ core - emit only core (unsuffixed) functions
         this is roughly 1000
 used - emit only actually used functions
         analyzes all .c and .cpp files in the current directory and children,
-          except arlib/
+          except arlib/, obj/, and .git/
         only works if your aropengl object is named 'gl'
 """)
 	exit()

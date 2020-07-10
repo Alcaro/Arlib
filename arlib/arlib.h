@@ -13,7 +13,7 @@
 //     likely to cause bugs (for example to write a test suite, or research potential security
 //     vulnerabilities), and appreciate the true complexity of something that seems simple.
 
-//if anyone whines about antivirus, https://arstechnica.com/information-technology/2017/01/antivirus-is-bad/
+//if anyone complains about antivirus, https://arstechnica.com/information-technology/2017/01/antivirus-is-bad/
 //  and linked:
 //    https://robert.ocallahan.org/2017/01/disable-your-antivirus-software-except.html
 //    https://twitter.com/justinschuh/status/802491391121260544

@@ -4,8 +4,9 @@
 //#include <sys/socket.h>
 
 //kernel features that aren't used yet, but may be useful here, or the underlying process module:
+//[4.17 / june 2018] MAP_FIXED_NOREPLACE, for preload_action early mmap
 //[5.0 / march 2019] SECCOMP_RET_USER_NOTIF - instead of SIGSYS, another process gets the syscall arguments
-//  worth investigating, though the target process can't follow any pointers, so probably won't do much
+//  worth investigating if that'd get rid of signal handler perf penalties - can target process follow the pointer args?
 //[5.1 / may 2019] pidfd_send_signal
 //[5.2 / july 2019] clone(CLONE_PIDFD)
 //[5.3 / september 2019] select() on pidfd, and reading exit status

@@ -11,7 +11,6 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>
-#include <ctype.h>
 #include <gtk/gtk.h>
 #ifdef ARGUIPROT_X11
 #include <gdk/gdkx.h>
