@@ -614,15 +614,6 @@ void window_run_wait()
 	window_run_iter();
 }
 
-runloop* runloop::global()
-{
-	//TODO: use WSACreateEvent and WSAEventSelect
-	//SOCKET is UINT_PTR, WSAEVENT is HANDLE, MsgWaitForMultipleObjects should work
-	static runloop* ret;
-	if (!ret) ret = new runloop_win32();
-	return ret;
-}
-
 
 
 

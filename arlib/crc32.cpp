@@ -125,7 +125,7 @@ static uint32_t crc32_pclmul(arrayview<uint8_t> data, uint32_t crc)
 uint32_t crc32_update(arrayview<uint8_t> data, uint32_t crc)
 {
 #ifdef MAYBE_SSE2
-	if (data.size() >= 4 // mz_crc32 is slow, but pclmul has a pretty high startup time; mz wins for size <= 4
+	if (data.size() >= 4 // mz_crc32 is slow per byte, but pclmul has a pretty high startup time; mz wins for size <= 4
 #ifndef __PCLMUL__       // (mz_crc32 needs to exist for machines without pclmul support)
 		&& __builtin_cpu_supports("pclmul") // this should be optimized if -mpclmul, but isn't, so more ifdef
 #endif

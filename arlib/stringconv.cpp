@@ -174,7 +174,7 @@ string tostring_float(T f)
 	static_assert(sizeof(T) == sizeof(Ti));
 	
 	if (isnan(f)) return "nan";
-	if (isinf(f)) return "-inf" + !signbit(f);
+	if (isinf(f)) return &"-inf"[!signbit(f)];
 	
 	int prec = minprec;
 	

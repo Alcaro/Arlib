@@ -265,7 +265,7 @@ static void test1(const char * haystack, const char * needle)
 		const char * winner = " | ";
 		if ((double)perf_libc / perf_arlib > 1.5) winner = "*| ";
 		if ((double)perf_arlib / perf_libc > 1.5) winner = " |*";
-		printf("%8lu%s%8lu | %s / %s\n", perf_libc, winner, perf_arlib, haystack, needle);
+		printf("%8u%s%8u | %s / %s\n", (unsigned)perf_libc, winner, (unsigned)perf_arlib, haystack, needle);
 	}
 	else
 	{
@@ -334,6 +334,7 @@ test("memmem", "", "string")
 #ifdef __SSE2__
 test("load_sse2_small","","")
 {
+#ifndef _WIN32
 	uint8_t* page;
 	if (posix_memalign((void**)&page, 4096, 8192) != 0) abort();
 	autofree<uint8_t> holder = page;
@@ -357,6 +358,7 @@ test("load_sse2_small","","")
 	test1(16, 11);
 	test1(27, 16);
 	test1(4100, 16);
+#endif
 	
 	// used to verify the condition in load_sse2_small
 	/*

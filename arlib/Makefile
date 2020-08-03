@@ -24,6 +24,17 @@
 #and find some way to auto include the correct one
 #(config depends on platform, so it must have OBJNAME)
 
+ifneq (,)
+  $(error conditionals are required; only GNU Make is supported)
+panic:
+	echo "conditionals are required; only GNU Make is supported"
+	false
+endif
+
+ifeq (,$(wildcard arlib/string.cpp))
+  $(error wrong build directory, go up one level)
+endif
+
 all: arlib-default
 
 MAKEFLAGS := Rr
@@ -31,9 +42,12 @@ MAKEFLAGS := Rr
 .SECONDEXPANSION:
 .DELETE_ON_ERROR:
 
-ifeq (,$(wildcard arlib/string.cpp))
-  $(error wrong build directory, go up one level)
-endif
+SPACE := $(NULL) $(NULL)
+
+define LF
+
+
+endef
 
 CC = gcc
 CFLAGS =
@@ -45,13 +59,13 @@ AS = as
 ASFLAGS =
 AR = ar
 
-SPACE :=
-SPACE +=
-
-define LF
-
-
-endef
+CC_FAMILY := gcc
+ifneq ($(findstring clang,$(CC) $(CXX) $(LD)),)
+  CC_FAMILY := clang
+  CC = clang
+  CXX = clang++
+  LD = clang++
+endif
 
 ifeq ($(OS),Windows_NT)
   OS = windows
@@ -104,9 +118,13 @@ else
   DEBUG ?= 0
 endif
 
-CCXXFLAGS = -fvisibility=hidden -Wall -Wmissing-declarations -Wimplicit-fallthrough -Wvla -Walloca -pipe
+CCXXFLAGS = -fvisibility=hidden -Wall -Wmissing-declarations -Wimplicit-fallthrough -Wvla -pipe
 #to silence for (size_t unused : range(42)) - delete this once gcc stops complaining
-CCXXFLAGS += -Wno-unused-variable -Wno-unused-but-set-variable
+CCXXFLAGS += -Wno-unused-variable
+ifeq ($(CC_FAMILY),gcc)
+  # Clang doesn't support those
+  CCXXFLAGS += -Walloca -Wno-unused-but-set-variable
+endif
 #doesn't seem to do anything
 #CFLAGS += -Wmissing-prototypes
 ifeq ($(EXCEPTIONS),1)
@@ -120,18 +138,10 @@ else
   OPTFLAGS += -fno-unwind-tables -fno-asynchronous-unwind-tables
 endif
 
-HOST_OS := unix
-
-CC_FAMILY := gcc
-ifneq ($(findstring clang,$(CC) $(CXX) $(LD)),)
-  CC_FAMILY := clang
-  CC = clang
-  CXX = clang++
-  LD = clang++
-endif
+HOST_SHELL := sh
 
 #double gcc bug combo:
-#(1) GCC hates this pattern:
+#(1) GCC hates commented-out backslash line continuations, even if the next line is commented out too, for example
 #//#define foo(a,b,c) \
 #//  bar(a) \
 #//  bar(b) \
@@ -201,7 +211,7 @@ ifeq ($(OS),windows)
   endif
 
   ifeq ($(shell echo ^^),^)
-    HOST_OS := windows
+    HOST_SHELL := cmd
   else
     # building non-windows binaries on a windows host is not supported (Cygwin or WSL compiling for themselves will probably work)
     # why would you do such a thing, anyways?
@@ -214,7 +224,7 @@ ifeq ($(V),)
   ECHOQ = @echo
 else
   Q =
-  ifeq ($(HOST_OS),windows)
+  ifeq ($(HOST_SHELL),cmd)
     ECHOQ = @ver>nul
   else
     ECHOQ = @true
@@ -230,7 +240,7 @@ OPTFLAGS += -DNDEBUG -DARLIB_OPT
 OPTFLAGS_CXX += -fno-threadsafe-statics
 OPTLFLAGS := -Wl,--gc-sections,--build-id=none,--relax,--sort-common
 ifneq ($(OS),windows)
-OPTLFLAGS += -Wl,--hash-style=gnu
+  OPTLFLAGS += -Wl,--hash-style=gnu
 endif
 #OPTLFLAGS += -Wl,--print-map
 ifneq ($(DEBUG),1)
@@ -267,6 +277,13 @@ ifeq ($(PROFILE),use)
   CONF_CFLAGS += -fprofile-use -fprofile-correction
 endif
 
+ifneq ($(ASAN),)
+  OBJNAME := $(OBJNAME)-asan
+  CONF_CFLAGS += -fsanitize=address
+  #ASan must be first
+  CONF_LFLAGS := -lasan $(CONF_LFLAGS)
+endif
+
 CONF_CFLAGS += -DARLIB_OBJNAME=$(OBJNAME)
 
 OUTNAME = $(PROGRAM)$(EXESUFFIX)
@@ -281,6 +298,7 @@ DOMAINNAME = $(firstword $(subst ___,$(SPACE),$(patsubst obj/%.o,%,$1)))
 
 CFLAGS_DEFAULT ?=
 CFLAGS_NOWARN += -w
+DEPS_DEFAULT :=
 
 SOURCES += *.cpp
 SOURCES_ARLIB := arlib/*.cpp
@@ -298,12 +316,12 @@ ifeq ($(ARGUI),1)
   SOURCES_ARLIB += arlib/gui/*.cpp
   ifeq ($(OS),windows)
     DEFINES += ARGUI_WINDOWS
-    CONF_LFLAGS += -lgdi32 -lcomctl32 -lcomdlg32
+    CONF_LFLAGS += -lgdi32 -lcomctl32 -lcomdlg32 -mwindows
   endif
   ifeq ($(OS),linux)
     DEFINES += ARGUI_GTK3 ARGUIPROT_X11
     CONF_CFLAGS += $(shell pkg-config --cflags gtk+-3.0)
-    CONF_LFLAGS += -ldl -lX11 $(shell pkg-config --libs gtk+-3.0)
+    CONF_LFLAGS += -lX11 $(shell pkg-config --libs gtk+-3.0)
     ifneq ($(OPT),0)
       # don't know if this has ever caught anything except NULLs, but they're harmless on debug
       # but they do waste space on release builds.
@@ -314,22 +332,36 @@ else
   DEFINES += ARGUI_NONE
 endif
 
-ifeq ($(AROPENGL),1)
-  ifeq ($(ARGUI),0)
-    $(error can't use OpenGL without the GUI)
+ifeq ($(ARGAME),1)
+  DEFINES += ARLIB_GAME
+  ifeq ($(ARGUI),1)
+    $(error can't use ARGAME and ARGUI simultaneously)
   endif
+  ifeq ($(OS),windows)
+    CONF_LFLAGS += -lgdi32 -mwindows
+  endif
+endif
+
+ifeq ($(AROPENGL),1)
   SOURCES_ARLIB += arlib/opengl/*.cpp
   DEFINES += ARLIB_OPENGL
   ifeq ($(OS),linux)
-    CONF_LFLAGS += -ldl
+    DEFINES += ARGUIPROT_X11
+    CONF_LFLAGS += -lX11
   endif
   ifeq ($(AROPENGL_D3DSYNC),1)
     DEFINES += AROPENGL_D3DSYNC
   endif
-obj/glsym-slim.h:
+    # if glsym-slim.h doesn't change, things that depend on it don't rebuild
+    # but that also means make thinks the header itself is outdated and will try to rebuild it next time,
+    #  which is noisy and failure prone
+    # instead, add another intermediate
+obj/glsym-slim-marker: $(SOURCES) | obj
 	python3 arlib/opengl/generate.py used aropengl obj/glsym-slim.h
+	echo a > obj/glsym-slim-marker
+obj/glsym-slim.h: obj/glsym-slim-marker | obj
 ifneq ($(OPT),0)
-arlib.h: obj/glsym-slim.h
+  DEPS_DEFAULT += obj/glsym-slim.h
 endif
 endif
 
@@ -391,15 +423,16 @@ endif
 ifneq ($(wildcard resources/*),)
   ifneq ($(wildcard resources/*.icon*),)
     ifeq ($(OS),windows)
-      OBJS += arlib/icons_$(OBJNAME).o
-arlib/icons_$(OBJNAME).o:
-	windres obj/icons.rc obj/icons_$(OBJNAME).o
+      OBJS += obj/icons-$(OBJNAME).o
+obj/icons-$(OBJNAME).o: obj/resources.h
+	windres obj/icons.rc obj/icons-$(OBJNAME).o
     endif
   endif
   SOURCES_ARLIB += obj/resources.cpp
-obj/resources.cpp: arlib/rescompile.py resources resources/*
+obj/resources.h: arlib/rescompile.py resources resources/* | obj
 	python3 arlib/rescompile.py
-arlib.h: obj/resources.cpp
+obj/resources.cpp: obj/resources.h
+  DEPS_DEFAULT += obj/resources.h
 endif
 
 SOURCES_NOWARN += arlib/deps/miniz.c
@@ -409,8 +442,8 @@ CONF_CFLAGS += $(patsubst %,-D%,$(DEFINES))
 TRUE_CFLAGS := -std=c99 $(CCXXFLAGS) $(CONF_CFLAGS) $(CFLAGS)
 # C++ version policy: I will switch to a newer version of C++ only if it adds something that
 # - considerably simplifies existing code (everything is doable without that, but some things are painful)
-# - works on the default compiler on current Debian stable, latest Ubuntu LTS, whatever compiler I use for Windows
-#    (currently mingw-w64 8.1.0), and whatever other computers I have at the moment
+# - works on the default compiler on current Debian stable, latest Ubuntu LTS, whatever compiler I currently use for
+#    Windows (as of writing, mingw-w64 8.1.0), and whatever other computers I have at the moment
 #    working on additional compilers (for example Clang) is recommended, but not mandatory
 # - is functional and non-experimental in a finalized -std= version (c++11 is final, c++0x isn't, -fcoroutines isn't)
 #    it's fine if not every part of that language version is supported in that compiler version
@@ -432,10 +465,11 @@ TRUE_CFLAGS := -std=c99 $(CCXXFLAGS) $(CONF_CFLAGS) $(CFLAGS)
 #   C++2a coroutines, for runloop-related stuff
 #   C++17 <charconv>, to speed up tostring(float) (though I'll need to keep the current one around, for Windows)
 #   [[trivially_relocatable]] http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2019/p1144r3.html
-#   Lambdas without braces/return; function<int(int)> mul2 = [](int i) => i*2; (useful for LINQ)
+#   Lambdas without braces/return, function<int(int)> mul2 = [](int i) => i*2; (useful for LINQ)
 #   Zero-overhead deterministic exceptions http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2018/p0709r0.pdf
 #   Compile-time reflection (that SERIALIZE macro is a little too limited, and the error messages are worse than from the regexes)
-#   Single-implementation interfaces (public functions and nothing else in header, member variables hidden; useful for the GUI classes)
+#   Single-implementation interfaces (public functions and nothing else in header, member variables hidden)
+#     useful for anything with multiple implementations, but where the active one is a #ifdef, for example gameview and the widgets
 #     the $class proposal P0707 would most likely permit this, as well as most or all of the reflection I want
 #   Demote or, and, bitand, etc from keyword to predefined macro (or even better, banish them to the <ciso646> they should've never left)
 #   std::embed http://open-std.org/JTC1/SC22/WG21/docs/papers/2018/p1040r0.html, to get rid of rescompile.py's assembly shenanigans
@@ -454,7 +488,7 @@ TRUE_LFLAGS := $(LFLAGS) -fvisibility=hidden $(CONF_LFLAGS)
 obj:
 	mkdir obj
 
-ifeq ($(HOST_OS),windows)
+ifeq ($(HOST_SHELL),cmd)
 clean:
 	del /q obj\*
 
@@ -471,12 +505,6 @@ superclean: clean
 	rm -f arlib/deps/bearssl-0.6/build/obj/*
 	rm -f arlib/deps/bearssl-0.6/build/libbearssl.a
 endif
-
-#ARLIB_H := $(patsubst %,\#define %$(LF),$(DEFINES))
-#arlib.h: Makefile
-#	$(eval export ARLIB_H)
-#	echo "$$ARLIB_H" > arlib.h
-#	echo '#include "arlib/arlib.h"' >> arlib.h
 
 
 DOMAINS += DEFAULT NOWARN
@@ -508,13 +536,13 @@ OBJS += $(sort $(OBJS_LATE))
 arlib-default: $(OUTNAME)
 
 
-obj/%.c.o: $$(call SOURCENAME,$$@) arlib.h | obj
+obj/%.c.o: $$(call SOURCENAME,$$@) $$(DEPS_$$(call DOMAINNAME,$$@)) | obj
 	$(ECHOQ) CC $<
 	$(Q)$(CC) $(TRUE_CFLAGS) $(CFLAGS_$(call DOMAINNAME,$@)) -c $< -o $@
-obj/%.cpp.o: $$(call SOURCENAME,$$@) arlib.h | obj
+obj/%.cpp.o: $$(call SOURCENAME,$$@) $$(DEPS_$$(call DOMAINNAME,$$@)) | obj
 	$(ECHOQ) CXX $<
 	$(Q)$(CXX) $(TRUE_CXXFLAGS) $(CFLAGS_$(call DOMAINNAME,$@)) -c $< -o $@
-obj/%.S.o: $$(call SOURCENAME,$$@) arlib.h | obj
+obj/%.S.o: $$(call SOURCENAME,$$@) $$(DEPS_$$(call DOMAINNAME,$$@)) | obj
 	$(ECHOQ) AS $<
 	$(Q)$(AS) $(TRUE_ASFLAGS) $(ASFLAGS_$(call DOMAINNAME,$@)) $< -o $@
 #do not make this rule generic (obj/%.a.o), it hits some ridiculous unkillable 'chain of implicit rules'

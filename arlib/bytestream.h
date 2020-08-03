@@ -2,7 +2,6 @@
 #include "array.h"
 #include "endian.h"
 #include "string.h"
-#include <initializer_list>
 
 //you're welcome to extend this object if you need a more rare operation, like leb128
 //signature and u8_or check for overflow; for anything else, use remaining()
@@ -33,7 +32,6 @@ public:
 	static forceinline bool sig_is_text(arrayview<uint8_t> sig) { return false; }
 	static forceinline bool sig_is_text(cstring sig)            { return true; }
 	static forceinline bool sig_is_text(const char * sig)       { return true; }
-	static forceinline bool sig_is_text(const std::initializer_list<uint8_t>& il) { return false; } // TODO: delete
 	template<typename... Ts>
 	static forceinline bool sig_is_text(uint8_t first, Ts... next) { return false; }
 	

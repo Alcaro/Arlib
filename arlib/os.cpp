@@ -196,12 +196,26 @@ bool debug_or_ignore()
 	return true;
 }
 
+bool debug_or_exit()
+{
+	if (RUNNING_ON_VALGRIND) VALGRIND_PRINTF_BACKTRACE("debug trace");
+	else if (has_debugger()) raise(SIGTRAP);
+	exit(1);
+}
+
+bool debug_or_abort()
+{
+	if (RUNNING_ON_VALGRIND) VALGRIND_PRINTF_BACKTRACE("debug trace");
+	else raise(SIGTRAP);
+	abort();
+}
+#endif
+
 #undef debug_or_print
 #include "file.h"
 bool debug_or_print(const char * filename, int line)
 {
-	if (RUNNING_ON_VALGRIND) VALGRIND_PRINTF_BACKTRACE("debug trace");
-	else if (has_debugger()) raise(SIGTRAP);
+	if (debug_or_ignore()) {} // if we're being debugged, no need for anything else
 	else
 	{
 		static file f;
@@ -218,21 +232,6 @@ bool debug_or_print(const char * filename, int line)
 	}
 	return true;
 }
-
-bool debug_or_exit()
-{
-	if (RUNNING_ON_VALGRIND) VALGRIND_PRINTF_BACKTRACE("debug trace");
-	else if (has_debugger()) raise(SIGTRAP);
-	exit(1);
-}
-
-bool debug_or_abort()
-{
-	if (RUNNING_ON_VALGRIND) VALGRIND_PRINTF_BACKTRACE("debug trace");
-	else raise(SIGTRAP);
-	abort();
-}
-#endif
 
 
 

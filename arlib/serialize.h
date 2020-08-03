@@ -20,6 +20,7 @@
 // - delete ser_enter and the enter() members
 // much of the mess is caused by not properly accounting for children being named vs anonymous
 //   {"a":1,"b":2,"c":3} is named, [1,2,3] is anonymous
+// and/or by BML and JSON supporting different data types
 
 
 //Interface:

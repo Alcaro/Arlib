@@ -17,6 +17,24 @@ body += '#include "resources.h"\n'
 constructor = "resources::resources()\n{\n"
 asm = ""
 
+if use_incbin:
+	body += r"""
+#if defined(__unix__)
+#define ASM_INCLUDE(varname, size, filename) \
+	".section .rodata." varname ",\"a\",@progbits\n" \
+	".size " varname ", " #size "\n" \
+	".type " varname ", @object\n" \
+	varname ":\n" \
+	".incbin \"" filename "\"\n"
+#elif defined(_WIN32)
+#define ASM_INCLUDE(varname, size, filename) \
+	".section .rdata$" varname ",\"dr\"\n" \
+	varname ":\n" \
+	".incbin \"" filename "\"\n"
+#endif
+
+"""
+
 icon_names = {}  # { 0: "minir" } (0 is exe's icon, others are usable for file associations)
 icon_paths = {}  # { 0: { 48: "resources/minir.icon-48.png", 32: etc, 16: etc } }
 
@@ -65,13 +83,7 @@ for fn in sorted(os.listdir("resources/")):
 	if use_incbin:
 		asmname = "_ZN9resources"+str(len(varname_raw))+varname_raw+"E"
 		# sticking everything in separate sections doesn't do much when the resources' constructors autodecode them, but why not
-		asm += ".section .rodata."+asmname+',"a",@progbits\n'
-		asm += ".globl "+asmname+"\n"
-		asm += ".size "+asmname+", "+str(filesize)+"\n"
-		asm += ".type "+asmname+", @object\n"
-		asm += asmname+":\n"
-		asm += ".incbin \"resources/"+fn+"\"\n"
-		asm += "\n"
+		asm += 'ASM_INCLUDE("'+asmname+'", '+str(filesize)+', "resources/'+fn+'")\n'
 	else:
 		with open(fullfn, "rb") as f:
 			b = bytearray(f.read())  # pointless bytearray conversion because in python2, bytes is str and indexing that is str, not int
@@ -81,12 +93,12 @@ for fn in sorted(os.listdir("resources/")):
 	
 	header += "static const uint8_t "+varname_raw+"["+str(filesize)+"];\n"
 
-asm += ".text\n"
+asm += '".text"\n'
 header += "};\n"
 body += constructor + "}\n"
 
 if use_incbin:
-	body += '__asm__(R"(\n'+asm+')");'
+	body += '__asm__(\n'+asm+');\n'
 
 # PNG-style .ico requires Vista or higher, but BMP-style requires messing with PIL (and BMP is bigger), so let's just use PNG
 # (also not supported in GdkPixbuf, though Wine supports it since 2010. https://github.com/wine-mirror/wine/commit/666940902db2c693

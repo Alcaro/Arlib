@@ -62,11 +62,12 @@
 #include "test.h"
 #include "zip.h"
 
-#if !defined(ARGUI_NONE) && !defined(ARGUI_WINDOWS) && !defined(ARGUI_GTK3)
-#define ARGUI_NONE
-#endif
 #ifndef ARGUI_NONE
 #include "gui/window.h"
+#endif
+
+#ifdef ARLIB_GAME
+#include "game.h"
 #endif
 
 #ifdef ARLIB_OPENGL

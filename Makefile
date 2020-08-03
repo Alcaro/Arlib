@@ -1,7 +1,8 @@
 PROGRAM = arlibtest
 #valid values: exe, dll, hybrid (usable as both exe and dll)
 ARTYPE = hybrid
-ARGUI = 1
+ARGUI = 0
+ARGAME = 1
 AROPENGL = 0
 ARTHREAD = 1
 ARWUTF = 0
@@ -25,13 +26,15 @@ ARXPSUPPORT = 1
 #  OPT=1 enables heavy optimizations; DEBUG=0 removes debug info; PROFILE=gen/opt are for PGO
 #CFLAGS, LFLAGS, CC, CXX, LD (CLI)
 #  override compiler choice, add additional flags
+#ASAN (CLI)
+#  if true, compiles with ASan; 
 #CONF_CFLAGS, CONF_LFLAGS
 #  additional compiler/linker flags needed by this program
 #EXCEPTIONS
 #  set to 1 if needed
 #  not recommended: many parts of Arlib are not guaranteed exception safe, exception support inhibits many optimizations,
 #  and it adds a few hundred kilobytes on Windows
-#  (tests throw exceptions on failure, and automatically enable them)
+#  (tests throw exceptions on failure, and automatically enable them, but tests don't need to be fast, leak-free, or shipped)
 #SOURCES
 #  extra files to compile, in addition to *.cpp
 #  supports .c and .cpp

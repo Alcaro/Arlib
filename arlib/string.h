@@ -88,6 +88,14 @@ class cstring {
 		else return m_data;
 	}
 	
+	arrayvieww<uint8_t> bytesw() const
+	{
+		if (inlined())
+			return arrayvieww<uint8_t>((uint8_t*)m_inline, MAX_INLINE-m_inline_len);
+		else
+			return arrayvieww<uint8_t>(m_data, m_len);
+	}
+	
 public:
 	uint32_t length() const
 	{
@@ -95,13 +103,7 @@ public:
 		else return m_len;
 	}
 	
-	arrayview<uint8_t> bytes() const
-	{
-		if (inlined())
-			return arrayview<uint8_t>(m_inline, MAX_INLINE-m_inline_len);
-		else
-			return arrayview<uint8_t>(m_data, m_len);
-	}
+	arrayview<uint8_t> bytes() const { return bytesw(); }
 	//If this is true, bytes()[bytes().size()] is '\0'. If false, it's undefined behavior.
 	//this[this->length()] is always '\0', even if this is false.
 	bool bytes_hasterm() const
@@ -522,6 +524,9 @@ public:
 	//Reading the NUL terminator is fine. Writing the terminator, or poking beyond the NUL, is undefined behavior.
 	uint8_t& operator[](int index) { return ptr()[index]; }
 	uint8_t operator[](int index) const { return ptr()[index]; }
+	
+	arrayview<uint8_t> bytes() const { return bytesw(); }
+	arrayvieww<uint8_t> bytes() { return bytesw(); }
 	
 	//Takes ownership of the given pointer. Will free() it when done.
 	static string create_usurp(char * str);

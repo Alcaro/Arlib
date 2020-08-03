@@ -218,7 +218,7 @@ void socket_test_fail(socket* sock, runloop* loop);
 
 #if __has_include(<valgrind/memcheck.h>)
 # include <valgrind/memcheck.h>
-#elif defined(__linux__)
+#elif defined(__unix__)
 # include "deps/valgrind/memcheck.h"
 #else
 # define RUNNING_ON_VALGRIND false
