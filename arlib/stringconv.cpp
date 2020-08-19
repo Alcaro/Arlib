@@ -31,6 +31,7 @@ template<typename T> bool parse_str(const char * in, const char * end, T& out)
 {
 	if constexpr (sizeof(T) > sizeof(size_t)) return parse_str_raw<T>(in, end, out);
 	
+	out = 0;
 	size_t n;
 	if (!parse_str_raw<size_t>(in, end, n)) return false; // minimize number of parse_str_raw instantiations
 	out = n;
@@ -39,12 +40,13 @@ template<typename T> bool parse_str(const char * in, const char * end, T& out)
 
 template<typename Ts, typename Tu> bool parse_str_sign(const char * in, const char * end, Ts& out)
 {
-	if (in == end) return false;
+	out = 0;
+	if (UNLIKELY(in == end)) return false;
 	bool neg = (*in == '-');
 	in += neg;
 	
 	Tu tmp;
-	if (!parse_str<Tu>(in, end, tmp)) return false;
+	if (UNLIKELY(!parse_str<Tu>(in, end, tmp))) return false;
 	if (neg)
 	{
 		out = (Ts)-tmp;
@@ -126,12 +128,12 @@ bool fromstring_float(cstring s, T& out)
 	out = 0;
 	auto tmp_s = s.c_str();
 	const char * tmp_cp = tmp_s;
-	if (*tmp_cp != '-' && !isdigit(*tmp_cp)) goto maybe_inf;
+	if (UNLIKELY(*tmp_cp != '-' && !isdigit(*tmp_cp))) goto maybe_inf;
 	char * tmp_cpo;
 	out = strtod(drop0x(tmp_cp), &tmp_cpo);
-	if (tmp_cpo != tmp_cp + s.length()) goto maybe_inf;
-	if (!isdigit(tmp_cpo[-1])) goto maybe_inf;
-	if (out == HUGE_VAL || out == -HUGE_VAL) goto maybe_inf;
+	if (UNLIKELY(tmp_cpo != tmp_cp + s.length())) goto maybe_inf;
+	if (UNLIKELY(!isdigit(tmp_cpo[-1]))) goto maybe_inf;
+	if (UNLIKELY(out == HUGE_VAL || out == -HUGE_VAL)) goto maybe_inf;
 	return true;
 maybe_inf:
 	if (s == "inf") { out = HUGE_VAL; return true; }

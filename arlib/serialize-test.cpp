@@ -141,22 +141,13 @@ public:
 	
 	typedef uint32_t serialize_as;
 };
-class almost_int {
-public:
-	uint64_t n;
-	explicit operator string() const { return tostring(n); }
-	//almost_int(cstring str) { fromstring(str, n); }
-	void operator=(cstring str) { fromstring(str, n); }
-};
 struct ser14 {
 	int_wrap foo;
-	almost_int bar;
 	
 	template<typename T>
 	void serialize(T& s)
 	{
 		s.item("foo", foo);
-		s.item("bar", bar);
 	}
 };
 
@@ -267,8 +258,7 @@ test("BML serialization", "bml", "serialize")
 	{
 		ser14 item;
 		item.foo.n = 123456789;
-		item.bar.n = 1234567890987654321;
-		assert_eq(bmlserialize(item), "foo=123456789\nbar=1234567890987654321");
+		assert_eq(bmlserialize(item), "foo=123456789");
 	}
 }
 
@@ -376,9 +366,8 @@ test("BML deserialization", "bml", "serialize")
 	}
 	
 	{
-		ser14 item = bmldeserialize<ser14>("foo=123456789\nbar=1234567890987654321");
+		ser14 item = bmldeserialize<ser14>("foo=123456789");
 		assert_eq(item.foo.n, 123456789);
-		assert_eq(item.bar.n, 1234567890987654321);
 	}
 	
 	{
@@ -592,8 +581,7 @@ test("JSON serialization", "json", "serialize")
 	{
 		ser14 item;
 		item.foo.n = 123456789;
-		item.bar.n = 1234567890987654321;
-		assert_eq(jsonserialize(item), "{\"foo\":123456789,\"bar\":\"1234567890987654321\"}");
+		assert_eq(jsonserialize(item), "{\"foo\":123456789}");
 	}
 }
 
@@ -730,9 +718,8 @@ test("JSON deserialization", "json", "serialize")
 	}
 	
 	{
-		ser14 item = jsondeserialize<ser14>("{\"foo\":123456789,\"bar\":\"1234567890987654321\"}");
+		ser14 item = jsondeserialize<ser14>("{\"foo\":123456789}");
 		assert_eq(item.foo.n, 123456789);
-		assert_eq(item.bar.n, 1234567890987654321);
 	}
 }
 #endif

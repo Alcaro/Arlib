@@ -15,7 +15,7 @@ ARSANDBOX = 1
 
 # Currently not supported on Windows.
 ARGUI = 0
-ARSANDBOX = 0
+#ARSANDBOX = 0
 
 # For Windows, Arlib can target either XP or 7. Latter is recommended; XP support slows down some things and disables some functionality.
 # Arlib does not support targetting any other Windows version.

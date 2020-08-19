@@ -21,6 +21,9 @@
 // much of the mess is caused by not properly accounting for children being named vs anonymous
 //   {"a":1,"b":2,"c":3} is named, [1,2,3] is anonymous
 // and/or by BML and JSON supporting different data types
+// and/or by not keeping proper track of what's 'one call per object in the document' vs 'can safely be called multiple times'
+// I should probably delete the 'multiple calls' part, and instead use s.items("foo", &foo, "bar", &bar)
+// or maybe I should use attributes and reflection (whenever they show up in c++)
 
 
 //Interface:
@@ -239,20 +242,18 @@ class bmldeserializer {
 		>>
 	read_item(T& out, int ov_resolut1)
 	{
-		typename T::serialize_as tmp;
-		try_fromstring(thisval, tmp);
-		out = tmp;
+		out = try_fromstring<typename T::serialize_as>(thisval);
 	}
 	
 	template<typename T>
 	typename std::enable_if_t<
 		!std::is_same_v<
-			decltype(try_fromstring(std::declval<cstring>(), std::declval<T&>())),
+			decltype(try_fromstring<T>(std::declval<cstring>())),
 			void*
 		>>
 	read_item(T& out, float ov_resolut1)
 	{
-		try_fromstring(thisval, out);
+		out = try_fromstring<T>(thisval);
 	}
 	
 	template<typename T> void read_item(array<T>& out, int ov_resolut1)
@@ -687,7 +688,7 @@ class jsondeserializer {
 	template<typename T>
 	typename std::enable_if_t<
 		std::is_same_v<
-			decltype(std::declval<T>().serialize(std::declval<jsonserializer&>())),
+			decltype(std::declval<T>().serialize(std::declval<jsondeserializer&>())),
 			void
 		>>
 	read_item(T& out, int ov_resolut1)
