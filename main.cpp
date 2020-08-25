@@ -16,7 +16,6 @@ inline void e(const char*w)
 	//}
 }
 
-#ifdef _WIN32
 __attribute__((constructor))
 static void x1()
 {
@@ -30,6 +29,10 @@ static void x2()
 
 extern uint32_t __cpu_model[4];
 
+#ifndef _WIN32
+static void GetProcAddress() {}
+#endif
+
 DLLEXPORT void y();
 void y()
 {
@@ -41,7 +44,6 @@ void y()
 	printf("%x,%x,%x,%x,%p %p\n",g[0],g[1],g[2],g[3],c,b);
 	printf("%x,%x,%x,%x,%p %p\n",__cpu_model[0],__cpu_model[1],__cpu_model[2],__cpu_model[3],GetProcAddress,__cpu_model);
 }
-#endif
 
 int main(int argc, char** argv)
 {
@@ -54,11 +56,15 @@ int main(int argc, char** argv)
 	arlib_init(NULL, argv);
 #endif
 	
-#ifdef _WIN32
 	puts("Begin");
 	{
 		dylib d;
+#ifdef _WIN32
 		printf("init=%d\n", d.init("test.dll"));
+#else
+		file::writeall("obj/fnep.so", file::readall("arlibtest"));
+		printf("init=%d\n", d.init("obj/fnep.so"));
+#endif
 		void(*d_y)() = d.sym_func("y");
 		printf("sym=%p\n", d_y);
 		y();
@@ -66,7 +72,7 @@ int main(int argc, char** argv)
 		puts("Unload");
 	}
 	puts("End");
-#endif
+	exit(0);
 	
 	//runloop* loop = runloop::global();
 	//HTTP h(loop);
