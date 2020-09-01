@@ -70,6 +70,16 @@ long double strtold_arlib(const char * str, char** str_end);
 #include <utility>
 #include "function.h"
 
+#ifdef STDOUT_DELETE
+#define puts(x) do{}while(0)
+#define printf(x, ...) do{}while(0)
+#endif
+
+#ifdef STDOUT_ERROR
+#define puts(x) cant_use_stdout_without_a_console
+#define printf(x, ...) cant_use_stdout_without_a_console
+#endif
+
 #ifdef _MSC_VER
 #pragma warning(disable:4800) // forcing value to bool 'true' or 'false' (performance warning)
 #endif
@@ -587,40 +597,44 @@ public:
 static inline range_t range(size_t stop) { return range_t(0, stop, 1); }
 static inline range_t range(size_t start, size_t stop, size_t step = 1) { return range_t(start, stop, step); }
 
-// WARNING: Hybrid EXE/DLL is not supported by the OS. If it's ran as an EXE, it's a perfectly normal EXE,
-//  other than its nonempty exports section; however, if used as a DLL, it's subject to several limitations:
+// WARNING: Hybrid EXE/DLL is not supported by Windows. If it's ran as an EXE, it's a perfectly normal EXE, other than
+//  its nonempty exports section; however, if used as a DLL, it has to reimplement some OS facilities, yielding several limitations:
 // - It's not supported by the OS; it relies on a bunch of implementation details and ugly tricks that may break in newer OSes.
-// - The program must call arlib_hybrid_dll_init() at the top of every DLLEXPORT function.
-//     (It's safe to call it multiple times, including multithreaded, as long as the first one has returned before the second enters.)
-//     (It's also safe to call it if it's ran as an EXE, and on OSes other than Windows. It'll just do nothing.)
-//     (Only the first call to arlib_hybrid_dll_init() does anything, so it's safe to omit it in
-//       exported functions guaranteed to not be the first one called, though not recommended.)
-// - It is poorly tested. __builtin_cpu_supports does not function properly, and I don't know what else is broken.
-// - DLLEXPORTed variables may not have constructors - the ctors are only called in arlib_hybrid_dll_init().
-// - On XP, global variables' destructors will never run, and dependent DLLs are never unloaded. It's a memory leak.
-//     On Vista and higher, it's untested.
-//     Note that parts of Arlib contains global constructors.
+// - The program must call arlib_hybrid_dll_init() at the top of every DLLEXPORTed function.
+//     It's safe to call it multiple times, including multithreaded if ARLIB_THREAD is enabled.
+//     It's also safe to call it if it's ran as an EXE, and on OSes other than Windows. It'll just do nothing.
+//     Only the first call to arlib_hybrid_dll_init() does anything, so it's safe to omit it in
+//       exported functions guaranteed to not be the first one called, though not recommended.
+// - The EXE/DLL startup code does a lot of stuff I don't understand, or never investigated; doubtlessly I forgot something important.
+// - Global objects' destructors are often implemented via atexit(), which is process-global in EXEs (or things GCC thinks is an EXE).
+//     As such, nontrivial globals are memory leaks at best; DLL paths may not touch them.
+//     Note that parts of Arlib use global constructors or global variables. In particular, the following are memory leaks or worse:
+//     - runloop::global()
+//     - socket::create_ssl() (all backends)
+//     - window_* on Windows
+//     - file::exepath() on Unix
+//     - random_t::get_seed() if ARXPSUPPORT (safe on Unix and 7)
+//     - WuTF
+// - To avoid crashes if onexit() calls an unloaded DLL, and to allow globals in EXE paths, globals' constructors are not run either.
+//     Constant-initialized variables are safe.
+// - Some parts of libc and compiler intrinsics are also implemented via global variables. Be careful.
+//     The only useful global-based intrinsic, __builtin_cpu_supports, is special cased and works.
 // - If a normal DLL imports a symbol that doesn't exist, LoadLibrary's caller gets an error.
-//     If this one loads a symbol that doesn't exist, it'll crash.
-// - The program may not use compiler-supported thread-local variables from a DLL path.
-//     TlsAlloc()/etc is fine, but since destructors are unreliable, it's not recommended.
+//     If this one loads a symbol that doesn't exist, it'll remain as NULL, and will crash if called (though you can NULL check them).
+// - Unless the DLL exports a single-thread-only init function, ARLIB_THREAD must be enabled, even if otherwise unused.
+// - Unlikely to work on 32bit, since it has to relocate itself. PIC on 32bit is hard.
+// - It does various weird things; antivirus programs may react.
+// On Linux, none of the above applies; it's a perfectly normal program in both respects.
 #ifdef ARLIB_HYBRID_DLL
 void arlib_hybrid_dll_init();
 #else
-#define arlib_hybrid_dll_init() // null
+#define arlib_hybrid_dll_init() do{}while(0)
 #endif
 
 //If an interface defines a function to set some state, and a callback for when this state changes,
 // calling that function will not trigger the state callback.
 //An implementation may, at its sole discretion, choose to define any implementation of undefined
 // behaviour, including reasonable ones. The user may, of course, not rely on that.
-//Any function that starts with an underscore may only be called by the module that implements that
-// function. ("Module" is defined as "anything whose compilation is controlled by the same #ifdef,
-// or the file implementing an interface, whichever makes sense"; for example, window-win32-* is the
-// same module.) The arguments and return values of these private functions may change meaning
-// between modules, and the functions are not guaranteed to exist at all, or closely correspond to
-// their name. For example, _window_init_misc on GTK+ instead initializes a component needed by the
-// listboxes.
 
 //This file, and many other parts of Arlib, uses a weird mix between Windows- and Linux-style
 // filenames and paths. This is intentional; the author prefers Linux-style paths and directory

@@ -78,10 +78,12 @@ void argparse::single_arg(char sname, const char * value, arglevel_t arglevel, b
 
 void argparse::parse_pre(const char * const * argv)
 {
+#ifndef ARLIB_OPT
 	if (m_appname)
 	{
 		error("internal error: argparse::parse called twice");
 	}
+#endif
 	m_appname = argv[0];
 }
 void argparse::parse(const char * const * argv)

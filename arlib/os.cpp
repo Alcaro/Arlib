@@ -244,15 +244,30 @@ static uint64_t muldiv64(uint64_t a, uint64_t b, uint64_t c)
 	return (a/c*b) + (a%c*b/c);
 }
 
+#ifndef ARLIB_HYBRID_DLL
+static LARGE_INTEGER timer_freq;
+oninit()
+{
+	QueryPerformanceFrequency(&timer_freq);
+}
+#endif
+
 uint64_t time_us_ne()
 {
 	////this one has an accuracy of 10ms by default
 	//ULARGE_INTEGER time;
 	//GetSystemTimeAsFileTime((LPFILETIME)&time);
-	//return time.QuadPart/10;//this one is in intervals of 100 nanoseconds, for some insane reason. We want microseconds.
+	//return time.QuadPart/10;//this one is in intervals of 100 nanoseconds, for some reason. We want microseconds.
 	
+#ifdef ARLIB_HYBRID_DLL
 	static LARGE_INTEGER timer_freq;
-	if (!timer_freq.QuadPart) QueryPerformanceFrequency(&timer_freq);
+	if (UNLIKELY(!lock_read_loose(&timer_freq.QuadPart)))
+	{
+		LARGE_INTEGER tmp;
+		QueryPerformanceFrequency(&tmp);
+		lock_write_loose(&timer_freq.QuadPart, tmp.QuadPart);
+	}
+#endif
 	
 	LARGE_INTEGER timer_now;
 	QueryPerformanceCounter(&timer_now);

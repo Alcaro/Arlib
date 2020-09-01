@@ -52,7 +52,7 @@ template<typename T> ser_include_if_t<const T> ser_include_if(bool cond, const T
 
 template<typename T>
 static constexpr inline
-std::enable_if_t<sizeof(T::serialize_as_array), bool>
+std::enable_if_t<sizeof(T::serialize_as_array)!=0, bool>
 serialize_as_array(int ov_resolut1)
 {
 	return T::serialize_as_array;
@@ -155,7 +155,7 @@ class jsonserializer {
 	}
 	
 	template<typename T>
-	std::enable_if_t<sizeof(typename T::serialize_as)>
+	std::enable_if_t<sizeof(typename T::serialize_as)!=0>
 	add_node(T& inner)
 	{
 		add_node((typename T::serialize_as)inner);
@@ -384,7 +384,7 @@ class jsondeserializer {
 	}
 	
 	template<typename T>
-	std::enable_if_t<sizeof(typename T::serialize_as)>
+	std::enable_if_t<sizeof(typename T::serialize_as)!=0>
 	read_item_raw(T& inner)
 	{
 		typename T::serialize_as tmp;
@@ -621,14 +621,14 @@ class bmlserializer {
 	}
 	
 	template<typename T>
-	std::enable_if_t<sizeof(tostring(std::declval<T>()))>
+	std::enable_if_t<sizeof(tostring(std::declval<T>()))!=0>
 	item_inner(cstring name, const T& inner)
 	{
 		w.node(name, tostring(inner));
 	}
 	
 	template<typename T>
-	std::enable_if_t<sizeof(typename T::serialize_as)>
+	std::enable_if_t<sizeof(typename T::serialize_as)!=0>
 	item_inner(cstring name, T& inner)
 	{
 		item_inner(name, (typename T::serialize_as)inner);
@@ -745,7 +745,7 @@ class bmldeserializer {
 	// output: ev points to the next node; each implementation must end with finish_item() next_ev()
 	
 	template<typename T>
-	std::enable_if_t<sizeof(fromstring(string(), std::declval<T&>()))>
+	std::enable_if_t<sizeof(fromstring(string(), std::declval<T&>()))!=0>
 	read_item(T& out)
 	{
 		valid &= fromstring(ev.value, out);
@@ -805,7 +805,7 @@ class bmldeserializer {
 	}
 	
 	template<typename T>
-	std::enable_if_t<sizeof(typename T::serialize_as)>
+	std::enable_if_t<sizeof(typename T::serialize_as)!=0>
 	read_item(T& out)
 	{
 		typename T::serialize_as tmp;

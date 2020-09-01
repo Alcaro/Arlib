@@ -196,10 +196,13 @@ public:
 	{
 		return memmem(this->ptr(), this->length(), other.ptr(), other.length()) != NULL;
 	}
-	size_t indexof(cstring other, size_t start = 0) const;
+	size_t indexof(cstring other, size_t start = 0) const; // Returns -1 if not found.
 	size_t lastindexof(cstring other) const;
 	bool startswith(cstring other) const;
 	bool endswith(cstring other) const;
+	
+	size_t iindexof(cstring other, size_t start = 0) const;
+	size_t ilastindexof(cstring other) const;
 	bool icontains(cstring other) const;
 	bool istartswith(cstring other) const;
 	bool iendswith(cstring other) const;
@@ -272,7 +275,7 @@ private:
 	
 public:
 	template<typename T>
-	std::enable_if_t<sizeof(std::declval<T>().match(nullptr,nullptr)), array<cstring>>
+	std::enable_if_t<sizeof(T::match(nullptr,nullptr,nullptr))!=0, array<cstring>>
 	csplit(T regex, size_t limit) const
 	{
 		return csplit([](const uint8_t * start, const uint8_t * & at, const uint8_t * & end)->bool {
@@ -284,17 +287,17 @@ public:
 		}, limit);
 	}
 	template<size_t limit = SIZE_MAX, typename T>
-	std::enable_if_t<sizeof(std::declval<T>().match(nullptr,nullptr)), array<cstring>>
+	std::enable_if_t<sizeof(T::match(nullptr,nullptr,nullptr))!=0, array<cstring>>
 	csplit(T regex) const { return csplit(regex, limit); }
 	
 	template<typename T>
-	std::enable_if_t<sizeof(std::declval<T>().match(nullptr,nullptr)), array<string>>
+	std::enable_if_t<sizeof(T::match(nullptr,nullptr,nullptr))!=0, array<string>>
 	split(T regex, size_t limit) const
 	{
 		return csplit(regex, limit).template cast<string>();
 	}
 	template<size_t limit = SIZE_MAX, typename T>
-	std::enable_if_t<sizeof(std::declval<T>().match(nullptr,nullptr)), array<string>>
+	std::enable_if_t<sizeof(T::match(nullptr,nullptr,nullptr))!=0, array<string>>
 	split(T regex) const { return split(regex, limit); }
 	
 	cstring trim() const
@@ -494,7 +497,7 @@ public:
 		return *this;
 	}
 	
-	// for other integer types, fail (other other integer types will be ambiguous)
+	// for other integer types, fail (short/long/etc will be ambiguous)
 	string& operator+=(int right) = delete;
 	string& operator+=(unsigned right) = delete;
 	

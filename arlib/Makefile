@@ -110,6 +110,7 @@ ARSANDBOX ?= 0
 ARWUTF ?= 0
 ARSOCKET ?= 0
 ARSOCKET_SSL ?= openssl
+#ARTERMINAL ?= auto # leave it unset, there are some ?= further down
 
 OPT ?= 0
 ifeq ($(OPT),0)
@@ -119,6 +120,7 @@ else
 endif
 
 CCXXFLAGS = -fvisibility=hidden -Wall -Wmissing-declarations -Wimplicit-fallthrough -Wvla -pipe
+CONF_LFLAGS += -pipe
 #to silence for (size_t unused : range(42)) - delete this once gcc stops complaining
 CCXXFLAGS += -Wno-unused-variable
 ifeq ($(CC_FAMILY),gcc)
@@ -193,6 +195,8 @@ ifeq ($(OS),windows)
   endif
   ifeq ($(ARTYPE),hybrid)
     DEFINES += ARLIB_HYBRID_DLL
+    CONF_CFLAGS += -fPIC
+    CONF_LFLAGS += -Wl,--dynamicbase
     $(warning hybrid DLL is a poorly tested configuration, prepare for bugs)
   endif
 #  OBJ += obj/resource$(OBJNAME).o
@@ -237,7 +241,7 @@ OPTFLAGS += -ffunction-sections
 #OPTFLAGS += -fdata-sections
 OPTFLAGS += -fno-ident
 OPTFLAGS += -DNDEBUG -DARLIB_OPT
-OPTFLAGS_CXX += -fno-threadsafe-statics
+CONF_CXXFLAGS += -fno-threadsafe-statics
 OPTLFLAGS := -Wl,--gc-sections,--build-id=none,--relax,--sort-common
 ifneq ($(OS),windows)
   OPTLFLAGS += -Wl,--hash-style=gnu
@@ -316,7 +320,8 @@ ifeq ($(ARGUI),1)
   SOURCES_ARLIB += arlib/gui/*.cpp
   ifeq ($(OS),windows)
     DEFINES += ARGUI_WINDOWS
-    CONF_LFLAGS += -lgdi32 -lcomctl32 -lcomdlg32 -mwindows
+    CONF_LFLAGS += -lgdi32 -lcomctl32 -lcomdlg32
+    ARTERMINAL_HASGUI = 1
   endif
   ifeq ($(OS),linux)
     DEFINES += ARGUI_GTK3 ARGUIPROT_X11
@@ -338,7 +343,8 @@ ifeq ($(ARGAME),1)
     $(error can't use ARGAME and ARGUI simultaneously)
   endif
   ifeq ($(OS),windows)
-    CONF_LFLAGS += -lgdi32 -mwindows
+    CONF_LFLAGS += -lgdi32
+    ARTERMINAL_HASGUI = 1
   endif
 endif
 
@@ -363,6 +369,24 @@ obj/glsym-slim.h: obj/glsym-slim-marker | obj
 ifneq ($(OPT),0)
   DEPS_DEFAULT += obj/glsym-slim.h
 endif
+endif
+
+ifeq ($(OS),windows)
+  ifeq ($(ARTERMINAL_HASGUI),1)
+    ARTERMINAL ?= error
+  else
+    ARTERMINAL ?= 1
+  endif
+  
+  ifeq ($(ARTERMINAL_HASGUI),0)
+    CONF_LFLAGS += -mwindows
+    DEFINES += STDOUT_DELETE
+  endif
+  
+  ifeq ($(ARTERMINAL_HASGUI),error)
+    CONF_LFLAGS += -mwindows
+    DEFINES += STDOUT_ERROR
+  endif
 endif
 
 ifeq ($(ARTHREAD),1)
@@ -455,12 +479,12 @@ TRUE_CFLAGS := -std=c99 $(CCXXFLAGS) $(CONF_CFLAGS) $(CFLAGS)
 #   C++2a template lambdas (for the PNG decoder)
 #   C++2a designated initializers (foo_t foo = { .a = 42, .b = 123 })
 #   C++2a template string literals (for the regex parser, and so I can create a string formatting function)
-#   C++2a concepts (also for the regex parser)
+#   C++2a concepts (also for the regex parser, the errors are absurd)
 #   C++2a consteval (still for the regex parser - that template mess is terrible, I want it as normal code)
 #   C++2a down with typename http://wg21.link/p0634r3
 #   C++2a [[likely]]
 #   C++2a [[no_unique_address]]
-#   C++2a ban non-twos-complement signed - will probably enable various other C++ improvements
+#   C++2a ban non-twos-complement signed - will probably enable various other language improvements
 #   C++2a void foo(auto arg) (shorthand for template<typename T> void foo(T arg) - simplifies function::bind_member)
 #   C++2a coroutines, for runloop-related stuff
 #   C++17 <charconv>, to speed up tostring(float) (though I'll need to keep the current one around, for Windows)
@@ -477,6 +501,7 @@ TRUE_CFLAGS := -std=c99 $(CCXXFLAGS) $(CONF_CFLAGS) $(CFLAGS)
 #   Allow int x(int y=0); int x(int y=0) { return y*2; } (only if default value is identical on both ends, of course)
 #   Something to get rid of the unused variable warning from for (size_t n : range(42)) - Ranges TS, maybe?
 #   Overloading operator[] depending on whether it's a read or write access, int x = std::map[key_t] mutating is silly
+#     not sure if map[key].foo.bar() should count as read or write, but I can dream
 # The following may or may not be usable, depending on the exact details:
 #   C++2a modules (it's very easy to produce a bad module system, I don't know if this one avoids the pitfalls)
 # Other stuff I've seen proposed is uninteresting to me, though I haven't seen all proposals.

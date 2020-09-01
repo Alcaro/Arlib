@@ -12,10 +12,15 @@ ARSOCKET_SSL = openssl
 #valid values: schannel (default), bearssl, no (others may work, not tested)
 ARSOCKET_SSL_WINDOWS = schannel
 ARSANDBOX = 1
+# Controls whether the program has a console window on Windows.
+# Valid values: 0, 1 (default if ARGUI and ARGAME are disabled), error (default if ARGUI or ARGAME is enabled)
+# error means 0, and also turn printf and puts into compile errors, since they won't work anyways.
+# Ignored on Linux.
+ARTERMINAL = 1
 
 # Currently not supported on Windows.
 ARGUI = 0
-#ARSANDBOX = 0
+ARSANDBOX = 0
 
 # For Windows, Arlib can target either XP or 7. Latter is recommended; XP support slows down some things and disables some functionality.
 # Arlib does not support targetting any other Windows version.

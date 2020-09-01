@@ -225,7 +225,7 @@ public:
 		//Counts as calling pack(), so only once.
 		void attach(HTTP::req& rq)
 		{
-			rq.body = std::move(pack());
+			rq.body = pack();
 			rq.headers.append("Content-Type: multipart/form-data; boundary="+boundary.substr(2, ~0));
 		}
 	};

@@ -29,20 +29,37 @@ static void x2()
 
 extern uint32_t __cpu_model[4];
 
+static const char const_a[] = "hello";
+static const char * const_b = const_a;
+static const char * const * const_c = &const_b;
+
 #ifndef _WIN32
 static void GetProcAddress() {}
 #endif
 
+DLLEXPORT void* x();
+void* x() { return (void*)const_a; }
+
 DLLEXPORT void y();
 void y()
 {
-	uint32_t g[4] = {__cpu_model[0],__cpu_model[1],__cpu_model[2],__cpu_model[3]};
+	//uint32_t g[4] = {__cpu_model[0],__cpu_model[1],__cpu_model[2],__cpu_model[3]};
 	uint32_t* b = __cpu_model;
 	auto* c = GetProcAddress;
+	auto* d = const_a;
+	auto* e = const_b;
+	auto* f = const_c;
+//#ifndef ARLIB_OPT
 	arlib_hybrid_dll_init();
-	puts("y()");
-	printf("%x,%x,%x,%x,%p %p\n",g[0],g[1],g[2],g[3],c,b);
-	printf("%x,%x,%x,%x,%p %p\n",__cpu_model[0],__cpu_model[1],__cpu_model[2],__cpu_model[3],GetProcAddress,__cpu_model);
+//#else
+	//puts("main, no init");
+//#endif
+	printf("y() %p\n", y);
+	//printf("%x,%x,%x,%x,",g[0],g[1],g[2],g[3]);
+	printf("%p %p %p %p %p\n",c,b,d,e,f);
+	//printf("%x,%x,%x,%x,",__cpu_model[0],__cpu_model[1],__cpu_model[2],__cpu_model[3]);
+	printf("%p %p %p %p %p\n",GetProcAddress,__cpu_model,const_a,const_b,const_c);
+	printf("%x,%x,%x,%x\n",__cpu_model[0],__cpu_model[1],__cpu_model[2],__cpu_model[3]);
 }
 
 int main(int argc, char** argv)
@@ -60,15 +77,23 @@ int main(int argc, char** argv)
 	{
 		dylib d;
 #ifdef _WIN32
-		printf("init=%d\n", d.init("test.dll"));
+		printf("init=%d ", d.init("test.dll"));
+		printf("%p\n", *(void**)&d);
 #else
 		file::writeall("obj/fnep.so", file::readall("arlibtest"));
 		printf("init=%d\n", d.init("obj/fnep.so"));
 #endif
+		
+		void*(*d_x)() = (void*(*)())d.sym_func("x");
+		printf("p=%p\n",x());
+		printf("sym=%p\n", d_x);
+		if (d_x) printf("p=%p\n",d_x());
+		
 		void(*d_y)() = d.sym_func("y");
-		printf("sym=%p\n", d_y);
 		y();
+		printf("sym=%p\n", d_y);
 		if (d_y) d_y();
+		
 		puts("Unload");
 	}
 	puts("End");

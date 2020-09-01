@@ -1,6 +1,7 @@
 #include "socket.h"
 #include "../bytepipe.h"
 #include "../dns.h"
+#include "../thread.h"
 
 #undef socket
 #ifdef _WIN32
@@ -34,17 +35,15 @@ static socketint_t mksocket(int domain, int type, int protocol) { return socket(
 
 namespace {
 
-static void initialize()
+#ifdef _WIN32
+RUN_ONCE_FN(initialize)
 {
-#ifdef _WIN32 // lol
-	static bool initialized = false;
-	if (initialized) return;
-	initialized = true;
-	
 	WSADATA wsaData;
-	WSAStartup(MAKEWORD(2, 2), &wsaData);
-#endif
+	WSAStartup(MAKEWORD(2, 2), &wsaData); // why
 }
+#else
+static void initialize() {}
+#endif
 
 static int fixret(int ret)
 {

@@ -639,6 +639,11 @@ inline array<T2> arrayview<T>::cast() const
 	return ret;
 }
 
+template<typename T> inline array<T> operator+(array<T>&& left, arrayview<T> right) { left += right; return left; }
+template<typename T> inline array<T> operator+(arrayview<T> left, arrayview<T> right) { array<T> ret = left; ret += right; return ret; }
+
+
+
 //Sized (or static) array - saves an allocation when returning fixed-size arrays, like string.split<N> or pack_le32
 template<typename T, size_t N> class sarray {
 	T storage[N];
