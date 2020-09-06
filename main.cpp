@@ -16,16 +16,8 @@ inline void e(const char*w)
 	//}
 }
 
-__attribute__((constructor))
-static void x1()
-{
-	puts("ctor");
-}
-__attribute__((destructor))
-static void x2()
-{
-	puts("dtor");
-}
+__attribute__((constructor)) static void x1() { puts("ctor"); }
+__attribute__((destructor))  static void x2() { puts("dtor"); }
 
 extern uint32_t __cpu_model[4];
 
@@ -60,6 +52,7 @@ void y()
 	//printf("%x,%x,%x,%x,",__cpu_model[0],__cpu_model[1],__cpu_model[2],__cpu_model[3]);
 	printf("%p %p %p %p %p\n",GetProcAddress,__cpu_model,const_a,const_b,const_c);
 	printf("%x,%x,%x,%x\n",__cpu_model[0],__cpu_model[1],__cpu_model[2],__cpu_model[3]);
+	puts(file::exepath()+"");
 }
 
 int main(int argc, char** argv)

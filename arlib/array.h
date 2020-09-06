@@ -18,7 +18,7 @@ protected:
 	size_t count = 0;
 	
 protected:
-	//must be functions, Clang won't like it otherwise
+	// static variables clog gdb output, so extra () it is
 	static bool trivial_cons() { return std::is_trivial_v<T>; } // constructor is memset(0)
 	static bool trivial_copy() { return std::is_trivially_copyable_v<T>; } // copy constructor is memcpy
 	static bool trivial_comp() { return std::has_unique_object_representations_v<T>; } // equality comparison is memcmp
@@ -49,8 +49,8 @@ public:
 	
 	arrayview(nullptr_t)
 	{
-		this->items=NULL;
-		this->count=0;
+		this->items = NULL;
+		this->count = 0;
 	}
 	
 	arrayview(const T * ptr, size_t count)

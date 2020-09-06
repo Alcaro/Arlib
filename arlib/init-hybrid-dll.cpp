@@ -16,6 +16,8 @@
 extern "C" void _pei386_runtime_relocator();
 extern "C" int __cpu_indicator_init(void);
 
+typedef void(*funcptr)();
+
 namespace {
 
 bool streq(const char * a, const char * b) // no strcmp, it's an OS facility
@@ -115,7 +117,7 @@ NTSTATUS WINAPI (*LdrLoadDll)(const WCHAR * DirPath, DWORD Flags, const UNICODE_
 HMODULE WINAPI (*RtlPcToFileHeader)(void* PcValue, HMODULE* BaseOfImage);
 NTSTATUS WINAPI (*NtProtectVirtualMemory)(HANDLE process, void** addr_ptr, size_t* size_ptr, uint32_t new_prot, uint32_t* old_prot);
 //"everyone" knows LdrProcessRelocationBlock returns IMAGE_BASE_RELOCATION*, but does it, or does it return void*?
-//or does it return void and the end iterator is just leftover in %rax?
+//or does it return void and the apparent return value is just whatever's left in %rax?
 IMAGE_BASE_RELOCATION* WINAPI (*LdrProcessRelocationBlock)(void* page, unsigned count, uint16_t* relocs, intptr_t delta);
 };
 #define ntdll_t_names \
@@ -123,7 +125,6 @@ IMAGE_BASE_RELOCATION* WINAPI (*LdrProcessRelocationBlock)(void* page, unsigned 
 	"RtlPcToFileHeader\0" \
 	"NtProtectVirtualMemory\0" \
 	"LdrProcessRelocationBlock\0" \
-
 
 void pe_get_ntdll_syms(ntdll_t* out)
 {
@@ -182,13 +183,20 @@ void pe_do_relocs(ntdll_t* ntdll, HMODULE mod)
 	intptr_t delta = base_addr - orig_base_addr;
 	if (!delta) return;
 	
-	uint32_t prot_prev[32]; // static allocation, malloc doesn't work yet... a normal exe has 19 sections, hope it won't grow above 32
+	uint32_t prot_prev[32]; // static allocation, malloc doesn't work yet... a normal exe has 19 sections, hope it won't grow too much
+#ifndef ARLIB_OPT
+	if (head_nt->FileHeader.NumberOfSections > sizeof(prot_prev)/sizeof(*prot_prev))
+		__builtin_trap();
+#endif
 	IMAGE_SECTION_HEADER* sec = (IMAGE_SECTION_HEADER*)((uint8_t*)&head_nt->OptionalHeader + head_nt->FileHeader.SizeOfOptionalHeader);
 	for (uint16_t i=0;i<head_nt->FileHeader.NumberOfSections;i++)
 	{
 		// ideally, there would be no relocations in .text, so we can just skip that section
-		// in practice, __CTOR_LIST__ is in the same page, so let's mark everything PAGE_EXECUTE_READWRITE instead of PAGE_READWRITE
+		// in practice, __CTOR_LIST__ is in the same section
+		// (no clue why, makes more sense in .rdata, or as a sequence of call instructions rather than pointers)
+		// the easiest solution is to just mark everything PAGE_EXECUTE_READWRITE instead of PAGE_READWRITE
 		// we're already deep into shenanigans territory, a W^X violation is nothing to worry about
+		// (if I want to fix the W^X, I'd map a copy of this function somewhere as r-x and let that one make the main dll rw-)
 		void* sec_addr = base_addr + sec[i].VirtualAddress;
 		size_t sec_size = sec[i].SizeOfRawData;
 		ntdll->NtProtectVirtualMemory((HANDLE)-1, &sec_addr, &sec_size, PAGE_EXECUTE_READWRITE, &prot_prev[i]);
@@ -214,19 +222,57 @@ void pe_do_relocs(ntdll_t* ntdll, HMODULE mod)
 	}
 }
 
-enum {
-	init_no,
-	init_busy,
-	init_done
-};
-static uint8_t init_state = init_no;
 
+
+// many ctors call atexit to register destructors, and even if their dtors work differently, they often leak memory
+// therefore, don't call the entire ctor table; call only a whitelist of known good ctors
+// to do this, group up the safe ones in the ctor table, and add markers for which ones are safe
+__asm__(R"(
+.section .ctors.arlibstatic1,"dr"
+init_last:
+.quad arlib_hybrid_exe_init  # this one must be "last" (.ctors is processed backwards)
+
+.section .ctors.arlibstatic3,"dr"
+init_first:
+
+.text
+)");
+
+extern "C" const funcptr init_first[];
+extern "C" const funcptr init_last[];
+
+static void run_static_ctors()
+{
+	__cpu_indicator_init(); // should be early
+	
+	const funcptr * iter = init_first;
+	const funcptr * end = init_last;
+	// comparing two "unrelated" pointers is undefined behavior, so confuse gcc a little
+	// (oddly enough, it also yields better code - if I use init_last directly, gcc spills it to stack, rather than keeping it in a reg.)
+	__asm__("" : "+r"(end));
+	__asm__("" : "+r"(iter));
+	do { // arlib_hybrid_exe_init guarantees that at least one static ctor exists, so we can safely use a do-while here
+		iter--;
+		(*iter)(); 
+	} while (iter != end);
 }
 
-__attribute__((constructor))
-static void arlib_hybrid_exe_init() // if we're an exe, ctors will run before the dll init
+
+
+#define init_no   (uint8_t)0 // #define rather than enum, lock_write doesn't like mismatched types
+#define init_busy (uint8_t)1
+#define init_done (uint8_t)2
+static uint8_t init_state = init_no;
+
+extern "C" __attribute__((used))
+void arlib_hybrid_exe_init()
 {
-	init_state = init_done;
+	// if we're a dll, this is the last ctor to run, so use an atomic write
+	// if we're an exe, this is not the last ctor, so being atomic accomplishes nothing,
+	//  but we also know that nobody will call arlib_hybrid_dll_init() before all ctors are done
+	lock_write_rel(&init_state, init_done);
+}
+
 }
 
 void arlib_hybrid_dll_init();
@@ -258,21 +304,6 @@ void arlib_hybrid_dll_init()
 	
 	_pei386_runtime_relocator(); // this doesn't seem to do much, but no reason not to
 	
-	// ignore ctors, to ensure use of global variables is swiftly punished
-	__cpu_indicator_init(); // except this one - non-allocating globals are fine
-	/*
-	typedef void(*ctor_t)();
-	extern ctor_t __CTOR_LIST__[];
-	extern ctor_t __DTOR_LIST__[];
-	
-	ctor_t * iter = __CTOR_LIST__+1;
-	while (*iter)
-	{
-		(*iter)();
-		iter++;
-	}
-	*/
-	
-	lock_write_rel(&init_state, init_done);
+	run_static_ctors();
 }
 #endif

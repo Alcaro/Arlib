@@ -551,6 +551,7 @@ socketlisten::socketlisten(socketint_t fd, runloop* loop, function<void(autoptr<
 		this->callback(new socketbuf(socket_raw::create(nfd, this->loop), this->loop));
 	});
 #else
+	waiter = CreateEvent(NULL, true, false, NULL);
 	WSAEventSelect(fd, waiter, FD_ACCEPT);
 	loop->set_object(waiter, [this](HANDLE h) {
 		ResetEvent(this->waiter);

@@ -1,16 +1,12 @@
 #include "file.h"
-#include "thread.h"
 
 #ifdef _WIN32
+#include <windows.h>
 //separate file so this oninit can be optimized out if unused
 
 static char g_exepath[MAX_PATH];
 
-#ifdef ARLIB_HYBRID_DLL
-RUN_ONCE_FN(init)
-#else
-oninit()
-#endif
+oninit_static()
 {
 	GetModuleFileName(NULL, g_exepath, MAX_PATH);
 	for (int i=0;g_exepath[i];i++)
@@ -21,11 +17,5 @@ oninit()
 	if (end) end[1]='\0';
 }
 
-cstring file::exepath()
-{
-#ifdef ARLIB_HYBRID_DLL
-	init();
-#endif
-	return g_exepath;
-}
+cstring file::exepath() { return g_exepath; }
 #endif

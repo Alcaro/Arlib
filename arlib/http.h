@@ -194,7 +194,7 @@ public:
 	public:
 		form()
 		{
-			uint8_t rand[16];
+			uint8_t rand[16]; // 128 bits of random ought to be enough for everyone
 			random_t::get_seed(&rand, sizeof(rand));
 			boundary = "--ArlibFormBoundary"+tostringhex(rand); // max 70 characters allowed, not counting the two leading hyphens
 		}

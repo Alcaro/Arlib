@@ -29,19 +29,18 @@ static void socket_test_httpfail(socket* sock, bool xfail, runloop* loop)
 	bool inside = false; // reject recursion
 	bool exited = false; // and excessive calls after loop->exit()
 	int exit_calls = 0;
-	sock->callback(bind_lambda([&]()
-		{
+	function<void()> cb = bind_lambda([&]() // extra variable so deleting the socket doesn't delete the handler
+		{                                   // please implement coroutines quickly, gcc and clang
 			assert(!exited);
 			if (exited) assert_lt(exit_calls++, 5);
 			assert(!inside);
+			inside = true;
 			
 			if (n_buf < 8)
 			{
-				inside = true;
 				int bytes = sock->recv(arrayvieww<uint8_t>(buf).slice(n_buf, n_buf==0 ? 2 : 1));
-				inside = false;
 				
-				if (bytes == 0) return;
+				if (bytes == 0) goto out;
 				if (xfail)
 				{
 					assert_lt(bytes, 0);
@@ -61,19 +60,19 @@ static void socket_test_httpfail(socket* sock, bool xfail, runloop* loop)
 			{
 				uint8_t discard[4096];
 				
-				inside = true;
 				if (sock->recv(discard) < 0)
 				{
-					inside = false;
 					delete sock;
 					sock = NULL;
 					loop->exit();
 					exited = true;
-					return;
+					goto out;
 				}
-				inside = false;
 			}
-		}));
+		out:
+			inside = false;
+		});
+	sock->callback(cb);
 	
 	loop->enter();
 	if (!xfail) assert_eq(string(arrayview<uint8_t>(buf)), "HTTP/1.1");

@@ -8,9 +8,9 @@ ARTHREAD = 1
 ARWUTF = 0
 ARSOCKET = 1
 #valid values: openssl (default), gnutls, bearssl, no
-ARSOCKET_SSL = openssl
+ARSOCKET_SSL = bearssl
 #valid values: schannel (default), bearssl, no (others may work, not tested)
-ARSOCKET_SSL_WINDOWS = schannel
+ARSOCKET_SSL_WINDOWS = bearssl
 ARSANDBOX = 1
 # Controls whether the program has a console window on Windows.
 # Valid values: 0, 1 (default if ARGUI and ARGAME are disabled), error (default if ARGUI or ARGAME is enabled)
@@ -22,7 +22,8 @@ ARTERMINAL = 1
 ARGUI = 0
 ARSANDBOX = 0
 
-# For Windows, Arlib can target either XP or 7. Latter is recommended; XP support slows down some things and disables some functionality.
+# For Windows, Arlib can target a minimum version of either XP or 7. Latter is recommended and default;
+# XP support slows down some things and disables some functionality (for example, thread runonce is a lot more complex if x)
 # Arlib does not support targetting any other Windows version.
 ARXPSUPPORT = 1
 

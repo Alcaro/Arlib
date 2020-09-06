@@ -163,12 +163,12 @@ CONF_CXXFLAGS += $(CONF_CFLAGS)
 ifeq ($(OS),linux)
   CONF_LFLAGS += -ldl -Wl,-z,relro,-z,now,--as-needed,--no-undefined
   ifeq ($(ARTYPE),dll)
-    CONF_CFLAGS += -fPIC
+    CONF_CFLAGS += -fpic
     CONF_LFLAGS += -shared
     EXESUFFIX = .so
   endif
   ifeq ($(ARTYPE),hybrid)
-    CONF_CFLAGS += -fPIC
+    CONF_CFLAGS += -fpic
     CONF_LFLAGS += -rdynamic
   endif
   ifeq ($(ARTHREADS),1)
@@ -176,15 +176,6 @@ ifeq ($(OS),linux)
     CONF_LFLAGS += -pthread
   endif
   OBJNAME := $(OBJNAME)linux
-  TR = valgrind --num-callers=100 --leak-check=full
-  ifeq ($(ARGUI),1)
-    # Gtk leaves over 9000 'possibly lost' objects around. not interested
-    TR += --show-possibly-lost=no
-    #envs G_SLICE=always-malloc G_DEBUG=gc-friendly look useful, but don't make any difference in practice
-  endif
-endif
-ifeq ($(TR),gdb)
-  override TR = gdb --args
 endif
 
 ifeq ($(OS),windows)
@@ -195,7 +186,7 @@ ifeq ($(OS),windows)
   endif
   ifeq ($(ARTYPE),hybrid)
     DEFINES += ARLIB_HYBRID_DLL
-    CONF_CFLAGS += -fPIC
+    CONF_CFLAGS += -fpic
     CONF_LFLAGS += -Wl,--dynamicbase
     $(warning hybrid DLL is a poorly tested configuration, prepare for bugs)
   endif
@@ -435,10 +426,16 @@ ifeq ($(ARSOCKET),1)
   else ifeq ($(ARSOCKET_SSL),bearssl)
     CFLAGS_ARLIB += -DARLIB_SSL_BEARSSL
     SOURCES_ARLIB += arlib/socket/bear-ser.c
+    ifeq ($(OS),windows)
+      LFLAGS += -lcrypt32
+    endif
     #update make superclean if changing this
-    OBJS_LATE += arlib/deps/bearssl-0.6/build/libbearssl.a
-arlib/deps/bearssl-0.6/build/libbearssl.a:
-	$(MAKE) -C arlib/deps/bearssl-0.6/ CFLAGS='$(OPTFLAGS) -fpic' lib
+    OBJS_LATE += arlib/deps/bearssl-0.6/build/libbearssl-$(OS).a
+arlib/deps/bearssl-0.6/build/libbearssl-$(OS).a:
+	$(MAKE) -C arlib/deps/bearssl-0.6/ clean
+	$(MAKE) -C arlib/deps/bearssl-0.6/ CFLAGS='$(OPTFLAGS) -fpic' CC=$(CC) lib
+	-mv arlib/deps/bearssl-0.6/build/libbearssl.a arlib/deps/bearssl-0.6/build/libbearssl-$(OS).a
+	-move arlib/deps/bearssl-0.6/build/libbearssl.a arlib/deps/bearssl-0.6/build/libbearssl-$(OS).a
   else
     $(error unknown SSL library)
   endif
@@ -528,7 +525,7 @@ clean-prof:
 
 superclean: clean
 	rm -f arlib/deps/bearssl-0.6/build/obj/*
-	rm -f arlib/deps/bearssl-0.6/build/libbearssl.a
+	rm -f arlib/deps/bearssl-0.6/build/libbearssl*.a
 endif
 
 
@@ -588,6 +585,18 @@ ifneq ($(SELFTEST),)
 obj/arlibtest$(EXESUFFIX): $(OBJS)
 	$(ECHOQ) LD $@
 	$(Q)$(LD) $+ $(TRUE_LFLAGS) -o $@ -lm
+
+ifeq ($(OS),linux)
+  TR = valgrind --num-callers=100 --leak-check=full
+  ifeq ($(ARGUI),1)
+    # Gtk leaves over 9000 'possibly lost' objects around. not interested
+    TR += --show-possibly-lost=no
+    #envs G_SLICE=always-malloc G_DEBUG=gc-friendly look useful, but don't make any difference in practice
+  endif
+endif
+ifeq ($(TR),gdb)
+  override TR = gdb --args
+endif
 
 ifneq ($(TF),)
   TESTFILTER := --filter="$(TF)"

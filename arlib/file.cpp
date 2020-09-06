@@ -109,6 +109,7 @@ bool file::mkdir(cstring filename)
 #ifdef _WIN32
 #define READONLY_FILE "C:/Windows/notepad.exe" // screw anything where the windows directory isn't on C:
 #define READONLY_FILE_HEAD "MZ"
+#include <windows.h>
 static string get_temp_dir() // no constant location, grumble grumble
 {
 	char temp_dir[MAX_PATH];

@@ -3,6 +3,7 @@
 #include "array.h"
 #include "hash.h"
 #include <string.h>
+#include <ctype.h>
 
 //A string is a mutable byte container. It usually represents UTF-8 text, but can be arbitrary binary data, including NULs.
 //All string functions taking or returning a char* assume/guarantee NUL termination. Anything using uint8_t* does not.
@@ -71,7 +72,8 @@ class cstring {
 			uint8_t* m_data;
 			uint32_t m_len;
 			bool m_nul; // whether the string is properly terminated (always true for string, possibly false for cstring)
-			uint8_t reserved; // reserve space for the last byte of the inline data; never ever access this
+			// 2 unused bytes here
+			int8_t reserved; // reserve space for the last byte of the inline data; never ever access this
 		};
 	};
 	
@@ -424,7 +426,7 @@ class string : public cstring {
 	{
 		release();
 		memcpy(this, &other, sizeof(*this));
-		other.m_inline_len = 0;
+		other.init_empty();
 	}
 	
 	void release()
@@ -464,12 +466,11 @@ class string : public cstring {
 	void replace_set(uint32_t pos, uint32_t len, cstring newdat);
 	
 public:
-	//Resizes the string to a suitable size, then allows the caller to fill it in with whatever. Initial contents are undefined.
-	//The returned pointer may only be used until the first subsequent use of the string, including read-only operations.
+	//Resizes the string to a suitable size, then allows the caller to fill it in. Initial contents are undefined.
 	arrayvieww<uint8_t> construct(uint32_t len)
 	{
 		resize(len);
-		return arrayvieww<uint8_t>(ptr(), len);
+		return bytes();
 	}
 	
 	string& operator+=(const char * right)
@@ -542,16 +543,16 @@ public:
 	//Comparison is bytewise. End goes before NUL, so the empty string comes before everything else.
 	//The return value is not guaranteed to be in [-1..1]. It's not even guaranteed to fit in anything smaller than int.
 	static int compare3(cstring a, cstring b);
-	//Like the above, but 0x61-0x7A (a-z) are treated as 0x41-0x5A (A-Z).
-	//If the strings are case-insensitively equal, uppercase goes first. If equal, they're equal.
+	//Like the above, but case insensitive. Considers ASCII only, øØ are considered nonequal.
+	//If the strings are case-insensitively equal, uppercase goes first.
 	static int icompare3(cstring a, cstring b);
 	static bool less(cstring a, cstring b) { return compare3(a, b) < 0; }
 	static bool iless(cstring a, cstring b) { return icompare3(a, b) < 0; }
 	
 	//Natural comparison; "8" < "10". Other than that, same as above.
 	//Exact rules:
-	//  Strings are compared component by component. A component is either a digit sequence, or a non-digit. 8 < 10, 2 = 02.
-	//  - and . are not part of the digit sequence. -1 < -2, 1.2 < 1.03.
+	//  Strings are compared component by component. A component is either a digit sequence, or a non-digit. 8 < 10, 2 = 02
+	//  - and . are not part of the digit sequence. -1 < -2, 1.2 < 1.03
 	//  If the strings are otherwise equal, repeat the comparison, but with 2 < 02. If still equal, let A < a.
 	//Correct sorting is a1 a2 a02 a2a a2a1 a02a2 a2a3 a2b a02b A3A A3a a3A a3a A03A A03a a03A a03a a10 a11 aa
 	static int natcompare3(cstring a, cstring b) { return string::natcompare3(a, b, false); }
@@ -562,6 +563,13 @@ private:
 	static int natcompare3(cstring a, cstring b, bool case_insensitive);
 public:
 };
+
+// TODO: I need a potentially-owning string class
+// cstring never owns memory, string always does, new one has a flag for whether it does
+// will be immutable after creation, like cstring
+// will be used for json/bml parsers, punycode, and most likely a lot more
+// need to find a good name for it first
+// could then extend it another step for cstring::c_str()
 
 #undef OBJ_SIZE
 #undef MAX_INLINE
@@ -584,9 +592,6 @@ inline string operator+(string&& left,     cstring right     ) { left+=right; re
 inline string operator+(string&& left,     const char * right) { left+=right; return left; }
 inline string operator+(const char * left, cstring right     ) { string ret=left; ret+=right; return ret; }
 
-//inline explicit string operator+(string&& left, char right) { left+=right; return left; }
-//inline explicit string operator+(cstring left, char right) { string ret=left; ret+=right; return ret; }
-//inline explicit string operator+(char left, cstring right) { string ret; ret[0]=left; ret+=right; return ret; }
 inline string operator+(string&& left, char right) = delete;
 inline string operator+(cstring left, char right) = delete;
 inline string operator+(char left, cstring right) = delete;

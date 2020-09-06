@@ -115,7 +115,7 @@ class socketlisten : nomove {
 	socketlisten(intptr_t sock, runloop* loop, function<void(autoptr<socket>)> callback);
 	
 	intptr_t fd;
-	HANDLE waiter = CreateEvent(NULL, true, false, NULL);
+	HANDLE waiter;
 #endif
 	
 	runloop* loop;

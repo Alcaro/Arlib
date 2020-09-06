@@ -25,9 +25,6 @@
 #    define _WIN32_IE _WIN32_IE_IE60SP2
 #  endif
 #  define WIN32_LEAN_AND_MEAN
-#  ifndef NOMINMAX
-#    define NOMINMAX
-#  endif
 #  define strcasecmp _stricmp
 #  define strncasecmp _strnicmp
 #  ifdef _MSC_VER
@@ -54,11 +51,6 @@ float strtof_arlib(const char * str, char** str_end);
 double strtod_arlib(const char * str, char** str_end);
 long double strtold_arlib(const char * str, char** str_end);
 #  endif
-#  define STRICT
-//the namespace pollution this causes is massive, but without it, there's a bunch of functions that
-// just tail call kernel32.dll. With it, they can be inlined.
-#  include <windows.h>
-#  undef STRICT
 #endif
 
 #include <stdint.h>
@@ -574,6 +566,17 @@ public:
                    static void JOIN(ondeinit,__LINE__)()
 #endif
 
+// oninit_static initializes a global variable, and promises to only write directly to global variables, no malloc.
+// In exchange, it is usable in hybrid DLLs. On non-hybrid or non-Windows, it's same as normal oninit.
+#ifdef ARLIB_HYBRID_DLL
+#define oninit_static() static void JOIN(oninit,__LINE__)(); \
+                        static const funcptr JOIN(initrun,__LINE__) \
+                            __attribute__((section(".ctors.arlibstatic2"), used)) = JOIN(oninit,__LINE__); \
+                        static void JOIN(oninit,__LINE__)()
+#else
+#define oninit_static oninit
+#endif
+
 #define container_of(ptr, outer_t, member) ((outer_t*)((uint8_t*)(ptr) - (offsetof(outer_t,member))))
 
 class range_iter_t {
@@ -606,11 +609,11 @@ static inline range_t range(size_t start, size_t stop, size_t step = 1) { return
 //     Only the first call to arlib_hybrid_dll_init() does anything, so it's safe to omit it in
 //       exported functions guaranteed to not be the first one called, though not recommended.
 // - The EXE/DLL startup code does a lot of stuff I don't understand, or never investigated; doubtlessly I forgot something important.
-// - Global objects' destructors are often implemented via atexit(), which is process-global in EXEs (or things GCC thinks is an EXE).
+// - Global objects' destructors are often implemented via atexit(), which is process-global in EXEs, or things GCC thinks is an EXE.
 //     As such, nontrivial globals are memory leaks at best; DLL paths may not touch them.
 //     Note that parts of Arlib use global constructors or global variables. In particular, the following are memory leaks or worse:
 //     - runloop::global()
-//     - socket::create_ssl() (all backends)
+//     - socket::create_ssl() SChannel backend (BearSSL is safe; OpenSSL and GnuTLS are not supported on Windows)
 //     - window_* on Windows
 //     - file::exepath() on Unix
 //     - random_t::get_seed() if ARXPSUPPORT (safe on Unix and 7)
