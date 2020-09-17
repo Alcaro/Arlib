@@ -9,11 +9,13 @@
 
 string argparse::get_usage()
 {
+#ifdef STDOUT_DELETE
+	return "";
+#endif
 	return "TODO";
 }
 void argparse::usage()
 {
-	puts(get_usage());
 	exit(0);
 }
 void argparse::error(cstring why)
@@ -89,7 +91,7 @@ void argparse::parse_pre(const char * const * argv)
 void argparse::parse(const char * const * argv)
 {
 #if !defined(ARGUI_NONE) && !defined(ARLIB_TEST)
-	abort(); // unreachable
+	abort(); // should be unreachable
 #endif
 	parse_pre(argv);
 	

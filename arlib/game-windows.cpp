@@ -1,7 +1,7 @@
 #if defined(ARLIB_GAME) && defined(_WIN32)
 #include "game.h"
 #include "runloop.h"
-#include <windowsx.h> // for some absurd reason, GET_X_LPARAM isn't in the usual header
+#include <windowsx.h> // GET_X_LPARAM isn't in the usual header
 
 #define WS_BASE WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX // okay microsoft, did I miss anything?
 #define WS_RESIZABLE (WS_BASE|WS_MAXIMIZEBOX|WS_THICKFRAME)
@@ -22,8 +22,9 @@ gameview_windows(uint32_t width, uint32_t height, cstring windowtitle, uintptr_t
 	wc.lpfnWndProc = DefWindowProc;
 	wc.cbClsExtra = 0;
 	wc.cbWndExtra = 0;
-	wc.hInstance = GetModuleHandle(NULL);
-	wc.hIcon = LoadIcon(GetModuleHandle(NULL), MAKEINTRESOURCE(1));
+	GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+	                   (LPCSTR)(void*)s_WindowProc, &wc.hInstance); // gameview shouldn't be used from a dll path, but why not
+	wc.hIcon = LoadIcon(wc.hInstance, MAKEINTRESOURCE(0));
 	wc.hCursor = LoadCursor(NULL, IDC_ARROW);
 	wc.hbrBackground = GetSysColorBrush(COLOR_3DFACE);
 	wc.lpszMenuName = NULL;
@@ -74,7 +75,7 @@ key_t vk_to_key(unsigned vk)
 		//x0   x1   x2   x3   x4   x5   x6   x7   x8   x9   xA   xB   xC   xD   xE   xF
 		0,   0,   0,   0,   0,   0,   0,   0,   0x08,0x09,0,   0,   0x0C,0x0D,0,   0,    // 0x
 		0,   0,   0,   0x13,0xAD,0,   0,   0,   0,   0,   0,   0x1B,0,   0,   0,   0,    // 1x
-		0x20,0x98,0x99,0x97,0x96,0x94,0x91,0x93,0x92,0,   0,   0,   0xBC,0x95,0x7F,0,    // 2x
+		' ', 0x98,0x99,0x97,0x96,0x94,0x91,0x93,0x92,0,   0,   0,   0xBC,0x95,0x7F,0,    // 2x
 		'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 0,   0,   0,   0,   0,   0,    // 3x
 		0,   'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O',  // 4x
 		'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 0xB7,0xB8,0,   0,   0xC0, // 5x

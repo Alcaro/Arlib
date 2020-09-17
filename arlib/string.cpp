@@ -666,8 +666,6 @@ bool cstring::isutf8() const
 		uint8_t head = *bytes++;
 		if (LIKELY(head < 0x80))
 			continue;
-		if (UNLIKELY(bytes == end))
-			return false; // continuation needed if above 0x80
 		
 		if (head < 0xC2) // continuation or overlong twobyte
 			return false;
@@ -687,12 +685,12 @@ bool cstring::isutf8() const
 			goto cont3;
 		return false; // fivebyte, U+140000 or above, or otherwise invalid
 		
-		cont3:
-			if (bytes == end || ((*bytes++) & 0xC0) != 0x80) return false;
-		cont2:
-			if (bytes == end || ((*bytes++) & 0xC0) != 0x80) return false;
-		cont1:
-			if (bytes == end || ((*bytes++) & 0xC0) != 0x80) return false;
+	cont3:
+		if (bytes == end || ((*bytes++) & 0xC0) != 0x80) return false;
+	cont2:
+		if (bytes == end || ((*bytes++) & 0xC0) != 0x80) return false;
+	cont1:
+		if (bytes == end || ((*bytes++) & 0xC0) != 0x80) return false;
 	}
 	
 	return true;

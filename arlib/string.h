@@ -322,9 +322,9 @@ public:
 	// Treats the string as UTF-8 and returns the codepoint there.
 	// If not UTF-8 or not a start index, returns U+DC80 through U+DCFF. Callers are welcome to treat this as an error.
 	// The index is updated to point to the next codepoint. Initialize it to zero; stop when it equals the string's length.
-	// If index is out of bounds, returns zero and does not advance index.
+	// If index is out of bounds, returns 'eof' and does not advance index. Return value is signed only so eof can be -1.
 	// If the string contains 00s, this function will treat it as U+0000. Callers are welcome to explicitly reject that.
-	int32_t codepoint_at(uint32_t& index, int32_t eof = 0) const;
+	int32_t codepoint_at(uint32_t& index, int32_t eof = -1) const;
 	
 	//Whether the string matches a glob pattern. ? in 'pat' matches any one byte, * matches zero or more bytes.
 	//NUL bytes are treated as any other byte, in both strings.

@@ -293,8 +293,7 @@ template<typename T> void testundec(const char * S, T V)
 {
 	T a;
 	assert_eq(fromstring(S, a), true);
-	if (a != V) puts("ERROR: expected "+tostring(V)+", got "+tostring(a));
-	//assert_eq(a, V);
+	test_nothrow { assert_eq(a, V); }
 }
 test("string conversion", "", "string")
 {

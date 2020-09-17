@@ -113,7 +113,7 @@ void* pe_get_proc_address(HMODULE mod, const char * name)
 
 
 struct ntdll_t {
-NTSTATUS WINAPI (*LdrLoadDll)(const WCHAR * DirPath, DWORD Flags, const UNICODE_STRING * ModuleFileName, HMODULE* ModuleHandle);
+NTSTATUS WINAPI (*LdrLoadDll)(const WCHAR * DirPath, uint32_t Flags, const UNICODE_STRING * ModuleFileName, HMODULE* ModuleHandle);
 HMODULE WINAPI (*RtlPcToFileHeader)(void* PcValue, HMODULE* BaseOfImage);
 NTSTATUS WINAPI (*NtProtectVirtualMemory)(HANDLE process, void** addr_ptr, size_t* size_ptr, uint32_t new_prot, uint32_t* old_prot);
 //"everyone" knows LdrProcessRelocationBlock returns IMAGE_BASE_RELOCATION*, but does it, or does it return void*?
@@ -227,6 +227,9 @@ void pe_do_relocs(ntdll_t* ntdll, HMODULE mod)
 // many ctors call atexit to register destructors, and even if their dtors work differently, they often leak memory
 // therefore, don't call the entire ctor table; call only a whitelist of known good ctors
 // to do this, group up the safe ones in the ctor table, and add markers for which ones are safe
+#ifndef __x86_64__
+#error change the .quad
+#endif
 __asm__(R"(
 .section .ctors.arlibstatic1,"dr"
 init_last:
@@ -247,7 +250,7 @@ static void run_static_ctors()
 	
 	const funcptr * iter = init_first;
 	const funcptr * end = init_last;
-	// comparing two "unrelated" pointers is undefined behavior, so confuse gcc a little
+	// comparing two "unrelated" pointers is undefined behavior, so let's force gcc to forget their relationship and lack thereof
 	// (oddly enough, it also yields better code - if I use init_last directly, gcc spills it to stack, rather than keeping it in a reg.)
 	__asm__("" : "+r"(end));
 	__asm__("" : "+r"(iter));

@@ -190,13 +190,8 @@ ifeq ($(OS),windows)
     CONF_LFLAGS += -Wl,--dynamicbase
     $(warning hybrid DLL is a poorly tested configuration, prepare for bugs)
   endif
-#  OBJ += obj/resource$(OBJNAME).o
-#  RC = windres
-#  RCFLAGS =
-#obj/resource$(OBJNAME).o: ico/*
-#	$(RC) $(RCFLAGS) ico/minir.rc obj/resource$(OBJNAME).o
   OBJNAME := $(OBJNAME)windows
-#surprisingly, this is still not default as of mingw 8.1.0 (to check, objdump -x | grep DllCharacteristics, 0x0100 bit is nxcompat)
+  #surprisingly, this is still not default as of mingw 8.1.0 (to check, objdump -x | grep DllCharacteristics, 0x0100 bit is nxcompat)
   CONF_LFLAGS += -Wl,--nxcompat
   ifeq ($(ARXPSUPPORT),1)
     DEFINES += _WIN32_WINNT=_WIN32_WINNT_WINXP
@@ -211,6 +206,7 @@ ifeq ($(OS),windows)
     # building non-windows binaries on a windows host is not supported (Cygwin or WSL compiling for themselves will probably work)
     # why would you do such a thing, anyways?
     $(warning non-cmd windows detected; if SHELL $(SHELL) is something other than sh.exe, makefile should check for that instead)
+    $(warning if MSYSTEM $(MSYSTEM) is nonempty, checking that may be valuable)
   endif
 endif
 
@@ -369,14 +365,15 @@ ifeq ($(OS),windows)
     ARTERMINAL ?= 1
   endif
   
-  ifeq ($(ARTERMINAL_HASGUI),0)
+  ifeq ($(ARTERMINAL),0)
     CONF_LFLAGS += -mwindows
     DEFINES += STDOUT_DELETE
   endif
   
-  ifeq ($(ARTERMINAL_HASGUI),error)
+  ifeq ($(ARTERMINAL),error)
     CONF_LFLAGS += -mwindows
     DEFINES += STDOUT_ERROR
+    CFLAGS_ARLIB += -D STDOUT_DELETE -U STDOUT_ERROR
   endif
 endif
 
@@ -407,37 +404,42 @@ ifeq ($(ARSOCKET),1)
     ifdef ARSOCKET_SSL_WINDOWS
       ARSOCKET_SSL := $(ARSOCKET_SSL_WINDOWS)
     endif
+    ARSOCKET_SSL ?= schannel
   endif
+  ARSOCKET_SSL ?= openssl
   
-  #TODO: allow using multiple at once, the tests could use that
   ifeq ($(ARSOCKET_SSL),no)
-    #no SSL
-    #socketssl will still be available at compile time, but fails linking
-  else ifeq ($(ARSOCKET_SSL),schannel)
-    CFLAGS_ARLIB += -DARLIB_SSL_SCHANNEL
-    #TODO: check if this is still needed
+    ARSOCKET_SSL :=
+  else
+    DEFINES += ARLIB_SSL
+  endif
+  ifneq ($(findstring schannel,$(ARSOCKET_SSL)),)
+    DEFINES += ARLIB_SSL_SCHANNEL
     CONF_LFLAGS += -lsecur32
-  else ifeq ($(ARSOCKET_SSL),openssl)
-    CFLAGS_ARLIB += -DARLIB_SSL_OPENSSL
+  endif
+  ifneq ($(findstring openssl,$(ARSOCKET_SSL)),)
+    DEFINES += ARLIB_SSL_OPENSSL
     CONF_LFLAGS += -lssl -lcrypto
-  else ifeq ($(ARSOCKET_SSL),gnutls)
-    CFLAGS_ARLIB += -DARLIB_SSL_GNUTLS
+  endif
+  ifneq ($(findstring gnutls,$(ARSOCKET_SSL)),)
+    DEFINES += ARLIB_SSL_GNUTLS
     CONF_LFLAGS += -lgnutls
-  else ifeq ($(ARSOCKET_SSL),bearssl)
-    CFLAGS_ARLIB += -DARLIB_SSL_BEARSSL
+  endif
+  ifneq ($(findstring bearssl,$(ARSOCKET_SSL)),)
+    DEFINES += ARLIB_SSL_BEARSSL
     SOURCES_ARLIB += arlib/socket/bear-ser.c
     ifeq ($(OS),windows)
       LFLAGS += -lcrypt32
     endif
-    #update make superclean if changing this
-    OBJS_LATE += arlib/deps/bearssl-0.6/build/libbearssl-$(OS).a
-arlib/deps/bearssl-0.6/build/libbearssl-$(OS).a:
-	$(MAKE) -C arlib/deps/bearssl-0.6/ clean
-	$(MAKE) -C arlib/deps/bearssl-0.6/ CFLAGS='$(OPTFLAGS) -fpic' CC=$(CC) lib
-	-mv arlib/deps/bearssl-0.6/build/libbearssl.a arlib/deps/bearssl-0.6/build/libbearssl-$(OS).a
-	-move arlib/deps/bearssl-0.6/build/libbearssl.a arlib/deps/bearssl-0.6/build/libbearssl-$(OS).a
-  else
-    $(error unknown SSL library)
+    # update make superclean if changing this
+    # there's only one libbearssl.a per OS, not per OBJNAME; BearSSL rarely changes, there's no need to be more granular
+    OBJS_LATE += arlib/deps/bearssl-0.6/build-$(OS)/libbearssl.a
+    arlib/deps/bearssl-0.6/build-$(OS)/libbearssl.a:
+      # BearSSL detects mingw32-make as Unix; override some variables into something shell-neutral
+	  $(MAKE) -C arlib/deps/bearssl-0.6/ lib CFLAGS='$(OPTFLAGS) -fpic' BUILD=build-$(OS) OBJDIR=build-$(OS) CC=$(CC) MKDIR=mkdir
+  endif
+  ifneq ($(filter-out schannel openssl gnutls bearssl,$(ARSOCKET_SSL)),)
+    $(error unknown SSL backend)
   endif
 endif
 
@@ -470,7 +472,8 @@ TRUE_CFLAGS := -std=c99 $(CCXXFLAGS) $(CONF_CFLAGS) $(CFLAGS)
 #    it's fine if not every part of that language version is supported in that compiler version
 # If someone cares about older C++ versions, I will accept PRs and not intentionally break it, as long as
 # - it doesn't uglify anything too much; most modern C++ features aren't indispensable, but the lambdas are staying
-# - there is no performance penalty if compiled under modern C++; this may be accomplished with #if __cplusplus > 12345, if necessary
+# - there is no performance penalty if compiled under modern C++; this may be accomplished with #if __cplusplus > 12345, if necessary,
+#     though doing that without uglifying things may be difficult
 # - said someone maintains it, and does not expect me to; I will forget what's C++11 and what isn't at random intervals
 # The following features would be useful; if enough of them show up, I will switch:
 #   C++2a template lambdas (for the PNG decoder)
@@ -524,8 +527,7 @@ clean-prof:
 	rm -f obj/*.o
 
 superclean: clean
-	rm -f arlib/deps/bearssl-0.6/build/obj/*
-	rm -f arlib/deps/bearssl-0.6/build/libbearssl*.a
+	-rm arlib/deps/bearssl-0.6/build*/*
 endif
 
 
@@ -553,7 +555,7 @@ ifeq ($(USE_AR_OPT),1)
  # .a are order sensitive, do not rearrange
  OBJS += obj/$(OBJNAME)-arlib.a
 endif
-OBJS += $(sort $(OBJS_LATE))
+OBJS += $(OBJS_LATE)
 
 arlib-default: $(OUTNAME)
 

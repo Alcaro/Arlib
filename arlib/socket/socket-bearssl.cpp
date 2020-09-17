@@ -134,6 +134,7 @@ RUN_ONCE_FN(initialize)
 }
 
 
+/*
 struct x509_noanchor_context {
 	const br_x509_class * vtable;
 	const br_x509_class ** inner;
@@ -180,6 +181,7 @@ static const br_x509_class x509_noanchor_vtable = {
 	xwc_end_chain,
 	xwc_get_pkey
 };
+*/
 
 
 class socketssl_bearssl : public socket {
@@ -189,7 +191,7 @@ public:
 	struct bearstate {
 		br_ssl_client_context sc;
 		br_x509_minimal_context xc;
-		x509_noanchor_context xwc = { NULL, NULL }; // initialized for serialization, otherwise not needed
+		//x509_noanchor_context xwc = { NULL, NULL }; // initialized for serialization, otherwise not needed
 		uint8_t iobuf[BR_SSL_BUFSIZE_BIDI];
 	} s;
 	
@@ -204,12 +206,12 @@ public:
 		this->sock = inner;
 		
 		br_ssl_client_init_full(&s.sc, &s.xc, alloc_certs, alloc_certs_initial-alloc_certs);
-		if (permissive)
-		{
-			s.xwc.vtable = &x509_noanchor_vtable;
-			s.xwc.inner = &s.xc.vtable;
-			br_ssl_engine_set_x509(&s.sc.eng, &s.xwc.vtable);
-		}
+		//if (permissive)
+		//{
+		//	s.xwc.vtable = &x509_noanchor_vtable;
+		//	s.xwc.inner = &s.xc.vtable;
+		//	br_ssl_engine_set_x509(&s.sc.eng, &s.xwc.vtable);
+		//}
 		br_ssl_engine_set_buffer(&s.sc.eng, s.iobuf, sizeof(s.iobuf), true);
 		br_ssl_client_reset(&s.sc, domain.c_str(), false);
 		
@@ -260,7 +262,7 @@ public:
 	
 	int recv(arrayvieww<uint8_t> data)
 	{
-		if (!sock) { errored=true; return -1; }
+		if (!sock) { errored = true; return -1; }
 		
 		size_t buflen;
 		uint8_t* buf = br_ssl_engine_recvapp_buf(&s.sc.eng, &buflen);
@@ -276,7 +278,7 @@ public:
 	
 	int send(arrayview<uint8_t> data)
 	{
-		if (!sock) { errored=true; return -1; }
+		if (!sock) { errored = true; return -1; }
 		
 		size_t buflen;
 		uint8_t* buf = br_ssl_engine_sendapp_buf(&s.sc.eng, &buflen);
@@ -381,7 +383,7 @@ public:
 };
 }
 
-socket* socket::wrap_ssl_raw(socket* inner, cstring domain, runloop* loop)
+socket* socket::wrap_ssl_raw_bearssl(socket* inner, cstring domain, runloop* loop)
 {
 	initialize();
 	if (alloc_certs_initial == alloc_certs) return NULL;

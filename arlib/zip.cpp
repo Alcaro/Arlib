@@ -325,9 +325,9 @@ bool zip::init(arrayview<uint8_t> data)
 		if (!fh) return false;
 		
 		string fname = fh_fname(data, fh);
-		if (!(cdr->bitflags & (1 << 11))) fname = fromcp437(fname);
-		filenames.append(fname);
-		//the OSX default zipper keeps zeroing half the fields in fh, use cdr
+		if (!(cdr->bitflags & (1 << 11))) fname = fromcp437(std::move(fname));
+		filenames.append(::file::sanitize_rel_path(std::move(fname)));
+		// the OSX default zipper keeps zeroing half the fields in fh, have to use cdr instead
 		if (fh->size_decomp != cdr->size_decomp) corrupt = true;
 		file f = { cdr->size_decomp, cdr->compmethod, fh_data(data, fh, cdr), cdr->crc32, cdr->moddate };
 		filedat.append(f);

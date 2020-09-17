@@ -293,7 +293,7 @@ inline anyptr calloc_check(size_t size, size_t count)
 	if (size && count && !ret) malloc_fail(size*count);
 	return ret;
 }
-inline anyptr try_calloc(size_t size, size_t count) { _test_malloc(); _test_free(); return calloc(size, count); }
+inline anyptr try_calloc(size_t size, size_t count) { _test_malloc(); return calloc(size, count); }
 #define calloc calloc_check
 
 inline void malloc_assert(bool cond) { if (!cond) malloc_fail(0); }
@@ -302,18 +302,19 @@ inline void malloc_assert(bool cond) { if (!cond) malloc_fail(0); }
 //if I cast it to void, that means I do not care, so shut up about warn_unused_result
 template<typename T> static inline void ignore(T t) {}
 
-template<typename T> static T min(const T& a) { return a; }
-template<typename T, typename... Args> static T min(const T& a, Args... args)
+
+template<typename T> static T min(T a) { return a; }
+template<typename T, typename... Args> static T min(T a, Args... args)
 {
-	const T& b = min(args...);
+	T b = min(args...);
 	if (a < b) return a;
 	else return b;
 }
 
-template<typename T> static T max(const T& a) { return a; }
-template<typename T, typename... Args> static T max(const T& a, Args... args)
+template<typename T> static T max(T a) { return a; }
+template<typename T, typename... Args> static T max(T a, Args... args)
 {
-	const T& b = max(args...);
+	T b = max(args...);
 	if (a < b) return b;
 	else return a;
 }
@@ -328,7 +329,7 @@ template<typename T, typename... Args> static T max(const T& a, Args... args)
 	type& operator=(type&&) = default
 class nocopy {
 protected:
-	nocopy() = default; // do not use {}, it optimizes poorly
+	nocopy() = default;
 	NO_COPY(nocopy);
 };
 
@@ -425,6 +426,7 @@ public:
 
 
 //if an object should contain callbacks that can destroy the object, you should use the macros below these classes
+//(hopefully c++20 coroutines will replace most usecases for this one, they're easy to forget)
 class destructible {
 	friend class destructible_lock;
 	bool* pb = NULL;
@@ -469,7 +471,7 @@ public:
 //#endif
 
 //Acts like strstr, with the obvious difference.
-#if defined(_WIN32) || defined(__x86_64__) // Windows doesn't have this; Linux does, but libc is poorly optimized on x64.
+#if defined(_WIN32) || defined(__x86_64__) // Windows doesn't have this; Linux does, but my libc is poorly optimized on x64.
 void* memmem_arlib(const void * haystack, size_t haystacklen, const void * needle, size_t needlelen) __attribute__((pure));
 #define memmem memmem_arlib
 #endif
@@ -477,11 +479,6 @@ void* memmem_arlib(const void * haystack, size_t haystacklen, const void * needl
 //Returns distance to first difference, or 'len' if that's smaller.
 size_t memcmp_d(const void * a, const void * b, size_t len) __attribute__((pure));
 
-
-//msvc:
-//typedef unsigned long uint32_t;
-//typedef unsigned __int64 uint64_t;
-//typedef unsigned int size_t;
 
 //undefined behavior if 'in' is negative, or if the output would be out of range (signed input types are fine)
 //returns 1 if input is 0
@@ -566,7 +563,7 @@ public:
                    static void JOIN(ondeinit,__LINE__)()
 #endif
 
-// oninit_static initializes a global variable, and promises to only write directly to global variables, no malloc.
+// oninit_static is like oninit, but promises to only write directly to global variables, no malloc.
 // In exchange, it is usable in hybrid DLLs. On non-hybrid or non-Windows, it's same as normal oninit.
 #ifdef ARLIB_HYBRID_DLL
 #define oninit_static() static void JOIN(oninit,__LINE__)(); \

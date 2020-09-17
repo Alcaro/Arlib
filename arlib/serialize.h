@@ -52,10 +52,10 @@ template<typename T> ser_include_if_t<const T> ser_include_if(bool cond, const T
 
 template<typename T>
 static constexpr inline
-std::enable_if_t<sizeof(T::serialize_as_array)!=0, bool>
+std::enable_if_t<sizeof(T::serialize_as_array())!=0, bool>
 serialize_as_array(int ov_resolut1)
 {
-	return T::serialize_as_array;
+	return T::serialize_as_array();
 }
 template<typename T> // I can't do 'enable if serialize_as_array member does not exist'
 constexpr static inline bool serialize_as_array(float ov_resolut1) // instead, extra argument so the other is a better match
@@ -178,7 +178,7 @@ class jsonserializer {
 	void add_node(ser_compact_t<T> inner)
 	{
 		int prev = delay_compact;
-		delay_compact = min(prev, delay_compact);
+		delay_compact = min(inner.depth, delay_compact);
 		add_node(inner.c);
 		delay_compact = prev;
 	}
@@ -359,6 +359,14 @@ class jsondeserializer {
 			out(*this);
 			finish_item(1);
 		}
+		else valid = false;
+	}
+	
+	template<typename T>
+	std::enable_if_t<std::is_invocable_v<T, cstring>>
+	read_item_raw(const T& out)
+	{
+		if (ev.action == jsonparser::str) out(ev.str);
 		else valid = false;
 	}
 	
