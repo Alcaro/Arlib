@@ -9,11 +9,8 @@ inline size_t base64_dec_len(size_t len) { return (len+3)/4*3; }
 inline size_t base64_enc_len(size_t len) { return (len+2)/3*4; }
 
 //if the entire buffer was successfully processed, returns number of bytes written; if not, returns 0
-//in both cases, outend contains a partially parsed object, and textend points to the first invalid character
-// (or past end of text, if the entire thing was parsed)
 //'out' must be at least base64_dec_len(text.length()) bytes; otherwise, undefined behavior
-//'out' may overlap 'text' only if 'out' starts at least 8 bytes before 'text'
-size_t base64_dec_raw(arrayvieww<uint8_t> out, size_t* outend, cstring text, size_t* textend);
+size_t base64_dec_raw(arrayvieww<uint8_t> out, cstring text);
 //returns blank array if not fully valid
 array<uint8_t> base64_dec(cstring text);
 

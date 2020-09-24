@@ -2,30 +2,17 @@
 #include "global.h"
 #include "array.h"
 #include "hash.h"
+#include "simd.h"
 #include <string.h>
-#include <ctype.h>
 
-//A string is a mutable byte container. It usually represents UTF-8 text, but can be arbitrary binary data, including NULs.
-//All string functions taking or returning a char* assume/guarantee NUL termination. Anything using uint8_t* does not.
+// define my own ctype, to guarantee I won't get any surprises in high ascii, and for performance (some of them are used in hot loops)
+// probably smaller too; not scrambling caller preserve regs saves a bit, and importing is* from libc isn't free,
+//  though it depends on the number of callers
 
-//cstring is an immutable sequence of bytes that does not own its storage; it usually points to a string constant, or part of a string.
-//In most contexts, it's called stringview, but I feel that's too long.
-//Long ago, cstring was just a typedef to 'const string&', hence its name.
-
-class string;
-
-#define OBJ_SIZE 16 // maximum 120, or the inline length overflows
-                    // (127 would fit, but that requires an extra alignment byte, which throws the sizeof assert)
-                    // minimum 16 (pointer + various members + alignment)
-                    //  (actually minimum 12 on 32bit, but who needs 32bit)
-#define MAX_INLINE (OBJ_SIZE-1) // macros instead of static const to make gdb not print them every time
-
-
-// define my own, to guarantee I won't get any surprises in high ascii,
-// and because inline means doesn't shred caller preserve regs aka smaller
-// (also inline is faster)
-
-#define iscntrl my_iscntrl // don't bother defining the ones I don't use
+#ifdef _WIN32
+#include <ctype.h> // include this one before windows.h does, the defines below confuse it
+#endif
+#define iscntrl my_iscntrl // define them all away, but don't bother defining the ones I don't use
 #define isprint my_isprint
 #define isspace my_isspace
 #define isblank my_isblank
@@ -41,21 +28,46 @@ class string;
 #define toupper my_toupper
 
 extern const uint8_t char_props[256];
-static inline int isspace(uint8_t c) { return char_props[c] & 0x01; } // C standard says \f \v are space, but this one disagrees
-static inline int isdigit(uint8_t c) { return char_props[c] & 0x40; }
-static inline int isalpha(uint8_t c) { return char_props[c] & 0x30; }
-static inline int islower(uint8_t c) { return char_props[c] & 0x20; }
-static inline int isupper(uint8_t c) { return char_props[c] & 0x10; }
-static inline int isalnum(uint8_t c) { return char_props[c] & 0x70; }
-static inline int isualpha(uint8_t c) { return char_props[c] & 0x38; }
-static inline int isualnum(uint8_t c) { return char_props[c] & 0x78; }
-static inline int isxdigit(uint8_t c) { return char_props[c] & 0x80; }
-static inline int tolower(uint8_t c) { return c|((char_props[c]&0x10)<<1);}
-static inline int toupper(uint8_t c) { return c&~(char_props[c]&0x20); }
+// bit meanings:
+// 0x01 - hex digit (0-9A-Fa-f)
+// 0x02 - uppercase (A-Z)
+// 0x04 - lowercase (a-z)
+// 0x08 - underscore (_)
+// 0x10 - unused (testing &0x28 is as cheap as &0x10, and I can't think of any remaining useful classifications)
+// 0x20 - letter (A-Za-z)
+// 0x40 - digit (0-9)
+// 0x80 - space (\t\n\r ) (0x80 bit is the cheapest to test, and isspace is the most common isctype())
+inline bool isspace(uint8_t c) { return char_props[c] & 0x80; } // C standard says \f \v are space, but this one disagrees
+inline bool isdigit(uint8_t c) { return char_props[c] & 0x40; }
+inline bool isalpha(uint8_t c) { return char_props[c] & 0x20; }
+inline bool islower(uint8_t c) { return char_props[c] & 0x04; }
+inline bool isupper(uint8_t c) { return char_props[c] & 0x02; }
+inline bool isalnum(uint8_t c) { return char_props[c] & 0x60; }
+inline bool isualpha(uint8_t c) { return char_props[c] & 0x28; }
+inline bool isualnum(uint8_t c) { return char_props[c] & 0x68; }
+inline bool isxdigit(uint8_t c) { return char_props[c] & 0x01; }
+inline uint8_t tolower(uint8_t c) { return c|(char_props[c]&0x20); }
+inline uint8_t toupper(uint8_t c) { return c&~(char_props[c]&0x20); }
 
+
+//A string is a mutable byte container. It usually represents UTF-8 text, but can be arbitrary binary data, including NULs.
+//All string functions taking or returning a char* assume/guarantee NUL termination. Anything using uint8_t* does not.
+
+//cstring is an immutable sequence of bytes that does not own its storage; it usually points to a string constant, or part of a string.
+//In most contexts, it's called stringview, but I feel that's too long.
+//Long ago, cstring was just a typedef to 'const string&', hence its name.
+
+class string;
+
+#define OBJ_SIZE 16 // maximum 120, or the inline length overflows
+                    // (127 would fit, but that requires an extra alignment byte, which throws the sizeof assert)
+                    // minimum 16 (pointer + various members + alignment)
+                    //  (actually minimum 12 on 32bit, but 32bit isn't relevant anymore)
+#define MAX_INLINE (OBJ_SIZE-1) // macros instead of static const to make gdb not print them every time
 
 class cstring {
 	friend class string;
+	friend inline bool operator==(cstring left, cstring right);
 	
 	static uint32_t max_inline() { return MAX_INLINE; }
 	
@@ -337,7 +349,7 @@ public:
 	
 	string leftPad (size_t len, uint8_t ch = ' ') const;
 	
-	size_t hash() const { return ::hash((char*)ptr(), length()); }
+	size_t hash() const { return ::hash(ptr(), length()); }
 	
 private:
 	class c_string {
@@ -576,8 +588,24 @@ public:
 
 
 inline bool operator==(cstring left,      const char * right) { return left.bytes() == arrayview<uint8_t>((uint8_t*)right,strlen(right)); }
-inline bool operator==(cstring left,      cstring right     ) { return left.bytes() == right.bytes(); }
 inline bool operator==(const char * left, cstring right     ) { return operator==(right, left); }
+inline bool operator==(cstring left,      cstring right     )
+{
+#ifdef __SSE2__
+	if (left.inlined())
+	{
+		static_assert(sizeof(cstring) == 16);
+		if (left.m_inline_len != right.m_inline_len) return false;
+		__m128i a = _mm_loadu_si128((__m128i*)&left);
+		__m128i b = _mm_loadu_si128((__m128i*)&right);
+		int eq = _mm_movemask_epi8(_mm_cmpeq_epi8(a, b));
+		return ((((~eq) << left.m_inline_len) & 0xFFFF) == 0);
+	}
+	else return !right.inlined() && arrayview<uint8_t>(left.m_data, left.m_len) == arrayview<uint8_t>(right.m_data, right.m_len);
+#else
+	return left.bytes() == right.bytes();
+#endif
+}
 inline bool operator!=(cstring left,      const char * right) { return !operator==(left, right); }
 inline bool operator!=(cstring left,      cstring right     ) { return !operator==(left, right); }
 inline bool operator!=(const char * left, cstring right     ) { return !operator==(left, right); }

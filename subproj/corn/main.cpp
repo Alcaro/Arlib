@@ -399,7 +399,6 @@ GtkWidget* make_search()
 }
 
 
-GtkFlowBox* playlist;
 size_t playlist_cur_idx = 0;
 void playlist_run()
 {
@@ -429,6 +428,8 @@ void enqueue(string fn) // cstring explodes if it's the oldest playlist item, so
 
 
 runloop::g_timer progress_timer;
+guint bus_watch = 0;
+
 void stop()
 {
 	if (!pipeline) return;
@@ -441,6 +442,7 @@ void stop()
 	gtk_progress_bar_set_fraction(progress, 0);
 	
 	gtk_button_set_image(btn_toggle, btnimg_play);
+	if (bus_watch != 0) g_source_remove(bus_watch);
 }
 
 void progress_tick()
@@ -477,9 +479,11 @@ void play(cstring fn)
 			progress_tick();
 			if (message->type == GST_MESSAGE_EOS)
 			{
+				bus_watch = 0;
 				stop();
 				playlist_cur_idx++;
 				playlist_run();
+				return false;
 			}
 			return true;
 		}, NULL);

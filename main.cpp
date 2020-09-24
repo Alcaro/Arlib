@@ -16,8 +16,10 @@ inline void e(const char*w)
 	//}
 }
 
+#ifndef ARLIB_TEST
 __attribute__((constructor)) static void x1() { puts("ctor"); }
 __attribute__((destructor))  static void x2() { puts("dtor"); }
+#endif
 
 extern uint32_t __cpu_model[4];
 

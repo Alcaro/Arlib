@@ -2,29 +2,16 @@
 #include "test.h"
 #include "simd.h"
 
-/*
-static inline int isspace(uint8_t c) { return char_props[c] & 0x01; } // C standard says \f \v are space, but this one disagrees
-static inline int isdigit(uint8_t c) { return char_props[c] & 0x40; }
-static inline int isalpha(uint8_t c) { return char_props[c] & 0x30; }
-static inline int islower(uint8_t c) { return char_props[c] & 0x20; }
-static inline int isupper(uint8_t c) { return char_props[c] & 0x10; }
-static inline int isalnum(uint8_t c) { return char_props[c] & 0x70; }
-static inline int isualpha(uint8_t c) { return char_props[c] & 0x38; }
-static inline int isualnum(uint8_t c) { return char_props[c] & 0x78; }
-static inline int isxdigit(uint8_t c) { return char_props[c] & 0x80; }
-// bits 0x02 and 0x04 are unused
-*/
-
 extern const uint8_t char_props[256] = {
 	//x0   x1   x2   x3   x4   x5   x6   x7   x8   x9   xA   xB   xC   xD   xE   xF
-	0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x01,0x01,0x00,0x00,0x01,0x00,0x00, // 0x
+	0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x80,0x80,0x00,0x00,0x80,0x00,0x00, // 0x
 	0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 1x
-	0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 2x  !"#$%&'()*+,-./
-	0xC0,0xC0,0xC0,0xC0,0xC0,0xC0,0xC0,0xC0,0xC0,0xC0,0x00,0x00,0x00,0x00,0x00,0x00, // 3x 0123456789:;<=>?
-	0x00,0x90,0x90,0x90,0x90,0x90,0x90,0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10, // 4x @ABCDEFGHIJKLMNO
-	0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x10,0x00,0x00,0x00,0x00,0x08, // 5x PQRSTUVWXYZ[\]^_
-	0x00,0xA0,0xA0,0xA0,0xA0,0xA0,0xA0,0x20,0x20,0x20,0x20,0x20,0x20,0x20,0x20,0x20, // 6x `abcdefghijklmno
-	0x20,0x20,0x20,0x20,0x20,0x20,0x20,0x20,0x20,0x20,0x20,0x00,0x00,0x00,0x00,0x00, // 7x pqrstuvwxyz{|}~
+	0x80,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 2x  !"#$%&'()*+,-./
+	0x41,0x41,0x41,0x41,0x41,0x41,0x41,0x41,0x41,0x41,0x00,0x00,0x00,0x00,0x00,0x00, // 3x 0123456789:;<=>?
+	0x00,0x23,0x23,0x23,0x23,0x23,0x23,0x22,0x22,0x22,0x22,0x22,0x22,0x22,0x22,0x22, // 4x @ABCDEFGHIJKLMNO
+	0x22,0x22,0x22,0x22,0x22,0x22,0x22,0x22,0x22,0x22,0x22,0x00,0x00,0x00,0x00,0x08, // 5x PQRSTUVWXYZ[\]^_
+	0x00,0x25,0x25,0x25,0x25,0x25,0x25,0x24,0x24,0x24,0x24,0x24,0x24,0x24,0x24,0x24, // 6x `abcdefghijklmno
+	0x24,0x24,0x24,0x24,0x24,0x24,0x24,0x24,0x24,0x24,0x24,0x00,0x00,0x00,0x00,0x00, // 7x pqrstuvwxyz{|}~
 	0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 8x
 	0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 9x
 	0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // Ax
@@ -807,60 +794,35 @@ string cstring::leftPad (size_t len, uint8_t ch) const {
 }
 
 
-bool strtoken(const char * haystack, const char * needle, char separator)
-{
-	//token lists are annoyingly complex to parse
-	//I suspect 'people using fixed-size buffers, then extension list grows and app explodes'
-	// isn't the only reason GL_EXTENSIONS string was deprecated from OpenGL
-	size_t nlen = strlen(needle);
-	
-	while (true)
-	{
-		const char * found = strstr(haystack, needle);
-		if (!found) break;
-		
-		if ((found==haystack || found[-1]==separator) && // ensure the match is the start of a word
-				(found[nlen]==separator || found[nlen]=='\0')) // ensure the match is the end of a word
-		{
-			return true;
-		}
-		
-		haystack = strchr(found, separator); // try again, could've found GL_foobar_limited when looking for GL_foobar
-		if (!haystack) return false;
-	}
-	return false;
-}
 
-
-
-static inline int alt_isspace(int c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; }
-static inline int alt_isdigit(int c) { return c >= '0' && c <= '9'; }
-static inline int alt_isalpha(int c) { return (c&~0x20) >= 'A' && (c&~0x20) <= 'Z'; }
-static inline int alt_islower(int c) { return c >= 'a' && c <= 'z'; }
-static inline int alt_isupper(int c) { return c >= 'A' && c <= 'Z'; }
-static inline int alt_isalnum(int c) { return alt_isalpha(c) || alt_isdigit(c); }
-static inline int alt_isualpha(int c) { return c == '_' || alt_isalpha(c); }
-static inline int alt_isualnum(int c) { return c == '_' || alt_isalnum(c); }
-static inline int alt_isxdigit(int c) { return alt_isdigit(c) || ((c&~0x20) >= 'A' && (c&~0x20) <= 'F'); }
-static inline int alt_tolower(int c) { if (alt_isupper(c)) return c|0x20; else return c; }
-static inline int alt_toupper(int c) { if (alt_islower(c)) return c&~0x20; else return c; }
+static inline int test_isspace(int c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; }
+static inline int test_isdigit(int c) { return c >= '0' && c <= '9'; }
+static inline int test_isalpha(int c) { return (c&~0x20) >= 'A' && (c&~0x20) <= 'Z'; }
+static inline int test_islower(int c) { return c >= 'a' && c <= 'z'; }
+static inline int test_isupper(int c) { return c >= 'A' && c <= 'Z'; }
+static inline int test_isalnum(int c) { return test_isalpha(c) || test_isdigit(c); }
+static inline int test_isualpha(int c) { return c == '_' || test_isalpha(c); }
+static inline int test_isualnum(int c) { return c == '_' || test_isalnum(c); }
+static inline int test_isxdigit(int c) { return test_isdigit(c) || ((c&~0x20) >= 'A' && (c&~0x20) <= 'F'); }
+static inline int test_tolower(int c) { if (test_isupper(c)) return c|0x20; else return c; }
+static inline int test_toupper(int c) { if (test_islower(c)) return c&~0x20; else return c; }
 
 test("ctype", "", "string")
 {
 	for (int i=0;i<=255;i++)
 	{
 		testctx(tostring(i)) {
-			assert_eq(!!isspace(i), !!alt_isspace(i));
-			assert_eq(!!isdigit(i), !!alt_isdigit(i));
-			assert_eq(!!isalpha(i), !!alt_isalpha(i));
-			assert_eq(!!islower(i), !!alt_islower(i));
-			assert_eq(!!isupper(i), !!alt_isupper(i));
-			assert_eq(!!isalnum(i), !!alt_isalnum(i));
-			assert_eq(!!isualpha(i), !!alt_isualpha(i));
-			assert_eq(!!isualnum(i), !!alt_isualnum(i));
-			assert_eq(!!isxdigit(i), !!alt_isxdigit(i));
-			assert_eq(tolower(i), alt_tolower(i));
-			assert_eq(toupper(i), alt_toupper(i));
+			assert_eq(!!isspace(i), !!test_isspace(i));
+			assert_eq(!!isdigit(i), !!test_isdigit(i));
+			assert_eq(!!isalpha(i), !!test_isalpha(i));
+			assert_eq(!!islower(i), !!test_islower(i));
+			assert_eq(!!isupper(i), !!test_isupper(i));
+			assert_eq(!!isalnum(i), !!test_isalnum(i));
+			assert_eq(!!isualpha(i), !!test_isualpha(i));
+			assert_eq(!!isualnum(i), !!test_isualnum(i));
+			assert_eq(!!isxdigit(i), !!test_isxdigit(i));
+			assert_eq(tolower(i), test_tolower(i));
+			assert_eq(toupper(i), test_toupper(i));
 		}
 	}
 }

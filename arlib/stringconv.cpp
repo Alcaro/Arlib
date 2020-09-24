@@ -261,7 +261,8 @@ string tostringhex(arrayview<uint8_t> val)
 	arrayvieww<uint8_t> retb = ret.construct(val.size()*2);
 	for (size_t i=0;i<val.size();i++)
 	{
-		sprintf((char*)retb.slice(i*2, 2).ptr(), "%.2X", val[i]);
+		retb[i*2+0] = "0123456789ABCDEF"[val[i]>>4];
+		retb[i*2+1] = "0123456789ABCDEF"[val[i]&15];
 	}
 	return ret;
 }

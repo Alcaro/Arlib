@@ -181,7 +181,6 @@ void* memmem_arlib(const void * haystack, size_t haystacklen, const void * needl
 	return (void*)memmem_rollhash((uint8_t*)haystack, haystacklen, (uint8_t*)needle, needlelen);
 }
 
-#define memmem memmem_arlib
 
 
 

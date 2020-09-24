@@ -30,8 +30,9 @@ public:
 		return true;
 	}
 	
-	socket* connect(cstring domain, int port, runloop* loop);
 #ifdef ARLIB_SSL
 	socket* connect(bool ssl, cstring domain, int port, runloop* loop);
+#else
+	socket* connect(cstring domain, int port, runloop* loop);
 #endif
 };

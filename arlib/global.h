@@ -263,36 +263,15 @@ void free_test(void* ptr);
 
 void malloc_fail(size_t size);
 
-inline anyptr malloc_check(size_t size)
-{
-	_test_malloc();
-	if (size >= 0x80000000) malloc_fail(size);
-	void* ret = malloc(size);
-	if (size && !ret) malloc_fail(size);
-	return ret;
-}
+anyptr malloc_check(size_t size);
 inline anyptr try_malloc(size_t size) { _test_malloc(); return malloc(size); }
 #define malloc malloc_check
 
-inline anyptr realloc_check(anyptr ptr, size_t size)
-{
-	if ((void*)ptr) _test_free();
-	if (size) _test_malloc();
-	if (size >= 0x80000000) malloc_fail(size);
-	void* ret = realloc(ptr, size);
-	if (size && !ret) malloc_fail(size);
-	return ret;
-}
+anyptr realloc_check(anyptr ptr, size_t size);
 inline anyptr try_realloc(anyptr ptr, size_t size) { if ((void*)ptr) _test_free(); if (size) _test_malloc(); return realloc(ptr, size); }
 #define realloc realloc_check
 
-inline anyptr calloc_check(size_t size, size_t count)
-{
-	_test_malloc();
-	void* ret = calloc(size, count);
-	if (size && count && !ret) malloc_fail(size*count);
-	return ret;
-}
+anyptr calloc_check(size_t size, size_t count);
 inline anyptr try_calloc(size_t size, size_t count) { _test_malloc(); return calloc(size, count); }
 #define calloc calloc_check
 
@@ -601,28 +580,38 @@ static inline range_t range(size_t start, size_t stop, size_t step = 1) { return
 //  its nonempty exports section; however, if used as a DLL, it has to reimplement some OS facilities, yielding several limitations:
 // - It's not supported by the OS; it relies on a bunch of implementation details and ugly tricks that may break in newer OSes.
 // - The program must call arlib_hybrid_dll_init() at the top of every DLLEXPORTed function.
+//     It must be at the very top; constructors and exception handling setup are not permitted.
 //     It's safe to call it multiple times, including multithreaded if ARLIB_THREAD is enabled.
 //     It's also safe to call it if it's ran as an EXE, and on OSes other than Windows. It'll just do nothing.
 //     Only the first call to arlib_hybrid_dll_init() does anything, so it's safe to omit it in
-//       exported functions guaranteed to not be the first one called, though not recommended.
+//       exported functions guaranteed to not be the first one called.
 // - The EXE/DLL startup code does a lot of stuff I don't understand, or never investigated; doubtlessly I forgot something important.
-// - Global objects' destructors are often implemented via atexit(), which is process-global in EXEs, or things GCC thinks is an EXE.
-//     As such, nontrivial globals are memory leaks at best; DLL paths may not touch them.
+// - Global objects' destructors are often implemented via atexit(), which is process-global in EXEs, and in things GCC thinks is an EXE.
+//     As such, globals containing dynamic allocations are memory leaks at best; DLL paths may not touch them.
+//     (Statically allocated globals are fine. For example, time_us() caches QueryPerformanceCounter() into a global integer.)
 //     Note that parts of Arlib use global constructors or global variables. In particular, the following are memory leaks or worse:
 //     - runloop::global()
 //     - socket::create_ssl() SChannel backend (BearSSL is safe; OpenSSL and GnuTLS are not supported on Windows)
-//     - window_* on Windows
-//     - file::exepath() on Unix
+//     - window_*
 //     - random_t::get_seed() if ARXPSUPPORT (safe on Unix and 7)
-//     - WuTF
+//     - WuTF (not supported in DLLs at all)
+//     - (file::exepath() uses globals on Linux, but these caveats don't apply on Linux.)
 // - To avoid crashes if onexit() calls an unloaded DLL, and to allow globals in EXE paths, globals' constructors are not run either.
-//     Constant-initialized variables are safe.
+//     Constant-initialized variables are safe, or if you need to fill in some globals, you can use oninit_static().
 // - Some parts of libc and compiler intrinsics are also implemented via global variables. Be careful.
 //     The only useful global-based intrinsic, __builtin_cpu_supports, is special cased and works.
-// - If a normal DLL imports a symbol that doesn't exist, LoadLibrary's caller gets an error.
-//     If this one loads a symbol that doesn't exist, it'll remain as NULL, and will crash if called (though you can NULL check them).
-// - Unless the DLL exports a single-thread-only init function, ARLIB_THREAD must be enabled, even if otherwise unused.
-// - Unlikely to work on 32bit, since it has to relocate itself. PIC on 32bit is hard.
+// - If a normal DLL imports a symbol that doesn't exist from another DLL, LoadLibrary's caller gets an error.
+//     If a hybrid DLL imports a symbol that doesn't exist, it'll remain as NULL, and will crash if called (you can't even
+//     NULL check them, compiler will optimize it out).
+// - DLLs used by this program will never be unloaded. If your program only links against system libraries, this is fine,
+//     something else is probably already using them; if your program ships its own DLLs (for example libstdc++-6.dll
+//     or libgcc_s_seh-1.dll), this is equivalent to a memory leak. (But if you're shipping DLLs, your program is already
+//     multiple files, and you should just put all shareable logic in another DLL and use a normal EXE.)
+//     A hybrid DLL calling LoadLibrary and FreeLibrary is safe.
+// - arlib_hybrid_dll_init() is thread safe only if ARLIB_THREAD is enabled. If you export a single-thread-only init function,
+//     it's safe to disable.
+// - Not tested on 32bit, and likely to crash. It has to relocate itself, and the relocator must be position independent;
+//     PIC on 32bit is hard.
 // - It does various weird things; antivirus programs may react.
 // On Linux, none of the above applies; it's a perfectly normal program in both respects.
 #ifdef ARLIB_HYBRID_DLL

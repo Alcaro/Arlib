@@ -48,7 +48,7 @@ static uint8_t* blobdup(const void * src, size_t len)
 	alloc_blobs += len;
 	return ret;
 }
-static void bytes_append(void* dest_ctx, const void * src, size_t len)
+static void vdn_append(void* dest_ctx, const void * src, size_t len)
 {
 	blobdup(src, len);
 }
@@ -61,10 +61,10 @@ static bool append_cert_x509(arrayview<uint8_t> xc)
 	br_x509_decoder_context dc;
 	
 	size_t vdn_start = alloc_blobs;
-	br_x509_decoder_init(&dc, bytes_append, NULL);
+	br_x509_decoder_init(&dc, vdn_append, NULL);
 	br_x509_decoder_push(&dc, xc.ptr(), xc.size());
 	br_x509_pkey* pk = br_x509_decoder_get_pkey(&dc);
-	if (pk == NULL || !br_x509_decoder_isCA(&dc)) return false;
+	if (pk == NULL || !br_x509_decoder_isCA(&dc)) goto fail;
 	
 	ta.dn.len = alloc_blobs - vdn_start;
 	ta.dn.data = alloc_arena + vdn_start;
@@ -86,9 +86,15 @@ static bool append_cert_x509(arrayview<uint8_t> xc)
 		ta.pkey.key.ec.q = blobdup(pk->key.ec.q, pk->key.ec.qlen);
 		break;
 	default:
-		return false;
+		goto fail;
 	}
 	return true;
+	
+fail:
+	ta.~br_x509_trust_anchor();
+	alloc_certs++;
+	alloc_blobs = vdn_start;
+	return false;
 }
 
 //unused on Windows, its cert store gives me x509s directly
@@ -103,7 +109,7 @@ MAYBE_UNUSED static void append_certs_pem_x509(cstring certs_pem)
 		
 		size_t buflen = base64_dec_len(certend);
 		buf.reserve(buflen);
-		size_t actuallen = base64_dec_raw(buf, NULL, cert.substr(0, certend), NULL);
+		size_t actuallen = base64_dec_raw(buf, cert.substr(0, certend));
 		append_cert_x509(buf.slice(0, actuallen));
 	}
 }
@@ -222,9 +228,9 @@ public:
 	{
 		if (sock)
 		{
-			int bearstate = br_ssl_engine_current_state(&s.sc.eng);
-			sock->callback((bearstate & BR_SSL_RECVREC) ? bind_this(&socketssl_bearssl::on_readable) : NULL,
-			               (bearstate & BR_SSL_SENDREC) ? bind_this(&socketssl_bearssl::on_writable) : NULL);
+			unsigned state = br_ssl_engine_current_state(&s.sc.eng);
+			sock->callback((state & BR_SSL_RECVREC) ? bind_this(&socketssl_bearssl::on_readable) : NULL,
+			               (state & BR_SSL_SENDREC) ? bind_this(&socketssl_bearssl::on_writable) : NULL);
 		}
 	}
 	
@@ -297,7 +303,7 @@ public:
 	{
 		//this function is known to be called only directly by the runloop, and as such, can't recurse
 		//this is likely a use-after-free if the callbacks throw, but runloop itself doesn't support exceptions, so who cares
-		int state = br_ssl_engine_current_state(&s.sc.eng);
+		unsigned state = br_ssl_engine_current_state(&s.sc.eng);
 	again:
 		if (cb_read  && (state&(BR_SSL_RECVAPP|BR_SSL_CLOSED))) RETURN_IF_CALLBACK_DESTRUCTS(cb_read( ));
 		if (cb_write && (state&(BR_SSL_SENDAPP|BR_SSL_CLOSED))) RETURN_IF_CALLBACK_DESTRUCTS(cb_write());
@@ -327,9 +333,8 @@ public:
 		
 		//gracefully tear this down, not really useful but not harmful either
 		br_ssl_engine_close(&s.sc.eng);
-		br_ssl_engine_flush(&s.sc.eng, false);
 		process_send();
-		//but don't worry too much about ensuring the remote gets our closure notification
+		//but don't worry too much about ensuring the remote peer gets our closure notification
 	}
 	
 	

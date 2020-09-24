@@ -2,7 +2,7 @@
 
 #ifdef __unix__
 #include <unistd.h>
-//separate file so this oninit can be optimized out if unused
+//separate file so this ctor can be optimized out if unused
 
 namespace {
 struct exepath_finder {
