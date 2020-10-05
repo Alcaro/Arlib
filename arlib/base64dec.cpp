@@ -1,5 +1,4 @@
 #include "base64.h"
-#include "base64.h"
 
 static const uint8_t decode[128] = {
 #define __ 0x80 // invalid
@@ -121,9 +120,30 @@ test("base64", "string,array", "base64")
 	assert_eq(string(base64_dec(" c G x l Y X N 1 c m U u ")), "pleasure.");
 	assert_eq(string(base64_dec(" b G V h c 3 V y Z S 4 = ")), "leasure." );
 	assert_eq(string(base64_dec(" Z W F z d X J l L g = = ")), "easure."  );
-	assert_eq(string(base64_dec(" Y  X  N  1  c  m  U  u ")),  "asure."   );
-	assert_eq(string(base64_dec(" c  3  V  y  Z  S  4  = ")),  "sure."    );
+	assert_eq(string(base64_dec("  Y  X  N  1  c  m  U  u  ")),  "asure."   );
+	assert_eq(string(base64_dec("  c  3  V  y  Z  S  4  =  ")),  "sure."    );
 	assert(!base64_dec("aaaaaaa$"));
-	assert(!base64_dec("AB=="));
+	// blank string should successfully decode to blank array, but successfully decoding zero bytes is indistinguishable from failure
+	assert(!base64_dec("A"));
+	assert(!base64_dec("A="));
+	assert(!base64_dec("A=="));
+	assert(!base64_dec("A==="));
+	assert(!base64_dec("A===="));
+	assert(!base64_dec("AA"));
+	assert(!base64_dec("AA="));
+	assert( base64_dec("AA=="));
+	assert(!base64_dec("AA==="));
+	assert(!base64_dec("AA===="));
+	assert(!base64_dec("AAA"));
+	assert( base64_dec("AAA="));
+	assert(!base64_dec("AAA=="));
+	assert(!base64_dec("AAA==="));
+	assert(!base64_dec("AAA===="));
+	assert( base64_dec("AAAA"));
+	assert(!base64_dec("AAAA="));
+	assert(!base64_dec("AAAA=="));
+	assert(!base64_dec("AAAA==="));
+	assert(!base64_dec("AAAA===="));
+	assert(!base64_dec("AB==")); // no set bits allowed in padding
 	assert(!base64_dec("AAB="));
 }

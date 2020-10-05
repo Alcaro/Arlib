@@ -335,9 +335,9 @@ test("JSON serialization", "json", "serialize")
 		item.c.get_create("a").append(4);
 		item.c.get_create("b").append(5);
 		item.c.get_create("b").append(6);
-		assert_eq(jsonserialize<2>(item), "{\n  \"a\": [\n    [\n      1,\n      2]],"
+		assert_eq_unordered(jsonserialize<2>(item), "{\n  \"a\": [\n    [\n      1,\n      2]],"
 		                                   "\n  \"b\": [\n    [2,3],\n    [4,5]],"
-		                                   "\n  \"c\": {\n    \"b\": [5,6],\n    \"a\": [3,4]}}");
+		                                   "\n  \"c\": {\n    $,\n    $}}", "\"a\": [3,4]", "\"b\": [5,6]");
 	}
 	
 	{
@@ -560,10 +560,8 @@ test("JSON deserialization", "json", "serialize")
 				});
 		assert_eq(num, 42);
 		assert_eq(str, "test");
-		if (sizeof(size_t)==8)
-			assert_eq(tostring_dbg(inner), "{b => 2, c => 3, a => 1}");
-		else
-			assert_eq(tostring_dbg(inner), "TODO: determine the current order");
+		
+		assert_eq_unordered(tostring_dbg(inner), "{$, $, $}", "a => 1", "b => 2", "c => 3");
 	}
 	
 	{
@@ -817,10 +815,7 @@ test("BML deserialization", "bml", "serialize")
 				});
 		assert_eq(num, 42);
 		assert_eq(tostring_dbg(strs), "[test,aaa]");
-		if (sizeof(size_t)==8)
-			assert_eq(tostring_dbg(inner), "{b => 2, c => 3, a => 1}");
-		else
-			assert_eq(tostring_dbg(inner), "TODO: determine the current order");
+		assert_eq_unordered(tostring_dbg(inner), "{$, $, $}", "a => 1", "b => 2", "c => 3");
 	}
 }
 #endif

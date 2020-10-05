@@ -44,11 +44,10 @@
 #  define _mm_stream_si128 _mm_storeu_si128
 # endif
 
-// fairly generic names, but SIMD types in arguments are super rare, so unlikely to be a problem
 void debugd8(__m128i vals); void debugd16(__m128i vals); void debugd32(__m128i vals); void debugd64(__m128i vals);
 void debugu8(__m128i vals); void debugu16(__m128i vals); void debugu32(__m128i vals); void debugu64(__m128i vals);
 void debugx8(__m128i vals); void debugx16(__m128i vals); void debugx32(__m128i vals); void debugx64(__m128i vals);
-void debugf32(__m128 vals);  void debugf64(__m128d vals);
+void debugf32(__m128 vals); void debugf64(__m128d vals);
 void debugd8(const char * prefix, __m128i vals); void debugd16(const char * prefix, __m128i vals); 
 void debugu8(const char * prefix, __m128i vals); void debugu16(const char * prefix, __m128i vals); 
 void debugx8(const char * prefix, __m128i vals); void debugx16(const char * prefix, __m128i vals); 

@@ -70,13 +70,16 @@ struct textgrid {
 		
 		auto click_cb = decompose_lambda([this](GdkEvent* event, GtkWidget* widget)->gboolean
 		{
-			if (event->type != GDK_2BUTTON_PRESS) return false;
+			if(0);
+			else if (event->button.button == GDK_BUTTON_PRIMARY && event->type == GDK_2BUTTON_PRESS) {}
+			else if (event->button.button == GDK_BUTTON_MIDDLE && event->type == GDK_BUTTON_PRESS) {}
+			else return GDK_EVENT_STOP;
 			
 			int col = event->button.x * NUM_COLS / gtk_widget_get_allocated_width(widget);
 			int row = event->button.y * NUM_ROWS / gtk_widget_get_allocated_height(widget);
 			this->onactivate[col](col, row);
 			
-			return true;
+			return GDK_EVENT_STOP;
 		});
 		g_signal_connect_swapped(widget, "button-press-event", G_CALLBACK(click_cb.fp), click_cb.ctx);
 		gtk_widget_add_events(widget, GDK_BUTTON_PRESS_MASK);
@@ -350,7 +353,7 @@ GtkWidget* make_search()
 			else
 				search_focus--;
 			c_search.focus(search_focus);
-			return TRUE;
+			return GDK_EVENT_STOP;
 		}
 		if (event->key.keyval == GDK_KEY_Down)
 		{
@@ -359,7 +362,7 @@ GtkWidget* make_search()
 			else
 				search_focus++;
 			c_search.focus(search_focus);
-			return TRUE;
+			return GDK_EVENT_STOP;
 		}
 		if (event->key.keyval == GDK_KEY_Return || event->key.keyval == GDK_KEY_KP_Enter)
 		{
@@ -372,14 +375,14 @@ GtkWidget* make_search()
 				enqueue(c_search.items[search_focus]);
 			if ((event->key.state&GDK_SHIFT_MASK) == 0)
 				gtk_entry_set_text(search_line, ""); // calls remove_cb
-			return TRUE;
+			return GDK_EVENT_STOP;
 		}
 		if (event->key.keyval == GDK_KEY_Escape)
 		{
 			gtk_entry_set_text(search_line, "");
-			return TRUE;
+			return GDK_EVENT_STOP;
 		}
-		return FALSE;
+		return GDK_EVENT_PROPAGATE;
 	});
 	g_signal_connect_swapped(search_line, "key-press-event", G_CALLBACK(key_cb.fp), key_cb.ctx);
 	// GTK often passes functions with too few arguments if the latter ones aren't used (for example gtk_widget_hide_on_delete)
@@ -483,9 +486,9 @@ void play(cstring fn)
 				stop();
 				playlist_cur_idx++;
 				playlist_run();
-				return false;
+				return G_SOURCE_REMOVE;
 			}
-			return true;
+			return G_SOURCE_CONTINUE;
 		}, NULL);
 	gst_object_unref(bus);
 	
@@ -595,13 +598,46 @@ void app_activate(GApplication* application, void* user_data)
 #include <sys/resource.h>
 int main(int argc, char** argv)
 {
-rlimit lim;
-lim.rlim_cur = 256*1024*1024;
-lim.rlim_max = RLIM_INFINITY;
-setrlimit(RLIMIT_CORE, &lim);
-
 	gst_init(&argc, &argv);
 	arlib_init_manual_args(&argc, &argv);
+	
+	/*
+	(corn:2350): GLib-GObject-CRITICAL **: 14:58:36.794: g_object_ref: assertion 'G_IS_OBJECT (object)' failed
+	
+	Thread 329 "gldisplay-event" received signal SIGTRAP, Trace/breakpoint trap.
+	[Switching to Thread 0x7fffb2df8700 (LWP 5929)]
+	0x00007ffff7580ea1 in ?? () from /usr/lib/x86_64-linux-gnu/libglib-2.0.so.0
+	(gdb) bt
+	#0  0x00007ffff7580ea1 in  () at /usr/lib/x86_64-linux-gnu/libglib-2.0.so.0
+	#1  0x00007ffff75821dd in g_logv ()
+		at /usr/lib/x86_64-linux-gnu/libglib-2.0.so.0
+	#2  0x00007ffff758231f in g_log ()
+		at /usr/lib/x86_64-linux-gnu/libglib-2.0.so.0
+	#3  0x00007ffff785ac3c in g_object_ref ()
+		at /usr/lib/x86_64-linux-gnu/libgobject-2.0.so.0
+	#4  0x00007ffff7aca5e7 in gst_object_ref ()
+		at /usr/lib/x86_64-linux-gnu/libgstreamer-1.0.so.0
+	#5  0x00007fffc0cc78a1 in  () at /usr/lib/x86_64-linux-gnu/libgstgl-1.0.so.0
+	#6  0x00007fffc0cc7ccc in  () at /usr/lib/x86_64-linux-gnu/libgstgl-1.0.so.0
+	#7  0x00007fffc0cc8fcc in  () at /usr/lib/x86_64-linux-gnu/libgstgl-1.0.so.0
+	#8  0x00007ffff757b417 in g_main_context_dispatch ()
+		at /usr/lib/x86_64-linux-gnu/libglib-2.0.so.0
+	#9  0x00007ffff757b650 in  () at /usr/lib/x86_64-linux-gnu/libglib-2.0.so.0
+	#10 0x00007ffff757b962 in g_main_loop_run ()
+		at /usr/lib/x86_64-linux-gnu/libglib-2.0.so.0
+	#11 0x00007fffc0ca07f7 in  () at /usr/lib/x86_64-linux-gnu/libgstgl-1.0.so.0
+	#12 0x00007ffff75a3175 in  () at /usr/lib/x86_64-linux-gnu/libglib-2.0.so.0
+	#13 0x00007ffff4ac46db in start_thread (arg=0x7fffb2df8700)
+		at pthread_create.c:463
+	#14 0x00007ffff5209a3f in clone ()
+		at ../sysdeps/unix/sysv/linux/x86_64/clone.S:95
+	(gdb) c
+	Continuing.
+	
+	(corn:2350): GStreamer-CRITICAL **: 15:01:41.883: gst_object_unref: assertion '((GObject *) object)->ref_count > 0' failed
+	*/
+	// why does it even use libgstgl when there's no video output
+	g_log_set_always_fatal((GLogLevelFlags)0);
 	
 	if ((cstring)argv[1] == "--local")
 	{

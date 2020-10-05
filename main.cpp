@@ -16,6 +16,7 @@ inline void e(const char*w)
 	//}
 }
 
+/*
 #ifndef ARLIB_TEST
 __attribute__((constructor)) static void x1() { puts("ctor"); }
 __attribute__((destructor))  static void x2() { puts("dtor"); }
@@ -56,9 +57,15 @@ void y()
 	printf("%x,%x,%x,%x\n",__cpu_model[0],__cpu_model[1],__cpu_model[2],__cpu_model[3]);
 	puts(file::exepath()+"");
 }
+*/
 
 int main(int argc, char** argv)
 {
+	puts(tostring(0x123u));
+	exit(0);
+
+/*
+
 #ifdef ARLIB_SANDBOX
 	argparse args;
 	array<string> child;

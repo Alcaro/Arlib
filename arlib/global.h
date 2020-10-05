@@ -36,15 +36,15 @@
 // (on some 32bit mingw versions, it also adds a dependency on libgcc_s_sjlj-1.dll)
 // extra kilobytes and dlls is the opposite of what I want, and my want is stronger, so here's some shenanigans
 // comments say libstdc++ demands a POSIX printf, but I don't use libstdc++'s text functions, so I don't care
-// msvcrt strtod also rounds wrong sometimes, but only for unrealistic inputs, so I don't care about that either
+// msvcrt strtod also rounds wrong sometimes, but it's right for all plausible inputs, so I don't care about that either
 #    define __USE_MINGW_ANSI_STDIO 0 // first, trigger a warning if it's enabled already - probably wrong include order
 #    include <stdlib.h>              // second, include this specific header; it includes <bits/c++config.h>,
 #    undef __USE_MINGW_ANSI_STDIO    // which sets this flag, which must be turned off
 #    define __USE_MINGW_ANSI_STDIO 0 // (subsequent includes of c++config.h are harmless, there's an include guard)
 #    undef strtof
 #    define strtof strtof_arlib // third, redefine these functions, they pull in mingw's scanf
-#    undef strtod               // (strtod not acting like scanf is creepy, anyways)
-#    define strtod strtod_arlib // this is why stdlib.h is chosen, rather than some random tiny c++ header like cstdbool
+#    undef strtod               // this is why stdlib.h is chosen, rather than some random tiny c++ header like cstdbool
+#    define strtod strtod_arlib // (strtod not acting like scanf is creepy, anyways)
 #    undef strtold
 #    define strtold strtold_arlib
 float strtof_arlib(const char * str, char** str_end);
@@ -61,6 +61,7 @@ long double strtold_arlib(const char * str, char** str_end);
 #include <inttypes.h>
 #include <utility>
 #include "function.h"
+#include "simd.h"
 
 #ifdef STDOUT_DELETE
 #define puts(x) do{}while(0)
@@ -261,21 +262,32 @@ void free_test(void* ptr);
 #define _test_free()
 #endif
 
-void malloc_fail(size_t size);
+//void malloc_fail(size_t size);
+//inline void malloc_assert(bool cond) { if (!cond) malloc_fail(0); }
 
-anyptr malloc_check(size_t size);
+#if defined(__i386__) || defined(__x86_64__)
+#include <mm_malloc.h> // contains an inline function that calls malloc
+#endif
+
+// these six act as their base functions on success, except they return anyptr and don't need explicit casts
+// on failure, try_ returns NULL, while xmalloc throws std::bad_alloc or calls abort(), depending on whether exceptions are enabled
+// however, note that using try_malloc, or catching xmalloc's exception, is not a comprehensive OOM handling strategy
+// - it's hard to test
+// - it's often unclear how OOM should be handled, especially considering OOM handlers can't allocate more memory
+// - parts of Arlib are not exception safe; you may get memory leaks, or something worse
+// - modern systems don't fail memory allocations; they swap things around until the machine is unusably slow, or summon the OOM killer
+// therefore, if your program has data it doesn't want to lose, it should write it to disk often, rather than try to handle OOM
+anyptr xmalloc(size_t size);
 inline anyptr try_malloc(size_t size) { _test_malloc(); return malloc(size); }
-#define malloc malloc_check
+#define malloc use_xmalloc_or_try_malloc_instead
 
-anyptr realloc_check(anyptr ptr, size_t size);
+anyptr xrealloc(anyptr ptr, size_t size);
 inline anyptr try_realloc(anyptr ptr, size_t size) { if ((void*)ptr) _test_free(); if (size) _test_malloc(); return realloc(ptr, size); }
-#define realloc realloc_check
+#define realloc use_xrealloc_or_try_realloc_instead
 
-anyptr calloc_check(size_t size, size_t count);
+anyptr xcalloc(size_t size, size_t count);
 inline anyptr try_calloc(size_t size, size_t count) { _test_malloc(); return calloc(size, count); }
-#define calloc calloc_check
-
-inline void malloc_assert(bool cond) { if (!cond) malloc_fail(0); }
+#define calloc use_xcalloc_or_try_calloc_instead
 
 
 //if I cast it to void, that means I do not care, so shut up about warn_unused_result
@@ -486,6 +498,67 @@ template<typename T> static inline T bitround(T in)
 }
 
 
+
+template<typename T> inline T memxor_t(const uint8_t * a, const uint8_t * b)
+{
+	T an; memcpy(&an, a, sizeof(T));
+	T bn; memcpy(&bn, b, sizeof(T));
+	return an^bn;
+}
+// memeq is small after optimization, but looks big to the inliner, so forceinline it
+// if caller doesn't know size, caller should also be forceinlined
+forceinline bool memeq(const void * a, const void * b, size_t len)
+{
+	if (!__builtin_constant_p(len)) return !memcmp(a, b, len);
+	
+#if defined(__i386__) || defined(__x86_64__) || defined(_M_IX86) || defined(_M_AMD64)
+	// several ideas borrowed from clang !memcmp(variable, constant, constant) output
+	// its codegen is often better than anything I could think of
+	
+	const uint8_t * a8 = (uint8_t*)a;
+	const uint8_t * b8 = (uint8_t*)b;
+	
+	if (len == 0)
+		return true;
+	
+	if (len == 1)
+		return *a8 == *b8;
+	
+	if (len == 2) return memxor_t<uint16_t>(a8, b8) == 0;
+	if (len == 3) return (memxor_t<uint16_t>(a8, b8) | (a8[2]^b8[2])) == 0;
+	
+	if (len == 4) return memxor_t<uint32_t>(a8, b8) == 0;
+	if (len == 5) return (memxor_t<uint32_t>(a8, b8) | (a8[4]^b8[4])) == 0;
+	if (len == 6) return (memxor_t<uint32_t>(a8, b8) | memxor_t<uint16_t>(a8+4, b8+4)) == 0;
+	if (len < 8) return (memxor_t<uint32_t>(a8, b8) | memxor_t<uint32_t>(a8+len-4, b8+len-4)) == 0;
+	
+	if (len == 8)  return memxor_t<uint64_t>(a8, b8) == 0;
+	if (len == 9)  return (memxor_t<uint64_t>(a8, b8) | (a8[8]^b8[8])) == 0;
+	if (len == 10) return (memxor_t<uint64_t>(a8, b8) | memxor_t<uint16_t>(a8+8, b8+8)) == 0;
+	if (len <= 12) return (memxor_t<uint64_t>(a8, b8) | memxor_t<uint32_t>(a8+len-4, b8+len-4)) == 0;
+	if (len <= 16) return (memxor_t<uint64_t>(a8, b8) | memxor_t<uint64_t>(a8+len-8, b8+len-8)) == 0;
+	
+#ifdef __SSE2__
+	if (len <= 32)
+	{
+		__m128i eq = _mm_cmpeq_epi8(_mm_loadu_si128((__m128i*)a8), _mm_loadu_si128((__m128i*)b8));
+		if (len == 16) return (_mm_movemask_epi8(eq) == 0xFFFF);
+		if (len == 17) return ((_mm_movemask_epi8(eq) & ~(a8[16]^b8[16])) == 0xFFFF);
+		if (len == 18) return ((_mm_movemask_epi8(eq) & ~memxor_t<uint16_t>(a8+16, b8+16)) == 0xFFFF);
+		if (len <= 20) return (((_mm_movemask_epi8(eq)^0xFFFF) | memxor_t<uint32_t>(a8+len-4, b8+len-4)) == 0);
+		if (len <= 24) return (((_mm_movemask_epi8(eq)^0xFFFF) | memxor_t<uint64_t>(a8+len-8, b8+len-8)) == 0);
+		__m128i eq2 = _mm_cmpeq_epi8(_mm_loadu_si128((__m128i*)(a8+len-16)), _mm_loadu_si128((__m128i*)(b8+len-16)));
+		return (_mm_movemask_epi8(_mm_and_si128(eq, eq2)) == 0xFFFF);
+	}
+#endif
+#else
+#error enable the above on platforms where unaligned mem access is fast
+#endif
+	
+	return !memcmp(a, b, len);
+}
+
+
 #define ALLINTS(x) \
 	x(signed char) \
 	x(unsigned char) \
@@ -497,11 +570,6 @@ template<typename T> static inline T bitround(T in)
 	x(unsigned long) \
 	x(signed long long) \
 	x(unsigned long long)
-
-#define ALLNUMS(x) \
-	ALLINTS(x) \
-	x(float) \
-	x(double) \
 
 #ifndef COMMON_INST
 #define COMMON_INST(T) extern template class T
@@ -595,7 +663,7 @@ static inline range_t range(size_t start, size_t stop, size_t step = 1) { return
 //     - window_*
 //     - random_t::get_seed() if ARXPSUPPORT (safe on Unix and 7)
 //     - WuTF (not supported in DLLs at all)
-//     - (file::exepath() uses globals on Linux, but these caveats don't apply on Linux.)
+//     - (file::exepath() uses globals on Unix, but these caveats don't apply on Linux.)
 // - To avoid crashes if onexit() calls an unloaded DLL, and to allow globals in EXE paths, globals' constructors are not run either.
 //     Constant-initialized variables are safe, or if you need to fill in some globals, you can use oninit_static().
 // - Some parts of libc and compiler intrinsics are also implemented via global variables. Be careful.

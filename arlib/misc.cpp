@@ -9,8 +9,19 @@
 #define __USE_MINGW_ANSI_STDIO 0
 
 
+static void malloc_fail(size_t size)
+{
+#ifdef ARLIB_EXCEPTIONS
+	throw std::bad_alloc();
+#else
+	if (size > 0) printf("malloc failed, size %" PRIuPTR "\n", size);
+	else puts("malloc failed, size unknown");
+	abort();
+#endif
+}
+
 #undef malloc
-anyptr malloc_check(size_t size)
+anyptr xmalloc(size_t size)
 {
 	_test_malloc();
 	if (size >= 0x80000000) malloc_fail(size);
@@ -19,7 +30,7 @@ anyptr malloc_check(size_t size)
 	return ret;
 }
 #undef realloc
-anyptr realloc_check(anyptr ptr, size_t size)
+anyptr xrealloc(anyptr ptr, size_t size)
 {
 	if ((void*)ptr) _test_free();
 	if (size) _test_malloc();
@@ -29,7 +40,7 @@ anyptr realloc_check(anyptr ptr, size_t size)
 	return ret;
 }
 #undef calloc
-anyptr calloc_check(size_t size, size_t count)
+anyptr xcalloc(size_t size, size_t count)
 {
 	_test_malloc();
 	void* ret = calloc(size, count);
@@ -60,36 +71,28 @@ size_t hash(const uint8_t * val, size_t n)
 
 
 #ifdef __SSE2__
-#define SIMD_DEBUG_INNER(bits, type, sse_type, inner_type, fmt) \
-	void debug##type##bits(sse_type vals) \
+#define SIMD_DEBUG_INNER(suffix, sse_type, inner_type, fmt) \
+	void debug##suffix(sse_type vals) \
 	{ \
 		inner_type inner[sizeof(sse_type)/sizeof(inner_type)]; \
 		memcpy(inner, &vals, sizeof(sse_type)); \
 		for (size_t i : range(ARRAY_SIZE(inner))) \
 			printf("%s%c", (const char*)fmt(inner[i]), (i == ARRAY_SIZE(inner)-1 ? '\n' : ' ')); \
 	} \
-	void debug##type##bits(const char * prefix, sse_type vals) { printf("%s ", prefix); debug##type##bits(vals); }
+	void debug##suffix(const char * prefix, sse_type vals) { printf("%s ", prefix); debug##suffix(vals); }
 #define SIMD_DEBUG_OUTER(bits) \
-	SIMD_DEBUG_INNER(bits, d, __m128i, int##bits##_t, tostring) \
-	SIMD_DEBUG_INNER(bits, u, __m128i, uint##bits##_t, tostring) \
-	SIMD_DEBUG_INNER(bits, x, __m128i, uint##bits##_t, tostringhex<bits/4>)
+	SIMD_DEBUG_INNER(d##bits, __m128i, int##bits##_t, tostring) \
+	SIMD_DEBUG_INNER(u##bits, __m128i, uint##bits##_t, tostring) \
+	SIMD_DEBUG_INNER(x##bits, __m128i, uint##bits##_t, tostringhex<bits/4>)
 SIMD_DEBUG_OUTER(8)
 SIMD_DEBUG_OUTER(16)
 SIMD_DEBUG_OUTER(32)
 SIMD_DEBUG_OUTER(64)
-SIMD_DEBUG_INNER(32, f, __m128, float, tostring)
-SIMD_DEBUG_INNER(64, f, __m128d, double, tostring)
+SIMD_DEBUG_INNER(f32, __m128, float, tostring)
+SIMD_DEBUG_INNER(f64, __m128d, double, tostring)
 #undef SIMD_DEBUG_INNER
 #undef SIMD_DEBUG_OUTER
 #endif
-
-
-void malloc_fail(size_t size)
-{
-	if (size > 0) printf("malloc failed, size %" PRIuPTR "\n", size);
-	else puts("malloc failed, size unknown");
-	abort();
-}
 
 //for windows:
 //  these are the only libstdc++ functions I use. if I reimplement them, I don't need that library at all,

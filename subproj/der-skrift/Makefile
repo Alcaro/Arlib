@@ -1,16 +1,5 @@
 PROGRAM = der-skrift
-#valid values: exe (executable), dll (shared library), hybrid (usable as both exe and dll, named as if it's an exe)
-ARTYPE = exe
-ARGUI = 0
-AROPENGL = 0
-ARTHREAD = 0
-ARWUTF = 0
 ARSOCKET = 1
-#valid values: openssl (default), gnutls, bearssl, no
-ARSOCKET_SSL = openssl
-#valid values: schannel (default), bearssl, no (others may work, not tested)
-ARSOCKET_SSL_WINDOWS = schannel
-ARSANDBOX = 0
 
 ifneq ($(DS_IN),)
   SOURCES := $(DS_IN)

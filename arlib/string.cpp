@@ -1,6 +1,7 @@
 #include "string.h"
 #include "test.h"
 #include "simd.h"
+#include "endian.h"
 
 extern const uint8_t char_props[256] = {
 	//x0   x1   x2   x3   x4   x5   x6   x7   x8   x9   xA   xB   xC   xD   xE   xF
@@ -9,7 +10,7 @@ extern const uint8_t char_props[256] = {
 	0x80,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 2x  !"#$%&'()*+,-./
 	0x41,0x41,0x41,0x41,0x41,0x41,0x41,0x41,0x41,0x41,0x00,0x00,0x00,0x00,0x00,0x00, // 3x 0123456789:;<=>?
 	0x00,0x23,0x23,0x23,0x23,0x23,0x23,0x22,0x22,0x22,0x22,0x22,0x22,0x22,0x22,0x22, // 4x @ABCDEFGHIJKLMNO
-	0x22,0x22,0x22,0x22,0x22,0x22,0x22,0x22,0x22,0x22,0x22,0x00,0x00,0x00,0x00,0x08, // 5x PQRSTUVWXYZ[\]^_
+	0x22,0x22,0x22,0x22,0x22,0x22,0x22,0x22,0x22,0x22,0x22,0x00,0x00,0x00,0x00,0x00, // 5x PQRSTUVWXYZ[\]^_
 	0x00,0x25,0x25,0x25,0x25,0x25,0x25,0x24,0x24,0x24,0x24,0x24,0x24,0x24,0x24,0x24, // 6x `abcdefghijklmno
 	0x24,0x24,0x24,0x24,0x24,0x24,0x24,0x24,0x24,0x24,0x24,0x00,0x00,0x00,0x00,0x00, // 7x pqrstuvwxyz{|}~
 	0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, // 8x
@@ -29,19 +30,19 @@ void string::resize(uint32_t newlen)
 	case 0: // small->small
 		{
 			m_inline[newlen] = '\0';
-			m_inline_len = max_inline()-newlen;
+			m_inline_len_w() = max_inline()-newlen;
 		}
 		break;
 	case 1: // small->big
 		{
-			uint8_t* newptr = malloc(bytes_for(newlen));
+			uint8_t* newptr = xmalloc(bytes_for(newlen));
 			memcpy(newptr, m_inline, max_inline());
 			newptr[newlen] = '\0';
 			m_data = newptr;
 			m_len = newlen;
 			m_nul = true;
 			
-			m_inline_len = -1;
+			m_inline_len_w() = -1;
 		}
 		break;
 	case 2: // big->small
@@ -50,12 +51,12 @@ void string::resize(uint32_t newlen)
 			memcpy(m_inline, oldptr, newlen);
 			free(oldptr);
 			m_inline[newlen] = '\0';
-			m_inline_len = max_inline()-newlen;
+			m_inline_len_w() = max_inline()-newlen;
 		}
 		break;
 	case 3: // big->big
 		{
-			m_data = realloc(m_data, bytes_for(newlen));
+			m_data = xrealloc(m_data, bytes_for(newlen));
 			m_data[newlen] = '\0';
 			m_len = newlen;
 		}
@@ -63,16 +64,13 @@ void string::resize(uint32_t newlen)
 	}
 }
 
-void string::init_from(arrayview<uint8_t> data)
+void string::init_from_outline(const uint8_t * str, uint32_t len)
 {
-	const uint8_t * str = data.ptr();
-	uint32_t len = data.size();
-	
 	if (len <= max_inline())
 	{
 		memcpy(m_inline, str, len);
 		m_inline[len] = '\0';
-		m_inline_len = max_inline()-len;
+		m_inline_len_w() = max_inline()-len;
 	}
 	else
 	{
@@ -82,9 +80,9 @@ void string::init_from(arrayview<uint8_t> data)
 
 void string::init_from_large(const uint8_t * str, uint32_t len)
 {
-	m_inline_len = -1;
+	m_inline_len_w() = -1;
 	
-	m_data = malloc(bytes_for(len));
+	m_data = xmalloc(bytes_for(len));
 	memcpy(m_data, str, len);
 	m_data[len]='\0';
 	
@@ -115,7 +113,7 @@ string string::create_usurp(char * str)
 {
 	cstring tmp(str);
 	string ret;
-	memcpy(&ret, &tmp, sizeof(string));
+	memcpy((void*)&ret, (void*)&tmp, sizeof(string));
 	if (tmp.inlined()) free(str);
 	return ret;
 }
@@ -123,36 +121,8 @@ string string::create_usurp(char * str)
 string::string(array<uint8_t>&& bytes) : cstring(noinit())
 {
 	cstring tmp(bytes);
-	memcpy(this, &tmp, sizeof(string));
+	memcpy((void*)this, (void*)&tmp, sizeof(string));
 	if (!tmp.inlined()) bytes.release();
-}
-
-void string::replace_set(uint32_t pos, uint32_t len, cstring newdat)
-{
-	//if newdat is a cstring backed by this, modifying this invalidates that string, so it's illegal
-	//if newdat equals this, then the memmoves will mess things up
-	if (this == &newdat)
-	{
-		string copy = newdat;
-		replace_set(pos, len, copy);
-		return;
-	}
-	
-	uint32_t prevlength = length();
-	uint32_t newlength = newdat.length();
-	
-	if (newlength < prevlength)
-	{
-		memmove(ptr()+pos+newlength, ptr()+pos+len, prevlength-len-pos);
-		resize(prevlength - len + newlength);
-	}
-	if (newlength > prevlength)
-	{
-		resize(prevlength - len + newlength);
-		memmove(ptr()+pos+newlength, ptr()+pos+len, prevlength-len-pos);
-	}
-	
-	memcpy(ptr()+pos, newdat.ptr(), newlength);
 }
 
 size_t cstring::indexof(cstring other, size_t start) const
@@ -486,10 +456,8 @@ int string::icompare3(cstring a, cstring b)
 		{
 			if (ret_i == 0) ret_i = (int)ab[n] - (int)bb[n];
 			
-			uint8_t ac = ab[n];
-			uint8_t bc = bb[n];
-			if (ac >= 'a' && ac <= 'z') ac -= 'a'-'A';
-			if (bc >= 'a' && bc <= 'z') bc -= 'a'-'A';
+			uint8_t ac = toupper(ab[n]);
+			uint8_t bc = toupper(bb[n]);
 			if (ac != bc) return ac - bc;
 		}
 	}
@@ -547,14 +515,13 @@ int string::natcompare3(cstring a, cstring b, bool case_insensitive)
 		}
 		else
 		{
-			if (*ab != *bb)
+			uint8_t ac = *ab;
+			uint8_t bc = *bb;
+			if (ac != bc)
 			{
-				if (ret_case == 0) ret_case = (int)*ab - (int)*bb;
-				
-				uint8_t ac = *ab;
-				uint8_t bc = *bb;
-				if (case_insensitive && ac >= 'a' && ac <= 'z') ac -= 'a'-'A';
-				if (case_insensitive && bc >= 'a' && bc <= 'z') bc -= 'a'-'A';
+				if (ret_case == 0) ret_case = (int)ac - (int)bc;
+				if (case_insensitive) ac = toupper(ac);
+				if (case_insensitive) bc = toupper(bc);
 				if (ac != bc) return (int)ac - (int)bc;
 			}
 			ab++;
@@ -596,7 +563,7 @@ bool cstring::contains_nul() const
 		// m_inline[0] becomes the 0001 bit, [1] -> 0002, etc
 		// m_inline_len is number of bytes at the end of the object we don't care about, not counting the NUL terminator
 		// iszero << m_inline_len puts the NUL at the 0x8000 bit; if anything lower is also true, that's a NUL in the input
-		return ((iszero << m_inline_len) & 0x7FFF);
+		return ((iszero << m_inline_len()) & 0x7FFF);
 	}
 	else return memchr(m_data, '\0', m_len);
 #else
@@ -604,43 +571,51 @@ bool cstring::contains_nul() const
 #endif
 }
 
-string string::codepoint(uint32_t cp)
+size_t string::codepoint(uint8_t* out, uint32_t cp)
 {
 	if (cp <= 0x7F)
 	{
-		uint8_t ret[] = { (uint8_t)cp };
-		return string(arrayview<uint8_t>(ret));
+		out[0] = cp;
+		return 1;
 	}
 	else if (cp <= 0x07FF)
 	{
-		uint8_t ret[] = {
-			(uint8_t)(((cp>> 6)     )|0xC0),
-			(uint8_t)(((cp    )&0x3F)|0x80),
-		};
-		return string(arrayview<uint8_t>(ret));
+		out[0] = ((cp>> 6)     )|0xC0;
+		out[1] = ((cp    )&0x3F)|0x80;
+		return 2;
 	}
 	else if (cp >= 0xD800 && cp <= 0xDFFF)
-		return "\xEF\xBF\xBD"; // curse utf16 forever
+	{
+		writeu_be32(out, 0xEFBFBD00); // curse utf16 forever
+		return 3;
+	}
 	else if (cp <= 0xFFFF)
 	{
-		uint8_t ret[] = {
-			(uint8_t)(((cp>>12)&0x0F)|0xE0),
-			(uint8_t)(((cp>>6 )&0x3F)|0x80),
-			(uint8_t)(((cp    )&0x3F)|0x80),
-		};
-		return string(arrayview<uint8_t>(ret));
+		out[0] = ((cp>>12)&0x0F)|0xE0;
+		out[1] = ((cp>>6 )&0x3F)|0x80;
+		out[2] = ((cp    )&0x3F)|0x80;
+		return 3;
 	}
 	else if (cp <= 0x10FFFF)
 	{
-		uint8_t ret[] = {
-			(uint8_t)(((cp>>18)&0x07)|0xF0),
-			(uint8_t)(((cp>>12)&0x3F)|0x80),
-			(uint8_t)(((cp>>6 )&0x3F)|0x80),
-			(uint8_t)(((cp    )&0x3F)|0x80),
-		};
-		return string(arrayview<uint8_t>(ret));
+		out[0] = ((cp>>18)&0x07)|0xF0;
+		out[1] = ((cp>>12)&0x3F)|0x80;
+		out[2] = ((cp>>6 )&0x3F)|0x80;
+		out[3] = ((cp    )&0x3F)|0x80;
+		return 4;
 	}
-	else return "\xEF\xBF\xBD";
+	else
+	{
+		writeu_be32(out, 0xEFBFBD00);
+		return 3;
+	}
+}
+
+string string::codepoint(uint32_t cp)
+{
+	string ret;
+	ret.resize(string::codepoint(ret.construct(4).ptr(), cp));
+	return ret;
 }
 
 bool cstring::isutf8() const
@@ -801,8 +776,6 @@ static inline int test_isalpha(int c) { return (c&~0x20) >= 'A' && (c&~0x20) <= 
 static inline int test_islower(int c) { return c >= 'a' && c <= 'z'; }
 static inline int test_isupper(int c) { return c >= 'A' && c <= 'Z'; }
 static inline int test_isalnum(int c) { return test_isalpha(c) || test_isdigit(c); }
-static inline int test_isualpha(int c) { return c == '_' || test_isalpha(c); }
-static inline int test_isualnum(int c) { return c == '_' || test_isalnum(c); }
 static inline int test_isxdigit(int c) { return test_isdigit(c) || ((c&~0x20) >= 'A' && (c&~0x20) <= 'F'); }
 static inline int test_tolower(int c) { if (test_isupper(c)) return c|0x20; else return c; }
 static inline int test_toupper(int c) { if (test_islower(c)) return c&~0x20; else return c; }
@@ -818,8 +791,6 @@ test("ctype", "", "string")
 			assert_eq(!!islower(i), !!test_islower(i));
 			assert_eq(!!isupper(i), !!test_isupper(i));
 			assert_eq(!!isalnum(i), !!test_isalnum(i));
-			assert_eq(!!isualpha(i), !!test_isualpha(i));
-			assert_eq(!!isualnum(i), !!test_isualnum(i));
 			assert_eq(!!isxdigit(i), !!test_isxdigit(i));
 			assert_eq(tolower(i), test_tolower(i));
 			assert_eq(toupper(i), test_toupper(i));
@@ -871,7 +842,7 @@ test("strtoken", "", "string")
 	//assert(strtoken("", "", ','));
 }
 
-test("string", "array", "string")
+test("string", "array,memeq", "string")
 {
 	{
 		const char * g = "hi";
@@ -970,6 +941,9 @@ test("string", "array", "string")
 		string c = "["+cstring(a)+"]";
 		assert_eq(b, "[123]");
 		assert_eq(c, "[123]");
+		
+		assert(b == "[123]"); // test the ==literal optimization
+		assert(c == "[123]");
 	}
 	
 	{

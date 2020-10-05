@@ -3,6 +3,9 @@
 
 // TODO: https://blog.panicsoftware.com/your-first-coroutine/
 
+static bool isualpha(uint8_t c) { return isalpha(c) || c=='_'; }
+static bool isualnum(uint8_t c) { return isalnum(c) || c=='_'; }
+
 static bool firstword(cstring a, const char * b)
 {
 	return a.startswith(b) && !isualnum(a[strlen(b)]);
