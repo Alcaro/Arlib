@@ -230,7 +230,7 @@ __asm__(R"(
 init_last:
 .quad arlib_hybrid_exe_init  # this one must be "last" (.ctors is processed backwards)
 
-.section .ctors.arlibstatic3,"dr"
+.section .ctors.arlibstatic9,"dr"
 init_first:
 
 .text
@@ -241,14 +241,16 @@ extern "C" const funcptr init_last[];
 
 static void run_static_ctors()
 {
-	__cpu_indicator_init(); // should be early
-	
 	const funcptr * iter = init_first;
 	const funcptr * end = init_last;
 	// comparing two "unrelated" pointers is undefined behavior, so let's force gcc to forget their relationship and lack thereof
 	__asm__("" : "+r"(iter));
 	__asm__("" : "+r"(end));
-	do { // arlib_hybrid_exe_init guarantees that at least one static ctor exists, so we can safely use a do-while here
+	// do-while optimizes better if at least one entry is guaranteed to exist (which is arlib_hybrid_exe_init)
+	// I don't know why it's a list of pointers, rather than a list of call instructions,
+	//  it'd be both smaller and nicer to the branch predictor
+	// maybe less platform dependent, maybe they want same mechanism for ctors and dtors (which run in opposite order)
+	do {
 		iter--;
 		(*iter)(); 
 	} while (iter != end);
@@ -264,7 +266,7 @@ extern "C" __attribute__((used))
 void arlib_hybrid_exe_init()
 {
 	// if we're a dll, this is the last ctor to run, so use an atomic write
-	// if we're an exe, there is no concurrency; atomic is overkill, but it works, and it's easier to implement this way
+	// if we're an exe, there is no concurrency; atomic is unnecessary but harmless
 	lock_write<lock_rel>(&init_state, init_done);
 }
 
@@ -282,7 +284,7 @@ void arlib_hybrid_dll_init()
 	{
 		while (state == init_busy)
 		{
-#ifdef MAYBE_SSE2
+#ifdef runtime__SSE2__
 			_mm_pause();
 #endif
 			state = lock_read<lock_acq>(&init_state);

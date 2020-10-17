@@ -398,7 +398,7 @@ private:
 		if (this->count >= newcount) return;
 		size_t prevcount = this->count;
 		resize_grow_noinit(newcount);
-		if constexpr (this->trivial_cons())
+		if constexpr (arrayview<T>::trivial_cons())
 		{
 			memset(this->items+prevcount, 0, sizeof(T)*(newcount-prevcount));
 		}
@@ -582,7 +582,7 @@ public:
 			dst = this->items+prevcount;
 		}
 		
-		if constexpr (this->trivial_copy())
+		if constexpr (arrayview<T>::trivial_copy())
 		{
 			memcpy(dst, src, sizeof(T)*othercount);
 		}
@@ -829,11 +829,7 @@ template<typename T> class refarray {
 	array<autoptr<T>> items;
 public:
 	explicit operator bool() const { return (bool)items; }
-	
-	T& operator[](size_t n)
-	{
-		return *items[n];
-	}
+	T& operator[](size_t n) { return *items[n]; }
 	template<typename... Ts>
 	T& append(Ts... args)
 	{
@@ -841,10 +837,9 @@ public:
 		items.append(ret);
 		return *ret;
 	}
-	void append_take(T& item)
-	{
-		items.append(&item);
-	}
+	void append_take(T& item) { items.append(&item); }
+	void append_take(T* item) { items.append(item); }
+	void append_take(autoptr<T> item) { items.append(std::move(item)); }
 	void remove(size_t index) { items.remove(index); }
 	void reset() { items.reset(); }
 	size_t size() { return items.size(); }

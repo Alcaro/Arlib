@@ -142,7 +142,7 @@ static string recompile(cstring text_raw)
 	at = 0;
 	while (at < tokens.size())
 	{
-		if (firstword(tokens[at], "#include"))
+		if (tokens[at].startswith("#"))
 			is_early[at] = true;
 		// function
 		if (isualnum(tokens[at+0][0]) && // return type

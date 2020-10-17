@@ -131,7 +131,7 @@ else
   DEBUG ?= 0
 endif
 
-CCXXFLAGS = -fvisibility=hidden -Wall -Wmissing-declarations -Wimplicit-fallthrough -Wvla -pipe
+CCXXFLAGS = -Wall -Wmissing-declarations -Wimplicit-fallthrough -Wvla -pipe
 CONF_LFLAGS += -pipe
 #to silence for (size_t unused : range(42)) - delete this once gcc stops complaining
 CCXXFLAGS += -Wno-unused-variable
@@ -219,7 +219,7 @@ ifeq ($(OS),windows)
   endif
 endif
 
-OPTFLAGS += -Os -fomit-frame-pointer -fmerge-all-constants
+OPTFLAGS += -Os -fomit-frame-pointer -fmerge-all-constants -fno-math-errno -fvisibility=hidden -fno-semantic-interposition
 OPTFLAGS += -ffunction-sections
 #-fdata-sections inhibits some optimizations, and more importantly, turns .bss into .data on Windows
 #OPTFLAGS += -fdata-sections
@@ -272,7 +272,7 @@ ifneq ($(ASAN),)
   CONF_LFLAGS := -lasan $(CONF_LFLAGS)
 endif
 
-CONF_CFLAGS += -DARLIB_OBJNAME=$(OBJNAME)
+DEFINES += ARLIB_OBJNAME=$(OBJNAME)
 
 OUTNAME = $(PROGRAM)$(EXESUFFIX)
 
@@ -313,7 +313,7 @@ ifeq ($(ARGUI),1)
     CONF_LFLAGS += -lX11 $(shell pkg-config --libs gtk+-3.0)
     ifneq ($(OPT),0)
       # these are useful on debug builds (they catch mostly NULLs), but on release builds, they just waste space
-      CONF_CFLAGS += -DG_DISABLE_CAST_CHECKS
+      DEFINES += G_DISABLE_CAST_CHECKS
     endif
   endif
 else
@@ -463,19 +463,17 @@ SOURCES_NOWARN += arlib/deps/miniz.c
 CONF_CFLAGS += $(patsubst %,-D%,$(DEFINES))
 
 TRUE_CFLAGS := -std=c99 $(CCXXFLAGS) $(CONF_CFLAGS) $(CFLAGS)
-# C++ version policy: I will switch to a newer version of C++ if and only if it adds something that
-# - considerably simplifies existing code, or permits writing something that would've previously been too complicated to even try
-# - works on the default compiler on current Debian stable, latest Ubuntu LTS, and whatever computers I have at the moment
-#    (as of writing, GCC 7.5.0 on Ubuntu 18.04, and mingw-w64 8.1.0)
-#    working on additional compilers (for example Clang) is recommended, but not mandatory
-# - is functional and non-experimental in a finalized -std= version (c++11 is final, c++0x isn't, -fcoroutines isn't)
-#    it's fine if not every part of that language version is supported in that compiler version, but only working parts may be used
-# If someone cares about older C++ versions, I will accept PRs and not intentionally break it, as long as
+# Compiler support policy: I will do my best to support the default compiler on current Debian stable, latest Ubuntu LTS,
+#    every newer version of that compiler, and whatever computers I have at the moment.
+# I will also refrain from using non-final C++ versions (c++11 is final, c++0x isn't, -fcoroutines isn't), and
+#    I will not switch C++ version unless the new one considerably simplifies existing code, or permits writing something
+#    that would've previously been too complicated to even try.
+# If someone cares about older compilers and C++ versions, I will accept PRs and not intentionally break it, as long as
 # - it doesn't uglify anything too much; most modern C++ features aren't indispensable, but the lambdas are staying
 # - there is no performance penalty if compiled under modern C++; this may be accomplished with #if __cplusplus > 12345, if necessary,
 #     though too big and/or too many ifdefs counts as uglifying things
-# - said someone maintains it, and does not expect me to; I will forget what's C++11 and what isn't at random intervals,
-#     and I will use new C++ features if I deem them valuable
+# - said someone maintains it, and does not expect me to; I will forget what works in each compiler version at random intervals,
+#     and I will use new features if I deem them sufficiently valuable
 # It's fine if said backport doesn't include the entire Arlib.
 # The following features would be useful; if enough of them show up, I will switch:
 #   C++2a template lambdas (for the PNG decoder)
@@ -510,7 +508,7 @@ TRUE_CFLAGS := -std=c99 $(CCXXFLAGS) $(CONF_CFLAGS) $(CFLAGS)
 # I'm not interested in library features. Most of them lack important functionality, have bad constant factors, and bloat the binary.
 # The compiler-magic ones, like std::move and type traits, do one thing and do it well, and optimize to nothing. I use them.
 TRUE_CXXFLAGS := -std=c++17 -fno-rtti $(CCXXFLAGS) $(CONF_CXXFLAGS) $(CXXFLAGS)
-TRUE_LFLAGS := -fvisibility=hidden $(CONF_LFLAGS) $(LFLAGS)
+TRUE_LFLAGS := $(CONF_LFLAGS) $(LFLAGS)
 
 obj:
 	mkdir obj

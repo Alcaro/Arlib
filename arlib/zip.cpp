@@ -3,6 +3,7 @@
 #include "crc32.h"
 #include "endian.h"
 #include "os.h"
+#include "deflate.h"
 #define MINIZ_HEADER_FILE_ONLY
 #include "deps/miniz.c"
 
@@ -368,8 +369,7 @@ bool zip::read_idx(size_t id, array<uint8_t>& out, bool permissive, string* erro
 			case 8:
 			{
 				out.resize(f.decomplen);
-				size_t actualsize = tinfl_decompress_mem_to_mem(out.ptr(), out.size(), f.data.ptr(), f.data.size(), 0);
-				if (actualsize != f.decomplen) { *error = "corrupt DEFLATE data"; goto fail; }
+				if (!inflator::inflate(f.data, out)) { *error = "corrupt DEFLATE data"; goto fail; }
 				break;
 			}
 			default:

@@ -14,6 +14,7 @@ class gameview_x11;
 // (gdk/x11/gdkxid.c, gdk_x11_window_lookup_for_display)
 // for me, there will only be one, so I'll stick to something simpler than a hashmap
 gameview_x11* g_gameview = NULL;
+ondeinit() { if (window_x11.display) XCloseDisplay(window_x11.display); }
 
 class gameview_x11 : public gameview {
 public:

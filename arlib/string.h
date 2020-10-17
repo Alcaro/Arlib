@@ -6,10 +6,10 @@
 #include <string.h>
 
 // define my own ctype, because table lookup is faster than libc call that probably ends up in a table lookup anyways,
-//  and so I can define weird whitespace (\f \v) to not space (rather than several Arlib modules making up their own isspace)
-// this means they don't obey locale, but all modern locales use UTF-8, for which isctype() has no useful answer anyways
-// the entire design of locale works poorly these days anyways; it interacts badly with libraries, logging, threading,
-//  text-based formats like JSON, and several other things
+//  and so I can define weird whitespace (\f \v) to not space (several Arlib modules require that, better centralize it)
+// this means they don't obey locale, but all modern locales use UTF-8, for which isctype() has no useful answer
+// locale shouldn't be in libc anyways; localization is complex enough to belong in a separate library that updates faster than libc,
+//  and its global state based design interacts badly with libraries, logging, threading, text-based formats like JSON, etc
 
 #ifdef _WIN32
 #include <ctype.h> // include this one before windows.h does, the defines below confuse it
@@ -35,7 +35,7 @@ extern const uint8_t char_props[256];
 // 0x02 - uppercase (A-Z)
 // 0x04 - lowercase (a-z)
 // 0x08 - unused (testing &0x60 is as cheap as &0x08, and I'm not sure what else would be common enough to spend these bits on)
-// 0x10 - unused (only plausible one would be underscore, but it's rare across my projects)
+// 0x10 - unused (underscore or ispunct would be plausible, but they'd have only one or two )
 // 0x20 - letter (A-Za-z)
 // 0x40 - digit (0-9)
 // 0x80 - space (\t\n\r ) (0x80 bit is the cheapest to test, and isspace is the most common isctype())
@@ -143,11 +143,8 @@ private:
 		if (!str) str = "";
 		init_from_nocopy(arrayview<uint8_t>((uint8_t*)str, strlen(str)), true);
 	}
-	void init_from_nocopy(arrayview<uint8_t> data, bool has_nul = false)
+	void init_from_nocopy(const uint8_t * str, uint32_t len, bool has_nul = false)
 	{
-		const uint8_t * str = data.ptr();
-		uint32_t len = data.size();
-		
 		if (len <= MAX_INLINE)
 		{
 			for (uint32_t i=0;i<len;i++) m_inline[i] = str[i]; // memcpy's constant overhead is huge
@@ -163,10 +160,15 @@ private:
 			m_nul = has_nul;
 		}
 	}
+	void init_from_nocopy(arrayview<uint8_t> data, bool has_nul = false) { init_from_nocopy(data.ptr(), data.size(), has_nul); }
 	void init_from_nocopy(const cstring& other) { *this = other; }
 	
 	char getchar(uint32_t index) const
 	{
+// TODO: I want to delete the 'string[string.length()] is always nul' guarantee
+// check added oct 7; delete it nov 7
+bool debug_or_ignore();
+if(index==length())debug_or_ignore();
 		//this function is REALLY hot, use the strongest possible optimizations
 		if (inlined()) return m_inline[index];
 		else if (index < m_len) return m_data[index];
@@ -188,9 +190,9 @@ public:
 #if defined(__GNUC__) && !defined(__clang__) && __GNUC__ >= 8 && __GNUC__ <= 10 && __cplusplus >= 201103
 		// https://gcc.gnu.org/bugzilla/show_bug.cgi?id=91212
 		// (dead code, but will keep as a reminder that this bug exists)
-		init_from_nocopy(arrayview<uint8_t>((uint8_t*)str, strlen(str)), true);
+		init_from_nocopy((uint8_t*)str, strlen(str), true);
 #else
-		init_from_nocopy(arrayview<uint8_t>((uint8_t*)str, N-1), str[N-1]=='\0');
+		init_from_nocopy((uint8_t*)str, N-1, str[N-1]=='\0');
 #endif
 	}
 	
@@ -341,18 +343,9 @@ public:
 	std::enable_if_t<sizeof(T::match(nullptr,nullptr,nullptr))!=0, array<string>>
 	split(T regex) const { return split(regex, limit); }
 	
-	cstring trim() const
-	{
-		const uint8_t * chars = ptr();
-		int start = 0;
-		int end = length();
-		while (end > start && isspace(chars[end-1])) end--;
-		while (start < end && isspace(chars[start])) start++;
-		return substr(start, end);
-	}
-	
 	string lower() const; // Only considers ASCII. "ägg".upper() is äGG, not ÄGG.
 	string upper() const;
+	cstring trim() const;
 	
 	// Whether the string contains one or more embedded NUL bytes.
 	bool contains_nul() const;

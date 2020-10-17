@@ -276,10 +276,9 @@ jsonparser::event jsonparser::next()
 			while (isdigit(*m_data)) m_data++;
 		}
 		
-		double d;
-		if (!fromstring(arrayview<uint8_t>(start, m_data-start), d)) return do_error();
+		size_t len = m_data-start;
 		if (!skipcomma()) return do_error();
-		return { num, d };
+		return { num, arrayview<uint8_t>(start, len) };
 	}
 	if (ch == 't' && *(m_data++)=='r' && *(m_data++)=='u' && *(m_data++)=='e')
 	{
@@ -361,7 +360,7 @@ void JSON::construct(jsonparser& p, jsonparser::event& ev, bool* ok, size_t maxd
 	m_action = ev.action;
 	if(0);
 	else if (ev.action == jsonparser::str) m_str = ev.str;
-	else if (ev.action == jsonparser::num) m_num = ev.num;
+	else if (ev.action == jsonparser::num) fromstring(ev.str, m_num);
 	else if (ev.action == jsonparser::error) *ok = false;
 	else if (maxdepth == 0)
 	{
@@ -536,9 +535,9 @@ static const char * test2 =
 
 static jsonparser::event test2e[]={
 	{ e_enter_list },
-		{ e_num, 1 },
-		{ e_num, 25 },
-		{ e_num, 3 },
+		{ e_num, "1" },
+		{ e_num, "2.5e+1" },
+		{ e_num, "3" },
 	{ e_exit_list },
 	{ e_finish }
 };
@@ -562,7 +561,7 @@ static jsonparser::event test3e[]={
 static const char * test4 =
 "{ \"a\": [ { \"b\": [ 1, 2 ], \"c\": [ 3, 4 ] }, { \"d\": [ 5, 6 ], "
 "\"e\": [ \"this is a 31 byte string aaaaaa\", \"this is a 32 byte string aaaaaaa\", \"this is a 33 byte string aaaaaaaa\" ] } ],\n"
-"  \"f\": [ { \"g\": [ 7, 8 ], \"h\": [ 9, 1 ] }, { \"i\": [ 2, \"\xC3\xB8\" ], \"j\": [ {}, \"x\\nx\x7fx\" ] } ] }"
+"  \"f\": [ { \"g\": [ 7, 8 ], \"h\": [ 9, 0 ] }, { \"i\": [ 1, \"\xC3\xB8\" ], \"j\": [ {}, \"x\\nx\x7fx\" ] } ] }"
 ;
 
 static jsonparser::event test4e[]={
@@ -571,13 +570,13 @@ static jsonparser::event test4e[]={
 		{ e_enter_list },
 			{ e_enter_map },
 				{ e_map_key, "b" },
-				{ e_enter_list }, { e_num, 1 }, { e_num, 2 }, { e_exit_list },
+				{ e_enter_list }, { e_num, "1" }, { e_num, "2" }, { e_exit_list },
 				{ e_map_key, "c" },
-				{ e_enter_list }, { e_num, 3 }, { e_num, 4 }, { e_exit_list },
+				{ e_enter_list }, { e_num, "3" }, { e_num, "4" }, { e_exit_list },
 			{ e_exit_map },
 			{ e_enter_map },
 				{ e_map_key, "d" },
-				{ e_enter_list }, { e_num, 5 }, { e_num, 6 }, { e_exit_list },
+				{ e_enter_list }, { e_num, "5" }, { e_num, "6" }, { e_exit_list },
 				{ e_map_key, "e" },
 				{ e_enter_list },
 					{ e_str, "this is a 31 byte string aaaaaa" },
@@ -590,13 +589,13 @@ static jsonparser::event test4e[]={
 		{ e_enter_list },
 			{ e_enter_map },
 				{ e_map_key, "g" },
-				{ e_enter_list }, { e_num, 7 }, { e_num, 8 }, { e_exit_list },
-				{ e_map_key, "h" }, // don't use [9,0], { e_num, 0 } is ambiguous between double/char* ctors because c++ null is drunk
-				{ e_enter_list }, { e_num, 9 }, { e_num, 1 }, { e_exit_list },
+				{ e_enter_list }, { e_num, "7" }, { e_num, "8" }, { e_exit_list },
+				{ e_map_key, "h" },
+				{ e_enter_list }, { e_num, "9" }, { e_num, "0" }, { e_exit_list },
 			{ e_exit_map },
 			{ e_enter_map },
 				{ e_map_key, "i" },
-				{ e_enter_list }, { e_num, 2 }, { e_str, "\xC3\xB8" }, { e_exit_list },
+				{ e_enter_list }, { e_num, "1" }, { e_str, "\xC3\xB8" }, { e_exit_list },
 				{ e_map_key, "j" },
 				{ e_enter_list }, { e_enter_map }, { e_exit_map }, { e_str, "x\nx\x7fx" }, { e_exit_list },
 			{ e_exit_map },
@@ -630,7 +629,6 @@ static void testjson(cstring json, jsonparser::event* expected)
 		{
 			assert_eq(actual.action, expected->action);
 			assert_eq(actual.str, expected->str);
-			if (expected->action == e_num) assert_eq(actual.num, expected->num);
 			
 			if (expected->action == e_finish) return;
 		}
@@ -673,6 +671,7 @@ test("JSON parser", "string", "json")
 	testcall(testjson(test5, test5e));
 	
 	testcall(testjson_error(""));
+	testcall(testjson_error("           "));
 	testcall(testjson_error("{"));
 	testcall(testjson_error("{\"a\""));
 	testcall(testjson_error("{\"a\":"));
@@ -684,6 +683,7 @@ test("JSON parser", "string", "json")
 	testcall(testjson_error("\""));
 	testcall(testjson_error("01"));
 	testcall(testjson_error("1."));
+	testcall(testjson_error("+1"));
 	testcall(testjson_error("1e"));
 	testcall(testjson_error("1e+"));
 	testcall(testjson_error("1e-"));
@@ -696,26 +696,28 @@ test("JSON parser", "string", "json")
 	testcall(testjson_error("\"\\u12"));
 	testcall(testjson_error("\"\\u123"));
 	testcall(testjson_error("\"\\u1234"));
+	testcall(testjson_error("[\f]"));
+	testcall(testjson_error("[\v]"));
 	
 	//try to make it read out of bounds
 	//input length 31
-	testcall(testjson_error("\"force allocating the string \\u"));
-	testcall(testjson_error("\"force allocating the string\\u1"));
-	testcall(testjson_error("\"force allocating the strin\\u12"));
-	testcall(testjson_error("\"force allocating the stri\\u123"));
-	testcall(testjson_error("\"force allocating the str\\u1234"));
+	testcall(testjson_error("\"this is a somewhat longer str\\u"));
+	testcall(testjson_error("\"this is a somewhat longer st\\u1"));
+	testcall(testjson_error("\"this is a somewhat longer s\\u12"));
+	testcall(testjson_error("\"this is a somewhat longer \\u123"));
+	testcall(testjson_error("\"this is a somewhat longer\\u1234"));
 	//input length 32
-	testcall(testjson_error("\"force allocating the string  \\u"));
-	testcall(testjson_error("\"force allocating the string \\u1"));
-	testcall(testjson_error("\"force allocating the string\\u12"));
-	testcall(testjson_error("\"force allocating the strin\\u123"));
-	testcall(testjson_error("\"force allocating the stri\\u1234"));
+	testcall(testjson_error("\"this is a somewhat longer stri\\u"));
+	testcall(testjson_error("\"this is a somewhat longer str\\u1"));
+	testcall(testjson_error("\"this is a somewhat longer st\\u12"));
+	testcall(testjson_error("\"this is a somewhat longer s\\u123"));
+	testcall(testjson_error("\"this is a somewhat longer \\u1234"));
 	//input length 15
-	testcall(testjson_error("\"inline data! \\u"));
-	testcall(testjson_error("\"inline data!\\u1"));
-	testcall(testjson_error("\"inline data\\u12"));
-	testcall(testjson_error("\"inline dat\\u123"));
-	testcall(testjson_error("\"inline da\\u1234"));
+	testcall(testjson_error("\"short string \\u"));
+	testcall(testjson_error("\"short string\\u1"));
+	testcall(testjson_error("\"short strin\\u12"));
+	testcall(testjson_error("\"short stri\\u123"));
+	testcall(testjson_error("\"short str\\u1234"));
 	
 	//found by https://github.com/nst/JSONTestSuite/ - thanks!
 	testcall(testjson_error("[]\1"));
@@ -726,8 +728,9 @@ test("JSON parser", "string", "json")
 	testcall(testjson_error("{\"a\":0,}"));
 	testcall(testjson_error("[1,,2]"));
 	testcall(testjson_error("[-.123]"));
-	testcall(testjson_error(arrayview<uint8_t>((uint8_t*)"123\0", 4)));
-	testcall(testjson_error(arrayview<uint8_t>((uint8_t*)"[]\0", 3)));
+	
+	testcall(testjson_error("123"+string::nul()));
+	testcall(testjson_error("[]"+string::nul()));
 }
 
 

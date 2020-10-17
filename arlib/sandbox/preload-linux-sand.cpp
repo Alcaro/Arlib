@@ -254,7 +254,7 @@ jmp %rax
 extern const char sandbox_preload_bin[];
 extern const unsigned sandbox_preload_len;
 __asm__(R"(
-.section .rodata
+.pushsection .rodata
 .globl sandbox_preload_bin
 sandbox_preload_bin:
 .incbin "obj/sand-preload-)" STR(ARLIB_OBJNAME) R"(.elf"
@@ -263,6 +263,6 @@ sandbox_preload_bin:
 .globl sandbox_preload_len
 sandbox_preload_len:
 .int my_len
-.text
+.popsection
 )");
 #endif

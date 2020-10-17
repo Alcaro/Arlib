@@ -2,11 +2,7 @@
 #include "bytestream.h"
 #include "crc32.h"
 #include "simd.h"
-
-// TODO: write my own deflate handler
-// high level format overview: http://www.codersnotes.com/notes/elegance-of-deflate/
-#define MINIZ_HEADER_FILE_ONLY
-#include "deps/miniz.c"
+#include "deflate.h"
 
 //used for color 3, and color 0 bpp<8
 template<int color_type, int bpp_in>
@@ -98,6 +94,7 @@ bool image::init_decode_png(arrayview<uint8_t> pngdata)
 	if (width == 0 || height == 0 || width >= 0x80000000 || height >= 0x80000000) goto fail;
 	if (bits_per_sample >= 32 || color_type > 6 || comp_meth != 0 || filter_meth != 0 || interlace_meth > 1) goto fail;
 	if (bits_per_sample > 8) goto fail; // bpp=16 is allowed by the png standard, but not by this program
+	if (interlace_meth) goto fail; // TODO: implement this
 	static const uint32_t bpp_allowed[7] = { 0x977F7FFF, 0xFFFFFFFF, 0xFF7F7FFF, 0x977FFFFF, 0xFF7F7FFF, 0xFFFFFFFF, 0xFF7F7FFF };
 	if ((bpp_allowed[color_type]<<bits_per_sample)&0x80000000) goto fail; // set bit - invalid bpp (this also rejects types 1 and 5)
 	
@@ -209,33 +206,25 @@ bool image::init_decode_png(arrayview<uint8_t> pngdata)
 	
 	uint8_t* inflate_end = (uint8_t*)this->storage + nbytes;
 	uint8_t* inflate_start = inflate_end - (bytes_per_line_raw+1)*height;
-	uint8_t* inflate_at = inflate_start;
 	
-	tinfl_decompressor infl;
-	tinfl_init(&infl);
+	inflator::zlibhead infl;
+	infl.set_output_first(bytesw(inflate_start, inflate_end-inflate_start));
+	inflator::ret_t infl_status = inflator::ret_more_input;
 	
-	while (IDAT.type == 0x49444154)
+	while (IDAT.type == 0x49444154 && infl_status == inflator::ret_more_input)
 	{
-		size_t chunklen = IDAT.len;
-		size_t inflate_outsize = inflate_end-inflate_at;
-		uint32_t flags = TINFL_FLAG_HAS_MORE_INPUT | TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF | TINFL_FLAG_PARSE_ZLIB_HEADER;
-		tinfl_status status = tinfl_decompress(&infl, IDAT.bytes(chunklen).ptr(), &chunklen,
-		                                       inflate_start, inflate_at, &inflate_outsize,
-		                                       flags);
-		if (status < 0) goto fail;
-		
-		inflate_at += inflate_outsize;
-		
+		infl.set_input(IDAT.bytes(IDAT.len), false);
+		infl_status = infl.inflate();
 		IDAT = reader.chunk_raw(); // all IDAT chunks must be consecutive
 	}
 	
-	size_t zero = 0;
-	size_t inflate_outsize = inflate_end-inflate_at;
-	tinfl_status status = tinfl_decompress(&infl, NULL, &zero, inflate_start, inflate_at, &inflate_outsize,
-	                                       TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF | TINFL_FLAG_PARSE_ZLIB_HEADER);
-	inflate_at += inflate_outsize;
-	if (status != TINFL_STATUS_DONE) goto fail;
-	if (inflate_at != inflate_end) goto fail; // too little data (if too much, status is TINFL_STATUS_HAS_MORE_OUTPUT)
+	if (infl_status == inflator::ret_more_input)
+	{
+		infl.set_input(NULL, true);
+		infl_status = infl.inflate();
+	}
+	if (infl_status != inflator::ret_done) goto fail;
+	if (inflate_start+infl.output_in_last() != inflate_end) goto fail;
 	
 	pngchunk IEND = IDAT;
 	if (IEND.type != 0x49454E44) IEND = reader.chunk(); // ancillary between IDAT and IEND is fine, just discard that

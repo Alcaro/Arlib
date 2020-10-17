@@ -134,6 +134,9 @@ void _test_nothrow(int add)
 
 static void _testfail(cstring why)
 {
+	if (result == err_ok || (result==err_skip && !show_verbose))
+		puts("");
+	
 	result = err_fail;
 	puts(why.c_str());
 	fflush(stdout);

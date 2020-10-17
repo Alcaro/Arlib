@@ -99,7 +99,7 @@ bool debug_or_abort();
 //Same epoch as time(). They're unsigned because the time is known to be after 1970, but it's fine to cast them to signed.
 uint64_t time_ms();
 uint64_t time_us(); // this will overflow in year 586524
-//No epoch; the epoch may vary across machines or reboots. In exchange, it may be faster.
+//No epoch; the epoch may vary across machines or reboots. In exchange, it may be faster and/or more accurate.
 //ms/us will have the same epoch as each other, and will remain constant unless the machine is rebooted.
 //It is unspecified whether this clock ticks while the machine is suspended or hibernated.
 //There is no second-counting time_ne().

@@ -42,7 +42,7 @@
 #include "base64.h"
 #include "bytestream.h"
 #include "crc32.h"
-#include "html.h"
+#include "deflate.h"
 #include "image.h"
 #include "init.h"
 #include "process.h"

@@ -155,8 +155,8 @@ void _assert_range(const T&  actual, const char * actual_exp,
 	static void TESTFUNCNAME(); \
 	static KEEP_OBJECT _testdecl JOIN(_testdecl, __LINE__)(TESTFUNCNAME, __FILE__, __LINE__, name, requires, provides); \
 	static void TESTFUNCNAME()
-#define assert(x) do { if (!(x)) { _testfail("\nFailed assertion " #x, __FILE__, __LINE__); } } while(0)
-#define assert_msg(x, msg) do { if (!(x)) { _testfail((string)"\nFailed assertion " #x ": "+msg, __FILE__, __LINE__); } } while(0)
+#define assert(x) do { if (!(x)) { _testfail("Failed assertion " #x, __FILE__, __LINE__); } } while(0)
+#define assert_msg(x, msg) do { if (!(x)) { _testfail((string)"Failed assertion " #x ": "+msg, __FILE__, __LINE__); } } while(0)
 #define _assert_fn(fn,actual,expected,ret) do { \
 		fn(actual, #actual, expected, #expected, __FILE__, __LINE__); \
 	} while(0)
@@ -169,16 +169,99 @@ void _assert_range(const T&  actual, const char * actual_exp,
 #define assert_range(actual,min,max) do { \
 		_assert_range(actual, #actual, min, #min, max, #max, __FILE__, __LINE__); \
 	} while(0)
-#define assert_unreachable() do { _testfail("\nassert_unreachable() wasn't unreachable", __FILE__, __LINE__); } while(0)
+#define assert_unreachable() do { _testfail("assert_unreachable() wasn't unreachable", __FILE__, __LINE__); } while(0)
 #define test_nomalloc contextmanager(_test_blockmalloc(), _test_unblockmalloc())
 #define testctx(x) contextmanager(_teststack_pushstr(x), _teststack_popstr())
 #define testcall(x) do { contextmanager(_teststack_push(__FILE__, __LINE__), _teststack_pop()) { x; } } while(0)
 #define test_skip(x) do { _test_skip(x); } while(0)
 #define test_skip_force(x) do { _test_skip_force(x); } while(0)
-#define test_fail(msg) do { _testfail((string)"\n"+msg, __FILE__, __LINE__); } while(0)
+#define test_fail(msg) do { _testfail(msg, __FILE__, __LINE__); } while(0)
 #define test_inconclusive(x) do { _test_inconclusive(x); } while(0)
 #define test_expfail(x) do { _test_expfail(x); } while(0)
 #define test_nothrow contextmanager(_test_nothrow(+1), _test_nothrow(-1))
+
+#ifdef __clang__
+// I am not proud of this code.
+struct assert_reached_t {
+	assert_reached_t * link;
+	const char * file;
+	int lineno;
+};
+
+__attribute__((unused))
+static assert_reached_t* assert_reached_impl(assert_reached_t* n)
+{
+	static assert_reached_t* root = NULL;
+	if (!n) return root;
+	n->link = root;
+	root = n;
+	return NULL;
+}
+
+#define assert_reached()                                             \
+	do {                                                             \
+		static assert_reached_t node = { NULL, __FILE__, __LINE__ }; \
+		struct x { __attribute__((constructor)) static void y() {    \
+			assert_reached_impl(&node); } };                         \
+		node.file = NULL;                                            \
+	} while(0)
+
+__attribute__((unused))
+static void assert_all_reached()
+{
+	assert_reached_t* node = assert_reached_impl(NULL);
+	test_nothrow {
+		while (node) {
+			if (node->file) _testfail("assert_reached() wasn't", node->file, node->lineno);
+			node = node->link;
+		}
+	}
+}
+
+#elif defined(__GNUC__)
+// and this one is even worse, but I couldn't find anything better that GCC supports
+//  (other than gcov, which doesn't integrate with my testing framework, and interacts poorly with same-line if-return).
+// Both implementations give false negatives if compiler deletes the code as provably unreachable,
+//  and the GCC version gives unpredictable results if the function is inlined, a template, or otherwise duplicated. Stick to -O0.
+#define assert_reached()                                \
+	do {                                                \
+		__asm__ volatile(                               \
+			".pushsection .data\n"                      \
+			".subsection 2\n"                           \
+			".LCreached%=: .int " STR(__LINE__) "\n"    \
+			".popsection\n"                             \
+			"{movl $0, .LCreached%=(%%rip)"             \
+			"|mov dword ptr [.LCreached%=+%%rip], 0}\n" \
+			:); /* happy code */                        \
+	} while(0) // (%= and {|} only exist in extended asm, which needs a :)
+#define assert_all_reached()                                               \
+	do {                                                                   \
+		int* iter;                                                         \
+		int* end;                                                          \
+		__asm__(                                                           \
+			".pushsection .data\n"                                         \
+			".subsection 1\n"                                              \
+			".LCreached_init:\n"                                           \
+			".subsection 3\n"                                              \
+			".LCreached_fini:\n"                                           \
+			".popsection\n"                                                \
+			"lea {.LCreached_init(%%rip), %0"                              \
+			    "|%0, [.LCreached_init+%%rip]}\n"                          \
+			"lea {.LCreached_fini(%%rip), %1"                              \
+			    "|%1, [.LCreached_fini+%%rip]}\n"                          \
+			: "=r"(iter), "=r"(end));                                      \
+		test_nothrow {                                                     \
+			while (iter < end)                                             \
+			{                                                              \
+				if (*iter)                                                 \
+					_testfail("assert_reached() wasn't", __FILE__, *iter); \
+				iter++;                                                    \
+			}                                                              \
+		}                                                                  \
+	} while(0)
+#else
+// TODO
+#endif
 
 #define main not_quite_main
 int not_quite_main(int argc, char** argv);
@@ -203,6 +286,8 @@ int not_quite_main(int argc, char** argv);
 #define test_fail(msg)
 #define test_inconclusive(x)
 #define test_expfail(x)
+#define assert_reached()
+#define assert_all_reached()
 #define assert_unreachable()
 #define test_nothrow
 

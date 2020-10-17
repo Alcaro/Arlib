@@ -553,6 +553,16 @@ string cstring::upper() const
 	return ret;
 }
 
+cstring cstring::trim() const
+{
+	const uint8_t * chars = ptr();
+	int start = 0;
+	int end = length();
+	while (end > start && isspace(chars[end-1])) end--;
+	while (start < end && isspace(chars[start])) start++;
+	return substr(start, end);
+}
+
 bool cstring::contains_nul() const
 {
 #ifdef __SSE2__

@@ -7,17 +7,9 @@
 
 #pragma once
 
-#if defined(_MSC_VER)
-# error check whether that test works
-// && defined(_M_AMD64)
-# define __SSE2__
-#endif
+#include "cpu.h"
 
-#if defined(__i386__) || defined(__x86_64__)
-# define MAYBE_SSE2
-#endif
-
-#ifdef __SSE2__
+#ifdef runtime__SSE2__
 # include <emmintrin.h>
 
 # ifdef __i386__

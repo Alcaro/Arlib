@@ -5,22 +5,22 @@
 #include "os.h"
 #endif
 
-#if defined(_WIN32) || defined(__x86_64__) || defined(ARLIB_TEST)
+#if defined(_WIN32) || defined(runtime__SSE4_2__) || defined(ARLIB_TEST)
 // Unlike musl and glibc, this program uses a rolling hash, not the twoway algorithm.
-// Twoway is often faster, but average is roughly the same, and rolling has more stable performance.
+// Twoway is sometimes faster, sometimes slower; average is roughly the same, and rolling has more predictable performance.
 // (Unless you repeatedly get hash collisions, but that requires a repetitive haystack and an adversarial needle.)
 
-// I could write a SWAR program for small needles, but there's no need. I'm not targetting anything except x86.
-// I'll revisit this decision if I do target non-x86.
+// I could write a SWAR program for small needles, but Arlib currently doesn't target any non-x86 platform, so no need.
+// (And even without cmpestri, real SIMD instructions are almost always faster than SWAR.)
 
 #undef memmem
 
-#ifdef MAYBE_SSE2
+#ifdef runtime__SSE4_2__
 #include <immintrin.h>
 
 // Loads len (1 to 16) bytes from src to a __m128i. src doesn't need any particular alignment. The result's high bytes are undefined.
-static inline __m128i load_sse2_small(const uint8_t * src, size_t len) __attribute__((target("sse2"), always_inline));
-static inline __m128i load_sse2_small(const uint8_t * src, size_t len)
+__attribute__((target("sse2")))
+static forceinline __m128i load_sse2_small(const uint8_t * src, size_t len)
 {
 #ifndef ARLIB_OPT
 	// Valgrind *really* hates the fast version.
@@ -31,7 +31,7 @@ static inline __m128i load_sse2_small(const uint8_t * src, size_t len)
 	//  so I can't just add a suppression to memmem.
 	// Judging by the incomplete cmpestri handler, fixing it is most likely not going to get prioritized.
 	// So I'll switch to a slower but safe version if unoptimized, and if optimized, just leave the errors.
-	// Valgrind doesn't work very well with optimizations, anyways.
+	// Valgrind doesn't work very well with optimizations anyways.
 	uint8_t tmp[16] __attribute__((aligned(16))) = {};
 	memcpy(tmp, src, len);
 	return _mm_load_si128((__m128i*)tmp);
@@ -66,7 +66,7 @@ static inline __m128i load_sse2_small(const uint8_t * src, size_t len)
 #endif
 }
 
-// Works on needles of length 16 or less, but it gets slower for big ones.
+// Works on needles of length 2 through 16, but it gets slower for big ones.
 __attribute__((target("sse4.2")))
 static const uint8_t * memmem_sse42(const uint8_t * haystack, size_t haystacklen, const uint8_t * needle, size_t needlelen)
 {
@@ -83,8 +83,8 @@ static const uint8_t * memmem_sse42(const uint8_t * haystack, size_t haystacklen
 		if (pos < (int)step)
 			return haystack + pos;
 		
-		haystack += step; // oddly enough, using 'pos' instead reduces performance. I guess cmpestri latency is high.
-		haystacklen -= step; // do not change without adding a haystacklen!=0 check below
+		haystack += step; // using 'pos' instead reduces performance, cmpestri latency is high
+		haystacklen -= step;
 	}
 	
 	// load_sse2_small fails for len=0, but haystacklen is known >= 1
@@ -102,20 +102,21 @@ static const uint8_t * memmem_sse42(const uint8_t * haystack, size_t haystacklen
 
 static const uint8_t * memmem_rollhash(const uint8_t * haystack, size_t haystacklen, const uint8_t * needle, size_t needlelen)
 {
-	size_t hash_in = 131; // lowest prime >= 128 - fairly arbitrarily chosen
-	size_t needle_hash = 0;
+	const size_t hash_in = 283;
+	// 283 is the prime closest to 256+31
+	// >= 256 guarantees the hash is perfect for haystacklen <= sizeof(size_t)
+	// 31 is the usual constant for string hashing; I don't know why it's chosen, but it's as good as any
 	
+	size_t needle_hash = 0;
 	uint32_t bytes_used[256/32] = {};
 	for (size_t n : range(needlelen))
 	{
 		uint8_t ch = needle[n];
-		bytes_used[ch/32] |= 1u<<(ch&31);
-		
 		needle_hash = needle_hash*hash_in + ch;
+		bytes_used[ch/32] |= 1u<<(ch&31);
 	}
 	
 	const uint8_t * haystackend = haystack+haystacklen;
-	
 again:
 	if (haystack+needlelen > haystackend)
 		return NULL;
@@ -172,13 +173,9 @@ void* memmem_arlib(const void * haystack, size_t haystacklen, const void * needl
 	haystacklen -= (uint8_t*)haystack - (uint8_t*)hay_orig;
 	if (UNLIKELY(needlelen > haystacklen)) return NULL;
 	
-#ifdef MAYBE_SSE2
-	if (needlelen <= 15 // use rolling hash for needle length 16, both do one byte per iteration and _mm_cmpestri is slow
-#ifndef __SSE4_2__
-		&& __builtin_cpu_supports("sse4.2") // this should be optimized if -msse4.2, but isn't, so more ifdef
-#endif
-	)
-		return (void*)memmem_sse42((uint8_t*)haystack, haystacklen, (uint8_t*)needle, needlelen);
+#ifdef runtime__SSE4_2__
+	// don't use this for needle length 16, both do one byte per iteration and _mm_cmpestri is slow
+	if (needlelen <= 15 && runtime__SSE4_2__) return (void*)memmem_sse42((uint8_t*)haystack, haystacklen, (uint8_t*)needle, needlelen);
 #endif
 	
 #if !defined(_WIN32) && !defined(ARLIB_TEST) // for long needles, use libc; we're roughly equally fast, and code reuse means smaller

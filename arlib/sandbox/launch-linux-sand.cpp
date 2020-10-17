@@ -150,7 +150,7 @@ int sandproc::preloader_fd()
 		goto fail;
 	if (fcntl(fd, F_ADD_SEALS, F_SEAL_WRITE|F_SEAL_SHRINK|F_SEAL_GROW|F_SEAL_SEAL) < 0)
 		goto fail;
-	int prev = lock_cmpxchg_loose(&s_fd, 0, fd);
+	int prev = lock_cmpxchg<lock_loose, lock_loose>(&s_fd, 0, fd);
 	if (prev != 0)
 	{
 		close(fd);

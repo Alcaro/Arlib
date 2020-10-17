@@ -101,7 +101,7 @@ class jsonserializer {
 	add_node(T inner)
 	{
 		if constexpr (std::is_same_v<T, bool>) w.boolean(inner);
-		else w.num((double)inner);
+		else w.num(inner);
 	}
 	
 	void add_node(cstring inner) { w.str(inner); }
@@ -186,7 +186,7 @@ class jsonserializer {
 	
 	template<typename T>
 	std::enable_if_t<std::is_integral_v<T>>
-	add_node_hex(T inner) { w.num((double)inner); }
+	add_node_hex(T inner) { w.num(inner); }
 	
 	void add_node_hex(bytesr inner) { w.str(tostringhex(inner)); }
 	
@@ -366,8 +366,8 @@ class jsondeserializer {
 	std::enable_if_t<std::is_invocable_v<T, cstring>>
 	read_item_raw(const T& out)
 	{
-		if (ev.action == jsonparser::str) out(ev.str);
-		else valid = false;
+		if (ev.action != jsonparser::str) { valid = false; return; }
+		out(ev.str);
 	}
 	
 	template<typename T>
@@ -375,7 +375,7 @@ class jsondeserializer {
 	read_item_raw(T& out)
 	{
 		if (ev.action != jsonparser::num) { valid = false; return; }
-		out = ev.num; // TODO: should flag error if this overflows (in fact, overflow is UB)
+		valid &= fromstring(ev.str, out);
 	}
 	
 	void read_item_raw(string& out)
@@ -386,9 +386,9 @@ class jsondeserializer {
 	
 	void read_item_raw(bool& out)
 	{
-		out = false;
 		if (ev.action == jsonparser::jtrue) out = true;
-		else if (ev.action != jsonparser::jfalse) valid = false;
+		else if (ev.action == jsonparser::jfalse) out = false;
+		else valid = false;
 	}
 	
 	template<typename T>
