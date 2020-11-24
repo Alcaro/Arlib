@@ -9,7 +9,8 @@
 //    The latter three should be as simple as possible; as much complexity as possible should be in the tests.
 //- As a corollary, tests may do weird things in order to exercise deeply-buried code paths of the implementation.
 //- All significant functionality should be tested.
-//- Tests shall not distrust any module they depend on, unless that module relies on this one for testing.
+//- Tests shall test one thing only, and shall assume that their dependencies are correct.
+//- If a test failure in a module is actually due to a dependency, there's also a bug in dependency's tests. Fix that bug first.
 //- Tests may assume that the implementation tries to do what it should.
 //    There's no need to e.g. verify that a file object actually hits the disk. If it hardcodes what the tests expect, it's malicious.
 //    As a corollary, if it's obviously correct, there's no need to test it.
@@ -17,10 +18,10 @@
 //    but they're also nontrivial effort to write, can be buggy or inaccurate, can displace things that should be tested,
 //    and injecting them usually involves adding complexity to implementation and/or interface.
 //    For example, the HTTP client tests will poke the internet.
-//Rare exceptions can be permitted, such as various ifdefs in the runloop implementations (they catch significant amount of issues,
+//Rare exceptions can be permitted, such as various ifdefs in the runloop implementations (they catch a significant amount of issues,
 //    with zero additional header complexity or release-mode bloat), or UDP sockets being untested (DNS client covers both).
 
-// ARLIB_TEST and ARLIB_TESTRUNNER are both defined in the main program if compiling for tests.
+// Both ARLIB_TEST and ARLIB_TESTRUNNER are defined in the main program if compiling for tests.
 // In Arlib itself, only ARLIB_TESTRUNNER is defined.
 
 #undef assert
@@ -180,7 +181,7 @@ void _assert_range(const T&  actual, const char * actual_exp,
 #define test_expfail(x) do { _test_expfail(x); } while(0)
 #define test_nothrow contextmanager(_test_nothrow(+1), _test_nothrow(-1))
 
-#ifdef __clang__
+#if defined(__clang__)
 // I am not proud of this code.
 struct assert_reached_t {
 	assert_reached_t * link;
@@ -222,7 +223,7 @@ static void assert_all_reached()
 // and this one is even worse, but I couldn't find anything better that GCC supports
 //  (other than gcov, which doesn't integrate with my testing framework, and interacts poorly with same-line if-return).
 // Both implementations give false negatives if compiler deletes the code as provably unreachable,
-//  and the GCC version gives unpredictable results if the function is inlined, a template, or otherwise duplicated. Stick to -O0.
+//  and I don't know what happens if the function is inlined, a template, or otherwise duplicated.
 #define assert_reached()                                \
 	do {                                                \
 		__asm__ volatile(                               \
@@ -238,7 +239,7 @@ static void assert_all_reached()
 	do {                                                                   \
 		int* iter;                                                         \
 		int* end;                                                          \
-		__asm__(                                                           \
+		__asm__ volatile(                                                  \
 			".pushsection .data\n"                                         \
 			".subsection 1\n"                                              \
 			".LCreached_init:\n"                                           \
@@ -260,7 +261,7 @@ static void assert_all_reached()
 		}                                                                  \
 	} while(0)
 #else
-// TODO
+// is this even possible without gcc extensions or a custom build step?
 #endif
 
 #define main not_quite_main

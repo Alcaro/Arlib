@@ -13,11 +13,11 @@ ARSOCKET_SSL = openssl bearssl
 ARSOCKET_SSL_WINDOWS = schannel bearssl
 ARSANDBOX = 1
 # Controls whether the program has a console window on Windows.
-# Valid values: 0, 1 (default if ARGUI and ARGAME are disabled), error (default if ARGUI or ARGAME is enabled), wine
+# Valid values: 0, 1 (default if ARGUI and ARGAME are disabled), error (default if ARGUI or ARGAME is enabled), hybrid
 # 1 - enable console window
 # 0 - disable console window, and delete every printf and puts call, since they don't work and just waste space
 # error - disable console window, and turn printf and puts into errors, as a reminder that they don't work
-# wine - disable console window, but compile printf/puts calls; they don't work on Windows, but they do work under Wine
+# hybrid - disable console window, but compile printf/puts calls; if the program calls window_console_attach(), they will work
 # Ignored on Linux.
 ARTERMINAL = 1
 

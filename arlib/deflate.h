@@ -143,17 +143,17 @@ public:
 	size_t unused_input() const { return m_in_end - m_in_at + m_in_nbits/8; }
 	
 	// Shortcuts to the above. Former returns empty on failure, which is indistinguishable from empty output;
-	//  latter returns false if the decompressed data didn't fit exactly, or if input is bigger than expected.
+	//  latter returns false if the decompressed data didn't fit exactly. Both return false if input contains unused bytes.
 	static bytearray inflate(bytesr in);
-	static bool inflate(bytesr in, bytesw out);
+	static bool inflate(bytesw out, bytesr in);
 	
 	// Same interface as the outer class, but also parses zlib headers.
 	// Also offers an adler32 calculator, in case you need that for anything else (for example creating zlib streams).
 	class zlibhead;
 };
 class inflator::zlibhead {
-	inflator inf;
 	uint32_t adler;
+	inflator inf;
 public:
 	zlibhead() { reset(); }
 	void reset() { adler = 1; inf.reset(); inf.m_state = 254; }
@@ -167,7 +167,8 @@ public:
 	size_t unused_input() const { return inf.unused_input(); }
 	
 	static bytearray inflate(bytesr in);
-	static bool inflate(bytesr in, bytesw out);
+	static bool inflate(bytesw out, bytesr in);
+	static void inflate_trusted(bytesw out, bytesr in);
 	
 	static uint32_t adler32(bytesr by, uint32_t adler_prev = 1);
 };

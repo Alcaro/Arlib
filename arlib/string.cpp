@@ -90,6 +90,14 @@ void string::init_from_large(const uint8_t * str, uint32_t len)
 	m_nul = true;
 }
 
+void string::init_from(const cstring& other)
+{
+	if (other.inlined())
+		memcpy((void*)this, (void*)&other, sizeof(*this));
+	else
+		init_from_large(other.m_data, other.m_len);
+}
+
 void string::reinit_from(arrayview<uint8_t> data)
 {
 	const uint8_t * str = data.ptr();
@@ -537,19 +545,19 @@ int string::natcompare3(cstring a, cstring b, bool case_insensitive)
 	return 0;
 }
 
-string cstring::lower() const
-{
-	string ret = *this;
-	uint8_t * chars = ret.ptr();
-	for (size_t i=0;i<length();i++) chars[i] = tolower(chars[i]);
-	return ret;
-}
-
 string cstring::upper() const
 {
 	string ret = *this;
-	uint8_t * chars = ret.ptr();
-	for (size_t i=0;i<length();i++) chars[i] = toupper(chars[i]);
+	bytesw by = ret.bytes();
+	for (size_t i=0;i<by.size();i++) by[i] = toupper(by[i]);
+	return ret;
+}
+
+string cstring::lower() const
+{
+	string ret = *this;
+	bytesw by = ret.bytes();
+	for (size_t i=0;i<by.size();i++) by[i] = tolower(by[i]);
 	return ret;
 }
 
@@ -1044,12 +1052,12 @@ test("string", "array,memeq", "string")
 	{
 		cstring a(nullptr);
 		cstring b = nullptr;
-		cstring c; c = nullptr;
-		cstring d((const char*)nullptr);
+		cstring c;
+		cstring d; c = nullptr;
 		string e(nullptr);
 		string f = nullptr;
-		string g; g = nullptr;
-		string h((const char*)nullptr);
+		string g;
+		string h; h = nullptr;
 		
 		assert_eq(a, "");
 		assert_eq(b, "");

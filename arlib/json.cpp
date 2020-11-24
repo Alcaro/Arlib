@@ -1,6 +1,7 @@
 #include "json.h"
 #include "stringconv.h"
 #include "simd.h"
+#include "endian.h"
 
 // TODO: find some better place for this
 // if input is 0, undefined behavior
@@ -109,15 +110,16 @@ jsonparser::event jsonparser::next()
 		uint8_t * val_out_start = m_data;
 		uint8_t * val_out = m_data;
 		
-		//most strings don't contain escapes - special case them
+		//most strings don't contain escapes, special case them
 		uint8_t * fast_iter = m_data;
 #ifdef __SSE2__
 		while (fast_iter+16 <= m_data_end)
 		{
 			__m128i chs = _mm_loadu_si128((__m128i*)fast_iter);
 			
-			__m128i bad1 = _mm_cmplt_epi8(_mm_xor_si128(chs, _mm_set1_epi8(0x80)), _mm_set1_epi8((int8_t)(0x20^0x80)));
-			__m128i bad2 = _mm_or_si128(_mm_cmpeq_epi8(chs, _mm_set1_epi8(0x22)), _mm_cmpeq_epi8(chs, _mm_set1_epi8(0x5C)));
+			// xor 128 because signed compare; xor 2 to fold " to beside the control chars and not check it separately
+			__m128i bad1 = _mm_cmplt_epi8(_mm_xor_si128(chs, _mm_set1_epi8(0x82)), _mm_set1_epi8((int8_t)(0x21^0x80)));
+			__m128i bad2 = _mm_cmpeq_epi8(chs, _mm_set1_epi8(0x5C)); // can't find any way to optimize out the \ check though
 			__m128i bad = _mm_or_si128(bad1, bad2);
 			int mask = _mm_movemask_epi8(bad); // always in uint16 range, but gcc doesn't know that; keeping it as int optimizes better
 			if (mask == 0)
@@ -140,7 +142,7 @@ jsonparser::event jsonparser::next()
 		while (true)
 		{
 			uint8_t ch = *fast_iter;
-			if (UNLIKELY(ch < 32 || ch == '\\' || ch == '"'))
+			if (UNLIKELY((ch^2) <= 32 || ch == '\\'))
 			{
 				val_out = fast_iter;
 				m_data = fast_iter;
@@ -191,7 +193,7 @@ jsonparser::event jsonparser::next()
 							codepoint = 0x10000 + ((codepoint-0xD800)<<10) + (low_sur-0xDC00);
 						}
 					}
-					// else leave as is, string::codepoint will return fffd
+					// else leave as is, string::codepoint will return fffd for unpaired surrogates
 					
 					val_out += string::codepoint(val_out, codepoint);
 					break;
@@ -280,18 +282,21 @@ jsonparser::event jsonparser::next()
 		if (!skipcomma()) return do_error();
 		return { num, arrayview<uint8_t>(start, len) };
 	}
-	if (ch == 't' && *(m_data++)=='r' && *(m_data++)=='u' && *(m_data++)=='e')
+	if (ch == 't' && m_data+3 <= m_data_end && readu_le32(m_data-1) == 0x65757274) // true
 	{
+		m_data += 3;
 		if (!skipcomma()) return do_error();
 		return { jtrue };
 	}
-	if (ch == 'f' && *(m_data++)=='a' && *(m_data++)=='l' && *(m_data++)=='s' && *(m_data++)=='e')
+	if (ch == 'f' && m_data+4 <= m_data_end && readu_le32(m_data) == 0x65736c61) // alse
 	{
+		m_data += 4;
 		if (!skipcomma()) return do_error();
 		return { jfalse };
 	}
-	if (ch == 'n' && *(m_data++)=='u' && *(m_data++)=='l' && *(m_data++)=='l')
+	if (ch == 'n' && m_data+3 <= m_data_end && readu_le32(m_data-1) == 0x6c6c756e) // null
 	{
+		m_data += 3;
 		if (!skipcomma()) return do_error();
 		return { jnull };
 	}
@@ -315,14 +320,13 @@ string jsonwriter::strwrap(cstring s)
 		{
 			__m128i chs = _mm_loadu_si128((__m128i*)it);
 			
-			__m128i bad1 = _mm_cmplt_epi8(_mm_xor_si128(chs, _mm_set1_epi8(0x80)), _mm_set1_epi8((int8_t)(0x20^0x80)));
-			__m128i bad2 = _mm_or_si128(_mm_cmpeq_epi8(chs, _mm_set1_epi8(0x22)), _mm_cmpeq_epi8(chs, _mm_set1_epi8(0x5C)));
-			__m128i bad3 = _mm_or_si128(bad2, _mm_cmpeq_epi8(chs, _mm_set1_epi8(0x7F)));
-			__m128i bad = _mm_or_si128(bad1, bad3);
+			__m128i bad1 = _mm_cmplt_epi8(_mm_xor_si128(chs, _mm_set1_epi8(0x82)), _mm_set1_epi8((int8_t)(0x21^0x80)));
+			__m128i bad2 = _mm_or_si128(_mm_cmpeq_epi8(chs, _mm_set1_epi8(0x7F)), _mm_cmpeq_epi8(chs, _mm_set1_epi8(0x5C)));
+			__m128i bad = _mm_or_si128(bad1, bad2);
 			int mask = _mm_movemask_epi8(bad);
 			if (mask == 0)
 			{
-				it += 16-1; // -1 for the it++ above
+				it += 16-1; // -1 for the it++ above (oddly enough, this way is faster)
 				continue;
 			}
 			it += ctz32(mask);
@@ -331,7 +335,7 @@ string jsonwriter::strwrap(cstring s)
 		
 		uint8_t c = *it;
 		// DEL is legal according to nst/JSONTestSuite, but let's avoid it anyways
-		if (c < 32 || c == '"' || c == '\\' || c == 0x7F)
+		if ((c^2) <= 32 || c == '\\' || c == 0x7F)
 		{
 			out += arrayview<uint8_t>(previt, it-previt);
 			previt = it+1;
@@ -505,6 +509,7 @@ string JSON::serialize_sorted(int indent) const
 }
 
 
+
 #include "test.h"
 #ifdef ARLIB_TEST
 #define e_jfalse jsonparser::jfalse
@@ -623,8 +628,8 @@ static void testjson(cstring json, jsonparser::event* expected)
 	{
 		jsonparser::event actual = parser.next();
 		
-//printf("e=%d [%s] [%lf]\n", expected->action, (const char*)expected->str.c_str(), (expected->action==e_num ? expected->num : -1));
-//printf("a=%d [%s] [%lf]\n\n", actual.action,  (const char*)actual.str.c_str(),    (actual.action==e_num ? actual.num : -1));
+//printf("e=%d [%s]\n", expected->action, (const char*)expected->str.c_str());
+//printf("a=%d [%s]\n\n", actual.action,  (const char*)actual.str.c_str());
 		if (expected)
 		{
 			assert_eq(actual.action, expected->action);
@@ -648,7 +653,7 @@ static void testjson_error(cstring json, bool actually_error = true)
 	{
 		jsonparser::event ev = parser.next();
 //if (events==999)
-//printf("a=%d [%s] [%f]\n", ev.action, ev.str.bytes().ptr(), ev.num);
+//printf("a=%d [%s]\n", ev.action, (const char*)ev.str.c_str());
 		if (ev.action == e_error) error = true; // any error is fine
 		if (ev.action == e_enter_list || ev.action == e_enter_map) depth++;
 		if (ev.action == e_exit_list  || ev.action == e_exit_map)  depth--;
@@ -718,6 +723,16 @@ test("JSON parser", "string", "json")
 	testcall(testjson_error("\"short strin\\u12"));
 	testcall(testjson_error("\"short stri\\u123"));
 	testcall(testjson_error("\"short str\\u1234"));
+	testcall(testjson_error("                    f"));
+	testcall(testjson_error("                    fa"));
+	testcall(testjson_error("                    fal"));
+	testcall(testjson_error("                    fals"));
+	testcall(testjson_error("                    t"));
+	testcall(testjson_error("                    tr"));
+	testcall(testjson_error("                    tru"));
+	testcall(testjson_error("                    n"));
+	testcall(testjson_error("                    nu"));
+	testcall(testjson_error("                    nul"));
 	
 	//found by https://github.com/nst/JSONTestSuite/ - thanks!
 	testcall(testjson_error("[]\1"));
@@ -733,8 +748,6 @@ test("JSON parser", "string", "json")
 	testcall(testjson_error("[]"+string::nul()));
 }
 
-
-
 test("JSON container", "string,array,set", "json")
 {
 	{
@@ -745,6 +758,19 @@ test("JSON container", "string,array,set", "json")
 	{
 		JSON json("\"42\"");
 		assert_eq(json.str(), "42");
+	}
+	
+	{
+		JSON json("                    false");
+		assert_eq(json.type(), jsonparser::jfalse);
+	}
+	{
+		JSON json("                    true");
+		assert_eq(json.type(), jsonparser::jtrue);
+	}
+	{
+		JSON json("                    null");
+		assert_eq(json.type(), jsonparser::jnull);
 	}
 	
 	{
@@ -791,6 +817,17 @@ test("JSON container", "string,array,set", "json")
 		JSONw json;
 		json["\x01\x02\x03\n\\n☃\""].str() = "\x01\x02\x03\n\\n☃\"";
 		assert_eq(json.serialize(), R"({"\u0001\u0002\u0003\n\\n☃\"":"\u0001\u0002\u0003\n\\n☃\""})");
+	}
+	
+	{
+		JSONw json;
+		json[0].str() = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+		json[1].str() = "aaaaaaaa\"aaaaaaaaaaaaaaaaaaaaaaa";
+		json[2].str() = "aaaaaaaa\x1f""aaaaaaaaaaaaaaaaaaaaaaa";
+		json[3].str() = "aaaaaaaa aaaaaaaaaaaaaaaaaaaaaaa";
+		json[4].str() = "aaaaaaaa\\aaaaaaaaaaaaaaaaaaaaaaa";
+		assert_eq(json.serialize(), R"(["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","aaaaaaaa\"aaaaaaaaaaaaaaaaaaaaaaa",)"
+		           R"("aaaaaaaa\u001Faaaaaaaaaaaaaaaaaaaaaaa","aaaaaaaa aaaaaaaaaaaaaaaaaaaaaaa","aaaaaaaa\\aaaaaaaaaaaaaaaaaaaaaaa"])");
 	}
 	
 	if (false) // disabled, JSON::construct runs through all 200000 events from the jsonparser which is slow

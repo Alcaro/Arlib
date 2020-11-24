@@ -175,7 +175,7 @@ public:
 	
 	int type() const { return m_action; }
 	
-	double num() const { return m_num; }
+	double num() const { return m_num; } // This struct handles double only. If you need int64, use serialize.h.
 	const string& str() const { return m_str; }
 	arrayview<JSON> list() const { return m_chld_list; }
 	const map<string,JSON>& assoc() const { return m_chld_map; }

@@ -63,6 +63,9 @@ long double strtold_arlib(const char * str, char** str_end);
 #include "function.h"
 #include "cpu.h"
 
+#define rand use_g_rand_instead
+#define srand g_rand_doesnt_need_this
+
 #ifdef STDOUT_DELETE
 #define puts(x) do{}while(0)
 #define printf(x, ...) do{}while(0)
@@ -266,15 +269,16 @@ void free_test(void* ptr);
 #include <mm_malloc.h> // contains an inline function that calls malloc
 #endif
 
-// these six act as their base functions on success, except they return anyptr and don't need explicit casts
-// on failure, try_ returns NULL, while xmalloc throws std::bad_alloc or calls abort(), depending on whether exceptions are enabled
-// however, note that using try_malloc, or catching xmalloc's exception, is not a comprehensive OOM handling strategy
-// - it's hard to test
-// - it's often unclear how OOM should be handled, especially considering OOM handlers can't allocate more memory
-// - parts of Arlib are not exception safe; you may get memory leaks, or something worse
-// - modern systems don't fail memory allocations; they swap things around until the machine is unusably slow, or summon the OOM killer
-// therefore, if your program has data it doesn't want to lose, it should write it to disk often, and crash and get restarted on OOM
-// (naturally, these arguments turn out differently on different platforms, but they're true for every platform Arlib targets)
+// These six act as their base functions if they return non-NULL, except they return anyptr and don't need explicit casts.
+// On NULL, try_ returns NULL, while xmalloc kills the process.
+
+// Arlib recommends using xmalloc. It means a malloc call can terminate the process, but that's already the case - either directly,
+//  via Linux OOM killer, or indirectly, via the machine being bogged down with infinite swap until user reboots it.
+// OOM should be handled by regularly saving all valuable to data to disk. This also protects against program crashes, power outage, etc.
+
+// On systems without swap or overcommit, malloc return value should of course be checked - but such systems are usually
+//  microcontrollers where malloc isn't allowed anyways, or retrocomputers that Arlib doesn't target.
+
 anyptr xmalloc(size_t size);
 inline anyptr try_malloc(size_t size) { _test_malloc(); return malloc(size); }
 #define malloc use_xmalloc_or_try_malloc_instead
@@ -335,9 +339,9 @@ protected:
 
 template<typename T>
 class autoptr : nocopy {
-	T* ptr;
+	T* ptr = NULL;
 public:
-	autoptr() : ptr(NULL) {}
+	autoptr() = default;
 	autoptr(T* ptr) : ptr(ptr) {}
 	autoptr(autoptr<T>&& other) { ptr = other.ptr; other.ptr = NULL; }
 	autoptr<T>& operator=(T* ptr) { delete this->ptr; this->ptr = ptr; return *this; }
@@ -355,9 +359,9 @@ public:
 
 template<typename T>
 class autofree : nocopy {
-	T* ptr;
+	T* ptr = NULL;
 public:
-	autofree() : ptr(NULL) {}
+	autofree() = default;
 	autofree(T* ptr) : ptr(ptr) {}
 	autofree(autofree<T>&& other) { ptr = other.ptr; other.ptr = NULL; }
 	autofree<T>& operator=(T* ptr) { free(this->ptr); this->ptr = ptr; return *this; }

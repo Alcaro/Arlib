@@ -71,7 +71,7 @@ struct textgrid {
 		auto click_cb = decompose_lambda([this](GdkEvent* event, GtkWidget* widget)->gboolean
 		{
 			if(0);
-			else if (event->button.button == GDK_BUTTON_PRIMARY && (event->button.state&GDK_SHIFT_MASK))
+			else if (event->button.button == GDK_BUTTON_PRIMARY && (event->button.state&GDK_CONTROL_MASK))
 			{
 				if (event->type == GDK_BUTTON_PRESS) {}
 				else return GDK_EVENT_STOP; // to discard the 2BUTTON_PRESS

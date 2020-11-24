@@ -11,7 +11,7 @@
 // (Unless you repeatedly get hash collisions, but that requires a repetitive haystack and an adversarial needle.)
 
 // I could write a SWAR program for small needles, but Arlib currently doesn't target any non-x86 platform, so no need.
-// (And even without cmpestri, real SIMD instructions are almost always faster than SWAR.)
+// (And even without cmpestri, real SIMD instructions are almost always faster than SWAR, and exist on all modern platforms.)
 
 #undef memmem
 
@@ -72,18 +72,31 @@ static const uint8_t * memmem_sse42(const uint8_t * haystack, size_t haystacklen
 {
 	__m128i needle_sse = load_sse2_small(needle, needlelen);
 	
+	__m128i firstbyte = needle_sse;
+	firstbyte = _mm_unpacklo_epi8(firstbyte, firstbyte); // duplicate bottom byte, ignore upper 14
+	firstbyte = _mm_unpacklo_epi16(firstbyte, firstbyte); // duplicate bottom two bytes, ignore upper 12
+	firstbyte = _mm_shuffle_epi32(firstbyte, _MM_SHUFFLE(0,0,0,0)); // and duplicate bottom four to all 16
+	
 	size_t step = 16+1-needlelen;
 	
 #define CMPSTR_FLAGS (_SIDD_UBYTE_OPS|_SIDD_CMP_EQUAL_ORDERED|_SIDD_LEAST_SIGNIFICANT)
 	while (haystacklen >= 16)
 	{
 		__m128i haystack_sse = _mm_loadu_si128((__m128i*)haystack);
+		if (_mm_movemask_epi8(_mm_cmpeq_epi8(haystack_sse, firstbyte)) == 0)
+		{
+			// look for first byte first; if not found, skip cmpestri, it's slow
+			haystack += 16;
+			haystacklen -= 16;
+			continue;
+		}
+		
 		int pos = _mm_cmpestri(needle_sse, needlelen, haystack_sse, 16, CMPSTR_FLAGS);
 		
 		if (pos < (int)step)
 			return haystack + pos;
 		
-		haystack += step; // using 'pos' instead reduces performance, cmpestri latency is high
+		haystack += step; // using 'pos' instead reduces iteration count, but using 'step' is faster. cmpestri latency is high
 		haystacklen -= step;
 	}
 	
@@ -289,8 +302,8 @@ test("memmem", "", "string")
 	
 	testcall(test1("*aaaaaaaa", "aaaaaaa"));
 	
-	testcall(test1("(b)100000", "a"));
-	testcall(test1("(b)100000*a", "a"));
+	testcall(test1("(b)100000", "a")); // at least one test must be nonexistent needle of length 1, and haystack length a multiple of 16
+	testcall(test1("(b)100000*a", "a")); // memmem_sse42() fails if given that input, must ensure it isn't
 	testcall(test1("(b)100000b*a", "a"));
 	testcall(test1("(b)100000bb*a", "a"));
 	testcall(test1("(b)100000bbb*a", "a"));

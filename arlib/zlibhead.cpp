@@ -42,23 +42,24 @@ inflator::ret_t inflator::zlibhead::inflate()
 	{
 	process_tail:
 		inf.bits_refill_fast();
-		if (inf.m_in_nbits < 32) return ret_more_input;
-		if (inf.m_state == 254)
+		if (inf.m_in_nbits < 32) return ret_more_input; // state 254 only needs 16 bits, but the other 16 will be used soon anyways
+		if (inf.m_state == 254) // zlib header
 		{
 			uint32_t head = inf.bits_extract(16);
 			if ((head&0x000F) != 0x0008 || // CMF.CF == DEFLATE (ZIP supports 8=DEFLATE and 0=uncompressed, but zlib only supports 8)
-			// ignore 00F0 CMF.CINFO, it's used only to reject large windows and I don't really care.
-			// ignore C000 FLG.FLEVEL, there are too many compressors for it to make sense anymore
+			// ignore 00F0 CMF.CINFO, inflator ignores window size (and it's almost always 7, the maximum)
+			// ignore C000 FLG.FLEVEL, it's just informational, and there are too many compressors for it to make sense anymore
 			    (head&0x2000) != 0x0000 || // FLG.FDICT, not supported
 			    (__builtin_bswap16(head)%31) != 0) return ret_error; // FLG.FCHECK, must be a multiple of 31
+			// (are both 0 and 31 allowed in FCHECK if 0 is the correct checksum? I think they are)
 			
 			inf.m_state = 0;
 		}
-		else
+		else // zlib footer
 		{
 			inf.m_in_bits_buf >>= inf.m_in_nbits&7;
 			inf.m_in_nbits &= ~7;
-			uint32_t adler_head = __builtin_bswap32(inf.bits_extract(32));
+			uint32_t adler_head = __builtin_bswap32(inf.bits_extract(32)); // zlib header is big endian, even though DEFLATE is little...
 			if (adler_head != adler) return ret_error;
 			return ret_done;
 		}
@@ -78,7 +79,7 @@ bytearray inflator::zlibhead::inflate(bytesr in)
 	inflator::zlibhead inf;
 	inf.set_input(in, true);
 	bytearray ret;
-	ret.resize(4096);
+	ret.resize(max(4096, in.size()*8));
 	inf.set_output_first(ret);
 again:
 	inflator::ret_t err = inf.inflate();
@@ -88,12 +89,13 @@ again:
 		inf.set_output_grow(ret);
 		goto again;
 	}
-	else if (err != inflator::ret_done) ret.reset();
+	else if (err != inflator::ret_done || inf.unused_input() != 0) ret.reset();
+	else ret.resize(inf.output_in_last());
 	
 	return ret;
 }
 
-bool inflator::zlibhead::inflate(bytesr in, bytesw out)
+bool inflator::zlibhead::inflate(bytesw out, bytesr in)
 {
 	inflator::zlibhead inf;
 	inf.set_input(in, true);
@@ -120,7 +122,7 @@ static void bench(const uint8_t * buf, int len, int iter, uint32_t exp)
 	}
 	uint64_t us = t.us();
 	if (iter > 1)
-		printf("size %d - %luus - %fGB/s\n", len, us, (double)len*iter/us/1024/1024/1024*1000000);
+		printf("size %d - %luus - %fGB/s\n", len, (unsigned long)us, (double)len*iter/us/1024/1024/1024*1000000);
 }
 
 test("adler", "", "adler32")

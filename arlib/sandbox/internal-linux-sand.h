@@ -15,6 +15,7 @@
 //  these three would allow deleting the SIGCHLD handler, killing some nasty code and likely fixing a few corner cases
 //[5.9 / october 2020] close_range() / close_from() / nextfd()
 //  simplifies my closefrom(), current one is pretty ugly
+//[5.10 / unreleased] nonblocking pidfd (maybe? not sure)
 //[unmerged?] CLONE_WAIT_PID
 //  makes waitpid(-1) not care about that child, allowing use of GSubprocess
 //[root-only] eBPF

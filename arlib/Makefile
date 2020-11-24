@@ -180,10 +180,6 @@ ifeq ($(OS),linux)
     CONF_CFLAGS += -fpic
     CONF_LFLAGS += -rdynamic
   endif
-  ifeq ($(ARTHREADS),1)
-    CONF_CFLAGS += -pthread
-    CONF_LFLAGS += -pthread
-  endif
   OBJNAME := $(OBJNAME)linux
 endif
 
@@ -215,15 +211,29 @@ ifeq ($(OS),windows)
     # building non-windows binaries on a windows host is not supported (Cygwin or WSL compiling for themselves will probably work)
     # why would you do such a thing, anyways?
     $(warning non-cmd windows detected; if SHELL $(SHELL) is something other than sh.exe, makefile should check for that instead)
-    $(warning if MSYSTEM $(MSYSTEM) is nonempty, checking that may be valuable)
+    $(warning alternatively, if MSYSTEM $(MSYSTEM) is nonempty, use that)
   endif
 endif
 
 OPTFLAGS += -Os -fomit-frame-pointer -fmerge-all-constants -fno-math-errno -fvisibility=hidden -fno-semantic-interposition
 OPTFLAGS += -ffunction-sections
-#-fdata-sections inhibits some optimizations, and more importantly, turns .bss into .data on Windows
+# -fdata-sections inhibits some optimizations, and more importantly, turns .bss into .data on Windows
+# better split it to more .cpp files
 #OPTFLAGS += -fdata-sections
 OPTFLAGS += -fno-ident
+# pseudo relocations are some kind of linker magic, documented at https://sourceware.org/binutils/docs/ld/Options.html
+# they show up only if a global variable or constant is imported from a DLL (rare and possibly bad idea) using
+#  PE-level linking rather than LoadLibrary (common but not guaranteed) without declspec(dllimport) (rare and definitely bad idea)
+# rare and bad idea means I want to know about it, so let's disable it
+# I can create them using (for example) __argc or _timezone, but only by not including its header, or by breaking it with a #define
+# (buggy third party libraries would also be an option)
+# additionally, without pseudo relocs, it's safe to set -mcmodel=small, making things a bit faster and smaller
+# (source: https://gcc.gnu.org/legacy-ml/gcc-patches/2013-03/msg00858.html)
+# --disable-auto-import seems to be synonymous to --disable-runtime-pseudo-reloc these days
+ifeq ($(OS),windows)
+  OPTFLAGS += -mcmodel=small
+  CONF_LFLAGS += -Wl,--disable-auto-import,--disable-runtime-pseudo-reloc
+endif
 OPTFLAGS += -DNDEBUG -DARLIB_OPT
 CONF_CXXFLAGS += -fno-threadsafe-statics
 OPTLFLAGS := -Wl,--gc-sections,--build-id=none,--relax,--sort-common
@@ -234,6 +244,8 @@ endif
 ifneq ($(DEBUG),1)
   #DEBUG means still working on it, so -Werror isn't appropriate yet
   #unused variables, bad indent, etc is super common in WIP code
+  #it'd be better if I could disable Werror for anyone who has a newer gcc than me and just wants to get it working,
+  # but I can't think of a good way to detect who's me and who's not
   OPTFLAGS += -Werror
   ifneq ($(STRIP),0)
     ifeq ($(SELFTEST),)
@@ -312,7 +324,7 @@ ifeq ($(ARGUI),1)
     CONF_CFLAGS += $(shell pkg-config --cflags gtk+-3.0)
     CONF_LFLAGS += -lX11 $(shell pkg-config --libs gtk+-3.0)
     ifneq ($(OPT),0)
-      # these are useful on debug builds (they catch mostly NULLs), but on release builds, they just waste space
+      # these are useful on debug builds, but on release builds, they just waste space
       DEFINES += G_DISABLE_CAST_CHECKS
     endif
   endif
@@ -362,7 +374,7 @@ ifeq ($(OS),windows)
   endif
   
   ifeq ($(ARTERMINAL),1)
-    # nothing
+    # nothing, -mconsole is the default
   else ifeq ($(ARTERMINAL),0)
     CONF_LFLAGS += -mwindows
     DEFINES += STDOUT_DELETE
@@ -370,7 +382,7 @@ ifeq ($(OS),windows)
     CONF_LFLAGS += -mwindows
     DEFINES += STDOUT_ERROR
     CFLAGS_ARLIB += -D STDOUT_DELETE -U STDOUT_ERROR
-  else ifeq ($(ARTERMINAL),wine)
+  else ifeq ($(ARTERMINAL),hybrid)
     CONF_LFLAGS += -mwindows
   else
     $(error invalid ARTERMINAL value $(ARTERMINAL))
@@ -421,10 +433,6 @@ ifeq ($(ARSOCKET),1)
     DEFINES += ARLIB_SSL_OPENSSL
     CONF_LFLAGS += -lssl -lcrypto
   endif
-  ifneq ($(findstring gnutls,$(ARSOCKET_SSL)),)
-    DEFINES += ARLIB_SSL_GNUTLS
-    CONF_LFLAGS += -lgnutls
-  endif
   ifneq ($(findstring bearssl,$(ARSOCKET_SSL)),)
     DEFINES += ARLIB_SSL_BEARSSL
     SOURCES_ARLIB += arlib/socket/bear-ser.c
@@ -438,7 +446,7 @@ ifeq ($(ARSOCKET),1)
       # BearSSL detects mingw32-make as Unix; override some variables into something shell-neutral
 	  $(MAKE) -C arlib/deps/bearssl-0.6/ lib CFLAGS='$(OPTFLAGS) -fpic' BUILD=build-$(OS) OBJDIR=build-$(OS) CC=$(CC) MKDIR=mkdir
   endif
-  ifneq ($(filter-out schannel openssl gnutls bearssl,$(ARSOCKET_SSL)),)
+  ifneq ($(filter-out schannel openssl bearssl,$(ARSOCKET_SSL)),)
     $(error unknown SSL backend)
   endif
 endif
@@ -455,6 +463,9 @@ obj/icons-$(OBJNAME).o: obj/resources.h
 obj/resources.h: arlib/rescompile.py resources resources/* | obj
 	python3 arlib/rescompile.py
 obj/resources.cpp: obj/resources.h
+    # if this recipe is empty, Make doesn't rebuild things depending on resources.cpp
+    # and if both obj/resources.* have the above recipe, Make runs it twice
+	@true
   DEPS_DEFAULT += obj/resources.h
 endif
 
@@ -464,10 +475,11 @@ CONF_CFLAGS += $(patsubst %,-D%,$(DEFINES))
 
 TRUE_CFLAGS := -std=c99 $(CCXXFLAGS) $(CONF_CFLAGS) $(CFLAGS)
 # Compiler support policy: I will do my best to support the default compiler on current Debian stable, latest Ubuntu LTS,
-#    every newer version of that compiler, and whatever computers I have at the moment.
+#    every newer version of those compilers, and whatever other compilers I have access to at the moment.
 # I will also refrain from using non-final C++ versions (c++11 is final, c++0x isn't, -fcoroutines isn't), and
-#    I will not switch C++ version unless the new one considerably simplifies existing code, or permits writing something
-#    that would've previously been too complicated to even try.
+#    I will not switch C++ version unless the new one contains a killer feature that considerably simplifies existing code,
+#    or permits writing something that would've previously been too complicated to even try. I will, however, use all
+#    features of that C++ version, unless given a reason not to (for example if only parts of that language version are implemented).
 # If someone cares about older compilers and C++ versions, I will accept PRs and not intentionally break it, as long as
 # - it doesn't uglify anything too much; most modern C++ features aren't indispensable, but the lambdas are staying
 # - there is no performance penalty if compiled under modern C++; this may be accomplished with #if __cplusplus > 12345, if necessary,
@@ -476,8 +488,7 @@ TRUE_CFLAGS := -std=c99 $(CCXXFLAGS) $(CONF_CFLAGS) $(CFLAGS)
 #     and I will use new features if I deem them sufficiently valuable
 # It's fine if said backport doesn't include the entire Arlib.
 # The following features would be useful; if enough of them show up, I will switch:
-#   C++2a template lambdas (for the PNG decoder)
-#   C++2a designated initializers (foo_t foo = { .a = 42, .b = 123 })
+#   C++2a coroutines, for runloop-related stuff (nearly every single socket-related operation is ugly)
 #   C++2a template string literals (for the regex parser, and so I can create a string formatting function)
 #   C++2a concepts (also for the regex parser, the errors are absurd)
 #   C++2a consteval (still for the regex parser - that template mess is terrible, I want it as normal code)
@@ -486,7 +497,7 @@ TRUE_CFLAGS := -std=c99 $(CCXXFLAGS) $(CONF_CFLAGS) $(CFLAGS)
 #   C++2a [[no_unique_address]]
 #   C++2a ban non-twos-complement signed - will probably enable various other language improvements
 #   C++2a void foo(auto arg) (shorthand for template<typename T> void foo(T arg) - simplifies function::bind_member)
-#   C++2a coroutines, for runloop-related stuff
+#   C++2a designated initializers (foo_t foo = { .a = 42, .b = 123 })
 #   C++17 <charconv>, to speed up tostring(float) (though I'll need to keep the current one around anyways, for Windows)
 #   [[trivially_relocatable]] http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2019/p1144r3.html
 #   Lambdas without braces/return, function<int(int)> mul2 = [](int i) => i*2; (useful for LINQ)
@@ -496,15 +507,14 @@ TRUE_CFLAGS := -std=c99 $(CCXXFLAGS) $(CONF_CFLAGS) $(CFLAGS)
 #     useful for anything with multiple implementations, but where the active one is a #ifdef, for example gameview and the widgets
 #     the $class proposal P0707 would most likely permit this, as well as most or all of the reflection I want
 #   Demote or, and, bitand, etc from keyword to predefined macro (or even better, banish them to the <ciso646> they should've never left)
-#   std::embed http://open-std.org/JTC1/SC22/WG21/docs/papers/2018/p1040r0.html, to get rid of rescompile.py's assembly shenanigans
-#     may allow some other optimizations/simplifications too
+#   std::embed http://open-std.org/JTC1/SC22/WG21/docs/papers/2018/p1040r0.html
 #   Allow int x(int y=0); int x(int y=0) { return y*2; } (only if default value is identical on both ends, of course)
 #   Something to get rid of the unused variable warning from for (size_t n : range(42)) - Ranges TS, maybe?
 #   Overloading operator[] depending on whether it's a read or write access, int x = std::map[key_t] mutating is silly
-#     not sure if map[key].foo.bar() should count as read or write, but I can dream
+#     not sure if map[key].foo.bar() should count as read or write, so probably not happening, but I can hope
 # The following may or may not be usable, depending on the exact details:
 #   C++2a modules (it's very easy to produce a bad module system, I don't know if this one avoids the pitfalls)
-# Other stuff I've seen proposed is uninteresting to me, though I haven't seen all proposals.
+# Other C++ features and proposals I've seen proposed is uninteresting to me, though I haven't seen them all.
 # I'm not interested in library features. Most of them lack important functionality, have bad constant factors, and bloat the binary.
 # The compiler-magic ones, like std::move and type traits, do one thing and do it well, and optimize to nothing. I use them.
 TRUE_CXXFLAGS := -std=c++17 -fno-rtti $(CCXXFLAGS) $(CONF_CXXFLAGS) $(CXXFLAGS)
@@ -589,6 +599,7 @@ obj/arlibtest$(EXESUFFIX): $(OBJS)
 	$(Q)$(LD) $+ $(TRUE_LFLAGS) -o $@ -lm
 
 ifeq ($(OS),linux)
+  #if make TR=, these assignments do nothing
   TR = valgrind --num-callers=100 --leak-check=full
   ifeq ($(ARGUI),1)
     # Gtk leaves over 9000 'possibly lost' objects around. not interested

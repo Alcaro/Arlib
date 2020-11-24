@@ -3,6 +3,7 @@
 #include "bytestream.h"
 #include "set.h"
 #include "stringconv.h"
+#include "random.h"
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -98,6 +99,15 @@ void DNS::init(cstring resolver, int port, runloop* loop)
 			
 			hosts_txt.insert(line.substr(domstart, i), addr);
 		}
+	}
+}
+
+uint16_t DNS::pick_trid()
+{
+	while (true)
+	{
+		uint16_t n = g_rand.rand32();
+		if (!queries.contains(n)) return n;
 	}
 }
 

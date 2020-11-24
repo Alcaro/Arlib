@@ -116,7 +116,7 @@ static bool unpack_huffman(uint16_t * out, const uint8_t * in, size_t in_len, si
 			assert_eq(bits_used+n_bits, in[n]);
 #endif
 			leaf = 0x0000 | ((bits_used+n_bits) << 11) | n;
-			if (n == 256) leaf |= 128;
+			if (n == 256) leaf |= 128; // remap EOF, saves an instruction in the symbol decoder fast path
 		}
 	}
 	
@@ -249,7 +249,7 @@ inflator::ret_t inflator::inflate()
 		[[fallthrough]];
 		case st_blockinit:
 			bits_refill_fast();
-			if (m_in_nbits < 3+7) // empty block with default huffman tables is 3+7 bits
+			if (UNLIKELY(m_in_nbits < 3+7)) // empty block with default huffman tables is 3+7 bits
 			{
 				assert_reached();
 				m_state = st_blockinit;
@@ -265,7 +265,7 @@ inflator::ret_t inflator::inflate()
 			case st_litblock_head:
 				bits_refill_fast();
 				
-				if (m_in_nbits < 32)
+				if (UNLIKELY(m_in_nbits < 32))
 				{
 					assert_reached();
 					m_state = st_litblock_head;
@@ -276,7 +276,7 @@ inflator::ret_t inflator::inflate()
 				{
 					len = m_in_bits_buf; // this truncates to 32 bits
 					len = len ^ ((~len)<<16);
-					if (len >= 0x10000) RET_FAIL();
+					if (UNLIKELY(len >= 0x10000)) RET_FAIL();
 					len &= 0xFFFF;
 					m_in_nbits -= 32;
 					m_in_bits_buf >>= 32;
@@ -288,7 +288,7 @@ inflator::ret_t inflator::inflate()
 				}
 				while (m_in_nbits && len)
 				{
-					if (m_out_end == m_out_at)
+					if (UNLIKELY(m_out_end == m_out_at))
 					{
 						assert_reached();
 						m_state = st_litblock;
@@ -306,7 +306,7 @@ inflator::ret_t inflator::inflate()
 				m_in_at += len_actual;
 				m_out_at += len_actual;
 				
-				if (len)
+				if (UNLIKELY(len))
 				{
 					assert_reached();
 					m_state = st_litblock;
@@ -317,14 +317,14 @@ inflator::ret_t inflator::inflate()
 				
 				if (m_in_nbits) assert_reached();
 			}
-			else if (m_block_type < 3*2)
+			else if (LIKELY(m_block_type < 3*2))
 			{
 				if (m_block_type & 4)
 				{
 				[[fallthrough]];
 				case st_huff1:
 					bits_refill_fast();
-					if (m_in_nbits < 5+5+4)
+					if (UNLIKELY(m_in_nbits < 5+5+4))
 					{
 						assert_reached();
 						m_state = st_huff1;
@@ -349,10 +349,10 @@ inflator::ret_t inflator::inflate()
 						uint32_t hclen = (huff_sizes>>10) + 4;
 						
 						// DEFLATE can represent 288 symbols and 32 distance codes, but only 286 resp. 30 are valid. why
-						if (hlit > 286 || hdist > 30) RET_FAIL();
+						if (UNLIKELY(hlit > 286 || hdist > 30)) RET_FAIL();
 						
 						bits_refill_all();
-						if (m_in_nbits < hclen*3)
+						if (UNLIKELY(m_in_nbits < hclen*3))
 						{
 							assert_reached();
 							m_state = st_huff2;
@@ -367,7 +367,8 @@ inflator::ret_t inflator::inflate()
 						
 						for (uint32_t i=0;i<hclen;i++) huff_al_len[huff_al_order[i]] = bits_extract(3);
 						
-						if (!unpack_huffman(m_huff_symbol, huff_al_len, 19, 19)) RET_FAIL();
+						bool ok = unpack_huffman(m_huff_symbol, huff_al_len, 19, 19);
+						if (UNLIKELY(!ok)) RET_FAIL();
 					}
 					
 					uint32_t i;
@@ -382,7 +383,7 @@ inflator::ret_t inflator::inflate()
 					while (i < hlit+hdist)
 					{
 						bits_refill_fast();
-						if (m_in_nbits < 15+7 && !m_in_last)
+						if (UNLIKELY(m_in_nbits < 15+7 && !m_in_last))
 						{
 							assert_reached();
 							m_state = st_huff3;
@@ -392,7 +393,7 @@ inflator::ret_t inflator::inflate()
 						}
 						
 						int sym = bits_read_huffman(m_huff_symbol); // takes 15 bits
-						if ((int32_t)m_in_nbits < 0) RET_FAIL();
+						if (UNLIKELY((int32_t)m_in_nbits < 0)) RET_FAIL();
 						
 						if (sym <= 15)
 						{
@@ -401,26 +402,26 @@ inflator::ret_t inflator::inflate()
 						else if (sym == 16) // repeat last length
 						{
 							uint32_t n_rep = bits_extract(2) + 3;
-							if (i == 0) RET_FAIL();
-							if (i+n_rep > hlit+hdist) RET_FAIL();
+							if (UNLIKELY(i == 0)) RET_FAIL();
+							if (UNLIKELY(i+n_rep > hlit+hdist)) RET_FAIL();
 							int last = m_symbol_lengths[i-1];
 							for (uint32_t j=0;j<n_rep;j++)
 								m_symbol_lengths[i++] = last;
 						}
-						else if (sym <= 18) // zeroes
+						else if (LIKELY(sym <= 18)) // zeroes
 						{
 							uint32_t n_rep = bits_extract((sym-17)*4+3) + (sym-17)*8+3; // takes 7 bits
-							if (i+n_rep > hlit+hdist) RET_FAIL();
+							if (UNLIKELY(i+n_rep > hlit+hdist)) RET_FAIL();
 							for (uint32_t j=0;j<n_rep;j++)
 								m_symbol_lengths[i++] = 0;
 						}
 						else RET_FAIL(); // sym=19 can happen if huffman table contains only one entry
 					}
 					
-					if (!unpack_huffman(m_huff_symbol, m_symbol_lengths, hlit, 287)) RET_FAIL();
+					if (UNLIKELY(!unpack_huffman(m_huff_symbol, m_symbol_lengths, hlit, 287))) RET_FAIL();
 					uint8_t tmp[32];
-					memcpy(tmp, m_symbol_lengths+hlit, 32);
-					if (!unpack_huffman(m_huff_distance, tmp, hdist, 31)) RET_FAIL();
+					memcpy(tmp, m_symbol_lengths+hlit, 32); // copy it - m_symbol_lengths is a union with m_huff_distance
+					if (UNLIKELY(!unpack_huffman(m_huff_distance, tmp, hdist, 31))) RET_FAIL();
 				}
 				else
 				{
@@ -452,8 +453,12 @@ inflator::ret_t inflator::inflate()
 				
 				ret_t ret_state = ret_done;
 				
-				if (m_state == st_copy) goto st_copy_inner;
-				if (m_state == st_litbyte) goto st_litbyte_inner;
+				if (UNLIKELY(m_state != st_mainloop))
+				{
+					if (m_state == st_copy) goto st_copy_inner;
+					else if (m_state == st_litbyte) goto st_litbyte_inner;
+					else __builtin_unreachable();
+				}
 				
 				while (true)
 				{
@@ -494,10 +499,11 @@ inflator::ret_t inflator::inflate()
 					//    -> comp_at == in_end
 					// -> either comp_at == in_end, a 32bit refill is safe, or there's no need to refill
 					// -> can do a 32bit refill if comp_at != in_end
+					// TODO: investigate performance of adding a 16bit refill up there and not refilling further down
 					
 					int symbol;
 					HUFF_READ_FAST(m_huff_symbol, symbol); // takes 15 bits
-					if ((int32_t)nbits < 0) RET_FAIL();
+					if (UNLIKELY((int32_t)nbits < 0)) RET_FAIL();
 					
 					if (symbol < 256)
 					{
@@ -533,7 +539,8 @@ inflator::ret_t inflator::inflate()
 							BITS_FAST(detail>>12, len); // takes 5 bits
 							len += (detail&511);
 							
-							if ((uint32_t)nbits >= 15+13) assert_reached(); // do not refill after underflow, shift by huge is UB
+							// do not refill after underflow, shift by huge is UB
+							if (UNLIKELY((uint32_t)nbits >= 15+13)) assert_reached();
 							else if (LIKELY(in_at != in_end))
 							{
 								assert_reached();
@@ -553,7 +560,8 @@ inflator::ret_t inflator::inflate()
 							dist += dist_base;
 							
 							if (UNLIKELY(dist > 32768)) RET_FAIL(); // dist_key >= 30 ends up here
-							if ((int32_t)nbits < 0) RET_FAIL(); // no need to check earlier, underflow just yields endless zeroes
+							// no need to check earlier, underflow just yields endless zeroes
+							if (UNLIKELY((int32_t)nbits < 0)) RET_FAIL();
 						}
 						
 						if(0) {
@@ -580,7 +588,7 @@ inflator::ret_t inflator::inflate()
 						rep_movsb(out_at, src, len_actual);
 						
 						len -= len_actual;
-						if (len)
+						if (UNLIKELY(len))
 						{
 							assert_reached();
 							m_stcopy_len = len;
@@ -590,7 +598,7 @@ inflator::ret_t inflator::inflate()
 							goto inner_return;
 						}
 					}
-					else if (symbol == 384)
+					else if (LIKELY(symbol == 384))
 						break;
 					else
 						RET_FAIL();
@@ -622,7 +630,7 @@ bytearray inflator::inflate(bytesr in)
 	inflator inf;
 	inf.set_input(in, true);
 	bytearray ret;
-	ret.resize(4096);
+	ret.resize(max(4096, in.size()*8));
 	inf.set_output_first(ret);
 again:
 	inflator::ret_t err = inf.inflate();
@@ -632,12 +640,13 @@ again:
 		inf.set_output_grow(ret);
 		goto again;
 	}
-	else if (err != inflator::ret_done) ret.reset();
+	else if (err != inflator::ret_done || inf.unused_input() != 0) ret.reset();
+	else ret.resize(inf.output_in_last());
 	
 	return ret;
 }
 
-bool inflator::inflate(bytesr in, bytesw out)
+bool inflator::inflate(bytesw out, bytesr in)
 {
 	inflator inf;
 	inf.set_input(in, true);
@@ -691,7 +700,6 @@ static size_t huff_max_size(size_t num_syms)
 			num_unused_syms--;
 		}
 	}
-	
 	
 	while (num_unused_syms)
 	{
@@ -925,6 +933,7 @@ static void test1x(const char * compdesc)
 			
 			if (rewind)
 			{
+				// the public API doesn't permit mixing next/grow like this, but the rewinder does
 				assert_gte(out_pos, 32768);
 				out_pos = 0;
 				inf.set_output_next(bytesw(out, out_exp.size()));
@@ -961,10 +970,9 @@ test("deflate decompression", "", "deflate")
 #define test1(comp, decomp) testcall(test1(bytesr((uint8_t*)comp, sizeof(comp)-1), bytesr((uint8_t*)decomp, sizeof(decomp)-1)))
 #define test1f(comp) testcall(test1f(bytesr((uint8_t*)comp, sizeof(comp)-1)))
 #define test1x(comp) testcall(test1x(comp))
-	// invalid type 3 block
 	test1f(""); // or just empty input
-	test1f("\xff");
-	test1f("\xff\xff");
+	test1f("\xff"); // invalid type 3 block
+	test1f("\xff\xff"); // some longer variants, to test refilling behavior
 	test1f("\xff\xff\xff");
 	test1f("\xff\xff\xff\xff");
 	test1f("\xff\xff\xff\xff\xff");
@@ -994,7 +1002,7 @@ test("deflate decompression", "", "deflate")
 	test1("\x95\xc0\x81\x00\x00\x00\x00\x80\x20\xd6\xfc\x25\x66\x38\x9e\x00", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 	test1("\x95\xc1\x81\x0c\x00\x00\x00\x80\x30\xd6\xf2\x87\x88\xa1\x1d\x59\x02", "abababababababababababababababababababababababab");
 	
-	test1x("< 110 00000 00+"); // empty input, just to test this function module
+	test1x("< 110 00000 00+"); // same as \x03\x00 above, just to test this tester function
 	test1x("< 110 00000 < 00+");
 	
 	test1x("< 010 00000000" // static huffman, empty block, to make it refill a lot
@@ -1139,17 +1147,18 @@ test("deflate decompression", "", "deflate")
 	         "0001" // dist 2 - length 1
 	         
 	         "100" // byte 00
-	         "00" // repeat 258 bytes from 1 byte back
+	         "00" // sym 285 - repeat 258 bytes from 1 byte back
 	         "000000000000000000000000000000000000000000000000000000000000000000000000000000000000" // 10836 bytes
 	         "000000000000000000000000000000000000000000000000000000000000000000000000000000000000" // 10836 bytes
 	         "000000000000000000000000000000000000000000000000000000000000000000000000000000000000" // 10836 bytes
 	         "101" // byte 01
 	         // total 32768 bytes written
+	         "100" // byte 00
 	         
 	         "01" // sym 285 - repeat 258 bytes from 2 bytes back
 	         "111+"
 	       "> #32767 00 01"
-	       ">< #129 0001"
+	       ">< 00 #129 0100"
 	       );
 	
 	assert_all_reached();

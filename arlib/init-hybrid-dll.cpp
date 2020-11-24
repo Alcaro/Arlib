@@ -8,9 +8,6 @@
 #include "simd.h"
 #include "thread/atomic.h"
 
-extern "C" void _pei386_runtime_relocator();
-extern "C" int __cpu_indicator_init(void);
-
 typedef void(*funcptr)();
 
 namespace {
@@ -143,7 +140,7 @@ void pe_process_imports(ntdll_t* ntdll, HMODULE mod)
 	while (imports->Name)
 	{
 		const char * libname = (char*)(base_addr + imports->Name);
-		WCHAR libname16[64]; // hope nothing uses non-ascii in dll names... ...how would it even be represented?
+		WCHAR libname16[64]; // I hope nothing uses non-ascii in dll names... ...how would it even be represented?
 		WCHAR* libname16iter = libname16;
 		while (*libname) *libname16iter++ = *libname++;
 		*libname16iter = '\0';
@@ -181,7 +178,7 @@ void pe_do_relocs(ntdll_t* ntdll, HMODULE mod)
 	uint32_t prot_prev[32]; // static allocation, malloc doesn't work yet... a normal exe has 19 sections, hope it won't grow too much
 #ifndef ARLIB_OPT
 	if (head_nt->FileHeader.NumberOfSections > sizeof(prot_prev)/sizeof(*prot_prev))
-		__builtin_trap();
+		__builtin_trap(); // not debug_fatal(), it's not relocated so it won't work yet
 #endif
 	IMAGE_SECTION_HEADER* sec = (IMAGE_SECTION_HEADER*)((uint8_t*)&head_nt->OptionalHeader + head_nt->FileHeader.SizeOfOptionalHeader);
 	for (uint16_t i=0;i<head_nt->FileHeader.NumberOfSections;i++)
@@ -219,9 +216,9 @@ void pe_do_relocs(ntdll_t* ntdll, HMODULE mod)
 
 
 
-// many ctors call atexit to register destructors, and even if their dtors work differently, they often leak memory
+// many ctors call atexit to register destructors, and even if their dtors work differently, ctors often allocate memory
 // therefore, don't call the entire ctor table; call only a whitelist of known good ctors
-// to do this, group up the safe ones in the ctor table, and add labels around the safe subsection
+// to do this, group up the safe ones in the ctor table, with labels around the safe subsection
 #ifndef __x86_64__
 #error change the .quad
 #endif
@@ -276,7 +273,7 @@ void arlib_hybrid_dll_init();
 void arlib_hybrid_dll_init()
 {
 	int state = lock_read<lock_acq>(&init_state);
-	if (state == init_done) return;
+	if (LIKELY(state == init_done)) return;
 	
 #ifdef ARLIB_THREAD
 	state = lock_cmpxchg<lock_acq, lock_acq>(&init_state, init_no, init_busy);
@@ -299,7 +296,7 @@ void arlib_hybrid_dll_init()
 	pe_process_imports(&ntdll, ntdll.RtlPcToFileHeader((void*)arlib_hybrid_dll_init, &this_mod));
 	pe_do_relocs(&ntdll, this_mod);
 	
-	_pei386_runtime_relocator(); // this doesn't seem to do much, but no reason not to
+	// the normal EXE and DLL startup code calls _pei386_runtime_relocator(), but pseudo relocs are disabled in Arlib, so no point
 	
 	run_static_ctors();
 }

@@ -296,20 +296,6 @@ public:
 		ssort([](const T& a, const T& b) { return a < b; });
 	}
 	
-	void shuffle()
-	{
-		for (int i=this->count;i>0;i--)
-		{
-			int a = i-1;
-			int b = rand()%i;
-			
-			char tmp[sizeof(T)];
-			memcpy(tmp, this->items+a, sizeof(T));
-			memcpy(this->items+a, this->items+b, sizeof(T));
-			memcpy(this->items+b, tmp, sizeof(T));
-		}
-	}
-	
 	const T* begin() const { return this->items; }
 	const T* end() const { return this->items+this->count; }
 	T* begin() { return this->items; }
@@ -657,14 +643,13 @@ template<typename T> inline array<T> operator+(arrayview<T> left, arrayview<T> r
 template<typename T, size_t N> class sarray {
 	T storage[N];
 public:
-	sarray() {}
+	sarray() = default;
 	// One argument per member - useful for parameter packs and fixed-size items.
 	template<typename... Ts> sarray(Ts... args) : storage{ (T)args... }
 	{
 		static_assert(sizeof...(Ts) == N);
 	}
-	
-	// Undefined behavior unless the input is the correct size or larger.
+	// Undefined behavior if the input is too small.
 	sarray(arrayview<T> ptr) { memcpy(storage, ptr.ptr(), sizeof(storage)); }
 	
 	T& operator[](size_t n) { return storage[n]; }
@@ -715,9 +700,31 @@ protected:
 	};
 	friend class entry;
 	
+#if (defined(__i386__) || defined(__x86_64__)) && !defined(__clang__) // disabled on clang, https://bugs.llvm.org/show_bug.cgi?id=47866
 	bool get(size_t n) const
 	{
-		return bits()[n/8]>>(n&7) & 1;
+		// neither GCC nor Clang can emit bt with a memory operand (and, oddly enough, GCC only emits bt reg,reg on -O2, not -Os)
+		// bt can accept integer arguments, but the assembler errors out if the argument is >= 256,
+		//  and silently emits wrong machine code for arguments >= operand size
+		// bt docs say operation is same as the C version, except it's implementation defined whether it uses u8, u16 or u32
+		// but our buffer is power of two sized, so that's fine
+		bool ret;
+		__asm__("bt {%2,%1|%1,%2}" : "=@ccc"(ret) : "m"(*(const uint8_t(*)[])bits()), "r"(n) : "cc");
+		return ret;
+	}
+	
+	void set(size_t n, bool val)
+	{
+		// weird how there are instructions to set, clear, toggle, and read a bit, but not for setting to current carry or whatever
+		if (val)
+			__asm__ volatile("bts {%1,%0|%0,%1}" : "+m"(*(uint8_t(*)[])bits()) : "r"(n) : "cc");
+		else
+			__asm__ volatile("btr {%1,%0|%0,%1}" : "+m"(*(uint8_t(*)[])bits()) : "r"(n) : "cc");
+	}
+#else
+	bool get(size_t n) const
+	{
+		return bits()[n/8] & (1<<(n&7));
 	}
 	
 	void set(size_t n, bool val)
@@ -726,6 +733,7 @@ protected:
 		byte &=~ (1<<(n&7));
 		byte |= (val<<(n&7));
 	}
+#endif
 	
 	//does not resize
 	void set_slice(size_t start, size_t num, const array<bool>& other, size_t other_start);

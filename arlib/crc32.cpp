@@ -23,7 +23,7 @@ static uint32_t crc32_small(arrayview<uint8_t> data, uint32_t crc)
 {
 	// based on Karl Malbrain's "A compact CCITT crc16 and crc32 C implementation that balances processor cache usage against speed",
 	// but the table is backwards, and every entry is xor'd with 0xF0000000, which allows deleting the crc = ~crc at the start and end
-	static uint32_t lookup[] = {
+	static const uint32_t lookup[] = {
 		0x4dbdf21c, 0x500ae278, 0x76d3d2d4, 0x6b64c2b0, 0x3b61b38c, 0x26d6a3e8, 0x000f9344, 0x1db88320,
 		0xa005713c, 0xbdb26158, 0x9b6b51f4, 0x86dc4190, 0xd6d930ac, 0xcb6e20c8, 0xedb71064, 0xf0000000,
 	};
@@ -124,8 +124,8 @@ static uint32_t crc32_pclmul(arrayview<uint8_t> data, uint32_t crc)
 	
 	// fold 128 bits into 64
 	__m128i mask_low32 = _mm_set1_epi64x(0x00000000FFFFFFFF);
-	state = _mm_xor_si128(_mm_srli_si128(state, 8), _mm_clmulepi64_si128(state, fold_64, 0x00));
-	state = _mm_xor_si128(_mm_srli_si128(state, 4), _mm_clmulepi64_si128(_mm_and_si128(state, mask_low32), fold_32, 0x00));
+	state = _mm_xor_si128(_mm_bsrli_si128(state, 8), _mm_clmulepi64_si128(state, fold_64, 0x00));
+	state = _mm_xor_si128(_mm_bsrli_si128(state, 4), _mm_clmulepi64_si128(_mm_and_si128(state, mask_low32), fold_32, 0x00));
 	
 	// Barrett reduction, using P(x) and µ from http://intel.ly/2ySEwL0, with bits backwards
 	// latter magic constant is the polynomial with an extra 1, but I have no idea what the former is
@@ -135,7 +135,7 @@ static uint32_t crc32_pclmul(arrayview<uint8_t> data, uint32_t crc)
 	magic2 = _mm_clmulepi64_si128(_mm_and_si128(state,  mask_low32), magic, 0x10);
 	magic2 = _mm_clmulepi64_si128(_mm_and_si128(magic2, mask_low32), magic, 0x00);
 	
-	return ~_mm_cvtsi128_si32(_mm_srli_si128(_mm_xor_si128(state, magic2), 4));
+	return ~_mm_cvtsi128_si32(_mm_bsrli_si128(_mm_xor_si128(state, magic2), 4));
 }
 
 uint32_t crc32_update(arrayview<uint8_t> data, uint32_t crc)

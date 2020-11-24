@@ -13,9 +13,9 @@ public:
 	// Consumes all of the object's contents; only call it once, with all expected members as arguments.
 	// The item may optionally be wrapped in
 	//  ser_array() - takes a lambda and an array in its input, and calls the lambda once per array member. Deserializing only.
-	//  ser_hex() - takes an unsigned integer or uint8_t array. For JSON, the numeric encoding is chosen, not hex.
+	//  ser_hex() - takes an unsigned integer or uint8_t array. For JSON, integers are encoded as integers, not strings.
 	//  ser_compact(val, depth) - (JSON only) deindents val's N-deep children (if depth is 1, val's children are one line each).
-	//  ser_include_if(cond, val) - when serializing, emits val only if cond is true. When deserializing, acts like undecorated val.
+	//  ser_include_if(cond, val) - when serializing, emits val only if cond is true. When deserializing, acts like val.
 	template<typename T> void items(cstring name, T& item, ...);
 	
 	// If serializing:
@@ -32,14 +32,14 @@ public:
 #endif
 
 #define SERIALIZE_CORE(member) STR(member), member, // this extra comma is troublesome, but ppforeach is kinda limited
-#define SERIALIZE(...) template<typename T> void serialize(T& s) { s.items(PPFOREACH(SERIALIZE_CORE, __VA_ARGS__) nullptr); }
+#define SERIALIZE(...) template<typename Ts> void serialize(Ts& s) { s.items(PPFOREACH(SERIALIZE_CORE, __VA_ARGS__) nullptr); }
 
 template<typename T> struct ser_array_t { T& c; ser_array_t(T& c) : c(c) {} };
-template<typename T> ser_array_t<T> ser_array(T& c) { return c; }
+template<typename T> ser_array_t<T> ser_array(T& c) { return ser_array_t(c); }
 template<typename T> ser_array_t<const T> ser_array(const T& c) { return ser_array_t(c); }
 
 template<typename T> struct ser_hex_t { T& c; ser_hex_t(T& c) : c(c) {} };
-template<typename T> ser_hex_t<T> ser_hex(T& c) { return c; }
+template<typename T> ser_hex_t<T> ser_hex(T& c) { return ser_hex_t(c); }
 template<typename T> ser_hex_t<const T> ser_hex(const T& c) { return ser_hex_t(c); }
 
 template<typename T> struct ser_compact_t { T& c; int depth; ser_compact_t(T& c, int depth) : c(c), depth(depth) {} };

@@ -369,7 +369,7 @@ bool zip::read_idx(size_t id, array<uint8_t>& out, bool permissive, string* erro
 			case 8:
 			{
 				out.resize(f.decomplen);
-				if (!inflator::inflate(f.data, out)) { *error = "corrupt DEFLATE data"; goto fail; }
+				if (!inflator::inflate(out, f.data)) { *error = "corrupt DEFLATE data"; goto fail; }
 				break;
 			}
 			default:
@@ -579,6 +579,8 @@ array<uint8_t> zip::pack() const
 
 
 #ifdef ARLIB_TEST
+#include "random.h"
+
 const uint8_t zipbytes[433] = {
 	0x50,0x4B,0x03,0x04,0x0A,0x03,0x00,0x00,0x00,0x00,0x2B,0xA5,0x8A,0x49,0x00,0x00,
 	0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x09,0x00,0x00,0x00,0x65,0x6D,
@@ -624,7 +626,7 @@ test("DOS timestamp conversion", "", "zip")
 		//generation is in the unix domain, it's easier
 		time_t unix_min = 631152000; // 1990-01-01 00:00:00
 		time_t unix_max = 1577836800; // 2020-01-01 00:00:00
-		time_t unix = unix_min + rand()%(unix_max-unix_min); // 100 million
+		time_t unix = unix_min + g_rand((uint32_t)(unix_max-unix_min));
 		
 		time_t dos = todosdate(unix);
 		assert_eq(fromdosdate(dos), unix&~1);

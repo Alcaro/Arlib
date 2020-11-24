@@ -140,7 +140,7 @@ static void _testfail(cstring why)
 	result = err_fail;
 	puts(why.c_str());
 	fflush(stdout);
-	debug_or_ignore();
+	debug_break();
 	test_throw(err_fail);
 }
 
