@@ -51,7 +51,7 @@ ARXPSUPPORT = 0
 #  additional compiler/linker flags needed by this program
 #EXCEPTIONS
 #  set to 1 if needed
-#  not recommended; many parts of Arlib are not guaranteed exception safe, exception support inhibits many optimizations,
+#  not recommended; many parts of Arlib are not exception safe, exception support inhibits many optimizations,
 #  and it adds a few hundred kilobytes on Windows
 #  (tests throw exceptions on failure, and automatically enable them, but tests don't need to be fast, leak-free, or shipped)
 #SOURCES

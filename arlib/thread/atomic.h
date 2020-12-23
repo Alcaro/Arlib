@@ -20,7 +20,7 @@
 
 // If doing cmpxchg on pointers and array indices, make sure you're not vulnerable to ABA problems.
 
-#ifdef __GNUC__
+#if defined(__GNUC__)
 // https://gcc.gnu.org/onlinedocs/gcc/_005f_005fatomic-Builtins.html
 
 enum lockorder_t {
@@ -54,6 +54,7 @@ T lock_cmpxchg(T* val, T2 oldval, T2 newval)
 #include <windows.h>
 
 // ordering is ignored under MSVC; it's separate functions, too annoying to parameterize
+// (and most of them only exist on windows 8+ sdk, though they map to instructions that exist for everything)
 enum lockorder_t { lock_seqcst, lock_acqrel, lock_acq, lock_rel, lock_loose };
 
 // in older MSVC, volatile access was guaranteed to always fence; in newer, that's deprecated, and off by default on ARM (/volatile:ms)

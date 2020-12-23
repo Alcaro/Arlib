@@ -125,7 +125,7 @@ public:
 	// If the function returns ret_more_input or _output, it won't do anything else until you supply the required resource.
 	//   If the function did not return ret_more_x, that resource may not be supplied.
 	// Output must be supplied as either a single chunk (which may be realloc()ed and passed to set_output_grow),
-	//   in chunks of at least 32KB where the previous one remains allocated until the next one is full,
+	//   in chunks of at least 32KB where the previous one remains unchanged until the next one is full,
 	//   or by reusing the same >=32KB chunk (latter two are done via set_output_next).
 	// If the function returns ret_done or ret_error, the next function call on the object must be reset() or dtor.
 	// The function may buffer an arbitrary amount of data internally, unless last=true in set_input;
@@ -136,19 +136,19 @@ public:
 	
 	// Returns number of bytes in the last output buffer. If there's only one chunk (either because it was reallocated,
 	//   or because the output size was already known), this is the size of the complete output; if chunked (either multiple,
-	//   or reusing the same chunk), it only counts the last chunk.
+	//   or reusing the same chunk), it only counts the last chunk (caller may count previous outputs if desired).
 	// These two are only valid after inflate() has returned ret_done.
 	size_t output_in_last() const { return m_out_at - m_out_start; }
 	// Returns number of bytes not used from the last input chunk.
 	size_t unused_input() const { return m_in_end - m_in_at + m_in_nbits/8; }
 	
 	// Shortcuts to the above. Former returns empty on failure, which is indistinguishable from empty output;
-	//  latter returns false if the decompressed data didn't fit exactly. Both return false if input contains unused bytes.
+	//  latter returns false if the decompressed data didn't fit exactly. Both return failure if input contains unused bytes.
 	static bytearray inflate(bytesr in);
 	static bool inflate(bytesw out, bytesr in);
 	
 	// Same interface as the outer class, but also parses zlib headers.
-	// Also offers an adler32 calculator, in case you need that for anything else (for example creating zlib streams).
+	// Also offers an adler32 calculator, in case you need that for anything else (for example creating a zlib stream).
 	class zlibhead;
 };
 class inflator::zlibhead {

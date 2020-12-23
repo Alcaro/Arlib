@@ -166,8 +166,11 @@ HOST_SHELL := sh
 # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=53431
 CCXXFLAGS += -Wno-comment
 
+# don't call pkg-config twice if present in CONF_xFLAGS
+CONF_CFLAGS := $(CONF_CFLAGS)
+CONF_LFLAGS := $(CONF_LFLAGS)
+CONF_CXXFLAGS := $(CONF_CXXFLAGS)
 EXESUFFIX =
-CONF_CXXFLAGS += $(CONF_CFLAGS)
 
 ifeq ($(OS),linux)
   CONF_LFLAGS += -ldl -Wl,-z,relro,-z,now,--as-needed,--no-undefined
@@ -471,8 +474,9 @@ endif
 
 SOURCES_NOWARN += arlib/deps/miniz.c
 
-CONF_CFLAGS += $(patsubst %,-D%,$(DEFINES))
+CCXXFLAGS += $(patsubst %,-D%,$(DEFINES))
 
+CONF_CXXFLAGS := $(CONF_CXXFLAGS) $(CONF_CFLAGS)
 TRUE_CFLAGS := -std=c99 $(CCXXFLAGS) $(CONF_CFLAGS) $(CFLAGS)
 # Compiler support policy: I will do my best to support the default compiler on current Debian stable, latest Ubuntu LTS,
 #    every newer version of those compilers, and whatever other compilers I have access to at the moment.

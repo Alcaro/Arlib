@@ -49,8 +49,6 @@ void WebSocket::connect(cstring target, arrayview<string> headers)
 
 void WebSocket::activity()
 {
-	break_callback = false;
-	
 	uint8_t bytes[4096];
 	int nbyte = sock->recv(bytes);
 	if (nbyte < 0)
@@ -118,6 +116,8 @@ again:
 	
 	int type = (msg[0] & 0x0F);
 	if (type == t_ping) send(msg, t_pong);
+	
+	break_callback = false;
 	
 	if (type == t_text)
 	{

@@ -97,12 +97,12 @@ public:
 	~defer_holder() { if (doit) fn(); }
 };
 template<typename T>
-defer_holder<T> defer_create(T&& f)
+defer_holder<T> dtor(T&& f)
 {
 	return f;
 }
-// Useful for implementing context manager macros like test_nomalloc, but should not be used directly.
-#define contextmanager(begin_expr,end_expr) using(auto DEFER=defer_create(((begin_expr),[&](){ end_expr; })))
+// Useful for implementing context manager macros like test_nomalloc, but should rarely if ever be used directly.
+#define contextmanager(begin_expr,end_expr) using(auto DEFER=dtor(((begin_expr),[&](){ end_expr; })))
 
 #define JOIN_(x, y) x ## y
 #define JOIN(x, y) JOIN_(x, y)

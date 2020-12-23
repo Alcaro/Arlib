@@ -1,8 +1,16 @@
 #include "arlib.h"
 #include <gtk/gtk.h>
-#include <gst/gst.h>
 #include <sys/stat.h>
 
+#include <gst/gst.h>
+
+extern "C" { // ffmpeg devs refuse to add this for some unclear reason,
+#include <libavformat/avformat.h> // even though more ffmpeg callers seem to be C++ than C,
+#include <libavcodec/avcodec.h> // and common.h contains a #if defined(__cplusplus) && etc
+#include <libavdevice/avdevice.h>
+}
+
+// this tool is designed for personal use only, hardcoded stuff is fine for all intended usecases
 #define MUSIC_DIR "/home/alcaro/Desktop/extramusic/"
 
 namespace {
@@ -99,8 +107,293 @@ textgrid grid;
 
 GtkWindow* mainwnd = NULL;
 GQuark q_fname;
-GstElement* pipeline = NULL;
-void play(cstring fn);
+
+class player_t {
+	GstElement* gst_pipeline = NULL;
+	guint gst_bus_watch = 0;
+	
+	bool gst_play(cstring fn)
+	{
+		stop();
+		
+		gst_pipeline = gst_parse_launch("filesrc location=\""+fn+"\" ! decodebin ! autoaudiosink", NULL);
+		if (!gst_pipeline) return false;
+puts("playing "+fn+" with gstreamer");
+		gst_element_set_state(gst_pipeline, GST_STATE_PLAYING);
+		
+		GstBus* bus = gst_element_get_bus(gst_pipeline);
+		gst_bus_watch = gst_bus_add_watch(bus, [](GstBus* bus, GstMessage* message, void* user_data)->gboolean {
+				player_t* this_ = (player_t*)user_data;
+				this_->something_cb();
+				if (message->type == GST_MESSAGE_EOS)
+				{
+					this_->gst_bus_watch = 0;
+					this_->gst_stop();
+					this_->finish_cb();
+					return G_SOURCE_REMOVE;
+				}
+				return G_SOURCE_CONTINUE;
+			}, this);
+		gst_object_unref(bus);
+		
+		return true;
+	}
+	
+	void gst_stop()
+	{
+		if (!gst_pipeline) return;
+		gst_element_set_state(gst_pipeline, GST_STATE_NULL);
+		gst_object_unref(gst_pipeline);
+		gst_pipeline = NULL;
+		if (gst_bus_watch != 0) g_source_remove(gst_bus_watch);
+	}
+	
+	bool gst_playing(int* pos, int* durat)
+	{
+		if (!gst_pipeline) return false;
+		
+		int64_t song_at;
+		int64_t song_len;
+		gst_element_query_position(gst_pipeline, GST_FORMAT_TIME, &song_at);
+		gst_element_query_duration(gst_pipeline, GST_FORMAT_TIME, &song_len);
+		
+		if (pos) *pos = GST_CLOCK_TIME_IS_VALID(song_at) ? (song_at+500000000)/1000000000 : -1;
+		if (durat) *durat = GST_CLOCK_TIME_IS_VALID(song_len) ? (song_len+500000000)/1000000000 : -1;
+		
+		return true;
+	}
+	
+	
+	
+	
+	
+	
+	AVFormatContext* ff_demux = NULL;
+	AVCodecContext* ff_codec = NULL;
+	AVCodecParameters* ff_par = NULL;
+	AVFrame* ff_frame = NULL;
+	AVPacket* ff_packet = NULL;
+	AVFormatContext* ff_out = NULL;
+	array<uint8_t> ff_buf;
+	int64_t ff_position;
+	int ff_stream_index;
+	
+	runloop::g_timer ff_idle;
+	
+	bool ff_play(cstring fn)
+	{
+		static bool ff_inited = false;
+		if (!ff_inited)
+		{
+			ff_inited = true;
+			av_register_all(); // not needed for ffmpeg >= 4.0 (april 2018)
+			avcodec_register_all();
+			avdevice_register_all();
+		}
+		
+		ff_demux = NULL;
+		ff_codec = NULL;
+		ff_par = NULL;
+		ff_frame = av_frame_alloc();
+		ff_packet = av_packet_alloc();
+		
+		AVCodec* codectype = NULL;
+		
+		ff_out = avformat_alloc_context();
+		ff_out->oformat = av_output_audio_device_next(NULL);
+		
+		avformat_open_input(&ff_demux, fn.c_str(), NULL, NULL);
+		if (!ff_demux)
+			goto fail;
+		
+		avformat_find_stream_info(ff_demux, NULL);
+		for (size_t i : range(ff_demux->nb_streams))
+		{
+			ff_par = ff_demux->streams[i]->codecpar;
+			if (ff_par->codec_type == AVMEDIA_TYPE_AUDIO)
+			{
+				ff_stream_index = i;
+				codectype = avcodec_find_decoder(ff_par->codec_id);
+				ff_codec = avcodec_alloc_context3(codectype);
+				avcodec_parameters_to_context(ff_codec, ff_par);
+				avcodec_open2(ff_codec, codectype, NULL);
+				break;
+			}
+		}
+		if (!ff_par)
+			goto fail;
+		
+		ff_position = 0;
+		
+		if (!ff_do_packet(true)) goto fail;
+puts("playing "+fn+" with ffmpeg");
+		
+		ff_idle.set_idle(bind_this(&player_t::ff_cb));
+		something_cb();
+		
+		return true;
+		
+	fail:
+		ff_stop(false);
+		return false;
+	}
+	
+	bool ff_do_packet(bool first)
+	{
+	again:
+		if (av_read_frame(ff_demux, ff_packet) < 0) return false;
+		
+		auto x = dtor([&](){ av_packet_unref(ff_packet); }); // ffmpeg packet memory management is weird
+		// and now-inaccurate docs of old ffmpeg versions show up on google and tell me to use av_free_packet, not av_packet_unref
+		// https://ffmpeg.org/doxygen/0.11/group__lavf__decoding.html#g4fdb3084415a82e3810de6ee60e46a61
+		
+		if (ff_packet->stream_index != ff_stream_index) goto again; // discard video frames
+		
+		avcodec_send_packet(ff_codec, ff_packet);
+		avcodec_receive_frame(ff_codec, ff_frame);
+		
+		if (ff_frame->format == AV_SAMPLE_FMT_NONE) goto again; // rare, but not nonexistent
+		
+		// av_frame_get_best_effort_timestamp exists, but I can't figure out what unit it uses
+		// and anything based on input position is a few seconds (audio buffer size) too high
+		ff_position += ff_frame->nb_samples;
+		
+		static const AVCodecID codecs[] = {
+			AV_CODEC_ID_PCM_U8,                                    // AV_SAMPLE_FMT_U8
+			AV_NE(AV_CODEC_ID_PCM_S16BE, AV_CODEC_ID_PCM_S16LE),   // AV_SAMPLE_FMT_S16
+			AV_NE(AV_CODEC_ID_PCM_S32BE, AV_CODEC_ID_PCM_S32LE),   // AV_SAMPLE_FMT_S32
+			AV_NE(AV_CODEC_ID_PCM_F32BE, AV_CODEC_ID_PCM_F32LE),   // AV_SAMPLE_FMT_FLT
+			AV_NE(AV_CODEC_ID_PCM_F64BE, AV_CODEC_ID_PCM_F64LE),   // AV_SAMPLE_FMT_DBL
+			AV_CODEC_ID_PCM_U8,                                    // AV_SAMPLE_FMT_U8P
+			AV_NE(AV_CODEC_ID_PCM_S16BE, AV_CODEC_ID_PCM_S16LE),   // AV_SAMPLE_FMT_S16P
+			AV_NE(AV_CODEC_ID_PCM_S32BE, AV_CODEC_ID_PCM_S32LE),   // AV_SAMPLE_FMT_S32P
+			AV_NE(AV_CODEC_ID_PCM_F32BE, AV_CODEC_ID_PCM_F32LE),   // AV_SAMPLE_FMT_FLTP
+			AV_NE(AV_CODEC_ID_PCM_F64BE, AV_CODEC_ID_PCM_F64LE),   // AV_SAMPLE_FMT_DBLP
+			AV_NE(AV_CODEC_ID_PCM_S64BE, AV_CODEC_ID_PCM_S64LE),   // AV_SAMPLE_FMT_S64
+			AV_NE(AV_CODEC_ID_PCM_S64BE, AV_CODEC_ID_PCM_S64LE),   // AV_SAMPLE_FMT_S64P
+		};
+		static const uint8_t fmtdescs[] = {
+			1,       // AV_SAMPLE_FMT_U8
+			2,       // AV_SAMPLE_FMT_S16
+			4,       // AV_SAMPLE_FMT_S32
+			4,       // AV_SAMPLE_FMT_FLT
+			8,       // AV_SAMPLE_FMT_DBL
+			1 | 128, // AV_SAMPLE_FMT_U8P
+			2 | 128, // AV_SAMPLE_FMT_S16P
+			4 | 128, // AV_SAMPLE_FMT_S32P
+			4 | 128, // AV_SAMPLE_FMT_FLTP
+			8 | 128, // AV_SAMPLE_FMT_DBLP
+			8,       // AV_SAMPLE_FMT_S64
+			8 | 128, // AV_SAMPLE_FMT_S64P
+		};
+		
+		if (first)
+		{
+			if (ff_frame->format >= AV_SAMPLE_FMT_NB) return false;
+			
+			AVStream* outstrm = avformat_new_stream(ff_out, NULL);
+			outstrm->codecpar->codec_type = AVMEDIA_TYPE_AUDIO;
+			outstrm->codecpar->codec_id = codecs[ff_frame->format];
+			outstrm->codecpar->channels = ff_par->channels;
+			outstrm->codecpar->sample_rate = ff_par->sample_rate;
+			if (avformat_write_header(ff_out, NULL) < 0)
+				return false;
+		}
+		
+		uint8_t fmtdesc = fmtdescs[ff_frame->format];
+		uint8_t bytes_per = fmtdesc&15;
+		
+		// codec IDs exist for a couple of planar formats, but not all, so deinterleave manually
+		// (and the ones that exist aren't supported by ffmpeg alsa backend)
+		if (fmtdesc&128)
+		{
+			ff_buf.reserve(ff_frame->nb_samples * ff_par->channels * bytes_per);
+			
+			uint8_t** chans = (uint8_t**)ff_frame->data;
+			uint8_t* iter = ff_buf.ptr();
+			for (size_t s : range(ff_frame->nb_samples))
+			for (size_t c : range(ff_par->channels))
+			for (size_t b : range(bytes_per))
+				*iter++ = chans[c][s*bytes_per+b]; // this could be optimized, but no real point
+			
+			ff_packet->data = (uint8_t*)ff_buf.ptr();
+		}
+		else
+		{
+			ff_packet->data = ff_frame->data[0];
+		}
+		
+		ff_packet->stream_index = 0;
+		ff_packet->size = ff_frame->nb_samples * ff_par->channels * bytes_per;
+		ff_packet->dts = ff_frame->pkt_dts;
+		ff_packet->duration = av_frame_get_pkt_duration(ff_frame);
+		if (ff_packet->size) av_write_frame(ff_out, ff_packet);
+		
+		return true;
+	}
+	
+	void ff_cb()
+	{
+		if (ff_do_packet(false))
+		{
+			ff_idle.set_idle(bind_this(&player_t::ff_cb));
+		}
+		else
+		{
+			ff_stop();
+			finish_cb();
+		}
+	}
+	
+	void ff_stop(bool write_trailer = true)
+	{
+		if (!ff_demux) return;
+		
+		// av_write_trailer (actually ff_alsa_close) calls snd_pcm_drain, which blocks while the buffer drains (it's always full)
+		// it's correct at the end of the song, but a few seconds of latency on the skip button is not quite desirable
+		// I don't know if there's any sensible solution without writing my own alsa/pulse backend
+		if (write_trailer) av_write_trailer(ff_out);
+		
+		av_frame_free(&ff_frame);
+		av_packet_free(&ff_packet);
+		avformat_close_input(&ff_demux); // I'm not sure how ffmpeg defines input and output, but it works
+		avformat_close_input(&ff_out); // avformat_close_output doesn't even exist
+		avcodec_free_context(&ff_codec);
+		ff_buf.reset();
+		ff_idle.reset();
+	}
+	
+	bool ff_playing(int* pos, int* durat)
+	{
+		if (!ff_demux) return false;
+		
+		if (pos) *pos = ff_position / ff_par->sample_rate;
+		if (durat) *durat = ff_demux->duration / AV_TIME_BASE;
+		
+		return true;
+	}
+	
+public:
+	function<void()> something_cb; // dumb name, but I can't think of anything better
+	function<void()> finish_cb;
+	
+	void stop()
+	{
+		ff_stop();
+		gst_stop();
+	}
+	
+	bool play(cstring fn)
+	{
+		return ff_play(fn) || gst_play(fn);
+	}
+	
+	bool playing(int* pos, int* durat)
+	{
+		return ff_playing(pos, durat) || gst_playing(pos, durat);
+	}
+} g_player;
+
 void enqueue(string fn);
 
 GtkButton* btn_toggle;
@@ -391,7 +684,7 @@ GtkWidget* make_search()
 	});
 	g_signal_connect_swapped(search_line, "key-press-event", G_CALLBACK(key_cb.fp), key_cb.ctx);
 	// GTK often passes functions with too few arguments if the latter ones aren't used (for example gtk_widget_hide_on_delete)
-	// it works in practice, but I'm 99% sure it's undefined behavior, so I'm not gonna follow suit.
+	// it works on every ABI I'm aware of, but I'm 99% sure it's undefined behavior per the C++ standard, so I'm not gonna follow suit
 	auto insert_cb = decompose_lambda([](unsigned position, char* chars, unsigned n_chars, GtkEntryBuffer* buffer)
 	{
 		update_search();
@@ -407,15 +700,21 @@ GtkWidget* make_search()
 }
 
 
+runloop::g_timer progress_timer;
+
+void progress_tick();
+void stop();
 size_t playlist_cur_idx = 0;
 void playlist_run()
 {
 	c_playlist.focus(-1);
-	if (playlist_cur_idx == c_playlist.n_items) return;
+	if (playlist_cur_idx == c_playlist.n_items) { stop(); return; }
 	cstring next = c_playlist.items[playlist_cur_idx];
-	if (!next) return;
 	c_playlist.focus(playlist_cur_idx);
-	play(next);
+	g_player.finish_cb = [](){ playlist_cur_idx++; playlist_run(); };
+	g_player.something_cb = progress_tick;
+	g_player.play(next);
+	progress_timer.set_repeat(1000, progress_tick);
 }
 void enqueue(string fn) // cstring explodes if it's the oldest playlist item, so use string
 {
@@ -431,73 +730,38 @@ void enqueue(string fn) // cstring explodes if it's the oldest playlist item, so
 		
 		c_playlist.add(fn);
 	}
-	if (!pipeline) playlist_run();
+	if (!g_player.playing(NULL,NULL)) playlist_run();
 }
 
 
-runloop::g_timer progress_timer;
-guint bus_watch = 0;
+void progress_tick()
+{
+	int pos;
+	int durat;
+	if (!g_player.playing(&pos, &durat)) return;
+	gtk_button_set_image(btn_toggle, btnimg_stop);
+	if (pos < 0) return;
+	
+	char buf[32];
+	if (durat >= 0)
+	{
+		sprintf(buf, "%u:%.2u / %u:%.2u", pos/60, pos%60, durat/60, durat%60);
+		gtk_progress_bar_set_fraction(progress, (double)pos/durat);
+	}
+	else
+		sprintf(buf, "%u:%.2u / ?:??", pos/60, pos%60);
+	gtk_progress_bar_set_text(progress, buf);
+}
 
 void stop()
 {
-	if (!pipeline) return;
-	gst_element_set_state(pipeline, GST_STATE_NULL);
-	gst_object_unref(pipeline);
-	pipeline = NULL;
+	g_player.stop();
 	
 	progress_timer.reset();
 	gtk_progress_bar_set_text(progress, "");
 	gtk_progress_bar_set_fraction(progress, 0);
 	
 	gtk_button_set_image(btn_toggle, btnimg_play);
-	if (bus_watch != 0) g_source_remove(bus_watch);
-}
-
-void progress_tick()
-{
-	if (!pipeline || !progress) return;
-	gtk_button_set_image(btn_toggle, btnimg_stop);
-	
-	int64_t song_at;
-	gst_element_query_position(pipeline, GST_FORMAT_TIME, &song_at);
-	int64_t song_len;
-	gst_element_query_duration(pipeline, GST_FORMAT_TIME, &song_len);
-	
-	uint32_t sec_at = (song_at+500000000)/1000000000;
-	uint32_t sec_len = (song_len+500000000)/1000000000;
-	char buf[32];
-	if (GST_CLOCK_TIME_IS_VALID(song_len))
-		sprintf(buf, "%u:%.2u / %u:%.2u", sec_at/60, sec_at%60, sec_len/60, sec_len%60);
-	else
-		sprintf(buf, "%u:%.2u / ?:??", sec_at/60, sec_at%60);
-	gtk_progress_bar_set_text(progress, buf);
-	if (GST_CLOCK_TIME_IS_VALID(song_len))
-		gtk_progress_bar_set_fraction(progress, (double)sec_at/sec_len);
-}
-
-void play(cstring fn)
-{
-	stop();
-	
-	pipeline = gst_parse_launch("filesrc location=\""+fn+"\" ! decodebin ! autoaudiosink", NULL);
-	gst_element_set_state(pipeline, GST_STATE_PLAYING);
-	
-	GstBus* bus = gst_element_get_bus(pipeline);
-	gst_bus_add_watch(bus, [](GstBus* bus, GstMessage* message, void* user_data)->gboolean {
-			progress_tick();
-			if (message->type == GST_MESSAGE_EOS)
-			{
-				bus_watch = 0;
-				stop();
-				playlist_cur_idx++;
-				playlist_run();
-				return G_SOURCE_REMOVE;
-			}
-			return G_SOURCE_CONTINUE;
-		}, NULL);
-	gst_object_unref(bus);
-	
-	progress_timer.set_repeat(1000, progress_tick);
 }
 
 
@@ -525,7 +789,7 @@ void playlist_next()
 }
 void playlist_toggle()
 {
-	if (pipeline) stop();
+	if (g_player.playing(NULL,NULL)) stop();
 	else playlist_run();
 }
 
@@ -535,16 +799,12 @@ void make_gui(GApplication* application)
 	q_fname = g_quark_from_static_string("corn-filename");
 	
 	if (application) mainwnd = GTK_WINDOW(gtk_application_window_new(GTK_APPLICATION(application)));
-	else
-	{
-		mainwnd = GTK_WINDOW(gtk_window_new(GTK_WINDOW_TOPLEVEL));
-		auto onclose_cb = decompose_lambda([](GdkEvent* event, GtkWidget* widget) -> gboolean
-		{
-			gtk_main_quit();
-			return GDK_EVENT_STOP;
-		});
-		g_signal_connect_swapped(mainwnd, "delete-event", G_CALLBACK(onclose_cb.fp), onclose_cb.ctx);
-	}
+	else mainwnd = GTK_WINDOW(gtk_window_new(GTK_WINDOW_TOPLEVEL));
+	
+	// the correct solution would be gtk_main_quit + GDK_EVENT_STOP, and only if application==NULL,
+	// but the idle handler in ffmpeg somehow keeps the application alive, so let's just grab a bigger toy
+	auto onclose_cb = decompose_lambda([](GdkEvent* event, GtkWidget* widget) -> gboolean { exit(0); });
+	g_signal_connect_swapped(mainwnd, "delete-event", G_CALLBACK(onclose_cb.fp), onclose_cb.ctx);
 	
 	auto key_cb = decompose_lambda([](GdkEvent* event, GtkWidget* widget)->gboolean
 	{
@@ -644,7 +904,7 @@ int main(int argc, char** argv)
 	// why does it even use libgstgl when there's no video output
 	g_log_set_always_fatal((GLogLevelFlags)0);
 	
-	if ((cstring)argv[1] == "--local")
+	if (argv[1] && (cstring)argv[1] == "--local")
 	{
 		make_gui(NULL);
 		char** arg = argv+2;

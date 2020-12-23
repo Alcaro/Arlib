@@ -36,9 +36,9 @@ HMODULE pe_get_ntdll()
 {
 	PEB* peb;
 #if defined(__i386__)
-	__asm__("{mov %%fs:(0x30), %0|mov %0, fs:[0x30]}" : "=r"(peb)); // *(PEB* __seg_fs*)0x30 would be a lot cleaner, but it's C only
+	__asm__("mov {%%fs:(0x30),%0|%0,fs:[0x30]}" : "=r"(peb)); // *(PEB* __seg_fs*)0x30 would be a lot cleaner, but it's C only
 #elif defined(__x86_64__)
-	__asm__("{mov %%gs:(0x60), %0|mov %0, gs:[0x60]}" : "=r"(peb));
+	__asm__("mov {%%gs:(0x60),%0|%0,gs:[0x60]}" : "=r"(peb));
 #elif defined(_M_IX86)
 	peb = (PEB*)__readfsdword(0x30);
 #elif defined(_M_AMD64)

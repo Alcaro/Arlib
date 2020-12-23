@@ -547,7 +547,7 @@ public:
 	
 	array<T>& operator+=(arrayview<T> other)
 	{
-		size_t prevcount = this->count;
+		size_t prevcount = this->size();
 		size_t othercount = other.size();
 		
 		const T* src;

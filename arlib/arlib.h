@@ -4,8 +4,9 @@
 //     splitting a string by linebreaks.
 // - std:: is full of strange features and guarantees whose existence increase the constant factor
 //     of every operation, even if unused and unnecessary.
-// - std:: headers are huge, and compile time acts accordingly. Again, removing unnecessary features
-//     and guarantees helps.
+// - The std:: headers are huge, and compile time acts accordingly. Again, removing unnecessary
+//     features and guarantees helps.
+// - There are lots of things std:: doesn't offer at all, such as sockets and JSON parsing.
 // - I care a lot about binary size and easy distribution (one single file, no DLLs) on Windows, and
 //     including the C++ standard library would often triple the program size.
 // - And, most importantly, every feature I implement is a feature I fully understand, so I can
