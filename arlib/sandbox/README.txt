@@ -618,7 +618,7 @@ Everything contains bugs. The following is a list of possible vulnerabilities th
 - seccomp filter: ioctl(TCGETS) and ioctl(TIOCGWINSZ) were allowed
     exploitability: trivial
     maximum impact: reveals some properties of stdout, including whether it's a terminal or redirected; utterly uninteresting, but
-      breaks the stated security policy, so stil a vulnerability
+      breaks the stated security policy, so still a vulnerability
     severity: low, due to the trivial maximum impact
     notes: trivial leaks of non-authorized data is still a sandbox flaw; no clue why I ever allowed them
 - Spectre type 2 (indirect jumps)

@@ -386,8 +386,8 @@ class refcount {
 	inner_t* inner;
 	
 public:
-	refcount() { inner = new inner_t(); inner->refcount = 1; }
-	refcount(nullptr_t) { inner = NULL; }
+	refcount() : inner(NULL) {}
+	template<typename... Ts> void init(Ts... args) { inner = new inner_t({ 1, { args... }}); }
 	refcount(const refcount<T>& other) { inner = other.inner; inner->refcount++; }
 	refcount(refcount<T>&& other) { inner = other.inner; other.inner = NULL; }
 	refcount<T>& operator=(T* ptr) = delete;
@@ -463,33 +463,6 @@ void* memmem_arlib(const void * haystack, size_t haystacklen, const void * needl
 #endif
 
 
-//undefined behavior if 'in' is negative, or if the output would be out of range (signed input types are fine)
-//returns 1 if input is 0
-template<typename T> static inline T bitround(T in)
-{
-#if defined(__GNUC__)
-	static_assert(sizeof(unsigned) == 4);
-	static_assert(sizeof(unsigned long long) == 8);
-	
-	if (in <= 1) return 1;
-	if (sizeof(T) <= 4) return 2u << (__builtin_clz(in - 1) ^ 31); // clz on x86 is bsr^31, so this compiles to bsr^31^31,
-	if (sizeof(T) == 8) return 2ull<<(__builtin_clzll(in-1) ^ 63); // which optimizes better than the usual 1<<(32-clz) bit_ceil
-	
-	abort();
-#endif
-	
-	in -= (bool)in; // so bitround(0) becomes 1, rather than integer overflow and back to 0
-	in |= in>>1;
-	in |= in>>2;
-	in |= in>>4;
-	if constexpr (sizeof(in) > 1) in |= in>>8; // silly ifs to avoid 'shift amount out of range' warnings
-	if constexpr (sizeof(in) > 2) in |= in>>16;
-	if constexpr (sizeof(in) > 4) in |= in>>32;
-	in++;
-	return in;
-}
-
-
 
 template<typename T> inline T memxor_t(const uint8_t * a, const uint8_t * b)
 {
@@ -536,6 +509,67 @@ forceinline bool memeq(const void * a, const void * b, size_t len)
 #endif
 	
 	return !memcmp(a, b, len);
+}
+
+
+// updates dest/src; does NOT update count, since it's just zero on exit
+// must behave properly both if dest/src are nonoverlapping, if src is slightly before dest,
+//  and if src is equal to or slightly after dest
+forceinline void rep_movsb(uint8_t * & dest, const uint8_t * & src, size_t count)
+{
+#if defined(__i386__) || defined(__x86_64__)
+	// rep movsb is slow for large buffers if not ERMS (intel 2013, amd 2020), and small if not FSRM (intel 2009, amd 2020)
+	// however, it always gives correct results in 'reasonable' speed, so no point adding conditionals
+	const uint8_t * rsi = src;
+	uint8_t * rdi = dest;
+	__asm__("rep movsb" : "+S"(rsi), "+D"(rdi), "+c"(count)
+#ifdef __clang__
+	                    : : "memory"); // https://bugs.llvm.org/show_bug.cgi?id=47866
+#else
+	                    , "+m"(*(uint8_t(*)[])rdi) : "m"(*(const uint8_t(*)[])rsi));
+#endif
+	src = rsi;
+	dest = rdi;
+#else
+	if (count & 2) { *dest++ = *src++; *dest++ = *src++; }
+	if (count & 1) { *dest++ = *src++; }
+	
+	count >>= 2;
+	while (count--)
+	{
+		*dest++ = *src++;
+		*dest++ = *src++;
+		*dest++ = *src++;
+		*dest++ = *src++;
+	}
+#endif
+}
+
+
+//undefined behavior if 'in' is negative, or if the output would be out of range (signed input types are fine)
+//returns 1 if input is 0
+template<typename T> static inline T bitround(T in)
+{
+#if defined(__GNUC__)
+	static_assert(sizeof(unsigned) == 4);
+	static_assert(sizeof(unsigned long long) == 8);
+	
+	if (in <= 1) return 1;
+	if (sizeof(T) <= 4) return 2u << (__builtin_clz(in - 1) ^ 31); // clz on x86 is bsr^31, so this compiles to bsr^31^31,
+	if (sizeof(T) == 8) return 2ull<<(__builtin_clzll(in-1) ^ 63); // which optimizes better than the usual 1<<(32-clz) bit_ceil
+	
+	abort();
+#endif
+	
+	in -= (bool)in; // so bitround(0) becomes 1, rather than integer overflow and back to 0
+	in |= in>>1;
+	in |= in>>2;
+	in |= in>>4;
+	if constexpr (sizeof(in) > 1) in |= in>>8; // silly ifs to avoid 'shift amount out of range' warnings
+	if constexpr (sizeof(in) > 2) in |= in>>16;
+	if constexpr (sizeof(in) > 4) in |= in>>32;
+	in++;
+	return in;
 }
 
 

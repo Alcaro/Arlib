@@ -16,6 +16,7 @@ inline void e(const char*w)
 	//}
 }
 
+/*
 #ifndef ARLIB_TEST
 __attribute__((constructor)) static void x1() { puts("ctor"); }
 __attribute__((destructor))  static void x2() { puts("dtor"); }
@@ -56,6 +57,7 @@ void y()
 	printf("%x,%x,%x,%x\n",__cpu_model[0],__cpu_model[1],__cpu_model[2],__cpu_model[3]);
 	puts(file::exepath()+"");
 }
+*/
 
 int main(int argc, char** argv)
 {
@@ -68,6 +70,7 @@ int main(int argc, char** argv)
 	arlib_init(NULL, argv);
 #endif
 	
+	/*
 	puts("Begin");
 	{
 		dylib d;
@@ -93,6 +96,7 @@ int main(int argc, char** argv)
 	}
 	puts("End");
 	exit(0);
+	*/
 	
 	//runloop* loop = runloop::global();
 	//HTTP h(loop);
@@ -237,7 +241,11 @@ int main(int argc, char** argv)
 	
 	ch.onexit([&](int lstatus) { runloop::global()->exit(); });
 	
-	ch.launch(child[0], child.skip(1));
+	if (!ch.launch(child[0], child.skip(1)))
+	{
+		puts("launch failed");
+		return 1;
+	}
 	runloop::global()->enter();
 #endif
 	return 0;

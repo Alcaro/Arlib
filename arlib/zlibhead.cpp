@@ -1,5 +1,4 @@
 #include "deflate.h"
-#include "simd.h"
 
 uint32_t inflator::zlibhead::adler32(bytesr by, uint32_t adler_prev)
 {

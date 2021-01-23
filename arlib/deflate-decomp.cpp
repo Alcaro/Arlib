@@ -149,37 +149,6 @@ static bool unpack_huffman_dfl(uint16_t * out, const uint8_t * in, size_t in_len
 	return true;
 }
 
-// updates dest/src; does NOT update count, since it'd just be zero on exit anyways
-// must behave properly both if dest/src are nonoverlapping, if src is slightly before dest,
-//  and if src is equal to or slightly after dest (latter can happen in a cyclical buffer)
-forceinline void rep_movsb(uint8_t * & dest, const uint8_t * & src, size_t count)
-{
-#if defined(__i386__) || defined(__x86_64__)
-	const uint8_t * rsi = src;
-	uint8_t * rdi = dest;
-	__asm__("rep movsb" : "+S"(rsi), "+D"(rdi), "+c"(count)
-#ifdef __clang__
-	                    : : "memory"); // https://bugs.llvm.org/show_bug.cgi?id=47866
-#else
-	                    , "+m"(*(uint8_t(*)[])rdi) : "m"(*(const uint8_t(*)[])rsi));
-#endif
-	src = rsi;
-	dest = rdi;
-#else
-	if (count & 2) { *dest++ = *src++; *dest++ = *src++; }
-	if (count & 1) { *dest++ = *src++; }
-	
-	count >>= 2;
-	while (count--)
-	{
-		*dest++ = *src++;
-		*dest++ = *src++;
-		*dest++ = *src++;
-		*dest++ = *src++;
-	}
-#endif
-}
-
 void inflator::bits_refill_fast()
 {
 	if (m_in_nbits&32) return;

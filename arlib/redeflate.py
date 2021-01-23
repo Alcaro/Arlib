@@ -4,7 +4,7 @@ import sys, subprocess, zlib, tempfile
 def inflate(buf): return zlib.decompress(buf, wbits=-15)
 
 def deflate_slow(decomp):
-	# no wbits param on zlib.compress; there's one on compressobj, but truncating the zlib header is easier.
+	# there's no wbits param on zlib.compress; there's one on compressobj, but truncating the zlib header is easier.
 	comp = zlib.compress(decomp)[2:-4]
 	
 	decomp_file = tempfile.NamedTemporaryFile()

@@ -25,10 +25,10 @@ bool oimage::init_decode_png(arrayview<uint8_t> pngdata)
 			pngchunk ret;
 			ret.type = 0; // invalid value, looks like an unrecognized critical chunk and will propagate outwards
 			
-			if (remaining() < 4) return ret;
+			if (remaining() < 12) return ret;
 			ret.len = u32b();
 			
-			if (ret.len >= 0x80000000 || remaining() < 4 + ret.len + 4) return ret;
+			if (ret.len >= 0x80000000 || remaining()-8 < ret.len) return ret;
 			
 			uint32_t crc32_actual = crc32(peekbytes(4+ret.len));
 			
@@ -86,8 +86,8 @@ bool oimage::init_decode_png(arrayview<uint8_t> pngdata)
 	if (bits_per_sample >= 32 || color_type > 6 || comp_meth != 0 || filter_meth != 0 || interlace_meth > 1) goto fail;
 	if (bits_per_sample > 8) goto fail; // bpp=16 is allowed by the png standard, but not by this program
 	if (interlace_meth) goto fail; // TODO: implement this
-	static const uint32_t bpp_allowed[7] = { 0x977F7FFF, 0xFFFFFFFF, 0xFF7F7FFF, 0x977FFFFF, 0xFF7F7FFF, 0xFFFFFFFF, 0xFF7F7FFF };
-	if ((bpp_allowed[color_type]<<bits_per_sample)&0x80000000) goto fail; // set bit - invalid bpp (this also rejects types 1 and 5)
+	static const uint32_t bpp_allowed[7] = { 0x68808000, 0x00000000, 0x00808000, 0x68800000, 0x00808000, 0x00000000, 0x00808000 };
+	if (!((bpp_allowed[color_type]<<bits_per_sample)&0x80000000)) goto fail; // clear bit - invalid bpp (this also rejects types 1 and 5)
 	
 	uint32_t palette[256];
 	unsigned palettelen = 0;
@@ -101,11 +101,8 @@ bool oimage::init_decode_png(arrayview<uint8_t> pngdata)
 		palettelen = PLTE.len/3;
 		for (unsigned i=0;i<palettelen;i++)
 		{
-			uint32_t color = 0xFF000000;
-			color |= PLTE.u8()<<16; // could've been cleaner if C++ order of evaluation wasn't implementation defined...
-			color |= PLTE.u8()<<8;
-			color |= PLTE.u8();
-			palette[i] = color;
+			// this reads a byte it shouldn't, but it's either previous color or the chunk's type, so not UB
+			palette[i] = 0xFF000000 | readu_be32(PLTE.bytes(3).ptr()-1);
 		}
 	}
 	
@@ -240,8 +237,9 @@ goto fail;
 	if (!image::png_defilter(defilter_start, defilter_out_line, inflate_start, filter_bpp, bytes_per_line_raw, height)) goto fail;
 	
 	defilter_start += 4; // skip the x=-1 = 0 padding
-	bool ok = true;
-	if (color_type == 0 && bits_per_sample < 8)
+	
+	if(0);
+	else if (color_type == 0)
 	{
 		//treating gray as a palette makes things a fair bit simpler, especially with tRNS handling
 		//doing it for bpp=8 means an 1KB table which is boring, but that one doesn't pack multiple pixels in a single byte,
@@ -252,13 +250,13 @@ goto fail;
 			if (has_alpha) transparent = gray_1bpp[transparent];
 			png_unpack_plte<1>(defilter_start, defilter_out_line, gray_1bpp, 2);
 		}
-		if (bits_per_sample == 2)
+		else if (bits_per_sample == 2)
 		{
 			static const uint32_t gray_2bpp[] = { 0xFF000000, 0xFF555555, 0xFFAAAAAA, 0xFFFFFFFF };
 			if (has_alpha) transparent = gray_2bpp[transparent];
 			png_unpack_plte<2>(defilter_start, defilter_out_line, gray_2bpp, 4);
 		}
-		if (bits_per_sample == 4)
+		else if (bits_per_sample == 4)
 		{
 			static const uint32_t gray_4bpp[] = { 0xFF000000, 0xFF111111, 0xFF222222, 0xFF333333,
 			                                      0xFF444444, 0xFF555555, 0xFF666666, 0xFF777777,
@@ -267,18 +265,19 @@ goto fail;
 			if (has_alpha) transparent = gray_4bpp[transparent];
 			png_unpack_plte<4>(defilter_start, defilter_out_line, gray_4bpp, 16);
 		}
+		else /* bits_per_sample == 8 */ png_unpack_rgb<0>(defilter_start, defilter_out_line);
 	}
-	if (color_type == 0 && bits_per_sample == 8) png_unpack_rgb<0>(defilter_start, defilter_out_line);
 	
-	if (color_type == 2 && bits_per_sample == 8) png_unpack_rgb<2>(defilter_start, defilter_out_line);
-	if (color_type == 3 && bits_per_sample == 1) ok = png_unpack_plte<1>(defilter_start, defilter_out_line, palette, palettelen);
-	if (color_type == 3 && bits_per_sample == 2) ok = png_unpack_plte<2>(defilter_start, defilter_out_line, palette, palettelen);
-	if (color_type == 3 && bits_per_sample == 4) ok = png_unpack_plte<4>(defilter_start, defilter_out_line, palette, palettelen);
-	if (color_type == 3 && bits_per_sample == 8) ok = png_unpack_plte<8>(defilter_start, defilter_out_line, palette, palettelen);
-	if (color_type == 4 && bits_per_sample == 8) png_unpack_rgb<4>(defilter_start, defilter_out_line);
-	if (color_type == 6 && bits_per_sample == 8) png_unpack_rgb<6>(defilter_start, defilter_out_line);
-	
-	if (!ok) goto fail;
+	else if (color_type == 2 /* bits_per_sample == 8 */) png_unpack_rgb<2>(defilter_start, defilter_out_line);
+	else if (color_type == 3)
+	{
+		if      (bits_per_sample == 1) { if (!png_unpack_plte<1>(defilter_start, defilter_out_line, palette, palettelen)) goto fail; }
+		else if (bits_per_sample == 2) { if (!png_unpack_plte<2>(defilter_start, defilter_out_line, palette, palettelen)) goto fail; }
+		else if (bits_per_sample == 4) { if (!png_unpack_plte<4>(defilter_start, defilter_out_line, palette, palettelen)) goto fail; }
+		else /* bits_per_sample = 8 */ { if (!png_unpack_plte<8>(defilter_start, defilter_out_line, palette, palettelen)) goto fail; }
+	}
+	else if (color_type == 4 /* bits_per_sample == 8 */) png_unpack_rgb<4>(defilter_start, defilter_out_line);
+	else  /* color_type == 6 && bits_per_sample == 8 */  png_unpack_rgb<6>(defilter_start, defilter_out_line);
 	
 	if (transparent >= 0xFF000000)
 	{
@@ -337,18 +336,20 @@ bool image::png_defilter(uint8_t * out, size_t out_stride, const uint8_t * in, i
 #ifdef __SSE2__
 #ifndef __SSSE3__
 			auto _mm_abs_epi16 = [](__m128i a) -> __m128i {
+				// abs(x) = (x^(x<0)) - (x<0)
+				// however, that's four insns (three obvious, plus have to copy the argument)
+				// instead, this one is three (or two, if first call reuses a zeroed reg from the a/b/c calculation)
 				// abs(x) = max_i16(x, -x) (or min_u16(x, -x))
-				// Clang optimizes abs(x) = (x^(x<0)) - (x<0) to real abs (if -mssse3), but it doesn't understand this one
-				// (GCC doesn't do anything useful with either)
 				return _mm_max_epi16(a, _mm_sub_epi16(_mm_setzero_si128(), a)); 
 			};
 #endif
 			// ignore simding the other filters; Paeth is the most common, and also the most expensive per pixel
-			// it can only be SIMDed to a degree of bytes_per_pixel, so ignore bytes_per_pixel=1
-			// (it's possible to interlace processing of two consecutive Paeth scanlines by having the upper
-			//    one 1px ahead of the one below, but the required data structures would be quite annoying,
-			//    and combining the bytes would be annoying too)
-			// macro instead of lambda is 7% faster
+			// it can only be SIMDed to a degree of bytes_per_pixel, so ignore bytes_per_pixel=1 (and =2, gray+alpha, too rare)
+			// (it's possible to interlace processing of two consecutive Paeth scanlines by having the upper one 1px ahead of the
+			//    one below, but the required data structures would be quite annoying, and combining the bytes would be annoying too)
+			// (it'd also be possible to assume the previous pixel was predicted Up aka B and discard the calculation if wrong,
+			//    but it's 84.6% Left/A, 13% Up/B, 2.4% Diag/C, so such a thing would be wrong most of the time and not accomplish much)
+			// macro instead of function is 7% faster
 #define SIMD_PAETH(bytes_per_pixel) do { \
 					uint32_t a32 = *(uint32_t*)(defilter_out+x           -bytes_per_pixel);          \
 					uint32_t b32 = *(uint32_t*)(defilter_out+x-out_stride                );          \
@@ -383,7 +384,7 @@ bool image::png_defilter(uint8_t * out, size_t out_stride, const uint8_t * in, i
 			if (bytes_per_pixel == 3)
 			{
 				//one pixel at the time, no need for a scalar tail loop
-				//shift one byte to the left, so we don't overflow the malloc at the last scanline
+				//shift one byte to the left, so we don't overflow the malloc at the last scanline (x=-1 is safe, it's all zero)
 				//we don't actually change that byte, but it's UB anyways
 				defilter_out--;
 				for (size_t x=0;x<width_bytes;x+=3)
@@ -441,24 +442,41 @@ bool image::png_unpack_plte(const uint8_t * source, size_t srcstride, const uint
 	uint32_t width = this->width;
 	uint32_t height = this->height;
 	
+	uint32_t nbytes = ((uint64_t)width*bpp_in+7)/8;
+	
+#ifdef __SSE2__
+	__m128i bpp1_bit0 = _mm_set1_epi32(palette[0]); // hoist those (gcc won't automatically, can't prove height/nbytes != 0)
+	__m128i bpp1_bitxor = _mm_set1_epi32(palette[0]^palette[1]);
+	uint64_t bpp1_fanout_magic = 0x8040201008040201; // no clue know why this isn't hoisted though
+#endif
+	uint8_t bpp1_max_bits = 0;
+	
 	for (uint32_t y=0;y<height;y++)
 	{
 		//in this function, all pixels have one sample per pixel
 		
 		//this will write 7 pixels out of bounds for bpp=1 and size=int*8+1; this will be absorbed by our overallocations
 		//TODO: test on 1*1, 1*2, 1*7, 1*8, 1*9, 1*1023, 1*1024 and 1*1025, bpp=1
-		for (uint32_t byte=0;byte<((uint64_t)width*bpp_in+7)/8;byte++)
+		for (uint32_t byte=0;byte<nbytes;byte++)
 		{
 			uint8_t packed = source[byte];
-#define WRITE(xs, idx) \
-				{ \
-					if (UNLIKELY((idx) >= pallen)) \
-						return false; \
-					pixels[byte*8/bpp_in + (xs)] = palette[(idx)]; \
-				}
+#define  WRITE(xs, idx)  pixels[byte*8/bpp_in + (size_t)(xs)] = palette[(idx)]
 			
 			if (bpp_in == 1)
 			{
+				bpp1_max_bits |= packed;
+				
+#ifdef __SSE2__
+				uint64_t fanout = (uint64_t)packed * bpp1_fanout_magic; // expand bits of packed to 0x80 bits of 64bit reg
+				__m128i mask = _mm_cvtsi64_si128(fanout); // the other 56 bits of fanout are don't care terms
+				mask = _mm_unpacklo_epi8(mask, mask); // left term is don't care, use mask because _mm_undefined_si128() optimizes poorly
+				mask = _mm_srai_epi16(mask, 15); // replicate 0x80 bits of fanout to every bit of int16s
+				
+				_mm_storeu_si128((__m128i*)(pixels+byte*8+0),
+					_mm_xor_si128(bpp1_bit0, _mm_and_si128(bpp1_bitxor, _mm_unpacklo_epi16(mask,mask))));
+				_mm_storeu_si128((__m128i*)(pixels+byte*8+4),
+					_mm_xor_si128(bpp1_bit0, _mm_and_si128(bpp1_bitxor, _mm_unpackhi_epi16(mask,mask))));
+#else
 				WRITE(0, (packed>>7)&1);
 				WRITE(1, (packed>>6)&1);
 				WRITE(2, (packed>>5)&1);
@@ -467,9 +485,19 @@ bool image::png_unpack_plte(const uint8_t * source, size_t srcstride, const uint
 				WRITE(5, (packed>>2)&1);
 				WRITE(6, (packed>>1)&1);
 				WRITE(7, (packed>>0)&1);
+#endif
 			}
 			if (bpp_in == 2)
 			{
+				// overflow if
+				// (((x+y)^((x^y)&HIGH)) & HIGH) != 0
+				// HIGH = bits to detect overflow into
+				// x = a byte
+				// y = 1<<nbits - pallen, repeated
+				// only used for 2bpp, more straightforward algorithms are better for the other three
+				uint32_t addend_2bpp = (4-pallen) * 0x55;
+				if (UNLIKELY( ((packed+addend_2bpp)^((packed^addend_2bpp)&0x154)) & 0x154 )) return false;
+				
 				WRITE(0, (packed>>6)&3);
 				WRITE(1, (packed>>4)&3);
 				WRITE(2, (packed>>2)&3);
@@ -477,11 +505,16 @@ bool image::png_unpack_plte(const uint8_t * source, size_t srcstride, const uint
 			}
 			if (bpp_in == 4)
 			{
+				if (UNLIKELY((uint32_t)(packed&15) >= pallen)) return false;
+				if (UNLIKELY((uint32_t)(packed>>4) >= pallen)) return false;
+				
 				WRITE(0, (packed>>4)&15);
 				WRITE(1, (packed>>0)&15);
 			}
 			if (bpp_in == 8)
 			{
+				if (UNLIKELY(packed >= pallen)) return false;
+				
 				WRITE(0, (packed>>0)&255);
 			}
 #undef WRITE
@@ -491,6 +524,7 @@ bool image::png_unpack_plte(const uint8_t * source, size_t srcstride, const uint
 		source += srcstride;
 	}
 	
+	if (bpp_in == 1 && UNLIKELY(pallen == 1 && bpp1_max_bits != 0)) return false;
 	return true;
 }
 template bool image::png_unpack_plte<1>(const uint8_t *, size_t, const uint32_t *, uint32_t) const;

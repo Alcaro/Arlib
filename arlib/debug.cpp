@@ -113,7 +113,6 @@ void debug_log_stack(const char * text)
 		void* addrs[20];
 		int n_addrs = CaptureStackBackTrace(0, ARRAY_SIZE(addrs), addrs, NULL);
 		
-addrs[0]=(void*)debug_log_stack;n_addrs=1;
 		for (int i=0;i<n_addrs;i++)
 		{
 			HMODULE mod = NULL;

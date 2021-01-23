@@ -148,7 +148,7 @@ static string recompile(cstring text_raw)
 		if (isualnum(tokens[at+0][0]) && // return type
 		    isualnum(tokens[at+1][0]) && // name
 		    tokens[at+2][0] == '(' &&    // arguments
-		    tokens[at+3][0] == '{')      // contents
+		    (tokens[at+3][0] == '{' || tokens[at+3][0] == ';'))      // contents
 		{
 			if (firstword(tokens[at+1], "main"))
 				has_main = true;
@@ -219,7 +219,6 @@ int main(int argc, char** argv, char** envp)
 	};
 	mode_t mode;
 	
-	string in_script = argv[2];
 	int first_arg = 3;
 	
 	if (argv[1] == (string)"-c")
@@ -234,8 +233,8 @@ int main(int argc, char** argv, char** envp)
 	{
 		mode = m_run;
 		first_arg = 2;
-		in_script = argv[1];
 	}
+	string in_script = argv[first_arg-1];
 	
 	bool is_run = (mode < m_compile);
 	

@@ -23,7 +23,7 @@ ARTERMINAL = 1
 
 # These features are currently not supported on Windows.
 ARGUI = 0
-ARSANDBOX = 0
+#ARSANDBOX = 0
 
 # For Windows, Arlib can target a minimum version of either XP or 7. Latter is recommended and default;
 #  XP support slows down some things and disables some functionality (for example, SRWLock requires Vista or higher).

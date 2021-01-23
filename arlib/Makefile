@@ -478,49 +478,32 @@ CCXXFLAGS += $(patsubst %,-D%,$(DEFINES))
 
 CONF_CXXFLAGS := $(CONF_CXXFLAGS) $(CONF_CFLAGS)
 TRUE_CFLAGS := -std=c99 $(CCXXFLAGS) $(CONF_CFLAGS) $(CFLAGS)
-# Compiler support policy: I will do my best to support the default compiler on current Debian stable, latest Ubuntu LTS,
-#    every newer version of those compilers, and whatever other compilers I have access to at the moment.
-# I will also refrain from using non-final C++ versions (c++11 is final, c++0x isn't, -fcoroutines isn't), and
-#    I will not switch C++ version unless the new one contains a killer feature that considerably simplifies existing code,
-#    or permits writing something that would've previously been too complicated to even try. I will, however, use all
-#    features of that C++ version, unless given a reason not to (for example if only parts of that language version are implemented).
-# If someone cares about older compilers and C++ versions, I will accept PRs and not intentionally break it, as long as
-# - it doesn't uglify anything too much; most modern C++ features aren't indispensable, but the lambdas are staying
-# - there is no performance penalty if compiled under modern C++; this may be accomplished with #if __cplusplus > 12345, if necessary,
-#     though too big and/or too many ifdefs counts as uglifying things
-# - said someone maintains it, and does not expect me to; I will forget what works in each compiler version at random intervals,
-#     and I will use new features if I deem them sufficiently valuable
-# It's fine if said backport doesn't include the entire Arlib.
-# The following features would be useful; if enough of them show up, I will switch:
-#   C++2a coroutines, for runloop-related stuff (nearly every single socket-related operation is ugly)
-#   C++2a template string literals (for the regex parser, and so I can create a string formatting function)
-#   C++2a concepts (also for the regex parser, the errors are absurd)
-#   C++2a consteval (still for the regex parser - that template mess is terrible, I want it as normal code)
-#   C++2a down with typename http://wg21.link/p0634r3
-#   C++2a [[likely]]
-#   C++2a [[no_unique_address]]
-#   C++2a ban non-twos-complement signed - will probably enable various other language improvements
-#   C++2a void foo(auto arg) (shorthand for template<typename T> void foo(T arg) - simplifies function::bind_member)
-#   C++2a designated initializers (foo_t foo = { .a = 42, .b = 123 })
-#   C++17 <charconv>, to speed up tostring(float) (though I'll need to keep the current one around anyways, for Windows)
-#   [[trivially_relocatable]] http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2019/p1144r3.html
-#   Lambdas without braces/return, function<int(int)> mul2 = [](int i) => i*2; (useful for LINQ)
-#   Zero-overhead deterministic exceptions http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2018/p0709r0.pdf
-#   Compile-time reflection (that SERIALIZE macro is a little too limited, and the error messages are worse than from the regexes)
-#   Single-implementation interfaces (public functions and nothing else in header, member variables hidden)
+# C++20/etc wishlist:
+# - Coroutines, for runloop-related stuff (nearly every single socket-related operation is ugly)
+# - Template string literals (for the regex parser, and so I can create a string formatting function)
+# - Concepts (also for the regex parser, the errors are absurd)
+# - Consteval (still for the regex parser, that template mess is terrible)
+# - Down with typename http://wg21.link/p0634r3
+# - [[likely]]
+# - [[no_unique_address]]
+# - Ban non-twos-complement signed - will probably enable various other language improvements
+# - void foo(auto arg) (shorthand for template<typename T> void foo(T arg) - simplifies function::bind_member)
+# - Designated initializers (foo_t foo = { .a = 42, .b = 123 })
+# - <charconv>, to speed up tostring(float) (though I'll need to keep the current one around anyways, for Windows)
+# - [[trivially_relocatable]] http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2019/p1144r3.html
+# - Lambdas without braces/return, function<int(int)> mul2 = [](int i) => i*2; (useful for LINQ)
+# - Zero-overhead deterministic exceptions http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2018/p0709r0.pdf
+# - Compile-time reflection (that SERIALIZE macro is a little too limited, and the error messages are worse than from the regexes)
+# - Single-implementation interfaces (public functions and nothing else in header, member variables hidden)
 #     useful for anything with multiple implementations, but where the active one is a #ifdef, for example gameview and the widgets
 #     the $class proposal P0707 would most likely permit this, as well as most or all of the reflection I want
-#   Demote or, and, bitand, etc from keyword to predefined macro (or even better, banish them to the <ciso646> they should've never left)
-#   std::embed http://open-std.org/JTC1/SC22/WG21/docs/papers/2018/p1040r0.html
-#   Allow int x(int y=0); int x(int y=0) { return y*2; } (only if default value is identical on both ends, of course)
-#   Something to get rid of the unused variable warning from for (size_t n : range(42)) - Ranges TS, maybe?
-#   Overloading operator[] depending on whether it's a read or write access, int x = std::map[key_t] mutating is silly
+# - Demote or, and, bitand, etc from keyword to predefined macro (or even better, banish them to <ciso646>)
+# - std::embed http://open-std.org/JTC1/SC22/WG21/docs/papers/2018/p1040r0.html
+# - Allow int x(int y=0); int x(int y=0) { return y*2; } (only if default value is identical on both ends, of course)
+# - Something to get rid of the unused variable warning from for (size_t n : range(42)) - Ranges TS, maybe?
+# - Overloading operator[] depending on whether it's a read or write access, int x = std::map[key_t] mutating is silly
 #     not sure if map[key].foo.bar() should count as read or write, so probably not happening, but I can hope
-# The following may or may not be usable, depending on the exact details:
-#   C++2a modules (it's very easy to produce a bad module system, I don't know if this one avoids the pitfalls)
-# Other C++ features and proposals I've seen proposed is uninteresting to me, though I haven't seen them all.
-# I'm not interested in library features. Most of them lack important functionality, have bad constant factors, and bloat the binary.
-# The compiler-magic ones, like std::move and type traits, do one thing and do it well, and optimize to nothing. I use them.
+# - Modules, if they're good (I haven't looked into them, but it's easy to make a bad module system)
 TRUE_CXXFLAGS := -std=c++17 -fno-rtti $(CCXXFLAGS) $(CONF_CXXFLAGS) $(CXXFLAGS)
 TRUE_LFLAGS := $(CONF_LFLAGS) $(LFLAGS)
 
@@ -604,6 +587,7 @@ obj/arlibtest$(EXESUFFIX): $(OBJS)
 
 ifeq ($(OS),linux)
   #if make TR=, these assignments do nothing
+  # could add --keep-debuginfo=yes, but needs a newer valgrind than I have
   TR = valgrind --num-callers=100 --leak-check=full
   ifeq ($(ARGUI),1)
     # Gtk leaves over 9000 'possibly lost' objects around. not interested

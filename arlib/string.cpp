@@ -248,7 +248,7 @@ string cstring::replace(cstring in, cstring out) const
 			if (!haystack) break;
 			
 			haystack += in.length();
-			outlen += out.length(); // outlen-inlen is type uint - bad idea
+			outlen += out.length(); // outlen-inlen is type uint32 - bad idea
 			outlen -= in.length();
 		}
 	}
