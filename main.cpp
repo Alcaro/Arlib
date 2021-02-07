@@ -61,15 +61,6 @@ void y()
 
 int main(int argc, char** argv)
 {
-#ifdef ARLIB_SANDBOX
-	argparse args;
-	array<string> child;
-	args.add("", &child);
-	arlib_init(args, argv);
-#else
-	arlib_init(NULL, argv);
-#endif
-	
 	/*
 	puts("Begin");
 	{
@@ -208,10 +199,12 @@ int main(int argc, char** argv)
 	*/
 	
 #ifdef ARLIB_SANDBOX
+	array<string> child = arrayview<const char *>(argv, argc).cast<string>();
+	
 	sandproc ch(runloop::global());
 	ch.set_stdout(process::output::create_stdout());
 	ch.set_stderr(process::output::create_stderr());
-	ch.fs_grant_syslibs(child[0]);
+	ch.fs_grant_syslibs(child[1]);
 	ch.fs_grant_cwd(100);
 	
 	//for gcc
@@ -241,7 +234,7 @@ int main(int argc, char** argv)
 	
 	ch.onexit([&](int lstatus) { runloop::global()->exit(); });
 	
-	if (!ch.launch(child[0], child.skip(1)))
+	if (!ch.launch(child[1], child.skip(2)))
 	{
 		puts("launch failed");
 		return 1;

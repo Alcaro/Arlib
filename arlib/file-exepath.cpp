@@ -1,22 +1,56 @@
 #include "file.h"
 
-#ifdef __unix__
+#ifdef __linux__
 #include <unistd.h>
+#include <dirent.h>
 //separate file so this ctor can be optimized out if unused
 
 namespace {
 struct exepath_finder {
 	string path;
 	
-	exepath_finder() // can't oninit() to initialize a string, globals' ctors' order is implementation defined and often wrong
+	exepath_finder() // can't oninit() to initialize a string, it blows up if oninit runs before string's own ctor
 	{
+#ifdef ARTYPE_DLL
+		char linkpath[64];
+		strcpy(linkpath, "/proc/self/map_files/");
+		
+		DIR* dir = opendir(linkpath);
+		if (!dir) goto fallback;
+		
+		dirent* ent;
+		while ((ent = readdir(dir)))
+		{
+			// for . and .., sscanf will fail, return 0, and leave low/high unchanged
+			// easiest way to ensure they return false is initialize high to 0, and check it before low
+			uintptr_t low;
+			uintptr_t high = 0;
+			sscanf(ent->d_name, "%zx-%zx", &low, &high);
+			
+			uintptr_t target = (uintptr_t)(void*)&file::exepath;
+			if (target < high && low <= target)
+			{
+				strcat(linkpath, ent->d_name);
+				break;
+			}
+		}
+		closedir(dir);
+		if (!ent)
+		{
+		fallback:
+			strcpy(linkpath, "/proc/self/exe");
+		}
+#else
+		const char * linkpath = "/proc/self/exe";
+#endif
+		
 		path.construct(64);
 		
 	again: ;
 		char * ptr = (char*)path.bytes().ptr();
 		size_t buflen = path.length();
-		ssize_t r = readlink("/proc/self/exe", ptr, buflen);
-		if (r <= 0) abort();
+		ssize_t r = readlink(linkpath, ptr, buflen);
+		if (r <= 0) { path = ""; return; }
 		if ((size_t)r >= buflen-1)
 		{
 			path.construct(buflen * 2);
@@ -42,13 +76,19 @@ static char g_exepath[MAX_PATH];
 
 oninit_static()
 {
-	GetModuleFileName(NULL, g_exepath, MAX_PATH);
+	HMODULE hmod;
+#ifdef ARTYPE_DLL
+	GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+	                   (LPCSTR)(void*)&file::exepath, &hmod);
+#else
+	hmod = NULL;
+#endif
+	GetModuleFileName(hmod, g_exepath, MAX_PATH);
 	for (int i=0;g_exepath[i];i++)
 	{
 		if (g_exepath[i]=='\\') g_exepath[i]='/';
 	}
-	char * end=strrchr(g_exepath, '/');
-	if (end) end[1]='\0';
+	strrchr(g_exepath, '/')[1] = '\0';
 }
 
 cstring file::exepath() { return g_exepath; }

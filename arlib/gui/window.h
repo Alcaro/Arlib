@@ -14,6 +14,12 @@ class widget_base;
 #define ARGUI_MANUAL_LAYOUT
 #endif
 
+// Arlib may automatically parse a few arguments, like --display on Linux.
+void arlib_init(argparse& args, char** argv);
+void arlib_init(nullptr_t, char** argv); // Shorthand if your program takes no arguments. Will complain if any are given.
+// In case you want to handle arguments yourself. Arlib will still handle --display if argc/argv are given, but it's safe to pass NULLs.
+void arlib_init_manual_args(int* argc, char*** argv);
+
 //On Windows, attaches stdout/stderr to the console of the launching process. On Linux, does nothing.
 //On both, returns whether the process is currently in a terminal. Returns true if I/O is redirected.
 bool window_console_attach(); // Returns whether it worked.

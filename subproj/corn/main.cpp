@@ -114,6 +114,7 @@ class player_t {
 	
 	bool gst_play(cstring fn)
 	{
+return false; // segfaults if ffmpeg is loaded into the process
 		stop();
 		
 		gst_pipeline = gst_parse_launch("filesrc location=\""+fn+"\" ! decodebin ! autoaudiosink", NULL);

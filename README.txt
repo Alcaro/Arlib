@@ -1,28 +1,37 @@
 Arlib is my utility library / std:: replacement.
 It exists for several reasons:
-- std:: types often contain strange features and guarantees whose existence increase the constant
-    factor of every operation, even if unused and unnecessary. (The compiler magic features, like
-    std::move and type traits, do one thing and do it well. I use them.)
-- The std:: headers are huge, and compile time acts accordingly. Again, removing unnecessary
-    features and guarantees helps.
-- The C++ standard library lacks lots of features, such as sockets, JSON parsing, and an easy way to
-    split a split a string at linebreaks. While newer C++ versions often fix a few of the omissions,
-    Arlib's lineage traces back to at least 2014.
+- The C++ standard headers contain plenty of strange features and guarantees whose existence
+    significantly increases compile time. For example, I only have one string class, no allocators
+    or wchar_t; this allows me to define most member functions outside the header.
+- The std:: types lack, or lacked when I created Arlib, lots of useful features, for example an easy
+    way to check if a string starts with another, or an easy way to split a string by linebreaks.
+    (There are no standardized sockets or JSON parsers either, but third party libraries can fill
+    that omission.)
+- The std:: types often contain strange features and guarantees whose existence increase the
+    constant factor of every operation (for example, std::unordered_map must be implemented as an
+    array of linked lists, open addressing is forbidden), even if unused and unnecessary.
 - I care a lot about binary size and easy distribution (one single file, no DLLs) on Windows, and
-    including the C++ standard library would often triple the program size.
+    including libstdc++ would often triple the program size.
 - And, most importantly, every feature I implement is a feature I fully understand, so I can debug
     it, debug other instances of the same protocol or format, know which edge cases are likely to
     cause bugs (for example to write a test suite, or research potential security vulnerabilities),
     and appreciate the true complexity of something that intuitively should be simple.
+There are, of course, several drawbacks to rejecting the standard library, the most obvious one
+  being the time it took me to reimplement it. While I'm happy with the knowledge and results I've
+  gained, it's not a path for everyone.
+
+Arlib is designed for my personal use only. While some things I've built on top are intended to be
+  usable by others, my goal is making high quality software; actually having it used is more of a
+  side effect. I rarely advertise/announce them, make releases, or similar.
+
+As such, outsider contributions would be unexpected. Bug reports are welcome, but I can't promise
+  anything about feature requests and PRs; simplicity is also a feature.
+
 I have rewritten parts of Arlib many times, and there are still a few pieces that need rewrites as
   soon as I can think of a better design. Each rewrite is a thing I've learned not to do, and I
   intend to keep learning.
 
-Arlib, and most things I've built on top of it, are designed for my personal use only. I enjoy
-  creating software, but I'm less fond of community management; I don't like the social pressure of
-  feature requests and contradictory preferences, so I usually choose to not advertise them, make
-  releases, or otherwise build a userbase or community.
-
-As such, outsider contributions would be unexpected. While I want my projects to be as high quality
-  as possible (bug reports are welcome), I can't promise anything about feature requests and pull
-  requests.
+I care only about the final state of my tools, not the way there; I will fix imperfections whenever
+  I find them. As such, change velocity is high, and a commit for each change would be quite noisy,
+  so I don't bother - I batch up minor changes until anything significant happens (though I often
+  forget how big things I'm working on and end up batching several bigger changes).

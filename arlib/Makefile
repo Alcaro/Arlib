@@ -172,6 +172,17 @@ CONF_LFLAGS := $(CONF_LFLAGS)
 CONF_CXXFLAGS := $(CONF_CXXFLAGS)
 EXESUFFIX =
 
+ifeq ($(ARTYPE),exe)
+  DEFINES += ARTYPE_EXE
+endif
+ifeq ($(ARTYPE),dll)
+  DEFINES += ARTYPE_DLL
+endif
+ifeq ($(ARTYPE),hybrid)
+  DEFINES += ARTYPE_EXE
+  DEFINES += ARTYPE_DLL
+endif
+
 ifeq ($(OS),linux)
   CONF_LFLAGS += -ldl -Wl,-z,relro,-z,now,--as-needed,--no-undefined
   ifeq ($(ARTYPE),dll)
