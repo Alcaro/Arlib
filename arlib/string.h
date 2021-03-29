@@ -152,7 +152,7 @@ private:
 	{
 		if (len <= MAX_INLINE)
 		{
-			for (uint32_t i=0;i<len;i++) m_inline[i] = str[i]; // memcpy's constant overhead is huge
+			for (uint32_t i=0;i<len;i++) m_inline[i] = str[i]; // memcpy's constant overhead is huge if len is unknown
 			m_inline[len] = '\0';
 			m_inline_len_w() = MAX_INLINE-len;
 		}
@@ -168,6 +168,9 @@ private:
 	void init_from_nocopy(arrayview<uint8_t> data, bool has_nul = false) { init_from_nocopy(data.ptr(), data.size(), has_nul); }
 	void init_from_nocopy(const cstring& other) { *this = other; }
 	
+	// TODO: make some of these ctors constexpr, so gcc can optimize them into the data section (Clang already does)
+	// partial or no initialization is c++20 only, so not until then
+	// may need removing the union and memcpying things to/from a struct
 	class noinit {};
 	cstring(noinit) {}
 	
@@ -585,8 +588,9 @@ public:
 // cstring never owns memory, string always does, new one has a flag for whether it does
 // it's like a generalized cstring::c_str()
 // will be immutable after creation, like cstring
-// will be used for bml parser, punycode, and most likely a lot more
+// will be used for json/bml parsers, and most likely a lot more
 // need to find a good name for it first
+// also need to check how much time SSO saves once that class exists
 
 #undef OBJ_SIZE
 #undef MAX_INLINE
@@ -618,7 +622,7 @@ forceinline bool operator==(const cstring& left, const char * right)
 	if (__builtin_constant_p(len))
 	{
 		if (len <= cstring::max_inline())
-			return ((uint8_t)left.m_inline_len() == cstring::max_inline()-len && memeq(left.m_inline, right, len));
+			return ((uint8_t)left.m_inline_len() == (cstring::max_inline()^len) && memeq(left.m_inline, right, len));
 		else
 			return (!left.inlined() && left.m_len == len && memeq(left.m_data, right, len));
 	}
@@ -644,9 +648,9 @@ inline bool operator==(const cstring& left, const cstring& right)
 	return left.bytes() == right.bytes();
 #endif
 }
-inline bool operator!=(const cstring& left,      const char * right) { return !operator==(left, right); }
-inline bool operator!=(const cstring& left,      const cstring& right     ) { return !operator==(left, right); }
-inline bool operator!=(const char * left, const cstring& right     ) { return !operator==(left, right); }
+inline bool operator!=(const cstring& left, const char * right  ) { return !operator==(left, right); }
+inline bool operator!=(const cstring& left, const cstring& right) { return !operator==(left, right); }
+inline bool operator!=(const char * left,   const cstring& right) { return !operator==(left, right); }
 
 bool operator<(cstring left,      const char * right) = delete;
 bool operator<(cstring left,      cstring right     ) = delete;

@@ -136,7 +136,7 @@ static string recompile(cstring text_raw)
 	
 	bool has_main = false;
 	
-	array<bool> is_early;
+	bitarray is_early;
 	is_early.resize(tokens.size());
 	
 	at = 0;

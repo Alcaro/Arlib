@@ -9,7 +9,10 @@ namespace {
 struct exepath_finder {
 	string path;
 	
-	exepath_finder() // can't oninit() to initialize a string, it blows up if oninit runs before string's own ctor
+	// can't oninit() to initialize a string, must use a ctor; it blows up if oninit runs before string's own ctor
+	// luckily, oninit_static isn't necessary on Linux
+	// (no, I don't know why string ctor isn't optimized into the data section; it is if constexpr)
+	exepath_finder()
 	{
 #ifdef ARTYPE_DLL
 		char linkpath[64];
@@ -22,7 +25,7 @@ struct exepath_finder {
 		while ((ent = readdir(dir)))
 		{
 			// for . and .., sscanf will fail, return 0, and leave low/high unchanged
-			// easiest way to ensure they return false is initialize high to 0, and check it before low
+			// easiest way to ensure the range check is false is initialize high to 0, and check it before low
 			uintptr_t low;
 			uintptr_t high = 0;
 			sscanf(ent->d_name, "%zx-%zx", &low, &high);
@@ -58,7 +61,7 @@ struct exepath_finder {
 		}
 		
 		ptr[r] = '\0';
-		char * end = strrchr(ptr, '/')+1; // a / is known to exist
+		char * end = strrchr(ptr, '/')+1; // at least one / is known to exist
 		path = path.substr(0, end-ptr);
 	}
 };

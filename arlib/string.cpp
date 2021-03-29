@@ -742,21 +742,21 @@ static bool test_islower(uint8_t c) { return c >= 'a' && c <= 'z'; }
 static bool test_isupper(uint8_t c) { return c >= 'A' && c <= 'Z'; }
 static bool test_isalnum(uint8_t c) { return test_isalpha(c) || test_isdigit(c); }
 static bool test_isxdigit(uint8_t c) { return test_isdigit(c) || ((c&~0x20) >= 'A' && (c&~0x20) <= 'F'); }
-static bool test_tolower(uint8_t c) { if (test_isupper(c)) return c|0x20; else return c; }
-static bool test_toupper(uint8_t c) { if (test_islower(c)) return c&~0x20; else return c; }
+static uint8_t test_tolower(uint8_t c) { if (test_isupper(c)) return c|0x20; else return c; }
+static uint8_t test_toupper(uint8_t c) { if (test_islower(c)) return c&~0x20; else return c; }
 
 test("ctype", "", "string")
 {
 	for (int i=0;i<=255;i++)
 	{
 		testctx(tostring(i)) {
-			assert_eq(!!isspace(i), !!test_isspace(i));
-			assert_eq(!!isdigit(i), !!test_isdigit(i));
-			assert_eq(!!isalpha(i), !!test_isalpha(i));
-			assert_eq(!!islower(i), !!test_islower(i));
-			assert_eq(!!isupper(i), !!test_isupper(i));
-			assert_eq(!!isalnum(i), !!test_isalnum(i));
-			assert_eq(!!isxdigit(i), !!test_isxdigit(i));
+			assert_eq(isspace(i), test_isspace(i));
+			assert_eq(isdigit(i), test_isdigit(i));
+			assert_eq(isalpha(i), test_isalpha(i));
+			assert_eq(islower(i), test_islower(i));
+			assert_eq(isupper(i), test_isupper(i));
+			assert_eq(isalnum(i), test_isalnum(i));
+			assert_eq(isxdigit(i), test_isxdigit(i));
 			assert_eq(tolower(i), test_tolower(i));
 			assert_eq(toupper(i), test_toupper(i));
 		}

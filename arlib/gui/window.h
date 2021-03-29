@@ -2,7 +2,7 @@
 #include "../global.h"
 #include "../string.h"
 #include "../runloop.h"
-#include <string.h>
+#include "../argparse.h"
 
 // TODO: this entire thing is a mess, and it's not used by anything at all
 

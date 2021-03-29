@@ -1,4 +1,5 @@
 #include "arlib.h"
+#include "obj/resources.h"
 #include <gtk/gtk.h>
 #include <sys/stat.h>
 
@@ -114,7 +115,7 @@ class player_t {
 	
 	bool gst_play(cstring fn)
 	{
-return false; // segfaults if ffmpeg is loaded into the process
+return false; // gstreamer segfaults if ffmpeg is loaded into the process
 		stop();
 		
 		gst_pipeline = gst_parse_launch("filesrc location=\""+fn+"\" ! decodebin ! autoaudiosink", NULL);
@@ -401,36 +402,72 @@ GtkButton* btn_toggle;
 GtkWidget* btnimg_stop;
 GtkWidget* btnimg_play;
 
-template<int t_start, int t_width> struct column {
-	static const int start = t_start;
-	static const int width = t_width;
+struct column {
+	int col_start;
+	int col_width;
 	
-	static const size_t offset = NUM_ROWS*start;
-	static const size_t n_cells = NUM_ROWS*width;
+	size_t offset;
+	size_t capacity;
 	
-	size_t n_items = 0;
-	string items[n_cells];
+	//static const int start = t_start;
+	//static const int width = t_width;
+	
+	//static const size_t offset = NUM_ROWS*start;
+	//static const size_t n_cells = NUM_ROWS*width;
+	
+	struct node
+	{
+		string display;
+		string filename;
+		int at;
+		int total;
+	};
+	array<node> items;
 	
 	function<void(cstring)> fn;
 	
-	void init(function<void(cstring)> fn)
+	void init(int start, int width, function<void(cstring)> fn)
 	{
+		this->col_start = start;
+		this->col_width = width;
+		
+		offset = NUM_ROWS*start;
+		capacity = NUM_ROWS*width;
+		
 		this->fn = fn;
-		for (size_t n=0;n<width;n++)
+		for (int n=0;n<width;n++)
 		{
 			grid.onactivate[start+n] = [this](int col, int row) {
-				this->fn(this->items[(col-start)*NUM_ROWS + row]);
+				size_t idx = (col-col_start)*NUM_ROWS + row;
+				if (idx < items.size())
+					this->fn(this->items[idx].filename);
 			};
 		}
 	}
 	
+	void render(int row)
+	{
+		node& n = items[row];
+		if (n.total > 1)
+			grid.text[offset+row] = "("+tostring(n.at)+"/"+tostring(n.total)+") "+n.display;
+		else
+			grid.text[offset+row] = n.display;
+		gtk_widget_queue_draw(grid.widget);
+	}
+	
 	bool add_raw(cstring display, cstring full)
 	{
-		if (n_items == n_cells) return false;
+		if (items && full == items[items.size()-1].filename)
+		{
+			items[items.size()-1].total++;
+			render(items.size()-1);
+			return true;
+		}
 		
-		items[n_items] = full;
-		grid.text[offset+n_items] = display;
-		n_items++;
+		if (items.size() == capacity) return false;
+		
+		grid.text[offset+items.size()] = display;
+		node& n = items.append({ display, full, 1, 1 });
 		gtk_widget_queue_draw(grid.widget);
 		return true;
 	}
@@ -442,44 +479,37 @@ template<int t_start, int t_width> struct column {
 	
 	void remove_first()
 	{
-		for (size_t i=0;i<n_items-1;i++)
-		{
-			items[i] = std::move(items[i+1]);
+		items.remove(0);
+		for (size_t i=0;i<items.size();i++)
 			grid.text[offset+i] = std::move(grid.text[offset+i+1]);
-		}
 		
-		items[n_items-1] = "";
-		grid.text[offset+n_items-1] = "";
-		n_items--;
+		grid.text[offset+items.size()] = "";
 		gtk_widget_queue_draw(grid.widget);
 	}
 	
 	void reset()
 	{
-		n_items = 0;
-		for (size_t i=0;i<n_cells;i++)
-		{
-			items[i] = "";
+		items.reset();
+		for (size_t i=0;i<capacity;i++)
 			grid.text[i+offset] = "";
-		}
 		focus(-1);
 		gtk_widget_queue_draw(grid.widget);
 	}
 	
 	void focus(int idx)
 	{
-		for (size_t n=0;n<width;n++)
+		for (int n=0;n<col_width;n++)
 		{
-			grid.focus_row[start+n] = -1;
+			grid.focus_row[col_start+n] = -1;
 		}
 		if (idx != -1)
-			grid.focus_row[start + idx/NUM_ROWS] = idx%NUM_ROWS;
+			grid.focus_row[col_start + idx/NUM_ROWS] = idx%NUM_ROWS;
 		gtk_widget_queue_draw(grid.widget);
 	}
 };
-column<0,2> c_common;
-column<2,1> c_search;
-column<3,1> c_playlist;
+column c_common;
+column c_search;
+column c_playlist;
 
 
 GtkProgressBar* progress;
@@ -546,7 +576,7 @@ void update_search()
 	//rules:
 	// each potential match must contain every word in the filename (including directory, but not MUSIC_DIR), in order, case insensitive
 	// additionally, the last word in the search string must be in the file's basename
-	// a word is defined as space-separated sequence of nonspaces in search string
+	// a word is defined as space-separated (potentially empty) sequence of nonspaces in search string
 	// a match's penalty is defined as how many skip slots contain ascii non-space bytes
 	// a skip slot is defined as each space, plus start of the string; start gives 1.5 penalty points
 	// if the filename contains a slash, add 1 penalty point
@@ -555,9 +585,10 @@ void update_search()
 	// if there are matches than what fit, delete every match sharing the max penalty; repeat if needed
 	// if the above did anything, or if there were no matches, insert an entry saying so
 	//exception: if input is blank, output is blank
-	//(implementation doubles the penalty)
+	//(implementation doubles the penalty, so it's all integers)
 	
 	string key = gtk_entry_get_text(search_line);
+	key = key.csplit<1>("*")[0];
 	
 	c_search.reset();
 	search_focus = 0;
@@ -616,9 +647,9 @@ void update_search()
 	
 	c_search.reset();
 	size_t n_matches_full = matches.size();
-	if (matches.size() > c_search.n_cells)
+	if (matches.size() > c_search.capacity)
 	{
-		int max_penalty = matches[c_search.n_cells-1].penalty;
+		int max_penalty = matches[c_search.capacity-1].penalty;
 		size_t trunc_to = 0;
 		while (matches[trunc_to].penalty < max_penalty) trunc_to++;
 		matches.resize(trunc_to);
@@ -648,7 +679,7 @@ GtkWidget* make_search()
 		if (event->key.keyval == GDK_KEY_Up)
 		{
 			if (search_focus == 0)
-				search_focus = c_search.n_items-1;
+				search_focus = c_search.items.size()-1;
 			else
 				search_focus--;
 			c_search.focus(search_focus);
@@ -656,7 +687,7 @@ GtkWidget* make_search()
 		}
 		if (event->key.keyval == GDK_KEY_Down)
 		{
-			if (search_focus == c_search.n_items-1)
+			if (search_focus == c_search.items.size()-1)
 				search_focus = 0;
 			else
 				search_focus++;
@@ -671,7 +702,9 @@ GtkWidget* make_search()
 				init_common();
 			}
 			else
-				enqueue(c_search.items[search_focus]);
+			{
+				enqueue(c_search.items[search_focus].filename);
+			}
 			if ((event->key.state&GDK_SHIFT_MASK) == 0)
 				gtk_entry_set_text(search_line, ""); // calls remove_cb
 			return GDK_EVENT_STOP;
@@ -709,18 +742,35 @@ size_t playlist_cur_idx = 0;
 void playlist_run()
 {
 	c_playlist.focus(-1);
-	if (playlist_cur_idx == c_playlist.n_items) { stop(); return; }
-	cstring next = c_playlist.items[playlist_cur_idx];
+	if (playlist_cur_idx == c_playlist.items.size()) { stop(); return; }
+	cstring next = c_playlist.items[playlist_cur_idx].filename;
 	c_playlist.focus(playlist_cur_idx);
-	g_player.finish_cb = [](){ playlist_cur_idx++; playlist_run(); };
+	g_player.finish_cb = [](){
+		column::node& n = c_playlist.items[playlist_cur_idx];
+		if (n.at != n.total)
+		{
+			n.at++;
+			c_playlist.render(playlist_cur_idx);
+		}
+		else
+			playlist_cur_idx++;
+		playlist_run();
+	};
 	g_player.something_cb = progress_tick;
 	g_player.play(next);
 	progress_timer.set_repeat(1000, progress_tick);
 }
-void enqueue(string fn) // cstring explodes if it's the oldest playlist item, so use string
+void enqueue_real(cstring fn)
 {
 	if (!fn) return;
-	if (!c_playlist.add(fn))
+	if (playlist_cur_idx && playlist_cur_idx == c_playlist.items.size() && fn == c_playlist.items[playlist_cur_idx-1].filename)
+	{
+		playlist_cur_idx--;
+		c_playlist.items[playlist_cur_idx].at++;
+		c_playlist.items[playlist_cur_idx].total++;
+		c_playlist.render(playlist_cur_idx);
+	}
+	else if (!c_playlist.add(fn))
 	{
 		if (playlist_cur_idx == 0)
 			return;
@@ -732,6 +782,14 @@ void enqueue(string fn) // cstring explodes if it's the oldest playlist item, so
 		c_playlist.add(fn);
 	}
 	if (!g_player.playing(NULL,NULL)) playlist_run();
+}
+void enqueue(string fn)
+{
+	int multiple = 1;
+	const char * mul_str = strchr(gtk_entry_get_text(search_line), '*');
+	if (mul_str) fromstring(mul_str+1, multiple);
+	for (int i=0;i<multiple;i++)
+		enqueue_real(fn);
 }
 
 
@@ -783,7 +841,7 @@ void playlist_prev()
 }
 void playlist_next()
 {
-	if (playlist_cur_idx >= c_playlist.n_items-1) return;
+	if (playlist_cur_idx >= c_playlist.items.size()-1) return;
 	playlist_cur_idx++;
 	stop();
 	playlist_run();
@@ -827,9 +885,9 @@ void make_gui(GApplication* application)
 	gtk_box_pack_start(box_upper, make_progress(), false, false, 0);
 	gtk_box_pack_start(box_upper, make_button("gtk-media-next", playlist_next), false, false, 0);
 	
-	c_common.init(enqueue);
-	c_search.init(enqueue);
-	c_playlist.init(enqueue);
+	c_common.init(0,2, enqueue);
+	c_search.init(2,1, enqueue);
+	c_playlist.init(3,1, enqueue);
 	grid.init();
 	
 	GtkBox* box_main = GTK_BOX(gtk_box_new(GTK_ORIENTATION_VERTICAL, 0));
@@ -904,6 +962,10 @@ int main(int argc, char** argv)
 	*/
 	// why does it even use libgstgl when there's no video output
 	g_log_set_always_fatal((GLogLevelFlags)0);
+	
+	GInputStream* is = g_memory_input_stream_new_from_data(resources::icon, sizeof(resources::icon), NULL);
+	GdkPixbuf* pix = gdk_pixbuf_new_from_stream_at_scale(is, 64, 64, true, NULL, NULL);
+	gtk_window_set_default_icon(pix);
 	
 	if (argv[1] && (cstring)argv[1] == "--local")
 	{
