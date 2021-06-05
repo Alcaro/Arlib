@@ -346,7 +346,7 @@ public:
 	//May be blank if the path can't be determined. The cstring is owned by Arlib and lives forever.
 	static cstring exepath();
 	//Returns the current working directory.
-	static cstring cwd();
+	static const string& cwd();
 	
 	static string realpath(cstring path) { return resolve(cwd(), path); }
 private:

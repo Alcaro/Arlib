@@ -68,15 +68,17 @@ size_t hash(const uint8_t * val, size_t n)
 
 
 #ifdef runtime__SSE2__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpsabi" // doesn't work, but...
 #define SIMD_DEBUG_INNER(suffix, sse_type, inner_type, fmt) \
-	void debug##suffix(sse_type vals) \
+	void debug##suffix(const sse_type& vals) \
 	{ \
 		inner_type inner[sizeof(sse_type)/sizeof(inner_type)]; \
 		memcpy(inner, &vals, sizeof(sse_type)); \
 		for (size_t i : range(ARRAY_SIZE(inner))) \
 			printf("%s%c", (const char*)fmt(inner[i]), (i == ARRAY_SIZE(inner)-1 ? '\n' : ' ')); \
 	} \
-	void debug##suffix(const char * prefix, sse_type vals) { printf("%s ", prefix); debug##suffix(vals); }
+	void debug##suffix(const char * prefix, const sse_type& vals) { printf("%s ", prefix); debug##suffix(vals); }
 #define SIMD_DEBUG_OUTER(bits) \
 	SIMD_DEBUG_INNER(d##bits, __m128i, int##bits##_t, tostring) \
 	SIMD_DEBUG_INNER(u##bits, __m128i, uint##bits##_t, tostring) \
@@ -89,14 +91,15 @@ SIMD_DEBUG_INNER(f32, __m128, float, tostring)
 SIMD_DEBUG_INNER(f64, __m128d, double, tostring)
 #undef SIMD_DEBUG_INNER
 #undef SIMD_DEBUG_OUTER
-void debugc8(__m128i vals)
+void debugc8(const __m128i& vals)
 {
 	char inner[sizeof(__m128i)/sizeof(char)];
 	memcpy(inner, &vals, sizeof(__m128i));
 	for (size_t i : range(ARRAY_SIZE(inner)))
 		printf("%c%c", inner[i], (i == ARRAY_SIZE(inner)-1 ? '\n' : ' '));
 }
-void debugc8(const char * prefix, __m128i vals) { printf("%s ", prefix); debugc8(vals); }
+void debugc8(const char * prefix, const __m128i& vals) { printf("%s ", prefix); debugc8(vals); }
+#pragma GCC diagnostic pop
 #endif
 
 //for windows:
@@ -107,7 +110,7 @@ void debugc8(const char * prefix, __m128i vals) { printf("%s ", prefix); debugc8
 //  need to override them, so they can be counted, leak checked, and rejected in test_nomalloc
 //  Valgrind overrides my new/delete override with an LD_PRELOAD, but Valgrind has its own leak checker,
 //   and new is only used for classes with vtables that don't make sense to use in test_nomalloc anyways
-//  (I can disable valgrind's override with -s, but that's obviously not worth it.)
+//  (I can disable valgrind's override by compiling with -s, but that has the obvious side effects.)
 #if defined(__MINGW32__) || defined(ARLIB_TESTRUNNER)
 void* operator new(std::size_t n) _GLIBCXX_THROW(std::bad_alloc) { return malloc(n); }
 //Valgrind 3.13 overrides operator delete(void*), but not delete(void*,size_t)
@@ -133,11 +136,12 @@ extern "C" void _pei386_runtime_relocator() {}
 // stamp out a jmp QWORD PTR [rip+12345678] in machine code
 // extended asm isn't supported as a toplevel statement, and -masm=intel/att sets no preprocessor flag, so this is the best I can do
 #define JMP_IMPORT(name) ".byte 0xFF,0x25; .int __imp_" #name "-" #name "-6"
+#define ASM_FORCE_IMPORT(name) __asm__(".section .text$" #name "; .globl " #name "; " #name ": " JMP_IMPORT(name) "; .text")
 #endif
 #ifdef __i386__
-#define JMP_IMPORT(name) ".byte 0xFF,0x25 : .int __imp_" #name
+#define JMP_IMPORT(name) ".byte 0xFF,0x25; .int __imp_" #name
+#define ASM_FORCE_IMPORT(name) // TODO: figure out if this does anything on 32bit, maybe it's only needed for 64bit
 #endif
-#define ASM_FORCE_IMPORT(name) __asm__(".section .text$" #name "; .globl " #name "; " #name ": " JMP_IMPORT(name) "; .text")
 
 ASM_FORCE_IMPORT(sin);   ASM_FORCE_IMPORT(sinf);
 ASM_FORCE_IMPORT(cos);   ASM_FORCE_IMPORT(cosf);

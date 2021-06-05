@@ -28,6 +28,7 @@ ARGUI = 0
 # For Windows, Arlib can target a minimum version of either XP or 7. Latter is recommended and default;
 #  XP support slows down some things and disables some functionality (for example, SRWLock requires Vista or higher).
 # Arlib may compile for other targets, but it's not tested and may break.
+# In addition to 0 and 1, the value 32 is supported, and means 1 if compiling as 32bit, otherwise 0.
 ARXPSUPPORT = 0
 
 #honored variables, in addition to the ones listed here:
@@ -45,8 +46,8 @@ ARXPSUPPORT = 0
 #  if 1, enables -fsanitize=address
 #TF, TR (CLI)
 #  TF runs only tests whose name contains the given string (case insensitive), for example TF=json
-#  TR is prefixed to the program when running the tests, for example valgrind (default), gdb, or strace
-#  these two are only effective for make test, test-all, and test-all-twice
+#  TR is prefixed to the program when running the tests, for example valgrind (default), gdb, strace, or blank (just run it directly)
+#  these two are only effective for the make test family
 #CONF_CFLAGS, CONF_LFLAGS
 #  additional compiler/linker flags needed by this program
 #EXCEPTIONS
@@ -66,7 +67,7 @@ ARXPSUPPORT = 0
 #  (SOURCES and SOURCES_NOWARN are implemented as domains)
 #the ones labeled (CLI) should not be set by the program's makefile, but should instead be reserved for command-line arguments
 
-#don't use this, it specifies that Arlib itself is the project here (i.e. enables Arlib's own tests)
+#don't use this, it specifies that Arlib itself is the project here. More specifically, it enables Arlib's own tests.
 ARLIB_MAIN = 1
 include arlib/Makefile
 

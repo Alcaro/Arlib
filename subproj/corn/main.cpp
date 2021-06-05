@@ -396,7 +396,8 @@ public:
 	}
 } g_player;
 
-void enqueue(string fn);
+void enqueue(cstring fn);
+void enqueue_real(string fn);
 
 GtkButton* btn_toggle;
 GtkWidget* btnimg_stop;
@@ -575,17 +576,21 @@ void update_search()
 {
 	//rules:
 	// each potential match must contain every word in the filename (including directory, but not MUSIC_DIR), in order, case insensitive
-	// additionally, the last word in the search string must be in the file's basename
 	// a word is defined as space-separated (potentially empty) sequence of nonspaces in search string
 	// a match's penalty is defined as how many skip slots contain ascii non-space bytes
 	// a skip slot is defined as each space, plus start of the string; start gives 1.5 penalty points
 	// if the filename contains a slash, add 1 penalty point
+	// if the last word in the search string is not in the file's basename, add 50 penalty points
 	//output:
 	// all matches, sorted by ascending penalty, then alphabetically by name including dir
 	// if there are matches than what fit, delete every match sharing the max penalty; repeat if needed
 	// if the above did anything, or if there were no matches, insert an entry saying so
-	//exception: if input is blank, output is blank
+	//exception: if input is blank, output is blank, not even the entry saying so
 	//(implementation doubles the penalty, so it's all integers)
+	
+	string prev_focus;
+	if (c_search.items) prev_focus = c_search.items[search_focus].filename;
+	if (prev_focus) prev_focus = prev_focus.substr(strlen(MUSIC_DIR), ~0);
 	
 	string key = gtk_entry_get_text(search_line);
 	key = key.csplit<1>("*")[0];
@@ -614,7 +619,9 @@ void update_search()
 		{
 			size_t min_idx = search_at;
 			if (word_at == words.size()-1 && last_slash != (size_t)-1)
-				min_idx = max(min_idx, last_slash);
+			{
+				if (fn.iindexof(words[word_at], last_slash) == (size_t)-1) penalty += 100;
+			}
 			size_t next_start = fn.iindexof(words[word_at], min_idx);
 			if (next_start == (size_t)-1) goto not_match;
 			
@@ -640,9 +647,9 @@ void update_search()
 	not_match: ;
 	}
 	
-	matches.sort([](match_t& a, match_t& b){
+	matches.sort([](match_t& a, match_t& b) {
 		if (a.penalty != b.penalty) return a.penalty < b.penalty;
-		return string::less(a.fn, b.fn);
+		return string::natless(a.fn, b.fn);
 	});
 	
 	c_search.reset();
@@ -666,6 +673,18 @@ void update_search()
 	if (n_matches_full != matches.size())
 	{
 		c_search.add_raw("("+tostring(n_matches_full-matches.size())+" more matches)", "");
+	}
+	
+	if (prev_focus)
+	{
+		for (size_t i=0;i<matches.size();i++)
+		{
+			if (matches[i].fn == prev_focus)
+			{
+				search_focus = i;
+				c_search.focus(i);
+			}
+		}
 	}
 }
 
@@ -696,12 +715,18 @@ GtkWidget* make_search()
 		}
 		if (event->key.keyval == GDK_KEY_Return || event->key.keyval == GDK_KEY_KP_Enter)
 		{
-			if (!strcmp(gtk_entry_get_text(search_line), "."))
+			cstring search_text = gtk_entry_get_text(search_line);
+			if (search_text == ".")
 			{
 				init_search();
 				init_common();
 			}
-			else
+			else if (search_text.endswith("*"))
+			{
+				for (column::node& item : c_search.items)
+					enqueue_real(item.filename);
+			}
+			else if (c_search.items)
 			{
 				enqueue(c_search.items[search_focus].filename);
 			}
@@ -760,7 +785,7 @@ void playlist_run()
 	g_player.play(next);
 	progress_timer.set_repeat(1000, progress_tick);
 }
-void enqueue_real(cstring fn)
+void enqueue_real(string fn) // must take string, not cstring; otherwise it'll screw up if the first element in the playlist is replayed
 {
 	if (!fn) return;
 	if (playlist_cur_idx && playlist_cur_idx == c_playlist.items.size() && fn == c_playlist.items[playlist_cur_idx-1].filename)
@@ -783,7 +808,7 @@ void enqueue_real(cstring fn)
 	}
 	if (!g_player.playing(NULL,NULL)) playlist_run();
 }
-void enqueue(string fn)
+void enqueue(cstring fn)
 {
 	int multiple = 1;
 	const char * mul_str = strchr(gtk_entry_get_text(search_line), '*');

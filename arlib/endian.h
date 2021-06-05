@@ -69,6 +69,21 @@ forceinline uint32_t readu_be32(const uint8_t* in) { uint32_t ret; memcpy(&ret, 
 forceinline uint64_t readu_le64(const uint8_t* in) { uint64_t ret; memcpy(&ret, in, sizeof(ret)); return END_BIG ? end_swap64(ret) : ret; }
 forceinline uint64_t readu_be64(const uint8_t* in) { uint64_t ret; memcpy(&ret, in, sizeof(ret)); return END_BIG ? ret : end_swap64(ret); }
 
+template<typename T> T readu_le(const uint8_t* in)
+{
+	if (sizeof(T) == 1) return readu_le8(in);
+	if (sizeof(T) == 2) return readu_le16(in);
+	if (sizeof(T) == 4) return readu_le32(in);
+	if (sizeof(T) == 8) return readu_le64(in);
+}
+template<typename T> T readu_be(const uint8_t* in)
+{
+	if (sizeof(T) == 1) return readu_be8(in);
+	if (sizeof(T) == 2) return readu_be16(in);
+	if (sizeof(T) == 4) return readu_be32(in);
+	if (sizeof(T) == 8) return readu_be64(in);
+}
+
 forceinline void writeu_le8( uint8_t* target, uint8_t  n) { *target = n; }
 forceinline void writeu_be8( uint8_t* target, uint8_t  n) { *target = n; }
 forceinline void writeu_le16(uint8_t* target, uint16_t n) { n = END_BIG ? end_swap16(n) : n; memcpy(target, &n, 2); }

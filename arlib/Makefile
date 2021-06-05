@@ -49,18 +49,6 @@ define LF
 
 endef
 
-ifeq ($(V),)
-  Q = @
-  ECHOQ = @echo
-else
-  Q =
-  ifeq ($(HOST_SHELL),cmd)
-    ECHOQ = @ver>nul
-  else
-    ECHOQ = @true
-  endif
-endif
-
 CC = gcc
 CFLAGS =
 CXX = g++
@@ -108,6 +96,23 @@ endif
 #  endif
 #endif
 
+ifeq ($(OS),windows)
+  DUMPMACHINE := $(shell $(CC) -dumpmachine)
+  ifeq ($(DUMPMACHINE),i686-w64-mingw32)
+    WINBITS = 32
+    ifeq ($(ARXPSUPPORT),32)
+      ARXPSUPPORT = 1
+    endif
+  else ifeq ($(DUMPMACHINE),x86_64-w64-mingw32)
+    WINBITS = 64
+    ifeq ($(ARXPSUPPORT),32)
+      ARXPSUPPORT = 0
+    endif
+  else
+    $(error can't determine machine bitness)
+  endif
+endif
+
 ifneq ($(filter $(MAKECMDGOALS),test test-all test-all-twice test-cg check),)
   SELFTEST = 1
   EXCEPTIONS = 1
@@ -123,6 +128,7 @@ ARWUTF ?= 0
 ARSOCKET ?= 0
 #ARSOCKET_SSL ?= openssl # leave them unset, there are some ?= further down
 #ARTERMINAL ?= auto
+ARXPSUPPORT ?= 0
 
 OPT ?= 0
 ifeq ($(OPT),0)
@@ -209,14 +215,11 @@ ifeq ($(OS),windows)
     CONF_LFLAGS += -Wl,--dynamicbase
     $(warning hybrid DLL is a poorly tested configuration, prepare for bugs)
   endif
-  OBJNAME := $(OBJNAME)windows
+  OBJNAME := $(OBJNAME)windows$(WINBITS)
   #surprisingly, this is still not default as of mingw 8.1.0 (to check, objdump -x | grep DllCharacteristics, 0x0100 bit is nxcompat)
-  CONF_LFLAGS += -Wl,--nxcompat
+  CONF_LFLAGS += -Wl,--nxcompat -ladvapi32
   ifeq ($(ARXPSUPPORT),1)
     DEFINES += _WIN32_WINNT=_WIN32_WINNT_WINXP
-  else
-    # for random.cpp
-    CONF_LFLAGS += -lbcrypt
   endif
 
   ifeq ($(shell echo ^^),^)
@@ -226,6 +229,18 @@ ifeq ($(OS),windows)
     # why would you do such a thing, anyways?
     $(warning non-cmd windows detected; if SHELL $(SHELL) is something other than sh.exe, makefile should check for that instead)
     $(warning alternatively, if MSYSTEM $(MSYSTEM) is nonempty, use that)
+  endif
+endif
+
+ifeq ($(V),)
+  Q = @
+  ECHOQ = @echo
+else
+  Q =
+  ifeq ($(HOST_SHELL),cmd)
+    ECHOQ = @ver>nul
+  else
+    ECHOQ = @true
   endif
 endif
 
@@ -245,12 +260,19 @@ OPTFLAGS += -fno-ident
 # (source: https://gcc.gnu.org/legacy-ml/gcc-patches/2013-03/msg00858.html)
 # --disable-auto-import seems to be synonymous to --disable-runtime-pseudo-reloc these days
 ifeq ($(OS),windows)
-  OPTFLAGS += -mcmodel=small
   CONF_LFLAGS += -Wl,--disable-auto-import,--disable-runtime-pseudo-reloc
+  ifeq ($(WINBITS),64)
+    # this one errors out on 32bit
+    OPTFLAGS += -mcmodel=small
+  else
+    # for the 64bit div/mod functions
+    # do this for 32bit only, so I notice if something else sneaks in
+    CONF_LFLAGS += -static-libgcc
+  endif
 endif
 OPTFLAGS += -DNDEBUG -DARLIB_OPT
 CONF_CXXFLAGS += -fno-threadsafe-statics
-OPTLFLAGS := -Wl,--gc-sections,--build-id=none,--relax,--sort-common
+OPTLFLAGS += -Wl,--gc-sections,--build-id=none,--relax,--sort-common
 ifneq ($(OS),windows)
   OPTLFLAGS += -Wl,--hash-style=gnu
 endif
@@ -367,17 +389,17 @@ ifeq ($(AROPENGL),1)
   ifeq ($(AROPENGL_D3DSYNC),1)
     DEFINES += AROPENGL_D3DSYNC
   endif
-    # if glsym-slim.h doesn't change, things that depend on it don't rebuild
-    # but that also means make thinks the header itself is outdated and will try to rebuild it next time,
-    #  which is noisy and failure prone
-    # instead, add another intermediate
+  # if glsym-slim.h doesn't change, things that depend on it don't rebuild
+  # but that also means make thinks the header itself is outdated and will try to rebuild it next time,
+  #  which is noisy and failure prone
+  # instead, add another intermediate
 obj/glsym-slim-marker: $(SOURCES) | obj
 	python3 arlib/opengl/generate.py used aropengl obj/glsym-slim.h
 	echo a > obj/glsym-slim-marker
 obj/glsym-slim.h: obj/glsym-slim-marker | obj
-ifneq ($(OPT),0)
-  DEPS_DEFAULT += obj/glsym-slim.h
-endif
+  ifneq ($(OPT),0)
+    DEPS_DEFAULT += obj/glsym-slim.h
+  endif
 endif
 
 ifeq ($(OS),windows)
@@ -491,7 +513,7 @@ CONF_CXXFLAGS := $(CONF_CXXFLAGS) $(CONF_CFLAGS)
 TRUE_CFLAGS := -std=c99 $(CCXXFLAGS) $(CONF_CFLAGS) $(CFLAGS)
 # C++20/etc wishlist:
 # - Coroutines, for runloop-related stuff (nearly every single socket-related operation is ugly)
-#    present in GCC 11, likely release date may 2021
+#    present in GCC 11, but needs -fcoroutines
 # - Template string literals (for the regex parser, and so I can create a string formatting function)
 #    present in GCC 9
 # - Concepts (also for the regex parser, the errors are absurd)
@@ -527,18 +549,20 @@ obj:
 	mkdir obj
 
 ifeq ($(HOST_SHELL),cmd)
+miniclean:
+	del /q obj\DEFAULT_*
 clean:
 	del /q obj\*
-
 clean-prof:
 	del /q obj\*.o
+#superclean not supported on cmd
 else
+miniclean:
+	rm -f obj/DEFAULT_*
 clean:
 	rm -f obj/*
-
 clean-prof:
 	rm -f obj/*.o
-
 superclean: clean
 	-rm arlib/deps/bearssl-0.6/build*/*
 endif

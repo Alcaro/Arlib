@@ -26,7 +26,7 @@ cat > main.cpp <<EOF
 
 int main(int argc, char** argv)
 {
-	arlib_init(nullptr, argv);
+	puts("Hello world");
 	return 0;
 }
 EOF
@@ -49,6 +49,7 @@ cat > Makefile <<-EOF
 	ARSOCKET_SSL = openssl
 	ARSOCKET_SSL_WINDOWS = schannel
 	ARSANDBOX = 0
+	ARTERMINAL = 1
 	
 	include arlib/Makefile
 EOF

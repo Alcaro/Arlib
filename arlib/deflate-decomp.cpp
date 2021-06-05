@@ -70,7 +70,7 @@ static bool unpack_huffman_dfl(uint16_t * out, const uint8_t * in, size_t in_len
 	// https://tools.ietf.org/html/rfc1951#page-13
 	if (UNLIKELY(used_bits != 0x10000))
 	{
-		if (used_bits >= 0x10000) return false; // no overfull tables
+		if (used_bits > 0x10000) return false; // no overfull tables
 		if (used_bits != (size_t)(n_len[1]<<15)) return false; // only 1-bit and unrepresentable symbols
 		if (bad_symbol == 19) return false; // huffman huffman table can't be incomplete
 		// (zlib implements this check differently, but our results are the same)
@@ -162,7 +162,7 @@ void inflator::bits_refill_fast()
 		m_in_nbits += 32;
 		m_in_at += 4;
 	}
-	else bits_refill_all(); // refill to max (after this, in is known empty)
+	else bits_refill_all(); // refill to max (after this, m_in is known empty)
 }
 
 void inflator::bits_refill_all()
@@ -267,7 +267,6 @@ inflator::ret_t inflator::inflate()
 					len = m_in_bits_buf; // this truncates to 32 bits
 					len = len ^ ((~len)<<16);
 					if (UNLIKELY(len >= 0x10000)) RET_FAIL();
-					len &= 0xFFFF;
 					m_in_nbits -= 32;
 					m_in_bits_buf >>= 32;
 				}

@@ -8,8 +8,8 @@ It exists for several reasons:
     (There are no standardized sockets or JSON parsers either, but third party libraries can fill
     that omission.)
 - The std:: types often contain strange guarantees whose existence increase the constant factor of
-    every operation (for example, std::unordered_map must be implemented as arrays of linked lists,
-    open addressing is forbidden), even if I have no use for such guarantees.
+    every operation (for example, std::unordered_map must be implemented as an array of linked
+    lists, open addressing is forbidden), even if I have no use for such guarantees.
 - I care a lot about binary size and easy distribution (one single file, no DLLs) on Windows, and
     including libstdc++ would often triple the program size.
 - And, most importantly, every feature I implement is a feature I fully understand, so I can debug
@@ -32,6 +32,6 @@ I have rewritten parts of Arlib many times, and there are still a few pieces tha
   intend to keep learning.
 
 I care only about the final state of my tools, not the way there; I will fix imperfections whenever
-  I find them. As such, change velocity is high, and a commit for each change would be quite noisy,
+  I find them. As such, change frequency is high, and a commit for each change would be quite noisy,
   so I don't bother - I batch up minor changes until anything significant happens (though I often
   don't realize when I finish those big changes, so they too tend to get batched up).

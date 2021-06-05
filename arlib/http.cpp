@@ -595,7 +595,7 @@ test("HTTP", "tcp,ssl,random", "http")
 	//httpbin response time is super slow, and super erratic
 	//it offers me unmatched flexibility in requesting strange http parameters,
 	// but doubling the test suite runtime isn't worth it
-	//yiram is chunked as well, I don't need two tests for that
+	//large.php is chunked as well, I don't need two tests for that
 	T if (false)
 	{
 		HTTP::req rq("https://httpbin.org/stream-bytes/128?chunk_size=30&seed=1");
