@@ -101,9 +101,7 @@ class function<Tr(Ta...)> {
 	typename std::enable_if_t<!std::is_convertible_v<Tl, Tfpr>>
 	init_lambda(Tl lambda)
 	{
-		if (std::is_trivially_move_constructible_v<Tl> &&
-		    std::is_trivially_destructible_v<Tl> &&
-		    sizeof(Tl) <= sizeof(void*))
+		if (std::is_trivially_copyable_v<Tl> && sizeof(Tl) <= sizeof(void*))
 		{
 			void* obj = NULL;
 			memcpy(&obj, &lambda, sizeof(lambda));
@@ -409,8 +407,7 @@ auto decompose_lambda(Tl1&& extract, Tl2&& exec)
 {
 	return decompose_lambda_explicit_inner<false, Tl1, Tl2>(std::move(exec), &Tl2::operator());
 	
-	static_assert(std::is_trivially_move_constructible_v<Tl2>); // putting these asserts higher makes it fail to deduce return type
-	static_assert(std::is_trivially_destructible_v<Tl2>);
+	static_assert(std::is_trivially_copyable_v<Tl2>); // putting these asserts higher makes it fail to deduce return type
 	static_assert(sizeof(Tl2) <= sizeof(void*));
 }
 //Like the above, but returns { function pointer, the second lambda }, not { fp, void* }. Use a pointer to the lambda as userdata.

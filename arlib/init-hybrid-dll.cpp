@@ -291,7 +291,7 @@ void arlib_hybrid_dll_init()
 	
 	ntdll_t ntdll;
 	pe_get_ntdll_syms(&ntdll);
-	HMODULE this_mod;
+	HMODULE this_mod; // TODO: check if I can use __ImageBase instead
 	pe_process_imports(&ntdll, ntdll.RtlPcToFileHeader((void*)arlib_hybrid_dll_init, &this_mod));
 	pe_do_relocs(&ntdll, this_mod);
 	

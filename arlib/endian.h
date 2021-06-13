@@ -7,10 +7,10 @@
 //Macros END_LITTLE and END_BIG
 //  Defined to 1 if that's the current machine's endian, otherwise 0.
 //readu_{le,be}{8,16,32,64}()
-//  Reads and returns an X-endian uintN_t from the given pointer. Accepts unaligned input.
+//  Reads and returns an X-endian uintN_t from the given pointer. Accepts misaligned input.
 //  The 8bit one is trivial, it exists mostly for consistency.
 //writeu_{le,be}{8,16,32,64}()
-//  The inverse of readu; writes an X-endian uintN_t into the given pointer. Accepts unaligned input.
+//  The inverse of readu; writes an X-endian uintN_t into the given pointer. Accepts misaligned input.
 //pack_{le,be}{8,16,32,64}()
 //  Like writeu, but instead of taking a pointer, it returns an sarray<uint8_t,N>.
 
@@ -69,6 +69,7 @@ forceinline uint32_t readu_be32(const uint8_t* in) { uint32_t ret; memcpy(&ret, 
 forceinline uint64_t readu_le64(const uint8_t* in) { uint64_t ret; memcpy(&ret, in, sizeof(ret)); return END_BIG ? end_swap64(ret) : ret; }
 forceinline uint64_t readu_be64(const uint8_t* in) { uint64_t ret; memcpy(&ret, in, sizeof(ret)); return END_BIG ? ret : end_swap64(ret); }
 
+// TODO: this should reinterpret, not convert, if type is float or double
 template<typename T> T readu_le(const uint8_t* in)
 {
 	if (sizeof(T) == 1) return readu_le8(in);

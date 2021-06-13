@@ -280,15 +280,15 @@ void free_test(void* ptr);
 
 anyptr xmalloc(size_t size);
 inline anyptr try_malloc(size_t size) { _test_malloc(); return malloc(size); }
-#define malloc use_xmalloc_or_try_malloc_instead
+#define malloc(x) use_xmalloc_or_try_malloc_instead
 
 anyptr xrealloc(anyptr ptr, size_t size);
 inline anyptr try_realloc(anyptr ptr, size_t size) { if ((void*)ptr) _test_free(); if (size) _test_malloc(); return realloc(ptr, size); }
-#define realloc use_xrealloc_or_try_realloc_instead
+#define realloc(x,y) use_xrealloc_or_try_realloc_instead
 
 anyptr xcalloc(size_t size, size_t count);
 inline anyptr try_calloc(size_t size, size_t count) { _test_malloc(); return calloc(size, count); }
-#define calloc use_xcalloc_or_try_calloc_instead
+#define calloc(x,y) use_xcalloc_or_try_calloc_instead
 
 
 //cast to void should be enough to shut up warn_unused_result, but...
@@ -557,8 +557,8 @@ forceinline void rep_movsb(uint8_t * & dest, const uint8_t * & src, size_t count
 template<typename T> static inline T bitround(T in)
 {
 #if defined(__GNUC__)
-	static_assert(sizeof(unsigned) == 4);
-	static_assert(sizeof(unsigned long long) == 8);
+	static_assert(sizeof(unsigned) == 4); // __builtin_clzl(5) is 29 on modern windows and 61 on modern linux. disgusting
+	static_assert(sizeof(unsigned long long) == 8); // at least these two have constant size on every modern platform... for now...
 	
 	if (in <= 1) return 1;
 	if (sizeof(T) <= 4) return 2u << (__builtin_clz(in - 1) ^ 31); // clz on x86 is bsr^31, so this compiles to bsr^31^31,

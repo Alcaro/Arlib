@@ -315,7 +315,7 @@ public:
 	// Absolute paths start with two slashes, or letter+colon+slash.
 	// Half-absolute paths, like /foo.txt or C:foo.txt on Windows, are considered corrupt and are undefined behavior.
 	//The path component separator is the forward slash on all operating systems, including Windows.
-	//Paths to directories end with a slash, Paths to files do not. For example, /home/ and c:/windows/ are valid,
+	//Paths to directories end with a slash, paths to files do not. For example, /home/ and c:/windows/ are valid,
 	// but /home and c:/windows are not.
 	static bool is_absolute(cstring path)
 	{
@@ -338,7 +338,7 @@ public:
 	//Returns sub if it's absolute, else resolve(parent+sub). parent must end with a slash.
 	static string resolve(cstring parent, cstring sub)
 	{
-		if (is_absolute(sub)) return sub;
+		if (is_absolute(sub)) return resolve(sub);
 		else return resolve(parent+sub);
 	}
 	

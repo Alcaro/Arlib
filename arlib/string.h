@@ -87,7 +87,7 @@ class cstring {
 		};
 		struct {
 			uint8_t* m_data;
-			uint32_t m_len; // always > OBJ_SIZE, if not inlined; some of the operator== demand that
+			uint32_t m_len; // always > MAX_INLINE, if not inlined; some of the operator== demand that
 			bool m_nul; // whether the string is properly terminated (always true for string, possibly false for cstring)
 			// 2 unused bytes here
 			uint8_t m_reserved; // reserve space for the last byte of the inline data; never ever access this

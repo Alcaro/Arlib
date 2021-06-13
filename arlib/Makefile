@@ -35,87 +35,8 @@ ifeq (,$(wildcard arlib/string.cpp))
   $(error wrong build directory, go up one level)
 endif
 
-all: arlib-default
-
-MAKEFLAGS := Rr
-.SUFFIXES:
-.SECONDEXPANSION:
-.DELETE_ON_ERROR:
-
-SPACE := $(NULL) $(NULL)
-
-define LF
-
-
-endef
-
-CC = gcc
-CFLAGS =
-CXX = g++
-CXXFLAGS = $(CFLAGS)
-LD = g++
-LFLAGS =
-AS = as
-ASFLAGS =
-AR = ar
-
-CC_FAMILY := gcc
-ifneq ($(findstring clang,$(CC) $(CXX) $(LD)),)
-  CC_FAMILY := clang
-  CC = clang
-  CXX = clang++
-  LD = clang++
-endif
-
-ifeq ($(OS),Windows_NT)
-  OS = windows
-endif
-ifeq ($(OS),)
-  dumpmachine := $(shell $(CXX) -dumpmachine)
-  ifneq ($(findstring mingw,$(dumpmachine)),)
-    OS := windows
-  else ifneq ($(findstring linux,$(dumpmachine)),)
-    OS := linux
-  else
-    $(error unrecognized OS $(dumpmachine))
-  endif
-endif
-
-#ifeq ($(OS),Windows_NT)
-#  OS = windows
-#else
-#  UNAME_S := $(shell uname -s)
-#  ifeq ($(UNAME_S),Linux)
-#    OS = linux
-#  else ifeq ($(UNAME_S),Darwin)
-#    OS = osx
-#  else ifeq ($(UNAME_S),)
-#    $(error couldn't execute uname -s)
-#  else
-#    $(error unrecognized OS $(UNAME_S))
-#  endif
-#endif
-
-ifeq ($(OS),windows)
-  DUMPMACHINE := $(shell $(CC) -dumpmachine)
-  ifeq ($(DUMPMACHINE),i686-w64-mingw32)
-    WINBITS = 32
-    ifeq ($(ARXPSUPPORT),32)
-      ARXPSUPPORT = 1
-    endif
-  else ifeq ($(DUMPMACHINE),x86_64-w64-mingw32)
-    WINBITS = 64
-    ifeq ($(ARXPSUPPORT),32)
-      ARXPSUPPORT = 0
-    endif
-  else
-    $(error can't determine machine bitness)
-  endif
-endif
-
-ifneq ($(filter $(MAKECMDGOALS),test test-all test-all-twice test-cg check),)
-  SELFTEST = 1
-  EXCEPTIONS = 1
+ifneq ($(ARMAKEHEAD),1)
+include arlib/Makefile-head
 endif
 
 ARTYPE ?= exe
@@ -130,11 +51,11 @@ ARSOCKET ?= 0
 #ARTERMINAL ?= auto
 ARXPSUPPORT ?= 0
 
-OPT ?= 0
-ifeq ($(OPT),0)
-  DEBUG ?= 1
-else
-  DEBUG ?= 0
+ifeq ($(OS)-$(WINBITS)-$(ARXPSUPPORT),windows-32-32)
+  ARXPSUPPORT = 1
+endif
+ifeq ($(OS)-$(WINBITS)-$(ARXPSUPPORT),windows-64-32)
+  ARXPSUPPORT = 0
 endif
 
 CCXXFLAGS = -Wall -Wmissing-declarations -Wimplicit-fallthrough -Wvla -pipe
@@ -158,8 +79,6 @@ else
   CCXXFLAGS += -fno-exceptions
   OPTFLAGS += -fno-unwind-tables -fno-asynchronous-unwind-tables
 endif
-
-HOST_SHELL := sh
 
 #double gcc bug combo:
 #(1) GCC hates commented-out backslash line continuations, even if the next line is commented out too, for example
@@ -288,6 +207,9 @@ ifneq ($(DEBUG),1)
       OPTLFLAGS += -s
     endif
   endif
+endif
+ifeq ($(STRIP),1)
+  LFLAGS += -s
 endif
 
 CFLAGS += -g

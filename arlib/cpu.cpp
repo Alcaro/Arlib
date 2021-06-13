@@ -126,6 +126,11 @@ oninit_static_early()
 #ifndef __AVX512F__
 		//if (0xE4&~osxsave) // AVX, opmask, ZMM, ZMM high 16 (why can those even be enabled separately)
 		//	// I don't think opm/zmm/zmmhi bits differ on any plausible OS, but better not take pointless risks
+		
+		//on mac/darwin, avx512 support is initially disabled in xgetbv, but gets enabled if any avx512 instruction is executed
+		//this is an optimization so it only needs to save 832 bytes of regs on task switch, not 2688
+		//https://github.com/apple/darwin-xnu/blob/0a798f6738bc1db01281fc08ae024145e84df927/osfmk/i386/fpu.c#L176
+		//no point checking for that, x86 mac is on its way out anyways. However, something similar may show up on future Linux.
 #endif
 	}
 }
