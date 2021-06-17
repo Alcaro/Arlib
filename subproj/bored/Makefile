@@ -19,11 +19,12 @@ CFLAGS_SODIUM += -DCONFIGURED=1 -DSODIUM_STATIC
 CFLAGS_SODIUM += -DHAVE_EMMINTRIN_H -DHAVE_TMMINTRIN_H -DHAVE_SMMINTRIN_H
 # make libsodium stop trying to define its own in sse2_64_32.h, they optimize poorly
 CFLAGS_SODIUM += -D_mm_set_epi64x=_mm_set_epi64x -D_mm_set1_epi64x=_mm_set1_epi64x -D_mm_cvtsi64_si128=_mm_cvtsi64_si128
-# disable avx2 on 32bit, compile error due to missing #pragma GCC target("sse2") in sse2_64_32.h (I submitted a PR, but it's not merged yet)
+# disable avx2 on 32bit, _mm_cvtsi64_si128 only exists on 64bit
+# it's emulated in sse2_64_32.h, but it errors out due to missing #pragma GCC target("sse2"); fixed upstream, but no release since then
 ifneq ($(OS)$(WINBITS),windows32)
   CFLAGS_SODIUM += -DHAVE_AVX2INTRIN_H
 endif
-# _sodium_crit_init (sodium/core.c, _WIN32 only) is nonstatic for some unclear reason. Fixed upstream, but no stable release since then.
+# _sodium_crit_init (sodium/core.c, _WIN32 only) is nonstatic; also fixed upstream, but also no release for that either
 CFLAGS_SODIUM += -Wno-missing-declarations
 CFLAGS_SODIUM += -Ilibsodium-1.0.18-stable/src/libsodium/include/sodium/
 SOURCES_SODIUM  += libsodium-1.0.18-stable/src/libsodium/crypto_secretstream/xchacha20poly1305/secretstream_xchacha20poly1305.c

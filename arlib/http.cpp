@@ -510,32 +510,38 @@ test("HTTP", "tcp,ssl,random", "http")
 	
 	T {
 		HTTP h(loop);
+		int n_done = 0;
+		bool entered = false;
 		
 		function<void(HTTP::rsp)> break_runloop_testc =
 			bind_lambda([&](HTTP::rsp inner_r)
 			{
-				loop->exit();
+				n_done++;
+				if (entered) { entered = false; loop->exit(); }
 				assert_eq(inner_r.status, 200);
 				assert_eq(inner_r.text(), CONTENTS);
 			});
 		function<void(HTTP::rsp)> break_runloop_testc2 =
 			bind_lambda([&](HTTP::rsp inner_r)
 			{
-				loop->exit();
+				n_done++;
+				if (entered) { entered = false; loop->exit(); }
 				assert_eq(inner_r.status, 200);
 				assert_eq(inner_r.text(), CONTENTS2);
 			});
 		function<void(HTTP::rsp)> break_runloop_testc3 =
 			bind_lambda([&](HTTP::rsp inner_r)
 			{
-				loop->exit();
+				n_done++;
+				if (entered) { entered = false; loop->exit(); }
 				assert_eq(inner_r.status, 200);
 				assert_eq(inner_r.text(), CONTENTS3);
 			});
 		function<void(HTTP::rsp)> break_runloop_testc4 =
 			bind_lambda([&](HTTP::rsp inner_r)
 			{
-				loop->exit();
+				n_done++;
+				if (entered) { entered = false; loop->exit(); }
 				assert_eq(inner_r.status, 200);
 				assert_eq(inner_r.text(), CONTENTS4);
 			});
@@ -543,11 +549,14 @@ test("HTTP", "tcp,ssl,random", "http")
 		h.send(HTTP::req(URL),  break_runloop_testc);
 		h.send(HTTP::req(URL2), break_runloop_testc2);
 		h.send(HTTP::req(URL3), break_runloop_testc3);
+		entered = true;
 		loop->enter();
 		h.send(HTTP::req(URL4), break_runloop_testc4);
-		loop->enter();
-		loop->enter();
-		loop->enter();
+		while (n_done < 4)
+		{
+			entered = true;
+			loop->enter();
+		}
 	}
 	
 	T {

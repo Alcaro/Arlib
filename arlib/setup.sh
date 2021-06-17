@@ -38,6 +38,8 @@ cat > .gitignore <<-EOF
 EOF
 
 cat > Makefile <<-EOF
+	include arlib/Makefile-head
+	
 	PROGRAM = $program
 	ARTYPE = exe
 	ARGUI = 0

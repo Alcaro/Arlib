@@ -221,7 +221,7 @@ public:
 // - u8[] data (ignored by recipient)
 // response:
 // - u8[] data (size equal to the u32, contents are arbitrary bytes)
-// used to test transfer speed
+// can be used to test transfer speed, or ask if the nodes are correctly connected
 
 
 #define REQ_EXEC 101
@@ -239,6 +239,9 @@ public:
 // - u8[] contents
 #define REQ_EXEC_STDIN_CLOSE 111
 // - blank
+#define REQ_EXEC_RELEASE 112
+// - blank
+// (socket terminates after this)
 
 // and the server may send
 #define REQ_EXEC_STDOUT 120
@@ -247,4 +250,4 @@ public:
 // - u32 exit status
 // (socket terminates after this)
 
-// if the socket terminates, the child process is terminated as well
+// if the socket terminates, the child process is terminated as well, if not terminated with REQ_EXEC_RELEASE

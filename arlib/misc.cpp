@@ -132,34 +132,30 @@ extern "C" void __cxa_pure_virtual() { __builtin_trap(); }
 extern "C" void _pei386_runtime_relocator();
 extern "C" void _pei386_runtime_relocator() {}
 
-#ifdef __x86_64__
-// stamp out a jmp QWORD PTR [rip+12345678] in machine code
-// extended asm isn't supported as a toplevel statement, and -masm=intel/att sets no preprocessor flag, so this is the best I can do
-#define JMP_IMPORT(name) ".byte 0xFF,0x25; .int __imp_" #name "-" #name "-6"
-#define ASM_FORCE_IMPORT(name) __asm__(".section .text$" #name "; .globl " #name "; " #name ": " JMP_IMPORT(name) "; .text")
-#endif
-#ifdef __i386__
-#define JMP_IMPORT(name) ".byte 0xFF,0x25; .int __imp_" #name
-#define ASM_FORCE_IMPORT(name) // TODO: figure out if this does anything on 32bit, maybe it's only needed for 64bit
-#endif
-
-ASM_FORCE_IMPORT(sin);   ASM_FORCE_IMPORT(sinf);
-ASM_FORCE_IMPORT(cos);   ASM_FORCE_IMPORT(cosf);
-//ASM_FORCE_IMPORT(tan);   ASM_FORCE_IMPORT(tanf); // some of them get pulled in from mingwex, wasting space for no valid reason
-//ASM_FORCE_IMPORT(sinh);  ASM_FORCE_IMPORT(sinhf); // some get errors if I try to override them
-//ASM_FORCE_IMPORT(cosh);  ASM_FORCE_IMPORT(coshf); // I don't know which are mingwex and which are not
-//ASM_FORCE_IMPORT(tanh);  ASM_FORCE_IMPORT(tanhf); // hopefully none are both mingwex and override-error simultaneously
-//ASM_FORCE_IMPORT(asin);  ASM_FORCE_IMPORT(asinf);
-//ASM_FORCE_IMPORT(acos);  ASM_FORCE_IMPORT(acosf);
-//ASM_FORCE_IMPORT(atan);  ASM_FORCE_IMPORT(atanf);
-//ASM_FORCE_IMPORT(atan2); ASM_FORCE_IMPORT(atan2f);
-ASM_FORCE_IMPORT(exp);   ASM_FORCE_IMPORT(expf);
-ASM_FORCE_IMPORT(log);   ASM_FORCE_IMPORT(logf);
-//ASM_FORCE_IMPORT(log10); ASM_FORCE_IMPORT(log10f);
-ASM_FORCE_IMPORT(pow);   ASM_FORCE_IMPORT(powf);
-ASM_FORCE_IMPORT(sqrt);  ASM_FORCE_IMPORT(sqrtf);
-ASM_FORCE_IMPORT(ceil);  ASM_FORCE_IMPORT(ceilf);
-ASM_FORCE_IMPORT(floor); ASM_FORCE_IMPORT(floorf);
+/*
+int asprintf(char ** strp, const char * fmt, ...)
+{
+	char buf[1200];
+	va_list args;
+	int len;
+	va_start(args, fmt);
+	len = vsnprintf(buf, sizeof(buf), fmt, args);
+	va_end(args);
+	*strp = malloc(len+1);
+	if (!*strp) return -1;
+	if (len < sizeof(buf))
+	{
+		memcpy(*strp, buf, len+1);
+	}
+	else
+	{
+		va_start(args, fmt);
+		len = vsnprintf(*strp, len+1, fmt, args);
+		va_end(args);
+	}
+	return 0;
+}
+*/
 #endif
 
 #include "test.h"
@@ -202,6 +198,23 @@ test("bitround", "", "")
 	assert_eq(bitround<uint64_t>(2), 2);
 	assert_eq(bitround<uint64_t>(3), 4);
 	assert_eq(bitround<uint64_t>(4), 4);
+	
+	//assert_eq(ilog2(0), -1);
+	assert_eq(ilog2(1), 0);
+	assert_eq(ilog2(2), 1);
+	assert_eq(ilog2(3), 1);
+	assert_eq(ilog2(4), 2);
+	assert_eq(ilog2(7), 2);
+	assert_eq(ilog2(8), 3);
+	assert_eq(ilog2(15), 3);
+	assert_eq(ilog2(16), 4);
+	assert_eq(ilog2(31), 4);
+	assert_eq(ilog2(32), 5);
+	assert_eq(ilog2(63), 5);
+	assert_eq(ilog2(64), 6);
+	assert_eq(ilog2(127), 6);
+	assert_eq(ilog2(128), 7);
+	assert_eq(ilog2(255), 7);
 }
 
 test("test_nomalloc", "", "")

@@ -306,7 +306,7 @@ public:
 	
 	static void WINAPI alert_completion(DWORD dwErrorCode, DWORD dwNumberOfBytesTransfered, LPOVERLAPPED lpOverlapped)
 	{
-		container_of(lpOverlapped, exechandler, stdout_ov)->alert_completion(dwErrorCode, dwNumberOfBytesTransfered);
+		container_of<&exechandler::stdout_ov>(lpOverlapped)->alert_completion(dwErrorCode, dwNumberOfBytesTransfered);
 	}
 	
 	void sock_msg(bytearray bytes)
@@ -325,13 +325,20 @@ public:
 			stdin_wr = NULL;
 		}
 		break;
+		case REQ_EXEC_RELEASE:
+		{
+			CloseHandle(hproc);
+			hproc = NULL;
+			sock_err();
+		}
+		break;
 		}
 	}
 	
 	void sock_err()
 	{
 		recv.stop();
-		TerminateProcess(hproc, 0);
+		if (hproc) TerminateProcess(hproc, 0);
 		
 		if (stdout_rd) CloseHandle(stdout_rd);
 		stdout_rd = NULL;
@@ -339,8 +346,8 @@ public:
 	
 	~exechandler()
 	{
-		TerminateProcess(hproc, 0);
-		CloseHandle(hproc);
+		if (hproc) TerminateProcess(hproc, 0);
+		if (hproc) CloseHandle(hproc);
 		if (stdin_wr) CloseHandle(stdin_wr);
 		if (stdout_rd) CloseHandle(stdout_rd);
 	}

@@ -209,7 +209,7 @@ ifneq ($(DEBUG),1)
   endif
 endif
 ifeq ($(STRIP),1)
-  LFLAGS += -s
+  CONF_LFLAGS += -s
 endif
 
 CFLAGS += -g
@@ -224,7 +224,7 @@ ifneq ($(OPT),0)
 else
   #OPT=1 DEBUG=1 should prioritize optimization over debugging; OPT=1 DEBUG=1 then 'strip' should be identical to OPT=1 DEBUG=0
   #so this one is gated on OPT=0, not DEBUG=1
-  CFLAGS += -DDEBUG
+  CONF_CFLAGS += -DDEBUG
 endif
 
 ifeq ($(PROFILE),gen)

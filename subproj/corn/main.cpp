@@ -475,7 +475,8 @@ struct column {
 	
 	bool add(cstring fn)
 	{
-		return add_raw(file::basename(fn), fn);
+		if (fn.startswith("$")) return add_raw(fn, fn);
+		else return add_raw(file::basename(fn), fn);
 	}
 	
 	void remove_first()
@@ -726,6 +727,10 @@ GtkWidget* make_search()
 				for (column::node& item : c_search.items)
 					enqueue_real(item.filename);
 			}
+			else if (search_text.startswith("$"))
+			{
+				enqueue_real(search_text);
+			}
 			else if (c_search.items)
 			{
 				enqueue(c_search.items[search_focus].filename);
@@ -766,9 +771,16 @@ void stop();
 size_t playlist_cur_idx = 0;
 void playlist_run()
 {
+again:
 	c_playlist.focus(-1);
 	if (playlist_cur_idx == c_playlist.items.size()) { stop(); return; }
-	cstring next = c_playlist.items[playlist_cur_idx].filename;
+	const string& next = c_playlist.items[playlist_cur_idx].filename;
+	if (next.startswith("$"))
+	{
+		ignore(system(1+(const char*)next));
+		playlist_cur_idx++;
+		goto again;
+	}
 	c_playlist.focus(playlist_cur_idx);
 	g_player.finish_cb = [](){
 		column::node& n = c_playlist.items[playlist_cur_idx];
@@ -785,7 +797,7 @@ void playlist_run()
 	g_player.play(next);
 	progress_timer.set_repeat(1000, progress_tick);
 }
-void enqueue_real(string fn) // must take string, not cstring; otherwise it'll screw up if the first element in the playlist is replayed
+void enqueue_real(string fn) // must take string, not cstring, otherwise it'll screw up if the first element in the playlist is replayed
 {
 	if (!fn) return;
 	if (playlist_cur_idx && playlist_cur_idx == c_playlist.items.size() && fn == c_playlist.items[playlist_cur_idx-1].filename)

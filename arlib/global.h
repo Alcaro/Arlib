@@ -280,15 +280,15 @@ void free_test(void* ptr);
 
 anyptr xmalloc(size_t size);
 inline anyptr try_malloc(size_t size) { _test_malloc(); return malloc(size); }
-#define malloc(x) use_xmalloc_or_try_malloc_instead
+#define malloc(x) use_xmalloc_or_try_malloc_instead(x)
 
 anyptr xrealloc(anyptr ptr, size_t size);
 inline anyptr try_realloc(anyptr ptr, size_t size) { if ((void*)ptr) _test_free(); if (size) _test_malloc(); return realloc(ptr, size); }
-#define realloc(x,y) use_xrealloc_or_try_realloc_instead
+#define realloc(x,y) use_xrealloc_or_try_realloc_instead(x,y)
 
 anyptr xcalloc(size_t size, size_t count);
 inline anyptr try_calloc(size_t size, size_t count) { _test_malloc(); return calloc(size, count); }
-#define calloc(x,y) use_xcalloc_or_try_calloc_instead
+#define calloc(x,y) use_xcalloc_or_try_calloc_instead(x,y)
 
 
 //cast to void should be enough to shut up warn_unused_result, but...
@@ -525,10 +525,11 @@ forceinline void rep_movsb(uint8_t * & dest, const uint8_t * & src, size_t count
 	uint8_t * rdi = dest;
 	__asm__("rep movsb" : "+S"(rsi), "+D"(rdi), "+c"(count)
 #ifdef __clang__
-	                    : : "memory"); // https://bugs.llvm.org/show_bug.cgi?id=47866
+	                    : : "memory" // https://bugs.llvm.org/show_bug.cgi?id=47866
 #else
-	                    , "+m"(*(uint8_t(*)[])rdi) : "m"(*(const uint8_t(*)[])rsi));
+	                    , "+m"(*(uint8_t(*)[])rdi) : "m"(*(const uint8_t(*)[])rsi)
 #endif
+	);
 	src = rsi;
 	dest = rdi;
 // TODO: test
@@ -584,8 +585,8 @@ template<typename T> static inline T ilog2(T in)
 	static_assert(sizeof(unsigned) == 4);
 	static_assert(sizeof(unsigned long long) == 8);
 	
-	if (sizeof(T) <= 4) return (__builtin_clz(in) ^ 31)+1; // like above, clz^31+1 becomes bsr+1, while 32-clz would become 32-(bsr^31)
-	if (sizeof(T) == 8) return (__builtin_clzll(in)^63)+1; // probably less optimal on non-x86, but whatever, good enough
+	if (sizeof(T) <= 4) return __builtin_clz(in) ^ 31;
+	if (sizeof(T) == 8) return __builtin_clzll(in)^63;
 	
 	abort();
 #else
@@ -680,7 +681,7 @@ public:
 // In exchange, it is usable in hybrid DLLs. On non-hybrid or non-Windows, it's same as normal oninit.
 // The only way to affect ordering is _early. Static early runs before both nonearly; early nonstatic runs before normal.
 // Other than that, no guarantees; there are no guarantees on order within a class, between static and nonstatic,
-// between static and early nonstatic, or between global objects and normal.
+// between static and early nonstatic, or between global objects and oninit.
 #ifdef ARLIB_HYBRID_DLL
 #define oninit_static_section(sec) static void JOIN(oninit,__LINE__)(); \
                         static const funcptr JOIN(initrun,__LINE__) \
@@ -693,7 +694,16 @@ public:
 #define oninit_static_early oninit_early
 #endif
 
-#define container_of(ptr, outer_t, member) ((outer_t*)((uint8_t*)(ptr) - (offsetof(outer_t,member))))
+// Linux kernel has a macro for this, but non-expressions (like member names) in macros look wrong
+template<typename Tc, typename Ti> Tc* container_of(Ti* ptr, Ti Tc:: * memb)
+{
+	// null math is technically UB, but every known compiler will do the right thing
+	// https://wg21.link/P0908 proposes a better solution, but it was forgotten and not accepted
+	Tc* fake_object = NULL;
+	size_t offset = (uintptr_t)&(fake_object->*memb) - (uintptr_t)fake_object;
+	return (Tc*)((uint8_t*)ptr - offset);
+}
+template<auto memb, typename Ti> auto container_of(Ti* ptr) { return container_of(ptr, memb); }
 
 class range_iter_t {
 	size_t n;
@@ -783,3 +793,28 @@ static inline void arlib_hybrid_dll_init() {}
 // 'documentation' includes the function and parameter names, not just comments; there is only one
 // plausible behavior for cstring::length(), so additional comments would just be noise.
 // https://i.redd.it/3adwp98dswi21.jpg
+
+#ifdef __MINGW32__
+// force these to be imported from msvcrt, not mingwex, saves a bunch of kilobytes (pow is 2.5KB for whatever reason)
+#define _GLIBCXX_MATH_H 1 // disable any subsequent #include <math.h>, it's full of using std::sin; that conflicts with my overloads
+#include <cmath>
+
+#define MATH_FN(name) \
+	extern "C" __attribute__((dllimport)) double name(double); \
+	extern "C" __attribute__((dllimport)) float name##f(float); \
+	static inline float name(float a) { return name##f(a); } /* sinf would be better, but it's harmless, and useful in templates */
+#define MATH_FN_2(name) \
+	extern "C" __attribute__((dllimport)) double name(double,double); \
+	extern "C" __attribute__((dllimport)) float name##f(float,float); \
+	static inline float name(float a, float b) { return name##f(a, b); }
+
+MATH_FN(sin) MATH_FN(cos)
+MATH_FN(exp) MATH_FN(log) MATH_FN(log10)
+MATH_FN_2(pow) MATH_FN(sqrt)
+MATH_FN(ceil) MATH_FN(floor)
+
+using std::isinf;
+using std::isnan;
+using std::isnormal;
+using std::signbit;
+#endif
