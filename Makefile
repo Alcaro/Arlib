@@ -1,3 +1,5 @@
+include arlib/Makefile-head
+
 PROGRAM = arlibtest
 #valid values: exe, dll, hybrid (usable as both exe and dll)
 ARTYPE = hybrid
@@ -11,7 +13,6 @@ ARSOCKET = 1
 ARSOCKET_SSL = openssl bearssl
 #valid values: schannel (default unless ARSOCKET_SSL is set), bearssl, no (others may work, not tested)
 ARSOCKET_SSL_WINDOWS = schannel bearssl
-ARSANDBOX = 1
 # Controls whether the program has a console window on Windows.
 # Valid values: 0, 1 (default if ARGUI and ARGAME are disabled), error (default if ARGUI or ARGAME is enabled), hybrid
 # 1 - enable console window
@@ -21,9 +22,9 @@ ARSANDBOX = 1
 # Ignored on Linux.
 ARTERMINAL = 1
 
-# These features are currently not supported on Windows.
-ARGUI = 0
-#ARSANDBOX = 0
+ifeq ($(OS),windows)
+  ARGUI = 0
+endif
 
 # For Windows, Arlib can target a minimum version of either XP or 7. Latter is recommended and default;
 #  XP support slows down some things and disables some functionality (for example, SRWLock requires Vista or higher).

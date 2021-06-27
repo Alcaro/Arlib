@@ -276,6 +276,13 @@ The locker's job is long, but fairly straightforward. After broker's fork() retu
     NEWCGROUP, to limit various resources
     NEWIPC, NEWNS and NEWUTC are mostly paranoia. I doubt they make any difference, but why not?
     (this is actually part of the fork(), and the fork is actually clone(), because unshare(CLONE_NEWPID) is weird)
+- (If the above fails) A normal fork(), then exec a setuid program and run subsequent steps in that process instead
+    this will happen on Debian's default config
+      NEWUSER allows access to a lot of occasionally-buggy previously-root-only kernel functions, so they disabled it
+    while using setuid is somewhat hypocritical after the complaints in the above sandbox list,
+      it is a fully optional component on some distros, and it's a 250 line program that takes no input
+      I believe it is safe, but belief is obviously not a proper security mechanism, and I do wish I can remove it in the future
+    the setuid program will also set up a uid_map, to drop privileges, as the first thing it does post-clone
 - dup2 the broker socket to fd 3
     it was created before clone()
     it's half of socketpair(AF_UNIX, SOCK_SEQPACKET, 0), used for passing additional file descriptors around
@@ -489,8 +496,8 @@ But if we're in an empty chroot, we don't have access to the emulator either. So
 
 Except that's not a syscall; glibc implements it as execve(/proc/self/fd/123), which won't work
  either. I could change the chroot to /proc/self/fd, but that'd probably screw up on fork(). And I'm
- not chrooting to /proc, too high risk of granting access to something unauthorized (kernel command
- line, for example, or the symlink /proc/<broker's PID>/root/ -> /).
+ not chrooting to /proc, too high risk of granting access to something unauthorized (for example the
+ kernel command line).
 
 Instead, execveat() can be employed. Like other *at() functions, it takes a fd and a path, using the
  fd instead of the current directory if the path is relative. It also supports a flag to execute the
@@ -635,7 +642,7 @@ Everything contains bugs. The following is a list of possible vulnerabilities th
     severity: likely no more than medium, but depends on what exactly shows up
     notes: not fixed yet - in fact, it'd surprise me if all variants are even discovered yet
 
-This is a total of 6 low-severity vulnerabilities, and an unknown but nonzero number of hardware
+This is a total of 7 low-severity vulnerabilities, and an unknown but nonzero number of hardware
   bugs (Spectre variants) that yield low- or medium-severity vulnerabilities.
 
 
@@ -802,11 +809,14 @@ Another solution would be to implement a custom GL wrapper protocol, but the GL 
 Vulkan would also be desirable, but I don't know how the Vulkan-kernel interfaces look.
 
 
-Future - Removing the unprivileged namespaces
----------------------------------------------
+
+
+Future - Removing the namespaces
+--------------------------------
 
 Unprivileged user namespaces are enabled by default in some distros, like Ubuntu - but disabled by
- default in others, like Debian. It would be better if the sandbox could be used on all distros.
+ default in others, like Debian. There is a setuid binary as a fallback on Debian, but it would be
+ better if the sandbox could be used on all distros.
 
 The namespaces are used to restrict user ID in auxv, to enforce the termination of all sandboxed
  processes upon sandbox exit, to grant access to chroot(), and possibly a few other operations. (I
@@ -837,32 +847,17 @@ Therefore, a namespace-less sandbox would be able to run a few programs, but sig
  reflect the usecases for my sandbox, but I believe it's safe to assume a large majority of users
  support unprivileged namespaces.
 
-However, removing namespaces isn't the only way to remove unprivileged namespaces. The alternative
- is adding privilege, i.e. setuid. This would require
-- splitting the launch to a separate process and making it setuid
-- changing effective user ID to caller's UID, to avoid pointless risks (for example, I believe the
-    OOM killer deprioritizes root)
-- fiddling with capset() to gain CAP_SYS_ADMIN, CAP_SETUID and CAP_SETGID (alternatively setting
-    SECBIT_KEEP_CAPS before setting EUID)
-- clone(CLONE_NEWPID|CLONE_NEWUSER|etc) (which clears capabilities in the calling user namespace,
-    leaving the new child fully unprivileged)
-- parent: send child's PID to broker
-- broker: accept PID; reject any further attempts to set PID, only the first one is trustworthy
-- child: await confirmation from broker that child's PID has been recorded, to avoid race conditions
-    (CLONE_STOPPED would work just as well, but it was deleted in Linux 2.6.38 for some unclear
-    reason)
-- child: apply other launcher restrictions, then execve the emulator (otherwise, the setuid binary
-    could be abused to exploit the exact vulnerabilities Debian's restrictions are trying to protect
-    from - with the sandbox's restrictive seccomp rules, I believe no vulnerabilities are available)
-which is easier to implement than removing namespaces, and can run as much as the normal one.
- However, it would complicate installation, and, like removing namespaces, would only benefit a
- small fraction of users.
+The above ignores ptrace - I believe a ptrace-based sandbox would be able to reach the stated
+ security goals, but it would have to intercept every single syscall (including harmless ones like
+ read and close), yielding unacceptable performance characteristics. It would also require rewriting
+ a huge body of code, at which point it wouldn't be the same sandbox anymore.
 
-Conclusion: The best course of action is most likely to keep the hard dependency on user namespaces,
- and (together with the web browsers) keep asking distros to unrestrict namespaces. Perhaps they
- would be receptive to a patch blocking unprivileged user namespaces from creating other namespaces;
- from what I can gather, most of the vulnerabilities are in the network namespace, which I only use
- as a dispensable defense-in-depth mechanism (though Firefox seems to actually need it).
+Conclusion: The best course of action is most likely to keep the dependency on namespaces, and
+ (together with the web browsers) keep asking distros to unrestrict them, so the setuid part can be
+ dropped. Perhaps the distros would be receptive to a patch blocking unprivileged user namespaces
+ from creating other namespaces; from what I can gather, most of the vulnerabilities are in the
+ network namespace, which I only use as a dispensable defense-in-depth mechanism (though Firefox
+ seems to actually need it).
 
 
 Future - Cooperating with ld-linux

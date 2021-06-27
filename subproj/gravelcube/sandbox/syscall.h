@@ -31,11 +31,12 @@
 #define REG_RET "eax"
 #endif
 
-// TODO: inline these functions into the template once I upgrade my gccs
 //ideally, these functions could be inlined into the templates, but that fails due to
 // https://gcc.gnu.org/bugzilla/show_bug.cgi?id=33661 (and duplicates: 36080 64951 66393 80264)
 //it's said that making the regs volatile fixes it, but that would likely demand the 'correct' initialization order and yield worse code
-//(fixed in january 2021, including branches down to 8.x; can switch to proper template once I upgrade my gccs)
+#if __GNUC__ >= 11
+#warning the gcc bug is gone as of january 2021, remove these extra steps
+#endif
 static inline long syscall6(long n, long a1, long a2, long a3, long a4, long a5, long a6)
 {
 	register long sysno __asm__(REG_SYSNO) = n;

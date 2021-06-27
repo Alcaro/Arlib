@@ -1,6 +1,4 @@
-#ifdef SANDBOX_INTERNAL
-
-//#define _GNU_SOURCE // default (mandatory) in c++
+#ifdef SANDBOX_PRELOAD
 #include <unistd.h>
 #include <sys/syscall.h>
 #include <sys/mman.h>
@@ -20,6 +18,9 @@
 #include <sys/resource.h>
 #include <sys/utsname.h>
 
+#define ARLIB_STANDALONE
+#include "../arlib/global.h"
+
 //__asm__(".intel_syntax");
 
 #define memset my_memset
@@ -33,9 +34,7 @@ int memcmp(const void * ptr1, const void * ptr2, size_t n);
 
 namespace mysand { namespace {
 #undef errno
-
-static const char * progname;
-
+#define abort() __builtin_trap()
 
 class mutex {
 public:
@@ -48,7 +47,7 @@ public:
 	}
 };
 class mutexlocker {
-	mutexlocker();
+	mutexlocker() = delete;
 	mutex* m;
 public:
 	mutexlocker(mutex* m) { this->m = m;  this->m->lock(); }
@@ -127,65 +126,68 @@ static inline int fcntl(unsigned int fd, unsigned int cmd, unsigned long arg)
 }
 
 
-//TODO: free()
+#include "internal-linux-sand.h"
+#define FD_PARENT 3
+static mutex broker_mut;
+
+static const char * progname;
+static char cwd[SAND_PATHLEN];
+
+
+// TODO: free()
 void* malloc(size_t size)
 {
-	//what's the point of brk()
+	// the usual malloc syscall is brk(), but it's process-global so I'll leave it to the main program.
+	// I'm not sure what (if anything) it offers over mmap, anyways.
 	void* ret = mmap(NULL, size, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
 	if ((unsigned long)ret >= (unsigned long)-4095) return NULL;
 	return ret;
 }
 
 
-//basically my printf
-inline void print1(int fd, size_t y)
+// basically my printf
+inline char* fmt1(char* ptr, size_t n)
 {
-	char buf[40];
-	char* bufend = buf+40;
-	char* bufat = bufend;
-	while (y)
+	size_t len = ilog10(n|1);
+	for (size_t i=0;i<=len;i++)
 	{
-		*--bufat = '0'+(y%10);
-		y /= 10;
+		ptr[len-i] = '0'+(n%10);
+		n /= 10;
 	}
-	if (bufend==bufat) *--bufat='0';
-	write(fd, bufat, bufend-bufat);
+	return ptr+len+1;
 }
-inline void print1x(int fd, size_t y)
+inline char* fmt1x(char* ptr, size_t n)
 {
 	static const char digits[] = "0123456789ABCDEF";
-	char buf[16];
 	for (int i=0;i<16;i++)
-	{
-		buf[15-i] = digits[(y>>(i*4))&15];
-	}
-	write(fd, buf, 16);
+		ptr[15-i] = digits[(n>>(i*4))&15];
+	return ptr+16;
 }
-inline void print1(int fd, const char * x)
+inline char* fmt1(char* ptr, const char * x)
 {
-	write(fd, x, strlen(x));
+	size_t len = strlen(x);
+	memcpy(ptr, x, len);
+	return ptr+len;
 }
-inline void print(int fd) {}
+inline void fmt(char* ptr) {}
+template<typename T, typename... Tnext> inline void fmt(char* ptr, T first, Tnext... next)
+{
+	fmt(fmt1(ptr, first), next...);
+}
 class hex {};
-template<typename T, typename... Tnext> inline void print(int fd, T first, Tnext... next)
+template<typename T, typename... Tnext> inline void fmt(char* ptr, hex n, T first, Tnext... next)
 {
-	print1(fd, first);
-	print(fd, next...);
+	fmt(fmt1x(ptr, first), next...);
 }
-template<typename T, typename... Tnext> inline void print(int fd, hex n, T first, Tnext... next)
+template<typename... Ts> static inline void error(int sysno, Ts... ts)
 {
-	print1x(fd, first);
-	print(fd, next...);
-}
-template<typename... Ts> static inline void error(Ts... ts)
-{
-	print(2, progname, ": ", ts..., "\n");
+	broker_req req = { br_bad_sys };
+	req.flags[0] = sysno;
+	fmt(req.path, ts...);
+	send(FD_PARENT, &req, sizeof(req), MSG_EOR);
 }
 
 
-#include "internal-linux-sand.h"
-#define FD_PARENT 3
-static mutex broker_mut;
 static inline int do_broker_req(broker_req* req)
 {
 	mutexlocker l(&broker_mut);
@@ -195,19 +197,14 @@ static inline int do_broker_req(broker_req* req)
 	broker_rsp rsp;
 	int fd;
 	ssize_t len = recv_fd(FD_PARENT, &rsp, sizeof(rsp), MSG_CMSG_CLOEXEC, &fd);
-	if (len != sizeof(rsp))
-	{
-		error("socket returned invalid data");
-		exit_group(1);
-	}
+	if (len != sizeof(rsp)) __builtin_trap(); // if broker gave us something weird, our entire world is a lie, so just suicide
 	if (fd >= 0) return fd;
-	else if (rsp.err==0) return 0;
+	else if (rsp.err == 0) return 0;
 	else return -rsp.err;
 }
 
-static char cwd[SAND_PATHLEN];
-//not sure about the return type, glibc uses int despite buflen being size_t. guess they don't care about 2GB paths
-//then neither do I
+
+// glibc uses return type int despite buflen being size_t. don't know why, but I'll follow suit
 static inline int getcwd(char * buf, size_t size)
 {
 	size_t outsize = strlen(cwd)+1;
@@ -216,10 +213,10 @@ static inline int getcwd(char * buf, size_t size)
 	return outsize;
 }
 
-//false for overflow
+// false for overflow
 static bool flatten_path(const char * path, char * outpath, size_t outlen)
 {
-	char* out_end = outpath+outlen;
+	char* out_end = outpath + outlen;
 	char* outat = outpath;
 	if (path[0] != '/')
 	{
@@ -233,22 +230,22 @@ static bool flatten_path(const char * path, char * outpath, size_t outlen)
 	{
 		const char * component = path;
 		bool dots = true;
-		while (*path!='/' && *path!='\0')
+		while (*path != '/' && *path != '\0')
 		{
-			if (*path!='.') dots=false;
+			if (*path != '.') dots = false;
 			path++;
 		}
-		int complen = path-component;
+		int complen = path - component;
 		if (*path) path++;
 		
-		if (dots && complen==0) continue;
-		if (dots && complen==1) continue;
-		if (dots && complen==2)
+		if (dots && complen == 0) continue;
+		if (dots && complen == 1) continue;
+		if (dots && complen == 2)
 		{
 			if (outat != outpath+1)
 			{
 				outat--;
-				while (outat[-1]!='/') outat--;
+				while (outat[-1] != '/') outat--;
 			}
 			continue;
 		}
@@ -256,9 +253,9 @@ static bool flatten_path(const char * path, char * outpath, size_t outlen)
 		memcpy(outat, component, complen);
 		outat += complen;
 		
-		if (*path) *outat++='/';
-		else *outat='\0';
+		if (*path) *outat++ = '/';
 	}
+	*outat = '\0';
 	
 	return true;
 }
@@ -280,11 +277,8 @@ static inline int do_broker_file_req(const char * pathname, broker_req_t op, int
 
 static inline int open(const char * pathname, int flags, mode_t mode = 0)
 {
-//error("open: ", pathname);
 	int fd = do_broker_file_req(pathname, br_open, flags, mode);
-	if (fd>=0 && !(flags&O_CLOEXEC)) fcntl(fd, F_SETFD, fcntl(fd, F_GETFD)&~O_CLOEXEC);
-//if (fd >= 0) error("open: ", pathname, " = ", fd);
-//else error("open: ", pathname, " = -", -fd);
+	if (fd >= 0 && !(flags & O_CLOEXEC)) fcntl(fd, F_SETFD, fcntl(fd, F_GETFD) & ~O_CLOEXEC);
 	return fd;
 }
 
@@ -292,7 +286,7 @@ static inline int openat(int dirfd, const char * pathname, int flags, mode_t mod
 {
 	if (dirfd == AT_FDCWD) return open(pathname, flags, mode);
 	
-	error("denied syscall openat ", pathname);
+	error(__NR_openat, pathname, " dirfd=", dirfd);
 	return -ENOENT;
 }
 
@@ -426,14 +420,10 @@ static inline int execveat(int dirfd, const char * pathname, char * const * argv
 		new_envp[0] = env_pwd_buf;
 	}
 	
-	broker_req req = { br_get_emul };
-	int fd = do_broker_req(&req);
-	if (fd<0) return -ENOMEM;
-	
 	intptr_t mmap_ret = (intptr_t)mmap((void*)execveat_gate_page, 4096, PROT_READ, MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED, -1, 0);
-	if (mmap_ret<0) return mmap_ret;
+	if (mmap_ret < 0) return mmap_ret;
 	
-	return syscall5(__NR_execveat, fd, (long)execveat_gate, (long)new_argv, (long)new_envp, AT_EMPTY_PATH);
+	return syscall5(__NR_execveat, FD_EMUL, (long)execveat_gate, (long)new_argv, (long)new_envp, AT_EMPTY_PATH);
 }
 
 static inline int execve(const char * filename, char * const argv[], char * const envp[])
@@ -493,7 +483,7 @@ static inline ssize_t readlink(const char * path, char * buf, size_t bufsiz)
 	{
 		return -EACCES;
 	}
-	error("denied readlink ", path);
+	error(__NR_readlink, path);
 	return -EACCES;
 }
 
@@ -511,9 +501,9 @@ static long syscall_emul(greg_t* regs, int errno)
 #define ARG6 (regs[REG_R9])
 	if (errno != 0)
 	{
-		error("denied syscall ", ARG0, " (",
+		error(ARG0,
 		      hex(),ARG1," ", hex(),ARG2," ", hex(),ARG3," ",
-		      hex(),ARG4," ", hex(),ARG5," ", hex(),ARG6,")");
+		      hex(),ARG4," ", hex(),ARG5," ", hex(),ARG6);
 		return -errno;
 	}
 	
@@ -572,7 +562,7 @@ static long syscall_emul(greg_t* regs, int errno)
 	WRAP1(chdir, char*);
 	WRAP1(uname, struct utsname*);
 	default:
-		error("can't emulate syscall ", ARG0);
+		error(ARG0, "unimplemeted in sysemu");
 		return -ENOSYS;
 	}
 #undef WRAP0_V
@@ -675,7 +665,7 @@ extern "C" void preload_action(char** argv, char** envp)
 
 extern "C" void preload_error(const char * why)
 {
-	error(why);
+	error(-1, why);
 	exit_group(1);
 }
 

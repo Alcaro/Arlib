@@ -1,10 +1,10 @@
+include arlib/Makefile-head
+
 PROGRAM = bored
 ARSOCKET = 1
 ARTERMINAL = hybrid
 ARWUTF = 1
 ARXPSUPPORT = 32
-
-include arlib/Makefile-head
 
 ifeq ($(OS),linux)
   CONF_CFLAGS += $(shell pkg-config --cflags fuse)

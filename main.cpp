@@ -198,48 +198,5 @@ int main(int argc, char** argv)
 	}
 	*/
 	
-#ifdef ARLIB_SANDBOX
-	array<string> child = arrayview<const char *>(argv, argc).cast<string>();
-	
-	sandproc ch(runloop::global());
-	ch.set_stdout(process::output::create_stdout());
-	ch.set_stderr(process::output::create_stderr());
-	ch.fs_grant_syslibs(child[1]);
-	ch.fs_grant_cwd(100);
-	
-	//for gcc
-	ch.fs_grant("/usr/bin/make");
-	ch.fs_grant("/usr/bin/gcc");
-	ch.fs_grant("/usr/bin/g++");
-	ch.fs_grant("/usr/bin/as");
-	ch.fs_grant("/usr/bin/ld");
-	ch.fs_grant("/usr/lib/");
-	ch.fs_hide("/usr/gnu/");
-	ch.fs_grant("/lib/");
-	ch.fs_hide("/usr/");
-	ch.fs_hide("/usr/local/include/");
-	ch.fs_grant("/usr/include/");
-	ch.fs_hide("/usr/x86_64-linux-gnu/");
-	ch.fs_hide("/usr/bin/gnm");
-	ch.fs_hide("/bin/gnm");
-	ch.fs_grant("/usr/bin/nm");
-	ch.fs_hide("/usr/bin/gstrip");
-	ch.fs_hide("/bin/gstrip");
-	ch.fs_grant("/usr/bin/strip");
-	ch.fs_hide("/usr/bin/uname");
-	ch.fs_grant("/bin/uname");
-	ch.fs_grant("/usr/bin/objdump");
-	ch.fs_hide("/usr/bin/grep");
-	ch.fs_grant("/bin/grep");
-	
-	ch.onexit([&](int lstatus) { runloop::global()->exit(); });
-	
-	if (!ch.launch(child[1], child.skip(2)))
-	{
-		puts("launch failed");
-		return 1;
-	}
-	runloop::global()->enter();
-#endif
 	return 0;
 }

@@ -2,8 +2,10 @@ ifneq ($(OS),linux)
   $(error sandbox is only supported on Linux)
 endif
 
-SOURCES_ARLIB += arlib/sandbox/*.cpp
-DEFINES += ARLIB_SANDBOX
+SOURCES += sandbox/*.cpp
+
+SETUID_CFLAGS := 
+SETUID_LFLAGS := 
 
 #ensure we're usable as linker, with ASLR enabled
 PRELOADER_CFLAGS += -fpic
@@ -14,7 +16,7 @@ PRELOADER_CFLAGS += -ffreestanding
 PRELOADER_LFLAGS += -nostdlib -nostartfiles -nodefaultlibs
 PRELOADER_CFLAGS += -fno-builtin-memcpy -fno-builtin-memset -fno-builtin-memmove
 #nothing should nor can override our symbols, and allowing it causes relocation issues
-PRELOADER_CFLAGS += -fvisibility=hidden
+SETUID_CFLAGS += -fvisibility=hidden
 #gcc sure loves inserting calls to random stuff, force it not to
 #I'd prefer if I could enable -fstack-protector, but the stack cookie is at %fs:40, which is a segfault
 #I could set it up, but that'd require a bunch of assembly, leak memory, and confuse the real libc when it tries to set up %fs
@@ -36,38 +38,54 @@ endif
 
 #I could include TRUE_{C,L}FLAGS, but that includes silly stuff like -pthread and -lgtk-3, so just hardcode them
 #CFLAGS/LFLAGS are set by command line only, empty by default, let's include them
-PRELOADER_CFLAGS += -DSANDBOX_INTERNAL -std=c++11 $(CFLAGS)
+PRELOADER_CFLAGS += -std=c++17 $(CFLAGS)
 PRELOADER_CFLAGS += -Wall -Wmissing-declarations -Wno-comment
-PRELOADER_LFLAGS += -Wl,-z,now $(LFLAGS)
+SETUID_LFLAGS += -Wl,-z,now $(LFLAGS)
+PRELOADER_CFLAGS += $(patsubst %,-D%,$(DEFINES))
 
 ifneq ($(OPT),0)
-  PRELOADER_CFLAGS += $(OPTFLAGS)
-  PRELOADER_LFLAGS += $(OPTLFLAGS)
+  SETUID_CFLAGS += $(OPTFLAGS)
+  SETUID_LFLAGS += $(OPTLFLAGS)
 endif
 ifeq ($(DEBUG),1)
-  #not sure if gdb can find the debug symbols of the sandbox child, or do anything useful with the child at all
-  #(strace works fine, but doesn't care about symbols)
-  #but gdb can run the launcher without the sandbox, so keep debug by default anyways
+  #not sure if gdb can find the sandbox preloader's debug symbols, or do anything useful inside the child at all
+  #(strace works fine, but doesn't care about symbols anyways)
+  #but gdb can run the preloader without the sandbox, so keep debug anyways
   PRELOADER_CFLAGS += -g
 endif
 
-#TODO: move to obj/, so programs can have custom sandbox rules
-arlib/sandbox/bpf.inc: arlib/sandbox/bpf.S arlib/sandbox/bpfasm.py
-	python3 arlib/sandbox/bpfasm.py $< $@
-$(call OBJMANGLE,ARLIB,arlib/sandbox/launch-linux-sand.cpp): arlib/sandbox/launch-linux-sand.cpp arlib/sandbox/bpf.inc | obj
+sandbox/bpf.inc: sandbox/bpf.S sandbox/bpfasm.py
+	python3 sandbox/bpfasm.py $< $@
+$(call OBJMANGLE,DEFAULT,sandbox/launch-linux-sand.cpp): sandbox/launch-linux-sand.cpp sandbox/bpf.inc | obj
 
-PRELOADER_SOURCES := arlib/sandbox/preload-linux-sand.cpp arlib/sandbox/sysemu-linux-sand.cpp
-PRELOADER_OBJS := $(call OBJMANGLE,arlibsand,$(wildcard $(PRELOADER_SOURCES)))
-obj/arlibsand___%.cpp.o: $$(call SOURCENAME,$$@) arlib/sandbox/internal-linux-sand.h | obj
+
+PRELOADER_SOURCES := sandbox/preload-linux-sand.cpp sandbox/sysemu-linux-sand.cpp
+PRELOADER_OBJS := $(call OBJMANGLE,ARSANDPL,$(PRELOADER_SOURCES))
+obj/ARSANDPL___%.cpp.o: $$(call SOURCENAME,$$@) sandbox/internal-linux-sand.h
 	$(ECHOQ) CXX $<
-	$(Q)$(CXX) $(PRELOADER_CFLAGS) -c $< -o $@
+	$(Q)$(CXX) -D SANDBOX_PRELOAD $(PRELOADER_CFLAGS) $(SETUID_CFLAGS) -c $< -o $@
 
 obj/sand-preload-$(OBJNAME).elf: $(PRELOADER_OBJS) | obj
 	$(ECHOQ) LD $@
-	$(Q)$(CXX) -D SANDBOX_INTERNAL $(PRELOADER_LFLAGS) $(PRELOADER_OBJS) -o $@
+	$(Q)$(CXX) $(PRELOADER_LFLAGS) $(SETUID_LFLAGS) $(PRELOADER_OBJS) -o $@
 #ensure failure if this thing isn't 100% static
 #requires .DELETE_ON_ERROR, which is set in Arlib's main makefile
 	$(Q)objdump -R $@ 2>&1 | grep -A500 -E 'DYNAMIC RELOCATION RECORDS$$' || true
 	$(Q)objdump -R $@ 2>&1 | grep -qF 'DYNAMIC RELOCATION RECORDS (none)' || \
 	    objdump -R $@ 2>&1 | grep -qF 'not a dynamic object'
-$(call OBJMANGLE,ARLIB,arlib/sandbox/preload-linux-sand.cpp): arlib/sandbox/preload-linux-sand.cpp obj/sand-preload-$(OBJNAME).elf | obj
+$(call OBJMANGLE,DEFAULT,sandbox/preload-linux-sand.cpp): obj/sand-preload-$(OBJNAME).elf
+
+
+SETUID_SOURCES := sandbox/lockdown-linux-sand.cpp
+SETUID_OBJS := $(call OBJMANGLE,ARSANDSU,$(SETUID_SOURCES))
+obj/ARSANDSU___%.cpp.o: $$(call SOURCENAME,$$@) | obj
+	$(ECHOQ) CXX $<
+	$(Q)$(CXX) -D SANDBOX_SETUID $(SETUID_CFLAGS) -c $< -o $@
+
+arlib-sandbox-setuid: $(SETUID_OBJS) | obj
+	$(ECHOQ) LD $@
+	$(Q)$(CXX) $(SETUID_LFLAGS) $(SETUID_OBJS) -o $@
+	chown root:root $@ || true
+	chmod +s $@ || true
+
+arlib-default: arlib-sandbox-setuid

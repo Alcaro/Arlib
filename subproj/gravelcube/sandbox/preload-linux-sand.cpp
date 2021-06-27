@@ -1,4 +1,4 @@
-#ifdef SANDBOX_INTERNAL
+#ifdef SANDBOX_PRELOAD
 
 //These 200 lines of code implement one tiny thing: Call one function (sysemu.cpp), then pass control to ld-linux.so.
 
@@ -189,6 +189,10 @@ static inline void update_auxv(Elf64_auxv_t* auxv, uint8_t* ld_base, Elf64_Ehdr*
 		//I don't think ld-linux uses PHDR or PHNUM, but why not
 		if (auxv[i].a_type == AT_PHDR)
 		{
+			//a_un is a union, but it only has one member. Apparently the rest were removed to allow
+			// a 64bit program to use the 32bit structs, even though auxv isn't accessible on wrong
+			// bitness. I guess someone removed all pointers, sensible or not.
+			//Backwards compatibility, fun for everyone...
 			auxv[i].a_un.a_val = (uintptr_t)ld_base + ehdr->e_phoff;
 		}
 		if (auxv[i].a_type == AT_PHNUM)
@@ -198,10 +202,6 @@ static inline void update_auxv(Elf64_auxv_t* auxv, uint8_t* ld_base, Elf64_Ehdr*
 		//AT_BASE looks like it should be relevant, but it's actually NULL
 		if (auxv[i].a_type == AT_ENTRY)
 		{
-			//a_un is a union, but it only has one member. Apparently the rest were removed to allow
-			// a 64bit program to use the 32bit structs, even though auxv isn't accessible on wrong
-			// bitness. I guess someone removed all pointers, sensible or not.
-			//Backwards compatibility, fun for everyone...
 			auxv[i].a_un.a_val = (uintptr_t)(funcptr)(ld_base + ehdr->e_entry);
 		}
 	}

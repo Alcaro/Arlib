@@ -292,6 +292,7 @@ public:
 			CloseHandle(stdout_rd);
 			stdout_rd = NULL;
 			
+			TerminateProcess(hproc, 0); // so it doesn't lock up if the process closed stdout without terminating
 			WaitForSingleObject(hproc, INFINITE);
 			DWORD exc;
 			GetExitCodeProcess(hproc, &exc);
@@ -339,7 +340,6 @@ public:
 	{
 		recv.stop();
 		if (hproc) TerminateProcess(hproc, 0);
-		
 		if (stdout_rd) CloseHandle(stdout_rd);
 		stdout_rd = NULL;
 	};
@@ -383,13 +383,13 @@ static bytearray reqexec_begin(handler& src, bytestream req)
 	
 	PROCESS_INFORMATION pi = {};
 	STARTUPINFO si = {};
-	si.cb = sizeof(STARTUPINFO); 
+	si.cb = sizeof(STARTUPINFO);
 	si.hStdError = stdout_wr;
 	si.hStdOutput = stdout_wr;
 	si.hStdInput = stdin_rd;
 	si.dwFlags |= STARTF_USESTDHANDLES;
 	
-	if (!CreateProcess(NULL, (char*)commandline.bytes().ptr(), NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL, cwd, &si, &pi)) return {};
+	if (!CreateProcess(exe, (char*)commandline.bytes().ptr(), NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL, cwd, &si, &pi)) return {};
 	
 	CloseHandle(pi.hThread);
 	CloseHandle(stdout_wr);

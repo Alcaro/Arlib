@@ -42,10 +42,12 @@ jeq #__NR_fstat, accept
 jeq #__NR_fcntl, fcntl
 jeq #__NR_fchmod, accept
 
-jeq #__NR_ioctl, ioctl
+#TODO: let sysemu return something random for ioctl(TCGETS) and ioctl(TIOCGWINSZ)
+jeq #__NR_ioctl, ENOTTY_S
 jeq #__NR_getcwd, emulate
 jeq #__NR_chdir, emulate
 jeq #__NR_getdents, accept
+jeq #__NR_getdents64, accept
 
 jeq #__NR_dup, accept
 jeq #__NR_dup2, accept
@@ -100,6 +102,11 @@ jeq #__NR_getcpu, accept
 jeq #__NR_gettimeofday, accept
 jeq #__NR_time, accept
 
+#ls -l complains if it gets ENOSYS, but ENOTSUP is fine
+jeq #__NR_getxattr, ENOTSUP_S
+jeq #__NR_lgetxattr, ENOTSUP_S
+jeq #__NR_fgetxattr, ENOTSUP_S
+
 jmp ENOSYS
 
 
@@ -130,20 +137,6 @@ jeq #F_DUPFD, accept
 jeq #F_DUPFD_CLOEXEC, accept
 
 jmp EINVAL
-
-
-ioctl:
-#int ioctl(int fd, int cmd, ...)
-defines /usr/include/asm-generic/ioctls.h
-
-ld [arg2h]
-jne #0, EINVAL
-ld [arg2l]
-#TODO: let sysemu return something random for these two
-#jeq #TCGETS, accept
-#jeq #TIOCGWINSZ, accept
-
-jmp ENOTTY_S
 
 
 execveat:
@@ -273,3 +266,6 @@ ret #SECCOMP_RET_ERRNO|ENOSYS
 
 ENOTTY_S:
 ret #SECCOMP_RET_ERRNO|ENOTTY
+
+ENOTSUP_S:
+ret #SECCOMP_RET_ERRNO|ENOTSUP

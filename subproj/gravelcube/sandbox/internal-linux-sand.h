@@ -2,6 +2,8 @@
 //this file requires <sys/socket.h> included
 //this is not done here, to allow recvmsg/sendmsg to be redefined
 //#include <sys/socket.h>
+#include <stdint.h>
+#include <string.h>
 
 //kernel features that aren't used yet, but may be useful here, or the underlying process module:
 //[4.17 / june 2018] MAP_FIXED_NOREPLACE, so the last page can be mapped early, ensuring it's not used during execve
@@ -50,14 +52,17 @@
 //  probably harmless with RESOLVE_NO_MAGICLINKS
 //  alternatively, check if pidfd is still a /proc entry; if not, it's safe
 
+#define FD_BROKER 3
+#define FD_EMUL 4
+
 enum broker_req_t {
-	br_nop,       // [req only] does nothing, doesn't respond (unused)
+	br_nop,       // does nothing, doesn't respond (unused)
 	br_ping,      // does nothing, sends an empty response (used by launcher to check if parent is alive, after setting PDEATHSIG)
 	br_open,      // open(req.path, req.flags[0], req.flags[1])
 	br_unlink,    // flags unused
 	br_access,    // access(req.path, req.flags[0])
-	br_get_emul,  // returns the fd of the emulator, path and flags unused
 	br_fork,      // returns a new fd equivalent to the existing broker fd, to be used in fork()
+	br_bad_sys,   // tells broker that the child did something unexpected; flags[0]=sysno, textual details in path; no response
 	br_shmem,     // for sandbox-aware children: returns a memfd, for sharing memory
 };
 

@@ -1,7 +1,6 @@
 #pragma once
-#include "../file.h"
-#include "../process.h"
-#include "../set.h"
+#include "../arlib.h"
+#include <errno.h>
 
 //Allows safely executing untrusted code.
 //
@@ -25,6 +24,9 @@
 //It feels like the Windows sandboxing functions are designed for trusted code operating on untrusted data, rather than untrusted code,
 // or for memory safe languages, or some similarly inapplicable constraint.
 //Since I can't create satisfactory results in such an environment, I won't even try.
+
+//Note that if stdin, stdout or stderr point to the parent process' std{in,out,err}, the child can fstat it.
+// If this is considered private information, create a pipe and forward it to the real streams.
 
 #ifdef __linux__
 //Currently, both parent and child must be x86_64.
@@ -66,6 +68,7 @@ class sandproc : public process {
 		int child_file(cstring pathname, int /* broker_req_t */ op, int flags, mode_t mode);
 	};
 	filesystem fs;
+	function<void(int sysno, cstring path)> bad_syscall;
 	
 	void watch_add(int sock);
 	void watch_del(int sock);
@@ -135,6 +138,15 @@ public:
 	void set_access_violation_cb(function<void(cstring path, bool write)> cb)
 	{
 		fs.report_access_violation = cb;
+	}
+	
+	// Bad syscalls are rejected with -ENOSYS in the child.
+	// Most of the time, the child handles ENOSYS correctly.
+	// For more details on what syscall that was, use strace -f. To silence them, upgrade the sandbox.
+	// The sandbox implementation does not sanitize the sysno; it can contain nonsense, including negative numbers.
+	void set_bad_syscall_cb(function<void(int sysno, cstring detail)> cb)
+	{
+		bad_syscall = cb;
 	}
 	
 	~sandproc();

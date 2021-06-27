@@ -1,7 +1,5 @@
 #ifdef __linux__
 #include "sandbox.h"
-#include "../set.h"
-#include "../stringconv.h"
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -81,9 +79,6 @@ void sandproc::filesystem::grant_errno(string cpath, int error, bool noisy)
 sandproc::filesystem::filesystem()
 {
 	grant_errno("/", EACCES, true);
-	report_access_violation = [](cstring path, bool write){
-		puts((string)"sandbox: denied " + (write?"writing":"reading") + " " + path);
-	};
 }
 
 sandproc::filesystem::~filesystem()
@@ -309,11 +304,12 @@ void sandproc::on_readable(uintptr_t sock)
 		}
 		return;
 	}
-	else if (req_sz != sizeof(req) || req.path[sizeof(req.path)-1] != '\0')
+	else if (req_sz != sizeof(req))
 	{
-		terminate(); // no mis-sized messages allowed, nor unterminated strings
+		terminate(); // no mis-sized messages allowed
 		return;
 	}
+	req.path[sizeof(req.path)-1] = '\0'; // ensure the string is nul terminated
 	
 	broker_rsp rsp = { req.type };
 	int fd = -1;
@@ -336,19 +332,13 @@ void sandproc::on_readable(uintptr_t sock)
 		fd = fs.child_file(req.path, req.type, req.flags[0], req.flags[1]);
 		close_fd = true;
 //puts((string)req.path+" "+tostring(req.type)+": "+tostring(fd)+" "+tostring(errno));
-		if (fd<0) rsp.err = errno;
-		break;
-	}
-	case br_get_emul:
-	{
-		fd = preloader_fd();
-		close_fd = false;
+		if (fd < 0) rsp.err = errno;
 		break;
 	}
 	case br_fork:
 	{
 		int socks[2];
-		if (socketpair(AF_UNIX, SOCK_SEQPACKET|SOCK_CLOEXEC, 0, socks)<0)
+		if (socketpair(AF_UNIX, SOCK_SEQPACKET|SOCK_CLOEXEC, 0, socks) < 0)
 		{
 			socks[0] = -1;
 			socks[1] = -1;
@@ -359,12 +349,17 @@ void sandproc::on_readable(uintptr_t sock)
 		watch_add(socks[0]);
 		break;
 	}
+	case br_bad_sys:
+	{
+		bad_syscall(req.flags[0], req.path);
+		return;
+	}
 	default:
 		terminate(); // invalid request means child is doing something stupid
 		return;
 	}
-	send_rsp(sock, &rsp, fd>0 ? fd : -1);
-	if (fd>0 && close_fd) close(fd);
+	send_rsp(sock, &rsp, fd);
+	if (fd > 0 && close_fd) close(fd);
 }
 
 sandproc::~sandproc()
