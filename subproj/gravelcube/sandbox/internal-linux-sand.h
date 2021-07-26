@@ -8,6 +8,8 @@
 //kernel features that aren't used yet, but may be useful here, or the underlying process module:
 //[4.17 / june 2018] MAP_FIXED_NOREPLACE, so the last page can be mapped early, ensuring it's not used during execve
 //  (can't unconditionally replace that page; if ASLR put the bottom of the stack there, shredding that would be inadvisable)
+//[5.0 / mar 2019] SECCOMP_RET_USER_NOTIF
+//  may allow removing the socket, simplifying some code and allowing removal of recvmsg from the syscall whitelist
 //[5.1 / may 2019] pidfd_send_signal
 //[5.2 / july 2019] clone(CLONE_PIDFD)
 //[5.3 / september 2019] select() on pidfd, and reading exit status
@@ -15,7 +17,7 @@
 //[5.9 / october 2020] close_range()
 //  simplifies my closefrom(), current one is pretty ugly
 //[5.10 / december 2020] nonblocking pidfd (maybe? not sure)
-//[5.13 / june 2021?] Landlock, another sandboxing mechanism
+//[5.13 / june 2021] Landlock, another sandboxing mechanism
 //  Landlock is not a complete sandbox in 5.13, but it's a good start, and it seems to complement seccomp-bpf quite well
 //  more specifically, banning FS_READ_DIR on / should restrict the filesystem well enough that I don't need the last mappable page hack,
 //    and it may also offer a variant of RESOLVE_BENEATH (not sure)

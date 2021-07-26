@@ -15,6 +15,7 @@ PRELOADER_LFLAGS += -static -shared -Wl,-Bsymbolic -Wl,--no-dynamic-linker
 PRELOADER_CFLAGS += -ffreestanding
 PRELOADER_LFLAGS += -nostdlib -nostartfiles -nodefaultlibs
 PRELOADER_CFLAGS += -fno-builtin-memcpy -fno-builtin-memset -fno-builtin-memmove
+SETUID_CFLAGS += -fno-unwind-tables -fno-asynchronous-unwind-tables
 #nothing should nor can override our symbols, and allowing it causes relocation issues
 SETUID_CFLAGS += -fvisibility=hidden
 #gcc sure loves inserting calls to random stuff, force it not to
@@ -85,7 +86,6 @@ obj/ARSANDSU___%.cpp.o: $$(call SOURCENAME,$$@) | obj
 arlib-sandbox-setuid: $(SETUID_OBJS) | obj
 	$(ECHOQ) LD $@
 	$(Q)$(CXX) $(SETUID_LFLAGS) $(SETUID_OBJS) -o $@
-	chown root:root $@ || true
-	chmod +s $@ || true
+	chown root:root $@ && chmod +s $@ || true
 
 arlib-default: arlib-sandbox-setuid

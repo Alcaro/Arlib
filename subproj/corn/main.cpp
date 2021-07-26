@@ -222,7 +222,7 @@ puts("playing "+fn+" with gstreamer");
 				break;
 			}
 		}
-		if (!ff_par)
+		if (!ff_par || !ff_codec)
 			goto fail;
 		
 		ff_position = 0;
@@ -581,6 +581,7 @@ void update_search()
 	// a match's penalty is defined as how many skip slots contain ascii non-space bytes
 	// a skip slot is defined as each space, plus start of the string; start gives 1.5 penalty points
 	// if the filename contains a slash, add 1 penalty point
+	// if the filename contains /x/ or /x-, add 2.5 penalty points
 	// if the last word in the search string is not in the file's basename, add 50 penalty points
 	//output:
 	// all matches, sorted by ascending penalty, then alphabetically by name including dir
@@ -610,6 +611,9 @@ void update_search()
 	for (cstring fn : search_filenames)
 	{
 		int penalty = 0;
+		
+		if (fn.contains("/x/") || fn.contains("/x-"))
+			penalty += 5;
 		
 		size_t last_slash = fn.lastindexof("/");
 		if (last_slash != (size_t)-1)
@@ -825,6 +829,7 @@ void enqueue(cstring fn)
 	int multiple = 1;
 	const char * mul_str = strchr(gtk_entry_get_text(search_line), '*');
 	if (mul_str) fromstring(mul_str+1, multiple);
+	if (!multiple) multiple = 1;
 	for (int i=0;i<multiple;i++)
 		enqueue_real(fn);
 }
@@ -946,7 +951,7 @@ void make_gui(GApplication* application)
 void app_open(GApplication* application, GFile* * files, int n_files, char* hint, void* user_data)
 {
 	make_gui(application);
-	for (int i : range(n_files)) enqueue(g_file_peek_path(files[i]));
+	for (int i : range(n_files)) enqueue_real(g_file_peek_path(files[i]));
 }
 
 void app_activate(GApplication* application, void* user_data)
@@ -1008,7 +1013,7 @@ int main(int argc, char** argv)
 	{
 		make_gui(NULL);
 		char** arg = argv+2;
-		while (*arg) enqueue(*arg++);
+		while (*arg) enqueue_real(*arg++);
 		gtk_main();
 		return 0;
 	}

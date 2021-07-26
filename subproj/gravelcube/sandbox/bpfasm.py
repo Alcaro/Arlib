@@ -17,7 +17,7 @@
 #  je out-of-bounds throws errors rather than truncating (TODO: convert to jne+jmp)
 #  supports a primitive preprocessor: 'let __NR_open = 0' defines a named constant
 #    you can also use 'defines /usr/include/x86_64-linux-gnu/asm/unistd_64.h' to read #defines from that file
-#      (other preprocessor directives ignored)
+#      (other preprocessor directives, including #include, ignored)
 #    unknown constants are passed to the C compiler, so you can #include the file there if you prefer
 #      but that may inhibit some optimizations
 #  /* */ comments not supported; # (start of line only) and ; (anywhere) are
