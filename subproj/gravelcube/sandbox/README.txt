@@ -245,6 +245,9 @@ The emulator runs in the child once it's locked down, and emulates an unconstrai
  complex component; however, as it's fully inside the sandbox, anything malicious could easily issue
  its own syscalls (including broker requests), so it doesn't need to protect against hostile inputs.
 
+The program is implemented in C++, because it was created in 2017, before Rust was relevant. While
+ suboptimal in hindsight, it's hard to fix.
+
 
 Broker
 ------
@@ -373,7 +376,7 @@ A minor issue is that it must be fully self-contained, no libc. But the useful p
 Another minor issue is that we're namespace init, so we can get grandchildren reparented to us,
  yielding zombies. This can be solved by creating an intermediate process that spawns the real one,
  then reaps children forever; or it can be considered too unlikely and inconsequential to worry
- about. Since zombies only show up if anything daemonizes or otherwise does stupid stuff, this
+ about. Since zombies only show up if anything daemonizes or otherwise does something weird, this
  sandbox is intended for short-lived utilities like gcc, and zombies aren't very expensive, we
  choose to accept a few of them (but there's a RLIMIT_NPROC in place to block too rampant abuse).
 
@@ -417,7 +420,7 @@ There are many, but they all have drawbacks:
     can't prove that's not a security hole
 - readlinkat(123, "") or readlinkat(123, ".")
     ENOENT or EINVAL, respectively; the fd itself is a plain directory, . is a hardlink
-- get fd to /proc/self, readlinkat(/proc/self, "123")
+- get fd to /proc/self/fd, readlinkat(/proc/self/fd, "123")
     how would broker find the right /proc entry? how would seccomp ensure it doesn't end up as readlink(/proc/self/../../etc/passwd)?
 - fchdir, getcwd
     allowing fchdir reopens a pile of security holes in execveat

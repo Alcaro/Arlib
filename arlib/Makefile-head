@@ -156,7 +156,7 @@ OPTFLAGS += -fno-ident
 # (source: https://gcc.gnu.org/legacy-ml/gcc-patches/2013-03/msg00858.html)
 # --disable-auto-import seems to be synonymous to --disable-runtime-pseudo-reloc these days
 ifeq ($(OS),windows)
-  CONF_LFLAGS += -Wl,--disable-auto-import,--disable-runtime-pseudo-reloc
+  CONF_LFLAGS += -Wl,--disable-auto-import,--disable-runtime-pseudo-reloc,--exclude-all-symbols
   ifeq ($(WINBITS),64)
     # this one errors out on 32bit
     OPTFLAGS += -mcmodel=small

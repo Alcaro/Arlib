@@ -3,6 +3,8 @@
 
 #if __GNUC__ >= 11 && !defined(_WIN32)
 #warning change to std::{to,from}_chars (but only on linux, no libstdc++ on windows)
+// for windows, I could use https://github.com/jk-jeon/dragonbox (it's faster, and lets me drop the ifdefs from the tests),
+// but it also uses a handful of kilobytes of tables and I haven't found any practical situation where it matters
 #endif
 
 #ifdef __MINGW32__

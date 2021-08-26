@@ -113,6 +113,28 @@ void string::reinit_from(arrayview<uint8_t> data)
 	}
 }
 
+void string::append(arrayview<uint8_t> newdat)
+{
+	// cache these four, for performance
+	uint8_t* p1 = ptr();
+	const uint8_t* p2 = newdat.ptr();
+	uint32_t l1 = length();
+	uint32_t l2 = newdat.size();
+	
+	if (UNLIKELY(p2 >= p1 && p2 < p1+l1))
+	{
+		uint32_t offset = p2-p1;
+		resize(l1+l2);
+		p1 = ptr();
+		memcpy(p1+l1, p1+offset, l2);
+	}
+	else
+	{
+		resize(l1+l2);
+		memcpy(ptr()+l1, p2, l2);
+	}
+}
+
 string string::create_usurp(char * str)
 {
 	cstring tmp(str);
@@ -437,6 +459,45 @@ array<cstring> cstring::csplit(bool(*find)(const uint8_t * start, const uint8_t 
 	return ret;
 }
 
+#ifdef __SSE2__
+bool operator==(const cstring& left, const cstring& right)
+{
+	static_assert(sizeof(cstring) == 16);
+	if (left.inlined())
+	{
+		if (left.m_inline_len() != right.m_inline_len()) return false; // if right isn't inlined, m_inline_len is -1 aka not equal
+		__m128i a = _mm_loadu_si128((__m128i*)&left);
+		__m128i b = _mm_loadu_si128((__m128i*)&right);
+		int eq = _mm_movemask_epi8(_mm_cmpeq_epi8(a, b));
+		return ((((~eq) << left.m_inline_len()) & 0xFFFF) == 0);
+	}
+	else
+	{
+		// this is basically a memcmp, but I know size >= 16, so I can jump straight to the SIMD loop
+		
+		auto memeq16 = [](const uint8_t * ap, const uint8_t * bp)
+		{
+			__m128i a = _mm_loadu_si128((__m128i*)ap);
+			__m128i b = _mm_loadu_si128((__m128i*)bp);
+			return (_mm_movemask_epi8(_mm_cmpeq_epi8(a, b)) == 0xFFFF);
+		};
+		if (right.inlined() || left.m_len != right.m_len) return false;
+		
+		const uint8_t * leftp = left.m_data;
+		const uint8_t * rightp = right.m_data;
+		size_t stop = left.m_len - 16;
+		
+		size_t iter = 0;
+		do { // entering this loop at all is pointless if len == 16, but do-while is a few bytes smaller than while
+			if (!memeq16(leftp+iter, rightp+iter)) return false;
+			iter += 16;
+		} while (iter < stop);
+		
+		return (memeq16(leftp+stop, rightp+stop));
+	}
+}
+#endif
+
 int string::compare3(cstring a, cstring b)
 {
 	size_t cmplen = min(a.length(), b.length());
@@ -577,7 +638,27 @@ bool cstring::contains_nul() const
 		// iszero << m_inline_len puts the NUL at the 0x8000 bit; if anything lower is also true, that's a NUL in the input
 		return ((iszero << m_inline_len()) & 0x7FFF);
 	}
-	else return memchr(m_data, '\0', m_len);
+	else
+	{
+		// similar design to operator==(cstring,cstring)
+		
+		auto hasnul16 = [](const uint8_t * ap)
+		{
+			__m128i a = _mm_loadu_si128((__m128i*)ap);
+			return (_mm_movemask_epi8(_mm_cmpeq_epi8(a, _mm_setzero_si128())) != 0x0000);
+		};
+		
+		const uint8_t * ptr = m_data;
+		size_t stop = m_len - 16;
+		
+		size_t iter = 0;
+		do {
+			if (hasnul16(ptr+iter)) return true;
+			iter += 16;
+		} while (iter < stop);
+		
+		return (hasnul16(ptr+stop));
+	}
 #else
 	return memchr(ptr(), '\0', length());
 #endif
@@ -820,16 +901,22 @@ test("string", "array,memeq", "string")
 		
 		assert_eq(a.length(), 3);
 		assert_eq((char)a[2], '!');
-		
-		//a.replace(1,1, "ello");
-		//assert_eq(a, "hello!");
-		//assert_eq(a.substr(1,3), "el");
-		//a.replace(1,4, "i");
-		//assert_eq(a, "hi!");
-		//a.replace(1,2, "ey");
-		//assert_eq(a, "hey");
-		//
-		//assert_eq(a.substr(2,2), "");
+	}
+	
+	{
+		uint8_t buf1[65] = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+		uint8_t buf2[65] = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+		for (size_t len=0;len<=34;len++)
+		{
+			assert_eq(cstring(bytesr(buf1, len)), cstring(bytesr(buf2, len)));
+			assert_ne(cstring(bytesr(buf1, len)), cstring(bytesr(buf2, len+1)));
+			for (size_t pos=0;pos<len;pos++)
+			{
+				buf2[pos] = 'b';
+				assert_ne(cstring(bytesr(buf1, len)), cstring(bytesr(buf2, len)));
+				buf2[pos] = 'a';
+			}
+		}
 	}
 	
 	{
@@ -846,10 +933,6 @@ test("string", "array,memeq", "string")
 		assert_eq(a.substr(1,~1), "2345678901234567812345678901234567");
 		assert_eq(a.substr(2,2), "");
 		assert_eq(a.substr(22,22), "");
-		//a.replace(1,5, "-");
-		//assert_eq(a, "1-789012345678123456789012345678");
-		//a.replace(4,20, "-");
-		//assert_eq(a, "1-78-12345678");
 	}
 	
 	{
@@ -1369,15 +1452,33 @@ test("string", "array,memeq", "string")
 			"",
 			"_",
 			"a",
-			"aaaa_aa",
-			"aaaa_aaa",
-			"_______________",
+			"aaaa_aa", // length 7
+			"aaaa_aaa", // length 8
+			"_______________", // length 15
 			"aaaaaaaaaaaaaaa",
 			"aaaaaaaaaaaaaa_",
 			"_aaaaaaaaaaaaaa",
-			"aaaaaaaaaaaaaaaa",
+			"aaaaaaaaaaaaaaaa", // length 16
 			"aaaaaaaaaaaaaaa_",
 			"_aaaaaaaaaaaaaaa",
+			"_aaaaaaaaaaaaaaaa", // length 17
+			"_aaaaaaaaaaaaaa_a",
+			"aaaaaaaaaaaaaaaa_",
+			"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", // length 31
+			"_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			"aaaaaaaaaaaaaaa_aaaaaaaaaaaaaaa",
+			"aaaaaaaaaaaaaaaa_aaaaaaaaaaaaaa",
+			"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_",
+			"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", // length 32
+			"aaaaaaaaaaaaaaa_aaaaaaaaaaaaaaaa",
+			"aaaaaaaaaaaaaaaa_aaaaaaaaaaaaaaa",
+			"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_",
+			"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", // length 33
+			"_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			"aaaaaaaaaaaaaaa_aaaaaaaaaaaaaaaaa",
+			"aaaaaaaaaaaaaaaa_aaaaaaaaaaaaaaaa",
+			"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_a",
+			"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_",
 		};
 		
 		for (const char * test : tests)

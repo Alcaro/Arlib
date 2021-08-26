@@ -2,7 +2,6 @@
 #include "global.h"
 #include "array.h"
 #include "hash.h"
-#include "simd.h"
 #include <string.h>
 
 // define my own ctype, because table lookup is faster than libc call that probably ends up in a table lookup anyways,
@@ -70,7 +69,7 @@ class string;
 
 class cstring {
 	friend class string;
-	friend inline bool operator==(const cstring& left, const cstring& right);
+	friend bool operator==(const cstring& left, const cstring& right);
 #if __GNUC__ == 7
 	template<size_t N> friend inline bool operator==(const cstring& left, const char (&right)[N]);
 #else
@@ -435,27 +434,7 @@ class string : public cstring {
 		if (!inlined()) free(m_data);
 	}
 	
-	void append(arrayview<uint8_t> newdat)
-	{
-		// cache these four, for performance
-		uint8_t* p1 = ptr();
-		const uint8_t* p2 = newdat.ptr();
-		uint32_t l1 = length();
-		uint32_t l2 = newdat.size();
-		
-		if (UNLIKELY(p2 >= p1 && p2 < p1+l1))
-		{
-			uint32_t offset = p2-p1;
-			resize(l1+l2);
-			p1 = ptr();
-			memcpy(p1+l1, p1+offset, l2);
-		}
-		else
-		{
-			resize(l1+l2);
-			memcpy(ptr()+l1, p2, l2);
-		}
-	}
+	void append(arrayview<uint8_t> newdat);
 	
 	void append(uint8_t newch)
 	{
@@ -632,23 +611,14 @@ forceinline bool operator==(const cstring& left, const char * right)
 #endif
 
 inline bool operator==(const char * left, const cstring& right) { return operator==(right, left); }
+#ifdef __SSE2__
+bool operator==(const cstring& left, const cstring& right);
+#else
 inline bool operator==(const cstring& left, const cstring& right)
 {
-#ifdef __SSE2__
-	if (left.inlined())
-	{
-		static_assert(sizeof(cstring) == 16);
-		if (left.m_inline_len() != right.m_inline_len()) return false;
-		__m128i a = _mm_loadu_si128((__m128i*)&left);
-		__m128i b = _mm_loadu_si128((__m128i*)&right);
-		int eq = _mm_movemask_epi8(_mm_cmpeq_epi8(a, b));
-		return ((((~eq) << left.m_inline_len()) & 0xFFFF) == 0);
-	}
-	else return !right.inlined() && arrayview<uint8_t>(left.m_data, left.m_len) == arrayview<uint8_t>(right.m_data, right.m_len);
-#else
 	return left.bytes() == right.bytes();
-#endif
 }
+#endif
 inline bool operator!=(const cstring& left, const char * right  ) { return !operator==(left, right); }
 inline bool operator!=(const cstring& left, const cstring& right) { return !operator==(left, right); }
 inline bool operator!=(const char * left,   const cstring& right) { return !operator==(left, right); }
@@ -657,11 +627,11 @@ bool operator<(cstring left,      const char * right) = delete;
 bool operator<(cstring left,      cstring right     ) = delete;
 bool operator<(const char * left, cstring right     ) = delete;
 
-inline string operator+(cstring left,      cstring right     ) { string ret=left; ret+=right; return ret; }
-inline string operator+(cstring left,      const char * right) { string ret=left; ret+=right; return ret; }
-inline string operator+(string&& left,     cstring right     ) { left+=right; return left; }
-inline string operator+(string&& left,     const char * right) { left+=right; return left; }
-inline string operator+(const char * left, cstring right     ) { string ret=left; ret+=right; return ret; }
+inline string operator+(cstring left,      cstring right     ) { string ret = left; ret += right; return ret; }
+inline string operator+(cstring left,      const char * right) { string ret = left; ret += right; return ret; }
+inline string operator+(string&& left,     cstring right     ) { left += right; return left; }
+inline string operator+(string&& left,     const char * right) { left += right; return left; }
+inline string operator+(const char * left, cstring right     ) { string ret = left; ret += right; return ret; }
 
 inline string operator+(string&& left, char right) = delete;
 inline string operator+(cstring left, char right) = delete;

@@ -578,6 +578,8 @@ template<typename T> static inline T bitround(T in)
 	
 	abort();
 #else
+	// MSVC has a _BitScanReverse, could use that
+	
 	in -= (bool)in; // so bitround(0) becomes 1, rather than integer underflow and back to 0
 	in |= in >> 1;
 	in |= in >> 2;
@@ -629,7 +631,7 @@ template<typename T> static inline uint8_t ilog2(T in)
 	// the chosen two are the numerically lowest
 	if (sizeof(T) <= 4)
 		return MultiplyDeBruijnBitPosition32[((uint32_t)in * 0x07C4ACDD) >> 27];
-	if (sizeof(T) == 8) // this is probably slower than an if+shift and a 32bit mul... don't care about that either...
+	if (sizeof(T) == 8) // this is probably slower than an if+shift and a 32bit mul, will fix if I find a compiler where it's relevant
 		return MultiplyDeBruijnBitPosition64[((uint64_t)in * 0x03F08A4C6ACB9DBD) >> 58];
 	
 	abort();
@@ -646,16 +648,16 @@ class ilog10_tab // implementation detail, class ensures the binary doesn't cont
 		8,9,9,9,10,10,10,11,11,11,11,12,12,12,13,13,13,14,14,14,14,15,15,15,16,16,16,17,17,17,17,18,
 	};
 	static constexpr const uint64_t powers[] = {
-		10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000,
-		1000000000, 10000000000, 100000000000, 1000000000000, 10000000000000, 100000000000000,
-		1000000000000000, 10000000000000000, 100000000000000000, 1000000000000000000, 10000000000000000000u
+		9, 99, 999, 9999, 99999, 999999, 9999999, 99999999, 999999999,
+		9999999999, 99999999999, 999999999999, 9999999999999, 99999999999999,
+		999999999999999, 9999999999999999, 99999999999999999, 999999999999999999, 9999999999999999999u
 	};
 };
 template<typename T> static inline uint8_t ilog10(T in)
 {
 	// implementation based on https://stackoverflow.com/questions/25892665/performance-of-log10-function-returning-an-int#25934909
-	uint8_t digits = ilog10_tab::approx[ilog2(in)];
-	return digits + (in >= (T)ilog10_tab::powers[digits]);
+	size_t digits = ilog10_tab::approx[ilog2(in)]; // can be (ilog2(in)*9) >> 5 for 32bit inputs, but that fails on 64bit,
+	return digits + (in > (T)ilog10_tab::powers[digits]); // and table lookup optimizes better on modern compilers
 }
 
 #define ALLINTS(x) \
@@ -733,10 +735,10 @@ public:
 template<typename Tc, typename Ti> Tc* container_of(Ti* ptr, Ti Tc:: * memb)
 {
 	// https://wg21.link/P0908 proposes a better solution, but it was forgotten and not accepted
-	Tc* fake_object = NULL;
+	Tc* fake_object = (Tc*)0x12345678;  // doing math on a fake pointer is UB, but good luck proving that one is bogus
 #ifdef __GNUC__
-	asm("nop" : "+r"(fake_object)); // doing math on a null is UB, but good luck proving anything across an asm
-#endif                              // (both gcc and clang optimize it out)
+	__asm__("nop" : "+r"(fake_object)); // especially across an asm (both gcc and clang optimize out the asm and the fake pointer)
+#endif
 	size_t offset = (uintptr_t)&(fake_object->*memb) - (uintptr_t)fake_object;
 	return (Tc*)((uint8_t*)ptr - offset);
 }
@@ -768,14 +770,36 @@ static inline range_t range(size_t start, size_t stop, size_t step = 1) { return
 #define _GLIBCXX_MATH_H 1 // disable any subsequent #include <math.h>, it's full of using std::sin that conflicts with my overloads
 #include <cmath>
 
+#ifdef __i386__
+// for some reason, the ##f functions don't exist on i386. I suspect it's somehow related to x87 automatic long double.
+#define MATH_FN(name) \
+	extern "C" __attribute__((dllimport)) double name(double); \
+	static inline float name##f(float a) { return name((double)a); } \
+	static inline float name(float a) { return name##f(a); }
+#define MATH_FN_2(name) \
+	extern "C" __attribute__((dllimport)) double name(double,double); \
+	static inline float name##f(float a, float b) { return name((double)a, (double)b); } \
+	static inline float name(float a, float b) { return name##f(a, b); }
+// only way to get rid of the extern float __cdecl sinf(float) from the headers
+#define sinf   dummy_sinf
+#define cosf   dummy_cosf
+#define expf   dummy_expf
+#define logf   dummy_logf
+#define log10f dummy_log10f
+#define powf   dummy_powf
+#define sqrtf  dummy_sqrtf
+#define ceilf  dummy_ceilf
+#define floorf dummy_floorf
+#else
 #define MATH_FN(name) \
 	extern "C" __attribute__((dllimport)) double name(double); \
 	extern "C" __attribute__((dllimport)) float name##f(float); \
-	static inline float name(float a) { return name##f(a); } /* calling sinf would be better, but it's harmless, and useful in templates */
+	static inline float name(float a) { return name##f(a); }
 #define MATH_FN_2(name) \
 	extern "C" __attribute__((dllimport)) double name(double,double); \
 	extern "C" __attribute__((dllimport)) float name##f(float,float); \
 	static inline float name(float a, float b) { return name##f(a, b); }
+#endif
 
 MATH_FN(sin) MATH_FN(cos)
 MATH_FN(exp) MATH_FN(log) MATH_FN(log10)

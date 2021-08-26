@@ -151,6 +151,7 @@ void sandbox_exec_lockdown(const char * const * argv)
 	//discard the response, we know it's { br_ping, {0,0,0}, "" }, we only care whether we got one at all
 	
 	// every syscall using uids is blocked by seccomp, but being root shows up in ps -ef, and may affect scheduling, so drop it if possible
+	// applies to both setuid and sudo
 	require_b(setuid(65534)==0 || errno==EINVAL); // EINVAL means uid_map wasn't set, meaning sandbox isn't root and doesn't need a setuid()
 	require_b(setgid(65534)==0 || errno==EINVAL); // pointless but harmless
 	
@@ -218,8 +219,8 @@ int main(int argc, char** argv)
 		require_eq(write(fd, uid_map, strlen(uid_map)), (ssize_t)strlen(uid_map));
 		require(close(fd));
 		
-		send(FD_BROKER, &pid, sizeof(pid_t), 0);
-		exit(0); // the actual exit status doesn't matter, parent discards it anyways
+		send(FD_BROKER, &pid, sizeof(pid_t), 0); // this is received in launch-linux-sand.cpp
+		exit(0); // the actual exit status doesn't matter, parent asked for no SIGCHLD
 	}
 	if (pid == 0)
 	{
@@ -228,7 +229,7 @@ int main(int argc, char** argv)
 		// wait for the above branch to finish, so setuid succeeds
 		// and for launcher to receive the pid from the parent process, so its { br_ping } doesn't do anything silly
 		char discard[1];
-		require_eq(recv(FD_BROKER, &discard, 1, 0), (ssize_t)1);
+		require_eq(recv(FD_BROKER, &discard, 1, 0), (ssize_t)1); // sent by launch-linux-sand.cpp after the pid is sent
 		require(setuid(65534));
 		
 		sandbox_exec_lockdown(argv);

@@ -299,6 +299,7 @@ test("string conversion", "", "string")
 	assert(!fromstring("inf"+string::nul(), f));
 	assert(!fromstring("-inf"+string::nul(), f));
 	assert(!fromstring("nan"+string::nul(), f));
+	assert_eq(f, 0.0f);
 	testcall(testundec<double>("nan", NAN));
 	testcall(testundec<double>("-0", -0.0));
 	testcall(testundec<double>("1.2e+08", 120000000.0)); // no octal allowed in exponent either
@@ -442,7 +443,9 @@ test("string conversion", "", "string")
 	assert(!fromstringhex("10000000000000000", u64));
 	assert( fromstringhex("0000000000000000FFFFFFFFFFFFFFFF", u64));
 	assert( fromstring("340282346638528859811704183484516925440", f)); // max possible float; a few higher values round down to that,
+	assert_eq(f, 340282346638528859811704183484516925440.0f);
 	assert(!fromstring("340282366920938463463374607431768211456", f)); // but anything too big should be rejected
+	assert_eq(f, HUGE_VALF);
 	assert( fromstring("1797693134862315708145274237317043567980705675258449965989174768031572607800285387605895586327668781715"
 	                   "4045895351438246423432132688946418276846754670353751698604991057655128207624549009038932894407586850845"
 	                   "5133942304583236903222948165808559332123348274797826204144723168738177180919299881250404026184124858368", d));
@@ -489,6 +492,7 @@ test("string conversion", "", "string")
 	
 	// https://www.exploringbinary.com/incorrectly-rounded-conversions-in-visual-c-plus-plus/
 	// many other troublesome numbers can be found at exploringbinary.com
+	// and https://github.com/ahrvoje/numerics/blob/master/strtod/strtod_tests.toml
 	// (they fail on Windows 7; may have been fixed in Windows 8+, didn't check)
 	testcall(testundec<double>("9214843084008499.0",
 	                            9214843084008500.0));

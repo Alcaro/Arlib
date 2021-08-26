@@ -73,7 +73,7 @@ int sandproc::preloader_fd()
 	static int s_fd = 0;
 	if (lock_read<lock_loose>(&s_fd)) return s_fd;
 	
-	int fd = syscall(__NR_memfd_create, "arlib-sand-preload", MFD_CLOEXEC|MFD_ALLOW_SEALING);
+	int fd = syscall(__NR_memfd_create, "gvc-preload", MFD_CLOEXEC|MFD_ALLOW_SEALING);
 	if (fd < 0)
 		goto fail;
 	if (write(fd, sandbox_preload_bin, sandbox_preload_len) != sandbox_preload_len)
@@ -136,7 +136,7 @@ pid_t sandproc::launch_impl(const char * program, array<const char*> argv, array
 	// if you need a fake argv[0], redirect the chosen executable via sandbox policy
 	argv[0] = program;
 	
-	argv.insert(0, "[arlib-sandbox]"); // ld-linux thinks it's argv[0] and discards the real one
+	argv.insert(0, "[gravelcube]"); // ld-linux thinks it's argv[0] and discards the real one
 	
 	//fcntl is banned by seccomp, so this goes early
 	//putting it before clone() allows sharing it between sandbox children
@@ -154,7 +154,6 @@ pid_t sandproc::launch_impl(const char * program, array<const char*> argv, array
 	int clone_flags = CLONE_NEWUSER | CLONE_NEWPID | CLONE_NEWNET | CLONE_NEWCGROUP | CLONE_NEWIPC | CLONE_NEWNS | CLONE_NEWUTS;
 	clone_flags |= SIGCHLD; // termination signal, must be SIGCHLD for waitpid to work properly
 	pid_t pid = syscall(__NR_clone, clone_flags, NULL, NULL, NULL, NULL);
-//pid_t pid=-1;errno=EPERM;
 	if (pid < 0)
 	{
 		if (errno == EPERM)
@@ -163,6 +162,7 @@ pid_t sandproc::launch_impl(const char * program, array<const char*> argv, array
 			if (socketpair(AF_UNIX, SOCK_SEQPACKET|SOCK_CLOEXEC, 0, socks2) < 0)
 				return -1;
 			
+			string setuid_path = file::exepath()+"gvc-setuid"; // do this before clone(), malloc isn't signal handler safe
 			pid_t pid_setuid = syscall(__NR_clone, 0, NULL, NULL, NULL, NULL); // clone instead of fork to discard the SIGCHLD
 			if (pid_setuid < 0) {} // do nothing, fall through to the errno != EPERM clause
 			if (pid_setuid > 0)
@@ -182,7 +182,7 @@ pid_t sandproc::launch_impl(const char * program, array<const char*> argv, array
 			{
 				// child path
 				require_b(set_fds(stdio_fd)); // easier before exec than after, and more code here and less in setuid is more secure
-				require(execve(file::exepath()+"arlib-sandbox-setuid", (char**)argv.ptr(), NULL));
+				require(execve(setuid_path, (char**)argv.ptr(), NULL));
 				__builtin_trap(); // unreachable
 			}
 		}

@@ -83,9 +83,9 @@ obj/ARSANDSU___%.cpp.o: $$(call SOURCENAME,$$@) | obj
 	$(ECHOQ) CXX $<
 	$(Q)$(CXX) -D SANDBOX_SETUID $(SETUID_CFLAGS) -c $< -o $@
 
-arlib-sandbox-setuid: $(SETUID_OBJS) | obj
+gvc-setuid: $(SETUID_OBJS) | obj
 	$(ECHOQ) LD $@
 	$(Q)$(CXX) $(SETUID_LFLAGS) $(SETUID_OBJS) -o $@
 	chown root:root $@ && chmod +s $@ || true
 
-arlib-default: arlib-sandbox-setuid
+arlib-default: gvc-setuid
