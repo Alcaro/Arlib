@@ -491,11 +491,9 @@ test("HTTP", "tcp,ssl,random", "http")
 		h.send(HTTP::req("http://floating.muncher.se/"), break_runloop);
 		loop->enter();
 		assert_eq(r.status, 301);
-		assert_eq(r.text(),
-			"<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\n"
-			"<html><head>\n<title>301 Moved Permanently</title>\n</head><body>\n"
-			"<h1>Moved Permanently</h1>\n<p>The document has moved <a href=\"https://floating.muncher.se/\">here</a>.</p>\n"
-			"<hr>\n<address>Apache/2.4.38 (Debian) Server at floating.muncher.se Port 80</address>\n</body></html>\n");
+		assert_gt(r.text().length(), 50);
+		assert_eq(r.text().substr(0, 50), "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">");
+		assert(r.text().endswith("</body></html>\n"));
 		assert_eq(r.header("Location"), "https://floating.muncher.se/");
 	}
 	

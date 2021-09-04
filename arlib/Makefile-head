@@ -153,13 +153,17 @@ OPTFLAGS += -fno-ident
 # I can create them using (for example) __argc or _timezone, but only by not including its header, or by breaking it with a #define
 # (buggy third party libraries would also be an option)
 # additionally, without pseudo relocs, it's safe to set -mcmodel=small, making things a bit faster and smaller
+#  and a bit simpler in init-hybrid-dll - lets me use __ImageBase even before relocations
 # (source: https://gcc.gnu.org/legacy-ml/gcc-patches/2013-03/msg00858.html)
 # --disable-auto-import seems to be synonymous to --disable-runtime-pseudo-reloc these days
 ifeq ($(OS),windows)
   CONF_LFLAGS += -Wl,--disable-auto-import,--disable-runtime-pseudo-reloc,--exclude-all-symbols
   ifeq ($(WINBITS),64)
     # this one errors out on 32bit
+    # not just an optimization - init-hybrid-dll needs it
+    # but BearSSL ignores CONF_CFLAGS, so it's an optimization too
     OPTFLAGS += -mcmodel=small
+    CONF_CFLAGS += -mcmodel=small
   else
     # for the 64bit div/mod functions
     # do this for 32bit only, so I notice if something else sneaks in

@@ -87,6 +87,13 @@ void srand(unsigned) __attribute__((deprecated("g_rand doesn't need this")));
 #define __has_include(x) false
 #endif
 
+// in case something is technically undefined behavior, but works as long as compiler can't prove that
+template<typename T> T launder(T v)
+{
+	__asm__("" : "+r"(v));
+	return v;
+}
+
 typedef void(*funcptr)();
 
 #define using(obj) if(obj;true)
@@ -847,7 +854,7 @@ using std::signbit;
 //     something else is probably already using them; if your program ships its own DLLs (for example libstdc++-6.dll),
 //     this is equivalent to a memory leak. (But if you're shipping DLLs, your program is already multiple files, and you
 //     should put all shareable logic in another DLL and use a normal EXE.)
-//     A hybrid DLL calling LoadLibrary is safe, as long as FreeLibrary is called.
+//     A hybrid DLL calling LoadLibrary is safe, as long as it also calls FreeLibrary.
 // - If a normal DLL imports a symbol that doesn't exist from another DLL, LoadLibrary's caller gets an error.
 //     If a hybrid DLL imports a symbol that doesn't exist, it will remain as NULL, and will crash if called. You can't even
 //     NULL check them, compiler will optimize it out. If you need that feature, use LoadLibrary.
@@ -857,6 +864,8 @@ using std::signbit;
 //     independent; PIC on i386 is hard.
 // - It does various weird things; antivirus programs may react.
 // On Linux, none of the above applies; it's a perfectly normal program in both respects.
+// Depending on what the EXE path does, it may end up loading itself as a DLL.
+//    This is safe, unless both EXE and DLL paths use globals in a dubious way.
 #ifdef ARLIB_HYBRID_DLL
 void arlib_hybrid_dll_init();
 #else

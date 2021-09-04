@@ -107,6 +107,10 @@ ifeq ($(ARTYPE),hybrid)
   DEFINES += ARTYPE_DLL
 endif
 
+ifeq ($(SELFTEST),1)
+  ARTERMINAL = 1
+endif
+
 ifeq ($(OS),linux)
   # -ldl is unnecessary on glibc >= 2.34 (aug 2021); musl has, as far as I can determine, never needed it
   # it can be removed once 2.34 is 5 years old, and it's confirmed to be unnecessary on musl
@@ -133,7 +137,6 @@ ifeq ($(OS),windows)
     DEFINES += ARLIB_HYBRID_DLL
     CONF_CFLAGS += -fpic
     CONF_LFLAGS += -Wl,--dynamicbase
-    $(warning hybrid DLL is a poorly tested configuration, prepare for bugs)
   endif
   #surprisingly, this is still not default as of mingw 8.1.0 (to check, objdump -x | grep DllCharacteristics, 0x0100 bit is nxcompat)
   CONF_LFLAGS += -Wl,--nxcompat -ladvapi32

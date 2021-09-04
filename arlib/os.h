@@ -31,8 +31,16 @@ public:
 		*(void**)&ret = this->sym_ptr(name);
 		return ret;
 	}
+	template<typename T>
+	auto sym(const char * name)
+	{
+		static_assert(std::is_function_v<T> || std::is_pointer_v<T>);
+		if constexpr (std::is_function_v<T>) return (T*)sym_func(name);
+		else if constexpr (std::is_function_v<std::remove_pointer_t<T>>) return (T)sym_func(name);
+		else return (T)sym_ptr(name);
+	}
 	// Usage recommendation:
-	// auto Direct3DCreate9 = (decltype(::Direct3DCreate9)*)d3d9.sym_func("Direct3DCreate9");
+	// auto Direct3DCreate9 = d3d9.sym<decltype(::Direct3DCreate9)>("Direct3DCreate9");
 	// If you need multiple symbols, using DECL_DYLIB_T will save you a bit of typing.
 	
 	//Fetches multiple symbols. 'names' must be a NUL-separated list of names, terminated with a blank one.
@@ -76,7 +84,6 @@ public:
 // This one is like the above two, but caller is expected to initialize it,
 //  probably because caller needs it initialized via something other than a dylib.
 // raw_names() and raw_target() are valid arguments to dylib::sym_multi(), but caller is welcome to pass them someone else.
-// Note that unlike DECL_DYLIB_T, the member function pointers are not set to NULL by default.
 #define DECL_DYLIB_RAW_T(name, prefix, ...) \
 	class name { \
 	public: \
