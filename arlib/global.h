@@ -37,19 +37,10 @@
 // extra kilobytes and dlls is the opposite of what I want, and my want is stronger, so here's some shenanigans
 // comments say libstdc++ demands a POSIX printf, but I don't use libstdc++'s text functions, so I don't care
 // msvcrt strtod also rounds wrong sometimes, but it's right for all plausible inputs, so I don't care about that either
-#    define __USE_MINGW_ANSI_STDIO 0 // first, trigger a warning if it's enabled already - probably wrong include order
-#    include <stdlib.h>              // second, include this specific header; it includes <bits/c++config.h>,
-#    undef __USE_MINGW_ANSI_STDIO    // which sets this flag, which must be turned off
+#    define __USE_MINGW_ANSI_STDIO 0 // trigger a warning if it's enabled already - probably wrong include order
+#    include <cstdbool>              // include some random c++ header; they all include <bits/c++config.h>,
+#    undef __USE_MINGW_ANSI_STDIO    // which ignores my #define above and sets this flag; re-clear it before including <stdio.h>
 #    define __USE_MINGW_ANSI_STDIO 0 // (subsequent includes of c++config.h are harmless, there's an include guard)
-#    undef strtof
-#    define strtof strtof_arlib // third, redefine these functions, they pull in mingw's scanf
-#    undef strtod               // this is why stdlib.h is chosen, rather than some random tiny c++ header like cstdbool
-#    define strtod strtod_arlib // (strtod not acting like scanf is creepy, anyways)
-#    undef strtold
-#    define strtold strtold_arlib
-float strtof_arlib(const char * str, char** str_end);
-double strtod_arlib(const char * str, char** str_end);
-long double strtold_arlib(const char * str, char** str_end);
 #  endif
 #endif
 
@@ -205,7 +196,7 @@ template<typename T> typename std::enable_if<sizeof(T)==0, T&>::type ARRAY_SIZE_
 //- works on all compilers
 //optional:
 //- (PASS) works in a template, even if the template isn't instantiated, if the condition isn't dependent on the types
-//- (FAIL) works if compiled as C; tried to design an alternate implementation and ifdef it, but nothing works inside structs
+//- (FAIL) works if compiled as C; I tried to design an alternate implementation and ifdef it, but nothing works inside structs
 //         closest I can find in C is a size zero or negative array, which messes up initializers,
 //         or a named inner struct, but that's a 'declaration does not declare anything' warning
 //- (PASS) can name assertions, if desired (only under C++11)
@@ -650,21 +641,58 @@ template<typename T> static inline uint8_t ilog10(T in);
 class ilog10_tab // implementation detail, class ensures the binary doesn't contain multiple copies of these tables
 {
 	template<typename T> friend uint8_t ilog10(T in);
-	static constexpr const uint8_t approx[] = {
-		0,0,0,0,0,0,1,1,1,2,2,2,2,3,3,3,4,4,4,5,5,5,5,6,6,6,7,7,7,8,8,8,
-		8,9,9,9,10,10,10,11,11,11,11,12,12,12,13,13,13,14,14,14,14,15,15,15,16,16,16,17,17,17,17,18,
+	static constexpr const uint64_t thresholds[] = {
+		( 1ll<<56) - (10>>0),
+		( 2ll<<56) - (100>>1),
+		( 3ll<<56) - (1000>>2),
+		( 4ll<<56) - (10000>>3),
+		( 5ll<<56) - (100000>>4),
+		( 6ll<<56) - (1000000>>5),
+		( 7ll<<56) - (10000000>>6),
+		( 8ll<<56) - (100000000>>7),
+		( 9ll<<56) - (1000000000>>8),
+		(10ll<<56) - (10000000000>>9),
+		(11ll<<56) - (100000000000>>10),
+		(12ll<<56) - (1000000000000>>11),
+		(13ll<<56) - (10000000000000>>12),
+		(14ll<<56) - (100000000000000>>13),
+		(15ll<<56) - (1000000000000000>>14),
+		(16ll<<56) - (10000000000000000>>15),
+		(17ll<<56) - (100000000000000000>>16),
+		(18ll<<56) - (1000000000000000000>>17),
+		(19ll<<56) - (10000000000000000000u>>18),
 	};
-	static constexpr const uint64_t powers[] = {
-		9, 99, 999, 9999, 99999, 999999, 9999999, 99999999, 999999999,
-		9999999999, 99999999999, 999999999999, 9999999999999, 99999999999999,
-		999999999999999, 9999999999999999, 99999999999999999, 999999999999999999, 9999999999999999999u
+	static constexpr const uint32_t thresholds32[] = { // 64bit math is annoying on 32bit
+		(1<<24) - (10>>0),
+		(2<<24) - (100>>1),
+		(3<<24) - (1000>>2),
+		(4<<24) - (10000>>3),
+		(5<<24) - (100000>>4),
+		(6<<24) - (1000000>>5),
+		(7<<24) - (10000000>>6),
+		(8<<24) - (100000000>>7),
+		(9<<24) - (1000000000>>8),
 	};
 };
 template<typename T> static inline uint8_t ilog10(T in)
 {
-	// implementation based on https://stackoverflow.com/questions/25892665/performance-of-log10-function-returning-an-int#25934909
-	size_t digits = ilog10_tab::approx[ilog2(in)]; // can be (ilog2(in)*9) >> 5 for 32bit inputs, but that fails on 64bit,
-	return digits + (in > (T)ilog10_tab::powers[digits]); // and table lookup optimizes better on modern compilers
+	// implementation based on ideas from https://lemire.me/blog/2021/06/03/computing-the-number-of-digits-of-an-integer-even-faster/
+	
+	// *9/32 and *19/64 are approximations of /log2(10); rather poor approximations, but good enough here
+	// the only requirement is that, for each ilog2 output, it returns
+	//  0,0,0,0,+0,+0,1,+1,+1,2,+2,+2,+2,3,+3,+3,4,+4,+4,5,+5,+5,+5,6,+6,+6,7,+7,+7,8,8,8,
+	//  +8,9,+9,+9,10,+10,+10,11,+11,+11,+11,12,+12,+12,13,+13,+13,14,+14,+14,+14,15,+15,+15,16,+16,+16,17,+17,+17,+17,18
+	// where + prefix means it can be either that value, or 1 more; for example, for input 4, both 0 and 1 are fine
+	// (the two middle 8s can be considered to have + on 64bit, but not on 32bit)
+	// *19/64 works for every size <= 8, but *9 optimizes better than *19, so sizeof conditional it is
+	size_t digits = (sizeof(T)<=4 ? ilog2(in)*9/32 : ilog2(in)*19/64);
+	
+	// the extra >>digits on in ensures the top table entries don't collide with the return value
+	// the bottom bits of in don't affect the output anyways
+	if (sizeof(size_t) <= 4 && sizeof(T) <= 4)
+		return (ilog10_tab::thresholds32[digits] + (in>>digits)) >> 24;
+	else
+		return (ilog10_tab::thresholds[digits] + (in>>digits)) >> 56;
 }
 
 #define ALLINTS(x) \

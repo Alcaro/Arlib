@@ -147,6 +147,17 @@ public:
 class benchmark {
 	timer t;
 	
+	bool next_cycle()
+	{
+		uint32_t us_actual = t.us();
+		if (us_actual > us)
+		{
+			us = us_actual;
+			return false;
+		}
+		return true;
+	}
+	
 public:
 	uint32_t iterations = 0; // Callers are allowed to read, but not write, these two.
 	uint32_t us = 500000;
@@ -154,17 +165,12 @@ public:
 	benchmark() {}
 	benchmark(uint32_t us) : us(us) {}
 	
-	operator bool()
+	forceinline operator bool()
 	{
 		iterations++;
 		if (!(iterations & (iterations-1))) // for really fast-running things, fetching the time is a bottleneck; do it rarely
 		{
-			uint32_t us_actual = t.us();
-			if (us_actual > us)
-			{
-				us = us_actual;
-				return false;
-			}
+			return next_cycle();
 		}
 		return true;
 	}
@@ -172,6 +178,21 @@ public:
 	double per_second()
 	{
 		return (double)iterations * 1000000 / us;
+	}
+	
+	void reset(uint32_t new_us = 500000)
+	{
+		iterations = 0;
+		us = new_us;
+		t.reset();
+	}
+	
+	// This is mostly the same as the global launder function, but guarantees that the input is computed for every iteration.
+	// Most of the time, your loop contains a function all, which is a sufficient compiler barrier. But this one's available if it's needed.
+	template<typename T> static T launder(T v)
+	{
+		__asm__ volatile("" : "+r"(v));
+		return v;
 	}
 };
 

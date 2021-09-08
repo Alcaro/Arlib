@@ -160,8 +160,8 @@ ifeq ($(OS),windows)
   CONF_LFLAGS += -Wl,--disable-auto-import,--disable-runtime-pseudo-reloc,--exclude-all-symbols
   ifeq ($(WINBITS),64)
     # this one errors out on 32bit
-    # not just an optimization - init-hybrid-dll needs it
-    # but BearSSL ignores CONF_CFLAGS, so it's an optimization too
+    # not just an optimization - _pei386_runtime_relocator() is disabled (and init-hybrid-dll needs it for __ImageBase)
+    # but it's an optimization too - BearSSL ignores CONF_CFLAGS
     OPTFLAGS += -mcmodel=small
     CONF_CFLAGS += -mcmodel=small
   else

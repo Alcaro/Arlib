@@ -31,10 +31,10 @@ inline string tostring(unsigned int val)   { return tostring((unsigned long)val)
 inline string tostringhex(unsigned char val, size_t mindigits = 0)  { return tostringhex((unsigned long)val, mindigits); }
 inline string tostringhex(unsigned short val, size_t mindigits = 0) { return tostringhex((unsigned long)val, mindigits); }
 inline string tostringhex(unsigned int val, size_t mindigits = 0)   { return tostringhex((unsigned long)val, mindigits); }
-template<size_t mindigits> inline string tostringhex(unsigned val) { return tostringhex(val, mindigits); }
+template<size_t mindigits, typename T> inline string tostringhex(T val) { return tostringhex((std::make_unsigned_t<T>)val, mindigits); }
 
 string tostring(unsigned val, size_t mindigits);
-template<size_t mindigits> inline string tostring(unsigned val) { return tostring(val, mindigits); }
+template<size_t mindigits, typename T> inline string tostring(T val) { return tostring(val, mindigits); }
 
 string tostring(double val);
 string tostring(float val);

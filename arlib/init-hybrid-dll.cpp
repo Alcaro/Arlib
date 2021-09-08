@@ -110,7 +110,7 @@ void* pe_get_proc_address(HMODULE mod, const char * name)
 	DWORD * name_off = (DWORD*)(base_addr + exports->AddressOfNames);
 	WORD * ordinal = (WORD*)(base_addr + exports->AddressOfNameOrdinals);
 	
-	// TODO: enable this if I find one
+	// TODO: enable this (if I find one, mingw prefers names)
 	//if ((uintptr_t)name < 0x10000) // ordinal
 	//{
 	//	size_t idx = (uintptr_t)name - exports->Base;
@@ -119,7 +119,7 @@ void* pe_get_proc_address(HMODULE mod, const char * name)
 	//	return base_addr + addr_off[idx];
 	//}
 	
-	// TODO: forwarder RVAs (if I find one - mingw resolves them when creating the exe/dll)
+	// TODO: forwarder RVAs (if I find one, mingw resolves them when creating the exe/dll)
 	
 	for (size_t i=0;i<exports->NumberOfNames;i++)
 	{
@@ -304,12 +304,13 @@ void arlib_hybrid_exe_init()
 
 #ifdef __i386__
 __asm__(R"(
-# it's impossible to let gcc choose a register, so I'll hardcode it to some random caller preserve register
+# letting gcc choose a register seems impossible for code like this, so I'll hardcode it (ebx is caller preserve)
 get_pc_ebx:
 .byte 0x8B,0x1C,0x24 # movl %ebx, [%esp] (toplevel asm can't have dialectal variants)
 ret
 )");
 #endif
+// can be called both before and after reloc processing
 HMODULE get_this_hmodule()
 {
 #ifdef __i386__

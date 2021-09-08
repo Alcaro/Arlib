@@ -70,6 +70,10 @@ ARXPSUPPORT = 0
 
 #don't use this, it specifies that Arlib itself is the project here. More specifically, it enables Arlib's own tests.
 ARLIB_MAIN = 1
+ifeq ($(SELFTEST),)
+  $(warning if you wish to run Arlib's tests, use make test instead)
+  $(error if you seek something actually useful, type make somewhere else, for example one of the subprojects)
+endif
 include arlib/Makefile
 
 #TODO: do I want a ./configure that verifies (maybe even caches) dependencies?

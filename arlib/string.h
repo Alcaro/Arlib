@@ -5,7 +5,7 @@
 #include <string.h>
 
 // define my own ctype, because table lookup is faster than libc call that probably ends up in a table lookup anyways,
-//  and so I can define weird whitespace (\f \v) to not space (several Arlib modules require that, better centralize it)
+//  and so I can define weird whitespace (\f\v) to not space (several Arlib modules require that, better centralize it)
 // this means they don't obey locale, but all modern locales use UTF-8, for which isctype() has no useful answer
 // locale shouldn't be in libc anyways; localization is complex enough to belong in a separate library that updates faster than libc,
 //  and its global-state-based design interacts badly with libraries, logging, threading, text-based formats like JSON, etc
