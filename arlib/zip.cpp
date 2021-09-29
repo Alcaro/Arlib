@@ -298,7 +298,7 @@ zip::locfhead* zip::geth(arrayview<uint8_t> data, centdirrec* cdr)
 string zip::fh_fname(arrayview<uint8_t> data, locfhead* fh, centdirrec* cdr)
 {
 	size_t start = (uint8_t*)fh - data.ptr();
-	if (start + sizeof(locfhead) + fh->len_fname > data.size()) return nullptr;
+	if (start + sizeof(locfhead) + fh->len_fname > data.size()) return "";
 	
 	string fname = data.slice(start+sizeof(locfhead), fh->len_fname);
 #if !ZIP_STRICT

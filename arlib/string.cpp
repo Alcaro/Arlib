@@ -901,6 +901,15 @@ test("string", "array,memeq", "string")
 		
 		assert_eq(a.length(), 3);
 		assert_eq((char)a[2], '!');
+		
+		string c;
+		cstring d;
+		
+		assert_eq(c, "");
+		assert_eq(d, "");
+		
+		assert(!c);
+		assert(!d);
 	}
 	
 	{
@@ -1075,35 +1084,6 @@ test("string", "array,memeq", "string")
 	}
 	
 	{
-		cstring a(nullptr);
-		cstring b = nullptr;
-		cstring c;
-		cstring d; c = nullptr;
-		string e(nullptr);
-		string f = nullptr;
-		string g;
-		string h; h = nullptr;
-		
-		assert_eq(a, "");
-		assert_eq(b, "");
-		assert_eq(c, "");
-		assert_eq(d, "");
-		assert_eq(e, "");
-		assert_eq(f, "");
-		assert_eq(g, "");
-		assert_eq(h, "");
-		
-		assert(!a);
-		assert(!b);
-		assert(!c);
-		assert(!d);
-		assert(!e);
-		assert(!f);
-		assert(!g);
-		assert(!h);
-	}
-	
-	{
 		cstring a = "floating munchers";
 		assert_eq(a.indexof("f"), 0);
 		assert_eq(a.indexof("l"), 1);
@@ -1232,6 +1212,7 @@ test("string", "array,memeq", "string")
 		  "A03A",
 		  "A3a",
 		  "A03a",
+		  "a$",
 		  "a1",
 		  "a2",
 		  "a02",
@@ -1259,21 +1240,23 @@ test("string", "array,memeq", "string")
 		  "a0184467440737095516170000",
 		  "a184467440737095516170001",
 		  "a0184467440737095516170001",
+		  "a@",
 		  "aa",
 		};
 		
 		for (size_t a=0;a<ARRAY_SIZE(strs);a++)
 		for (size_t b=0;b<ARRAY_SIZE(strs);b++)
 		{
-			if (a <  b) testctx(strs[a]+" < "+strs[b]) assert_lt(string::natcompare3(strs[a], strs[b]), 0);
-			if (a == b) testctx(strs[a]+" = "+strs[b]) assert_eq(string::natcompare3(strs[a], strs[b]), 0);
-			if (a >  b) testctx(strs[a]+" > "+strs[b]) assert_gt(string::natcompare3(strs[a], strs[b]), 0);
-			testctx(strs[a]+" <=> "+strs[b]) assert_eq(string::natless(strs[a], strs[b]), a<b);
+			if (a <  b) testctx(strs[a]+" < "+strs[b]) assert_lt(string::snatcompare3(strs[a], strs[b]), 0);
+			if (a == b) testctx(strs[a]+" = "+strs[b]) assert_eq(string::snatcompare3(strs[a], strs[b]), 0);
+			if (a >  b) testctx(strs[a]+" > "+strs[b]) assert_gt(string::snatcompare3(strs[a], strs[b]), 0);
+			testctx(strs[a]+" <=> "+strs[b]) assert_eq(string::snatless(strs[a], strs[b]), a<b);
 		}
 	}
 	
 	{
 		cstring strs[] = {
+		  "a$",
 		  "a1",
 		  "a2",
 		  "a02",
@@ -1305,6 +1288,7 @@ test("string", "array,memeq", "string")
 		  "a0184467440737095516170000",
 		  "a184467440737095516170001",
 		  "a0184467440737095516170001",
+		  "a@",
 		  "aa",
 		};
 		

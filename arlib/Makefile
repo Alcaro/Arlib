@@ -188,7 +188,10 @@ CFLAGS_DEFAULT ?=
 CFLAGS_NOWARN += -w
 DEPS_DEFAULT :=
 
-SOURCES += *.cpp
+
+ifeq ($(ARLIB_MAIN),)
+  SOURCES += *.cpp
+endif
 SOURCES_ARLIB := arlib/*.cpp
 
 ifneq ($(SELFTEST),)
@@ -326,10 +329,10 @@ ifeq ($(ARSOCKET),1)
     endif
     # update make superclean if changing this
     # there's only one libbearssl.a per OS, not per OBJNAME; BearSSL rarely changes, there's no need to be more granular
-    OBJS_LATE += arlib/deps/bearssl-0.6/build-$(OS)/libbearssl.a
-    arlib/deps/bearssl-0.6/build-$(OS)/libbearssl.a:
+    OBJS_LATE += arlib/deps/bearssl-0.6/build-$(OS)$(WINBITS)/libbearssl.a
+    arlib/deps/bearssl-0.6/build-$(OS)$(WINBITS)/libbearssl.a:
       # BearSSL detects mingw32-make as Unix; override some variables into something shell-neutral
-	  $(MAKE) -C arlib/deps/bearssl-0.6/ lib CFLAGS='$(OPTFLAGS) -fpic' BUILD=build-$(OS) OBJDIR=build-$(OS) CC=$(CC) MKDIR=mkdir
+	  $(MAKE) -C arlib/deps/bearssl-0.6/ lib CFLAGS='$(OPTFLAGS) -fpic' BUILD=build-$(OS)$(WINBITS) OBJDIR=build-$(OS)$(WINBITS) CC=$(CC) MKDIR=mkdir
   endif
   ifneq ($(filter-out schannel openssl bearssl,$(ARSOCKET_SSL)),)
     $(error unknown SSL backend)

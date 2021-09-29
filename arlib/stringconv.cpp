@@ -185,11 +185,11 @@ string tostringhex_inner(T val, size_t mindigits)
 }
 string tostring(  signed long long val) { return tostring_inner<signed long long, unsigned long long>(val); }
 string tostring(unsigned long long val) { return tostring_inner<unsigned long long, unsigned long long>(val); }
-string tostringhex(unsigned long long val, size_t mindigits) { return tostringhex_inner<unsigned long long>(val, mindigits); }
+string tostringhex(unsigned long long val, size_t mindigits) { return tostringhex_inner(val, mindigits); }
 #if SIZE_MAX < ULLONG_MAX
 string tostring(  signed long val) { return tostring_inner<signed long, unsigned long>(val); }
 string tostring(unsigned long val) { return tostring_inner<unsigned long, unsigned long>(val); }
-string tostringhex(unsigned long val, size_t mindigits) { return tostringhex_inner<unsigned long>(val, mindigits); }
+string tostringhex(unsigned long val, size_t mindigits) { return tostringhex_inner(val, mindigits); }
 #endif
 string tostring(unsigned val, size_t mindigits)
 {

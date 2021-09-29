@@ -3,17 +3,28 @@
 
 #if __GNUC__ >= 11 && !defined(_WIN32)
 #warning change to std::{to,from}_chars (but only on linux, no libstdc++ on windows)
+// from_chars seems to
+// - accept 0. and .0 (but not . or most other weird inputs)
+// - accept infinity and INF
+// - not demand round-to-even tiebreaker for halfway inputs (though I expect every ieee754 implementation will do that anyways)
+// - accept inputs longer than 10000 chars
+// - accept 1x, returning 1.0 and treating x as unparsed remainder
+// - return failure and no value if input is out of range, rather than return infinity
+// to_chars seems to
+// - require decimal point, even for integers
+// - choose fixed or scientific per shortest length, not based on the input's magnitude
+// - always use at least two digits in the exponent
+// all of which are in the rest suite, except >10000 chars
 #endif
 
 struct floatinf {
 	size_t max_sig; // Lowest unrepresentable integer minus 1, aka 1<<(bits_mantissa+1); or SIZE_MAX, whichever is smaller.
 	uint8_t max_int_exp; // Highest exactly representable power of 10.
 	uint8_t bits_mantissa; // Not counting the implicit 1.
-	int16_t max_bin_exp; // At what exponent the number is infinite, plus some arbitrary offset that's basically trial and error.
-	int32_t max_exponent; // Trying to represent 2**this is instead infinity.
+	int32_t max_bin_exp; // At what exponent the number is infinite, plus some arbitrary offset that's basically trial and error.
 };
-static const floatinf fi_double = { (size_t)min(1ull<<53, SIZE_MAX), 22, 52, 963, 0x3ff };
-static const floatinf fi_float = { 1<<24, 10, 23, 67, 0x7f };
+static const floatinf fi_double = { (size_t)min(1ull<<53, SIZE_MAX), 22, 52, 963 };
+static const floatinf fi_float = { 1<<24, 10, 23, 67 };
 
 static bool fromstring_float(cstring s, double& out, const floatinf * fi)
 {
@@ -23,6 +34,7 @@ static bool fromstring_float(cstring s, double& out, const floatinf * fi)
 	const char * end = start + s.length();
 	const char * digits_end = end;
 	if (end-start > 10000) return false; // 0.(9999 zeroes)1e+10000 is technically equal to 1, but it's also stupid.
+	// TODO: should allow it anyways
 	
 	bool neg = false;
 	if (start < end && *start == '-')
@@ -103,262 +115,267 @@ static bool fromstring_float(cstring s, double& out, const floatinf * fi)
 		}
 	}
 	
-	// for large numbers, use a slower algorithm
-	// some float parser implementations have three different algorithms with different speed and limitations, but two's enough for me
-	if (UNLIKELY(abs(exponent) > fi->max_int_exp || significand > fi->max_sig || n_digits > ilog10(SIZE_MAX)))
+	// for small numbers, the correct answer can be calculated with a multiplication or division of two float-representable integers
+	// there are some numbers where the mul or div rounds to exactly halfway between two floats, but to my knowledge,
+	//  they all have significand or exponent out of range for floats and need the slow path
+	if (LIKELY(abs(exponent) <= fi->max_int_exp && significand <= fi->max_sig && n_digits < ilog10(SIZE_MAX)))
 	{
-		if (significand_sum == 0) // 0e+999 will go here, as will 0.000000000000000000000000 (it exceeds n_digits)
-		{
-			if (neg) out = -out;
-			return true;
-		}
-		// inputs:
-		// - start .. digits_end - digits of the input. The dot, if any, should be ignored.
-		//    Contains at least one nonzero digit. Contains nothing but digits and the dot.
-		// - exponent - Number of steps to shift the given digits.
-		// - n_digits - Number of digits, though some may be leading or trailing zeroes. Not necessarily useful.
-		// - neg - Whether the input is negative.
-		// - fi - Information about the float formats.
-		// Other variables should be ignored or discarded.
+		bool neg_exp = (exponent < 0);
+		exponent = abs(exponent);
 		
-		// the digits need to be multiplied or divided such that the exponent is zero, then take the leftmost bits
-		// for subnormals, the number of digits to round to is variable
+		double exp_adjust = 1;
+		if (exponent & 1) exp_adjust *= 10.0;
+		if (exponent & 2) exp_adjust *= 100.0;
+		if (exponent & 4) exp_adjust *= 10000.0;
+		if (exponent & 8) exp_adjust *= 100000000.0;
+		if (exponent & 16) exp_adjust *= 10000000000000000.0;
 		
-		const char * iter = start;
-		while (*iter <= '0') iter++; // the only possible non-digit, ., is 0x2E <= '0' (0x30), and there's known to be a nonzero digit
-		
-		uint32_t limbs[100] = {}; // the traditional implementation is u8[800], but that's just wasteful. better pack eight digits in a u32
-		// 9 would fit, but 8 makes the math easier
-		// I could count how many limbs I'm using, but that'd be a lot more complexity for no reasonable benefit
-		
-		int limb_at = 0;
-		uint32_t tmp = 0;
-		while (limb_at < 800 && iter < digits_end)
-		{
-			if (*iter == '.') { iter++; continue; }
-			tmp = tmp*10 + *iter-'0';
-			if (limb_at%8 == 7)
-			{
-				limbs[limb_at/8] = tmp;
-				tmp = 0;
-			}
-			limb_at++;
-			iter++;
-		}
-		exponent += limb_at;
-		if (tmp)
-		{
-			if ((8-limb_at)&4) tmp *= 10000;
-			if ((8-limb_at)&2) tmp *= 100;
-			if ((8-limb_at)&1) tmp *= 10;
-			limbs[limb_at/8] = tmp;
-		}
-		
-		while (iter < digits_end)
-		{
-			if (*iter > '0') limbs[99] |= 1; // some algorithms maintain a 'is truncated' bit, but it's easier to round up
-			iter++;
-			exponent++;
-		}
-		
-		// at the end of this process, I need
-		// - limbs[0] concat limbs[1] concat limbs[2]/1000000 to be the output bits of the double
-		// - limbs[0] >= 50000000, <= 99999999
-		// - every limb <= 99999999
-		// - bin_exponent to tell how many bits it was shifted
-		// min     4503599627370496
-		// max 18446744073709551616
-		// if output is 10.0, the limbs must be 10 << n such that 10<<n >= 200000000000000000, <= 999999999999999999
-		// there two allowed limb values are
-		// n=56 72057594 03792793 60+000000
-		// n=55 36028797 01896396 80+000000
-		// same limbs for 5, 20, 40, 80, 160, etc, just different bin_exponent
-		
-		int bin_exponent = 0;
-		
-		exponent -= 18; // need 18 decimal digits of mantissa
-		if (exponent & 7)
-		{
-			// first limb is known >= 10000000, so multiplying by any power of ten will make it overflow and require shifting the limbs
-			
-			uint64_t mul = 1;
-			if (exponent&4) mul *= 10000;
-			if (exponent&2) mul *= 100;
-			if (exponent&1) mul *= 10;
-			exponent &= ~7;
-			exponent += 8;
-			
-			uint64_t carry = 0;
-			for (int i=0;i<100;i++)
-			{
-				uint64_t cur = carry + limbs[i]*mul;
-				limbs[i] = cur/100000000;
-				carry = cur%100000000*100000000;
-			}
-			if (carry) limbs[99] |= 1; // sticky overflow
-		}
-		
-		// the top limb must be nonzero at all times
-		while (true)
-		{
-			if (exponent > 0)
-			{
-				// divide by the smallest power of 2 that zeroes the top limb, and multiply by 1e8 (shift the limbs one step)
-				int shift_bits = ilog2(limbs[0])+1;
-				bin_exponent += shift_bits;
-				exponent -= 8;
-				
-				uint32_t carry_mask = (1<<shift_bits)-1;
-				
-				// 64bit multiplication and division everywhere... sucks for 32bit cpus
-				// I could change it to uint16[200], but not much point. 32bit is on its way out
-				uint64_t carry = limbs[0]; // carry is NOT divided by shift_bits
-				for (int i=1;i<100;i++)
-				{
-					uint64_t cur = (uint64_t)limbs[i] + carry*100000000;
-					limbs[i-1] = cur >> shift_bits;
-					carry = cur & carry_mask;
-				}
-				limbs[99] = carry; // this is too much, but it won't affect the result
-			}
-			else if (exponent < 0 && limbs[0] >= 2)
-			{
-				// multiply by 1<<26, and divide by 1e8
-				int shift_bits = 26;
-				bin_exponent -= shift_bits;
-				exponent += 8;
-				
-				uint64_t cur = ((uint64_t)limbs[99] << shift_bits);
-				
-				uint64_t carry = cur/100000000 | (cur%100000000 ? 1 : 0);
-				for (int i=98;i>=0;i--)
-				{
-					uint64_t cur = ((uint64_t)limbs[i] << shift_bits) + carry;
-					limbs[i+1] = cur%100000000;
-					carry = cur/100000000;
-				}
-				limbs[0] = carry;
-			}
-			else if (limbs[0] < 20000000)
-			{
-				// multiply by a low power of 2 so the top limb goes a bit higher
-				int shift_bits = 25-ilog2(limbs[0]);
-				bin_exponent -= shift_bits;
-				
-				uint64_t carry = 0;
-				for (int i=99;i>=0;i--)
-				{
-					uint64_t cur = ((uint64_t)limbs[i] << shift_bits) + carry;
-					limbs[i] = cur%100000000;
-					carry = cur/100000000;
-				}
-			}
-			else break;
-		}
-		
-		bool ret = true;
-		
-		uint64_t mantissa = (uint64_t)limbs[0]*10000000000 + (uint64_t)limbs[1]*100 + limbs[2]/1000000;
-		if (mantissa == 0)
-			goto done;
-		
-		{
-			int error = 60-ilog2(mantissa);
-			mantissa <<= error;
-			bin_exponent -= error;
-		}
-		
-		if (bin_exponent+1023+60-1 <= -60)
-			goto done;
-		
-		{
-			uint64_t prev_mantissa = mantissa;
-			int shift = 0;
-			if (bin_exponent+1023+60-1 < 0)
-			{
-				shift = -(bin_exponent+1023+60-1);
-			}
-			if (fi->bits_mantissa != 52)
-			{
-				if (bin_exponent+209 <= 23)
-					shift = 52-(bin_exponent+209);
-				else
-					shift = 52-23;
-			}
-			
-			mantissa >>= shift;
-			bin_exponent += shift;
-			
-			if (mantissa << shift != prev_mantissa)
-				mantissa |= 1;
-		}
-		
-		// if it's at least halfway to next number,
-		if (mantissa & 0x80)
-		{
-			// and if bottom bit of output mantissa is set, any bit below half-mantissa is set,
-			// or if any bit in the limbs outside the mantissa is set, then add 0x80 (bits below that will be discarded)
-			if ((mantissa & 0x017F) || limbs[2]%1000000)
-			{
-				mantissa += 0x80;
-			}
-			else
-			{
-				for (int i=3;i<100;i++)
-				{
-					if (limbs[i])
-					{
-						mantissa += 0x80;
-						break;
-					}
-				}
-			}
-		}
-		
-		{
-			int error = 61-ilog2(mantissa); // it's probably same power of two as last time, but not guaranteed; must renormalize
-			mantissa <<= error;
-			bin_exponent -= error;
-		}
-		
-		if (bin_exponent+1023+61 <= 0) // subnormal (or zero)
-		{
-			mantissa >>= -(bin_exponent+1023+61);
-			out = reinterpret<double>(mantissa>>10);
-		}
-		else if (bin_exponent >= fi->max_bin_exp) // infinite
-		{
-			out = HUGE_VAL;
-			ret = false;
-		}
-		else // normal
-		{
-			out = reinterpret<double>(((uint64_t)(bin_exponent+1023+61)<<52) | (mantissa<<3>>12));
-		}
-		
-	done:
-		if (neg) out = -out;
-		return ret;
+		double ret;
+		if (!neg_exp)
+			ret = (double)significand * exp_adjust;
+		else
+			ret = (double)significand / exp_adjust;
+		if (neg) out = -ret;
+		else out = ret;
+		return true;
 	}
 	
-	bool neg_exp = (exponent < 0);
-	exponent = abs(exponent);
+	// for large numbers, use a slower algorithm
+	// some float parser implementations have three different algorithms with different speed and limitations, but two's enough for me
 	
-	double exp_adjust = 1;
-	if (exponent & 1) exp_adjust *= 10.0;
-	if (exponent & 2) exp_adjust *= 100.0;
-	if (exponent & 4) exp_adjust *= 10000.0;
-	if (exponent & 8) exp_adjust *= 100000000.0;
-	if (exponent & 16) exp_adjust *= 10000000000000000.0;
+	if (significand_sum == 0) // 0e+999 will go here, as will 0.000000000000000000000000 (it exceeds n_digits)
+	{
+		if (neg) out = -out;
+		return true;
+	}
+	// inputs:
+	// - start .. digits_end - digits of the input. The dot, if any, should be ignored.
+	//    Contains at least one nonzero digit. Contains nothing but digits and the dot.
+	// - exponent - Number of steps to shift the given digits.
+	// - n_digits - Number of digits, though some may be leading or trailing zeroes. Not necessarily useful.
+	// - neg - Whether the input is negative.
+	// - fi - Information about the float format.
+	// Other variables should be ignored or discarded.
 	
-	double ret;
-	if (!neg_exp)
-		ret = (double)significand * exp_adjust;
-	else
-		ret = (double)significand / exp_adjust;
-	if (neg) out = -ret;
-	else out = ret;
-	return true;
+	// the digits need to be multiplied or divided such that the exponent is zero, then take the leftmost bits
+	// for subnormals, the number of digits to round to is variable
+	
+	iter = start;
+	while (*iter <= '0') iter++; // the only possible non-digit, ., is 0x2E <= '0' (0x30), and there's known to be a nonzero digit
+	
+	uint32_t limbs[100] = {}; // the traditional implementation is u8[800], but that's just wasteful. better pack eight digits in a u32
+	// 9 would fit, but 8 makes the math easier
+	// I could count how many limbs I'm using, but that'd be a lot more complexity for no reasonable benefit
+	
+	int limb_at = 0;
+	uint32_t tmp = 0;
+	while (limb_at < 800 && iter < digits_end)
+	{
+		if (*iter == '.') { iter++; continue; }
+		tmp = tmp*10 + *iter-'0';
+		if (limb_at%8 == 7)
+		{
+			limbs[limb_at/8] = tmp;
+			tmp = 0;
+		}
+		limb_at++;
+		iter++;
+	}
+	exponent += limb_at;
+	if (tmp)
+	{
+		if ((8-limb_at)&4) tmp *= 10000;
+		if ((8-limb_at)&2) tmp *= 100;
+		if ((8-limb_at)&1) tmp *= 10;
+		limbs[limb_at/8] = tmp;
+	}
+	
+	while (iter < digits_end)
+	{
+		if (*iter > '0') limbs[99] |= 1; // some algorithms maintain an 'is truncated' bit, but it's easier to round up
+		iter++;
+		if (*iter != '.') exponent++;
+	}
+	
+	// at the end of this process, I need
+	// - limbs[0] concat limbs[1] concat limbs[2]/1000000 to be the output bits of the double
+	// - limbs[0] >= 20000000
+	// - every limb <= 99999999
+	// - bin_exponent to tell how many bits it was shifted
+	// min     4503599627370496
+	// max 18446744073709551616
+	// if output is 10.0, the limbs must be 10 << n such that 10<<n >= 200000000000000000, <= 999999999999999999
+	// there two allowed limb values are
+	// n=56 72057594 03792793 60+000000
+	// n=55 36028797 01896396 80+000000
+	// same limbs for 5, 20, 40, 80, 160, etc, just different bin_exponent
+	
+	int bin_exponent = 0;
+	
+	exponent -= 18; // need 18 decimal digits of mantissa
+	if (exponent & 7)
+	{
+		// first limb is known >= 10000000, so multiplying by any power of ten will make it overflow and require shifting the limbs
+		
+		uint64_t mul = 1;
+		if (exponent&4) mul *= 10000;
+		if (exponent&2) mul *= 100;
+		if (exponent&1) mul *= 10;
+		exponent &= ~7;
+		exponent += 8;
+		
+		uint64_t carry = 0;
+		for (int i=0;i<100;i++)
+		{
+			uint64_t cur = carry + limbs[i]*mul;
+			limbs[i] = cur/100000000;
+			carry = cur%100000000*100000000;
+		}
+		if (carry) limbs[99] |= 1; // sticky overflow
+	}
+	
+	// the top limb must be nonzero at all times
+	while (true)
+	{
+		if (exponent > 0)
+		{
+			// divide by the smallest power of 2 that zeroes the top limb, and multiply by 1e8 (shift the limbs one step)
+			int shift_bits = ilog2(limbs[0])+1;
+			bin_exponent += shift_bits;
+			exponent -= 8;
+			
+			uint32_t carry_mask = (1<<shift_bits)-1;
+			
+			// 64bit multiplication and division everywhere... sucks for 32bit cpus
+			// I could change it to uint16[200], but not much point. 32bit is on its way out
+			uint64_t carry = limbs[0]; // carry is NOT divided by shift_bits
+			for (int i=1;i<100;i++)
+			{
+				uint64_t cur = (uint64_t)limbs[i] + carry*100000000;
+				limbs[i-1] = cur >> shift_bits;
+				carry = cur & carry_mask;
+			}
+			limbs[99] = carry; // this is too much, but it won't affect the result
+		}
+		else if (exponent < 0 && limbs[0] >= 2)
+		{
+			// multiply by 1<<26, and divide by 1e8
+			int shift_bits = 26;
+			bin_exponent -= shift_bits;
+			exponent += 8;
+			
+			uint64_t cur = ((uint64_t)limbs[99] << shift_bits);
+			
+			uint64_t carry = cur/100000000 | (cur%100000000 ? 1 : 0);
+			for (int i=98;i>=0;i--)
+			{
+				uint64_t cur = ((uint64_t)limbs[i] << shift_bits) + carry;
+				limbs[i+1] = cur%100000000;
+				carry = cur/100000000;
+			}
+			limbs[0] = carry;
+		}
+		else if (limbs[0] < 20000000)
+		{
+			// multiply by a low power of 2 so the top limb goes a bit higher
+			int shift_bits = 25-ilog2(limbs[0]);
+			bin_exponent -= shift_bits;
+			
+			uint64_t carry = 0;
+			for (int i=99;i>=0;i--)
+			{
+				uint64_t cur = ((uint64_t)limbs[i] << shift_bits) + carry;
+				limbs[i] = cur%100000000;
+				carry = cur/100000000;
+			}
+		}
+		else break;
+	}
+	
+	bool ret = true;
+	
+	uint64_t mantissa = (uint64_t)limbs[0]*10000000000 + (uint64_t)limbs[1]*100 + limbs[2]/1000000;
+	if (mantissa == 0)
+		goto done;
+	
+	{
+		int error = 60-ilog2(mantissa);
+		mantissa <<= error;
+		bin_exponent -= error;
+	}
+	
+	if (bin_exponent+1023+60-1 <= -60) // too small, round to zero
+		goto done;
+	
+	{
+		uint64_t prev_mantissa = mantissa;
+		int shift = 0;
+		if (bin_exponent+1023+60-1 < 0)
+		{
+			shift = -(bin_exponent+1023+60-1);
+		}
+		if (fi->bits_mantissa != 52)
+		{
+			if (bin_exponent+209 <= 23)
+				shift = 52-(bin_exponent+209);
+			else
+				shift = 52-23;
+		}
+		
+		mantissa >>= shift;
+		bin_exponent += shift;
+		
+		if (mantissa << shift != prev_mantissa)
+			mantissa |= 1;
+	}
+	
+	// if it's at least halfway to next number,
+	if (mantissa & 0x80)
+	{
+		// and if bottom bit of output mantissa is set, any bit below half-mantissa is set,
+		// or if any bit in the limbs outside the mantissa is set,
+		// then round up (bits below that will be discarded)
+		if ((mantissa & 0x017F) || limbs[2]%1000000)
+		{
+			mantissa += 0x80;
+		}
+		else
+		{
+			for (int i=3;i<100;i++)
+			{
+				if (limbs[i])
+				{
+					mantissa += 0x80;
+					break;
+				}
+			}
+		}
+	}
+	
+	{
+		int error = 61-ilog2(mantissa); // it's probably same power of two as last time, but not guaranteed; must renormalize
+		mantissa <<= error;
+		bin_exponent -= error;
+	}
+	
+	if (bin_exponent+1023+61 <= 0) // subnormal (or rounded to zero)
+	{
+		mantissa >>= -(bin_exponent+1023+61);
+		out = reinterpret<double>(mantissa>>10);
+	}
+	else if (bin_exponent >= fi->max_bin_exp) // infinite
+	{
+		out = HUGE_VAL;
+		ret = false;
+	}
+	else // normal (or subnormal float - the double/float cast will handle that)
+	{
+		out = reinterpret<double>(((uint64_t)(bin_exponent+1023+61)<<52) | (mantissa<<3>>12));
+	}
+	
+done:
+	if (neg) out = -out;
+	return ret;
 }
 bool fromstring(cstring s, double& out)
 {
@@ -376,12 +393,14 @@ bool fromstring(cstring s, float& out)
 // Arlib's float->string functions yield the shortest possible string that roundtrips, like Python,
 //  except I omit the fraction for integers, and I don't zero pad the exponent.
 // Like Python, I use decimal for 0.0001 to 9999999999999998 (inclusive), and scientific for anything else.
-// Upper threshold is because above that, rounding gets wonky. https://github.com/python/cpython/blob/v3.8.0/Python/pystrtod.c#L1116
-// Lower threshold is to match Python. I don't know why they chose that one, personally I would've kept it decimal for another digit.
-// Thresholds are same for float and double (even though float rounding gets wonky as soon as 16777217) because why wouldn't they.
-// However, tostring((float)0.1) is 0.1, not 0.10000000149011612.
+// Their rationale <https://github.com/python/cpython/blob/v3.8.0/Python/pystrtod.c#L1116> doesn't apply to this implementation
+//  (if it's integer, I format it as integer; if it's non-integer, it needs significant digits beyond the comma),
+//  and they don't seem to have a rationale at all for lower, but I can't find a compelling reason to deviate from their choice.
+// However, the functions respect the input type; tostring(0.1f) is 0.1, not 0.10000000149011612.
 
 #include "deps/dragonbox.h"
+static string tostring_float_part2(bool negative, bool fixed, int exponent, uint64_t significand);
+
 template<typename T>
 string tostring_float(T f)
 {
@@ -397,29 +416,35 @@ string tostring_float(T f)
 		return tostring((int64_t)f);
 	}
 	
+	bool fixed = (fabs(f) >= (T)0.0001 && fabs(f) < (T)10000000000000000.0);
 	namespace dbp = jkj::dragonbox::policy;
 	auto r = jkj::dragonbox::to_decimal<T>(f, dbp::cache::compact, dbp::trailing_zero::ignore, dbp::sign::ignore);
-	
-	while (r.significand%10 == 0)
+	return tostring_float_part2(signbit(f), fixed, r.exponent, r.significand);
+}
+
+// separate function so the template doesn't duplicate it
+static string tostring_float_part2(bool negative, bool fixed, int exponent, uint64_t significand)
+{
+	while (significand%10 == 0)
 	{
-		r.significand /= 10;
-		r.exponent++;
+		significand /= 10;
+		exponent++;
 	}
 	
 	char buf[64];
 	char* out = buf+32;
 	char* outend = buf+32;
 	
-	if (fabs(f) >= (T)0.0001 && fabs(f) < (T)10000000000000000.0)
+	if (fixed)
 	{
 		do {
-			if (r.exponent++ == 0) *--out = '.';
-			*--out = '0'+r.significand%10;
-			r.significand /= 10;
-		} while (r.significand);
-		if (r.exponent <= 0)
+			if (exponent++ == 0) *--out = '.';
+			*--out = '0'+significand%10;
+			significand /= 10;
+		} while (significand);
+		if (exponent <= 0)
 		{
-			while (++r.exponent <= 0)
+			while (++exponent <= 0)
 				*--out = '0';
 			*--out = '.';
 			*--out = '0';
@@ -427,34 +452,35 @@ string tostring_float(T f)
 	}
 	else
 	{
-		if (r.significand >= 10)
+		if (significand >= 10)
 		{
-			while (r.significand >= 10)
+			while (significand >= 10)
 			{
-				*--out = '0'+r.significand%10;
-				r.significand /= 10;
-				r.exponent++;
+				*--out = '0'+significand%10;
+				significand /= 10;
+				exponent++;
 			}
 			*--out = '.';
 		}
-		*--out = '0'+r.significand%10;
+		*--out = '0'+significand%10;
 		*(outend++) = 'e';
-		*(outend++) = (r.exponent < 0 ? '-' : '+');
-		r.exponent = abs(r.exponent);
-		if (r.exponent < 10) outend += 1; // only possible for negative exponents
-		else if (r.exponent < 100 || sizeof(T) == 4) outend += 2; // float goes from 1e-38 to 3e+38, double from 5e-324 to 1e+308
+		*(outend++) = (exponent < 0 ? '-' : '+');
+		exponent = abs(exponent);
+		if (exponent < 10) outend += 1; // only possible for negative exponents
+		else if (exponent < 100) outend += 2;
 		else outend += 3;
 		
 		char* expend = outend;
-		while (r.exponent)
+		while (exponent)
 		{
-			*--expend = '0'+r.exponent%10;
-			r.exponent /= 10;
+			*--expend = '0'+exponent%10;
+			exponent /= 10;
 		}
 	}
-	if (signbit(f)) *--out = '-';
+	if (negative) *--out = '-';
 	return bytesr((uint8_t*)out, outend-out);
 }
+
 string tostring(double f) { return tostring_float<double>(f); }
 string tostring(float f) { return tostring_float<float>(f); }
 
@@ -467,11 +493,10 @@ template<typename T> void testundec(const char * S, T V)
 	assert(fromstring(S, a));
 	
 	// bitcast it - -0.0 and nan equality is funny
-	static_assert(sizeof(T) <= sizeof(uint64_t));
-	uint64_t ai = 0;
-	uint64_t Vi = 0;
-	memcpy(&ai, &a, sizeof(T));
-	memcpy(&Vi, &V, sizeof(T));
+	using Ti = std::conditional_t<sizeof(T)==sizeof(uint32_t), uint32_t, uint64_t>;
+	static_assert(sizeof(T) == sizeof(Ti));
+	Ti ai = reinterpret<Ti>(a);
+	Ti Vi = reinterpret<Ti>(V);
 	if (ai != Vi)
 	{
 		test_nothrow
@@ -505,6 +530,7 @@ test("string conversion - float", "", "string")
 	testcall(testundec<double>("inf", HUGE_VAL));
 	testcall(testundec<double>("-inf", -HUGE_VAL));
 	assert(!fromstring("+inf", f));
+	assert(!fromstring("infinity", f));
 	assert(!fromstring("NAN", f));
 	assert(!fromstring("INF", f));
 	assert(!fromstring("-INF", f));
@@ -541,6 +567,7 @@ test("string conversion - float", "", "string")
 	assert(!fromstring("1.", f));
 	assert(!fromstring(".1", f));
 	assert(!fromstring(".", f));
+	assert(!fromstring("1.2.3", f));
 	assert(!fromstring("0e99999999999999999999n", f));
 	assert(!fromstring("", f));
 	assert(!fromstring("2,5", f)); // this is not the decimal separator, has never been and will never be
@@ -586,7 +613,8 @@ test("string conversion - float", "", "string")
 	// 0.0000000000000000000000000703853069185120912085918801714030697411 <- float closest to the input (rounded)
 	// 0.0000000000000000000000000703853100000000022281692450609677778769 <- double closest to the input (rounded)
 	// 0.0000000000000000000000000703853130814879132477466099505324860128 <- float closest to the above double (rounded)
-	// this is the most well known such problematic number, and the only one with <= 7 significand digits
+	// this is the most well known such problematic number, one of few that's a valid output from tostring(float),
+	//  and the only one with <= 7 significand digits
 	assert(fromstring("7.038531e-26", f));
 	assert_ne(f, (float)7.038531e-26);
 	assert_eq(f, 7.038531e-26f);
@@ -615,6 +643,10 @@ test("string conversion - float", "", "string")
 	assert( fromstring("340282346638528859811704183484516925440", f)); // max possible float; a few higher values round down to that,
 	assert_eq(f, 340282346638528859811704183484516925440.0f);
 	assert(!fromstring("340282356779733661637539395458142568448", f)); // but anything too big should be rejected
+	assert_eq(f, HUGE_VALF);
+	assert(!fromstring("355555555555555555555555555555555555555", f)); // ensure it's inf and not nan
+	assert_eq(f, HUGE_VALF);
+	assert(!fromstring("955555555555555555555555555555555555555", f));
 	assert_eq(f, HUGE_VALF);
 	assert(!fromstring("1e+10000", f));
 	assert_eq(f, HUGE_VALF);
@@ -645,6 +677,15 @@ test("string conversion - float", "", "string")
 	assert(!fromstring("1797693134862315907729305190789024733617976978942306572734300811577326758055009631327084773224075360211"
 	                   "2011387987139335765878976881441662249284743063947412437776789342486548527630221960124609411945308295208"
 	                   "5005768838150682342462881473913110540827237163350510684586298239947245938479716304835356329624224137216", d));
+	// more than the above, ensure it's inf and not nan
+	assert(!fromstring("1999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999"
+	                   "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+	                   "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000", d));
+	assert_eq(d, HUGE_VAL);
+	assert(!fromstring("9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999"
+	                   "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+	                   "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000", d));
+	assert_eq(d, HUGE_VAL);
 	// halfway between the highest two doubles - round to even
 	testcall(testundec<double>("1797693134862315608353258760581052985162070023416521662616611746258695532672923265745300992879465492467"
 	                           "5063149033587701752208710592698796290627760473556921329019091915239418047621712533496094635638726128664"
@@ -803,6 +844,17 @@ test("string conversion - float", "", "string")
 	                             "999999999999999999999999999999999999999",
 	                             2.225073858507201e-308));
 	
+	// decimal point after the 800th digit (with some extra 1s to ensure it can't just trim zeroes)
+	testcall(testundec<double>("10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+	                            "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+	                            "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+	                            "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+	                            "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+	                            "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+	                            "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+	                            "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+	                            "01000.0001e-805", 1.0));
+	
 	// https://www.exploringbinary.com/incorrectly-rounded-conversions-in-visual-c-plus-plus/
 	// many other troublesome numbers can be found at exploringbinary.com
 	// and https://github.com/ahrvoje/numerics/blob/master/strtod/strtod_tests.toml
@@ -889,7 +941,7 @@ test("string conversion - float", "", "string")
 	assert_eq(tostring(4.7019785e-38f), "4.7019785e-38");
 	assert_eq(tostring(9.40397050112110050170108664354930e-38f), "9.40397e-38"); // printing to 6 decimals gives nonzero last
 	assert_eq(tostring(0.00024414061044808477163314819336f), "0.00024414061");
-	assert_eq(tostring(0.00024414062500000000000000000000f), "0.00024414062"); // last digit should round to 2, not 3
+	assert_eq(tostring(0.00024414062500000000000000000000f), "0.00024414062"); // last digit should round to even, to 2
 	assert_eq(tostring(0.00024414065410383045673370361328f), "0.00024414065");
 	assert_eq(tostring(0.00000002980718250000791158527136f), "2.9807183e-8");
 	assert_eq(tostring(3.355445e+7f), "33554448"); // expanding shortest scientific notation to decimal gives wrong answer
@@ -897,4 +949,10 @@ test("string conversion - float", "", "string")
 	assert_eq(tostring(1.262177448e-29f), "1.2621775e-29"); // one of three increment-last floats in this ruleset
 	assert_eq(tostring(1.262177598e-29f), "1.2621776e-29"); // (the other two are 1.5474251e+26f and 1.2379401e+27f)
 	assert_eq(tostring(4.30373586499999995214071901727947988547384738922119140625e-15f), "4.303736e-15"); // easy to round wrong
+	
+	// there may be some numbers that give weird results if fpcw is set to float80 rather than float64 (i386 only)
+	// impossible for tostring (dragonbox uses memcpy on the float then exclusively integer math),
+	//  and for fromstring slow path (only float math is a double to float cast, where the double is already rounded),
+	//  but may be possible for fromstring fast path
+	// I did not investigate this
 }

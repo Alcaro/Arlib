@@ -654,7 +654,7 @@ void update_search()
 	
 	matches.sort([](match_t& a, match_t& b) {
 		if (a.penalty != b.penalty) return a.penalty < b.penalty;
-		return string::natless(a.fn, b.fn);
+		return string::inatless(a.fn, b.fn);
 	});
 	
 	c_search.reset();
@@ -781,7 +781,7 @@ again:
 	const string& next = c_playlist.items[playlist_cur_idx].filename;
 	if (next.startswith("$"))
 	{
-		ignore(system(1+(const char*)next));
+		(void)! system(1+(const char*)next);
 		playlist_cur_idx++;
 		goto again;
 	}

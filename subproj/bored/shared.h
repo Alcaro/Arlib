@@ -24,6 +24,12 @@ class receiver {
 		return ret;
 	}
 	
+	void do_error()
+	{
+		stop();
+		error();
+	}
+	
 	void handle()
 	{
 		if (!buf) buf.resize(4);
@@ -32,21 +38,21 @@ class receiver {
 		if (pos < 4)
 		{
 			int n = sock->recv(buf.skip(pos));
-			if (n < 0) { error(); return; }
+			if (n < 0) return do_error();
 			
 			pos += n;
 			if (pos == 4)
 			{
 				uint32_t len = readu_le32(buf.ptr());
-				if (len > 16*1024*1024) { error(); return; }
-				if (len < crypto_secretstream_xchacha20poly1305_ABYTES) { error(); return; }
+				if (len > 16*1024*1024) return do_error();
+				if (len < crypto_secretstream_xchacha20poly1305_ABYTES) return do_error();
 				buf.resize(len);
 			}
 		}
 		else
 		{
 			int n = sock->recv(buf.skip(pos-4));
-			if (n < 0) { error(); return; }
+			if (n < 0) return do_error();
 			pos += n;
 			
 			if (pos-4 == buf.size())
@@ -55,10 +61,11 @@ class receiver {
 				
 				if (!cryptrecv_inited)
 				{
-					if (buf.size() != crypto_secretstream_xchacha20poly1305_HEADERBYTES) { error(); return; }
+					if (buf.size() != crypto_secretstream_xchacha20poly1305_HEADERBYTES) return do_error();
 					crypto_secretstream_xchacha20poly1305_init_pull(&crypt_recv, buf.ptr(), the_key()); // oddly enough, this can't fail
 					
 					cryptrecv_inited = true;
+					cb(bytearray());
 				}
 				else
 				{
@@ -67,11 +74,8 @@ class receiver {
 					bytearray plain;
 					plain.resize(buf.size() - crypto_secretstream_xchacha20poly1305_ABYTES);
 					if (crypto_secretstream_xchacha20poly1305_pull(
-						&crypt_recv, plain.ptr(), NULL, NULL, buf.ptr(), buf.size(), NULL, 0) != 0)
-					{
-						error();
-						return;
-					}
+							&crypt_recv, plain.ptr(), NULL, NULL, buf.ptr(), buf.size(), NULL, 0) != 0)
+						return do_error();
 					cb(std::move(plain));
 				}
 				buf.reset();

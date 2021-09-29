@@ -178,54 +178,17 @@ int main(int argc, char** argv)
 	else mountpoint = file::realpath(argv[1]);
 	if (!mountpoint.endswith("/")) mountpoint += "/";
 	
-	static bool login_retry;
-	size_t addr_id = 0;
-	
-	static const char * address = NULL;
-	array<string> host_addresses;
-	
-again:
-	if (is_remote_exec)
-	{
-		address = remote_param[1];
-		login_retry = false;
-	}
-	else
-	{
-		if (!host_addresses)
-			host_addresses = file::readallt("hosts.txt").split("\n").where([](const string& s) { return s && s[0]!='#'; });
-		if (!host_addresses)
-		{
-			puts("error: no host address configured");
-			puts("put the IP or domain name of your desired target in hosts.txt");
-			puts("if your target is on DHCP or otherwise has a variable address, list all possible ones; each will be tried in order");
-			exit(1);
-		}
-		address = host_addresses[addr_id++];
-		login_retry = (addr_id < host_addresses.size());
-	}
+	static string address;
 	
 	receiver recv;
 	recvp = &recv;
-	recv.init(socket::create(address, 3339, runloop::global()),
-	              [](bytearray by){ request_rsp = std::move(by); runloop::global()->exit(); },
-	              [](){ puts("failed"); if (login_retry) { recvp->stop(); runloop::global()->exit(); } else exit(1); });
-	
-	if (!is_remote_exec)
-	{
-		puts((cstring)"connecting to "+address);
-		bytestreamw req;
-		req.u32l(REQ_PING);
-		req.u32l(0);
-		bytearray ret = request(req.finish());
-		if (!recv.alive()) goto again;
-		
-		puts("done");
-	}
-	login_retry = false;
-	
 	if (is_remote_exec)
 	{
+		address = remote_param[1];
+		recv.init(socket::create(address, 3339, runloop::global()),
+		              [](bytearray by){ request_rsp = std::move(by); runloop::global()->exit(); },
+		              [](){ puts("connection failed"); exit(1); });
+		
 		bytestreamw req;
 		req.u32l(REQ_EXEC);
 		
@@ -241,7 +204,7 @@ again:
 			if (by.size() < 4) return;
 			uint32_t type = readu_le32(by.ptr());
 			if (type == REQ_EXEC_STDOUT)
-				ignore(write(1, by.ptr()+4, by.size()-4));
+				(void)! write(1, by.ptr()+4, by.size()-4);
 			if (type == REQ_EXEC_EXIT && by.size() == 8)
 				exit(readu_le32(by.ptr()+4));
 		}, [](){ puts("sock error"); exit(1); });
@@ -261,6 +224,92 @@ again:
 		});
 		runloop::global()->enter();
 		exit(1);
+	}
+	
+	{
+		// process:
+		// - try to connect to every address
+		// - on first success: start state::t, 100ms
+		//    on expiry: break runloop
+		//     this leads to caller deleting all existing receivers
+		// - on any success including first:
+		//    if current one's idx < state::chosen_idx:
+		//     update chosen_idx
+		//     overwrite out with current one's receiver
+		// - if all fail: terminate process
+		
+		struct state;
+		struct target {
+			state* st;
+			size_t idx;
+			cstring address;
+			receiver recv;
+			
+			void connect_done(bool success);
+		};
+		
+		struct state {
+			size_t n_total;
+			size_t n_finished;
+			size_t chosen_idx;
+			DECL_G_TIMER(timeout, state);
+			array<target> hosts;
+			
+			void connect_done(target& t, bool success)
+			{
+				if (success && t.idx < chosen_idx)
+				{
+					if (chosen_idx == n_total)
+						timeout.set_once(100, [](){ runloop::global()->exit(); });
+					chosen_idx = t.idx;
+				}
+				
+				n_finished++;
+				if (n_finished == n_total && chosen_idx == n_total)
+					runloop::global()->exit();
+			}
+		};
+		
+		string tmp = file::readallt("hosts.txt");
+		state st;
+		for (cstring addr : tmp.csplit("\n"))
+		{
+			if (!addr || addr[0] == '#') continue;
+			target& t = st.hosts.append();
+			t.st = &st;
+			t.idx = st.hosts.size()-1;
+			t.address = addr;
+		}
+		if (!st.hosts)
+		{
+			puts("error: no host address configured");
+			puts("put the IP or domain name of your desired target in hosts.txt");
+			puts("if your target is on DHCP or otherwise has a variable address, list all possible ones; each will be tried in order");
+			exit(1);
+		}
+		st.n_total = st.hosts.size();
+		st.n_finished = 0;
+		st.chosen_idx = st.hosts.size();
+		
+		for (target& t : st.hosts)
+		{
+			t.recv.init(socket::create(t.address, 3339, runloop::global()),
+				[&t](bytearray by) { t.st->connect_done(t, true); },
+				[&t]() { t.st->connect_done(t, false); });
+		}
+		
+		runloop::global()->enter();
+		if (st.chosen_idx == st.n_total)
+		{
+			puts("connections failed");
+			exit(1);
+		}
+		
+		recv.consume(st.hosts[st.chosen_idx].recv);
+		recv.callback([](bytearray by){ request_rsp = std::move(by); runloop::global()->exit(); },
+		              [](){ puts("failed"); exit(1); });
+		address = st.hosts[st.chosen_idx].address;
+		st.hosts.reset();
 	}
 	
 	auto perftest = [](size_t sendamt, size_t recvamt, size_t count){
@@ -356,7 +405,7 @@ again:
 	{
 		int linux_flags = fi->flags;
 		linux_flags &= ~__O_LARGEFILE;
-		linux_flags &= ~O_NOFOLLOW; // symlinks don't exist on windows anyways
+		linux_flags &= ~O_NOFOLLOW; // symlinks are near-extinct on windows anyways
 		linux_flags &= ~O_NONBLOCK; // I don't know why this is passed to fuse, doesn't make any sense over here
 //printf("cr=%d fl=%o flok=%o\n",create,linux_flags,O_ACCMODE | O_APPEND | O_CREAT | O_EXCL | O_NOATIME | O_TRUNC);
 		if (linux_flags & ~(O_ACCMODE | O_APPEND | O_CREAT | O_EXCL | O_NOATIME | O_TRUNC))
@@ -390,7 +439,7 @@ again:
 	};
 	f_ops.open = [](const char * path, struct fuse_file_info * fi) -> int
 	{
-		if (fi->flags == (FMODE_EXEC|__O_LARGEFILE))
+		if (fi->flags & FMODE_EXEC)
 		{
 			my_file* f = new my_file;
 			f->is_exec = true;

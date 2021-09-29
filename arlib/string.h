@@ -385,10 +385,10 @@ class string : public cstring {
 	
 	void init_from(const char * str)
 	{
-		if (!str) str = "";
+		//if (!str) str = "";
 		init_from((uint8_t*)str, strlen(str));
 	}
-	void init_from(const uint8_t * str, size_t len)
+	forceinline void init_from(const uint8_t * str, size_t len)
 	{
 		if (__builtin_constant_p(len))
 		{
@@ -402,7 +402,7 @@ class string : public cstring {
 		}
 		else init_from_outline(str, len);
 	}
-	void init_from(arrayview<uint8_t> data) { init_from(data.ptr(), data.size()); }
+	forceinline void init_from(arrayview<uint8_t> data) { init_from(data.ptr(), data.size()); }
 	void init_from_outline(const uint8_t * str, size_t len);
 	void init_from_large(const uint8_t * str, size_t len);
 	void init_from(const cstring& other);
@@ -497,23 +497,23 @@ public:
 #endif
 	}
 	template<typename T, typename Ttest = std::enable_if_t<std::is_same_v<T,const char*> || std::is_same_v<T,char*>>>
-	string(T str) : cstring(noinit()) { init_from(str); } // disgusting hack to optimize string literal arguments
-	template<size_t N> string(const char (&str)[N]) : cstring(noinit()) { init_from_literal<N>(str); }
-	template<size_t N> string(char (&str)[N]) : cstring(noinit()) { init_from(str); } // hack on a hack - char buf[32] isn't a literal
+	forceinline string(T str) : cstring(noinit()) { init_from(str); } // disgusting hack to optimize string literal arguments
+	template<size_t N> forceinline string(const char (&str)[N]) : cstring(noinit()) { init_from_literal<N>(str); }
+	template<size_t N> forceinline string(char (&str)[N]) : cstring(noinit()) { init_from(str); } // hack on a hack - char buf[32] isn't a literal
 #else
-	string(const char * str) : cstring(noinit()) { init_from(str); }
+	forceinline string(const char * str) : cstring(noinit()) { init_from(str); }
 #endif
 	
-	string(cstring other) : cstring(noinit()) { init_from(other); }
-	string(arrayview<uint8_t> bytes) : cstring(noinit()) { init_from(bytes); }
-	string(arrayview<char> chars) : cstring(noinit()) { init_from(chars.reinterpret<uint8_t>()); }
+	forceinline string(cstring other) : cstring(noinit()) { init_from(other); }
+	forceinline string(arrayview<uint8_t> bytes) : cstring(noinit()) { init_from(bytes); }
+	forceinline string(arrayview<char> chars) : cstring(noinit()) { init_from(chars.reinterpret<uint8_t>()); }
 	string(array<uint8_t>&& bytes);
-	string(nullptr_t) : cstring(noinit()) { init_empty(); }
-	string& operator=(const string& other) { reinit_from(other); return *this; }
-	string& operator=(const cstring& other) { reinit_from(other); return *this; }
-	string& operator=(string&& other) { reinit_from(std::move(other)); return *this; }
-	string& operator=(const char * str) { reinit_from(str); return *this; }
-	string& operator=(nullptr_t) { release(); init_empty(); return *this; }
+	forceinline string(nullptr_t) = delete;
+	forceinline string& operator=(const string& other) { reinit_from(other); return *this; }
+	forceinline string& operator=(const cstring& other) { reinit_from(other); return *this; }
+	forceinline string& operator=(string&& other) { reinit_from(std::move(other)); return *this; }
+	forceinline string& operator=(const char * str) { reinit_from(str); return *this; }
+	forceinline string& operator=(nullptr_t) { release(); init_empty(); return *this; }
 	~string() { release(); }
 	
 	explicit operator bool() const { return length() != 0; }
@@ -543,7 +543,7 @@ public:
 	//Comparison is bytewise. End goes before NUL, so the empty string comes before everything else.
 	//The return value is not guaranteed to be in [-1..1]. It's not even guaranteed to fit in anything smaller than int.
 	static int compare3(cstring a, cstring b);
-	//Like the above, but case insensitive. Considers ASCII only, øØ are considered nonequal.
+	//Like the above, but case insensitive (treat every letter as uppercase). Considers ASCII only, øØ are considered nonequal.
 	//If the strings are case-insensitively equal, uppercase goes first.
 	static int icompare3(cstring a, cstring b);
 	static bool less(cstring a, cstring b) { return compare3(a, b) < 0; }
@@ -553,11 +553,13 @@ public:
 	//Exact rules:
 	//  Strings are compared component by component. A component is either a digit sequence, or a non-digit. 8 < 10, 2 = 02
 	//  - and . are not part of the digit sequence. -1 < -2, 1.2 < 1.03
-	//  If the strings are otherwise equal, repeat the comparison, but with 2 < 02. If still equal, let A < a.
-	//Correct sorting is a1 a2 a02 a2a a2a1 a02a2 a2a3 a2b a02b A3A A3a a3A a3a A03A A03a a03A a03a a10 a11 aa
-	static int natcompare3(cstring a, cstring b) { return string::natcompare3(a, b, false); }
+	//  If the strings are otherwise equal, repeat the comparison, but with 2 < 02. If still equal, repeat case sensitively (if applicable).
+	//  Digits (0x30-0x39) belong after $ (0x24), but before @ (0x40).
+	//Correct sorting is a$ a1 a2 a02 a2a a2a1 a02a2 a2a3 a2b a02b A3A A3a a3A a3a A03A A03a a03A a03a a10 a11 aa a@
+	//It's named snat... instead of nat... because case sensitive natural comparison is probably a mistake; it shouldn't be the default.
+	static int snatcompare3(cstring a, cstring b) { return string::natcompare3(a, b, false); }
 	static int inatcompare3(cstring a, cstring b) { return string::natcompare3(a, b, true); }
-	static bool natless(cstring a, cstring b) { return natcompare3(a, b) < 0; }
+	static bool snatless(cstring a, cstring b) { return snatcompare3(a, b) < 0; }
 	static bool inatless(cstring a, cstring b) { return inatcompare3(a, b) < 0; }
 private:
 	static int natcompare3(cstring a, cstring b, bool case_insensitive);

@@ -22,7 +22,7 @@
 #    undef _WIN32_WINNT
 #    define _WIN32_WINNT _WIN32_WINNT_WS03 // _WIN32_WINNT_WINXP excludes SetDllDirectory, so I need to put it at 0x0502
 #    define NTDDI_VERSION NTDDI_WS03 // actually NTDDI_WINXPSP2, but mingw sddkddkver.h gets angry about that
-#    define _WIN32_IE _WIN32_IE_IE60SP2
+#    define _WIN32_IE _WIN32_IE_IE60SP2 // I don't know what this one controls
 #  endif
 #  define WIN32_LEAN_AND_MEAN
 #  define strcasecmp _stricmp
@@ -36,7 +36,6 @@
 // (on some 32bit mingw versions, it also adds a dependency on libgcc_s_sjlj-1.dll)
 // extra kilobytes and dlls is the opposite of what I want, and my want is stronger, so here's some shenanigans
 // comments say libstdc++ demands a POSIX printf, but I don't use libstdc++'s text functions, so I don't care
-// msvcrt strtod also rounds wrong sometimes, but it's right for all plausible inputs, so I don't care about that either
 #    define __USE_MINGW_ANSI_STDIO 0 // trigger a warning if it's enabled already - probably wrong include order
 #    include <cstdbool>              // include some random c++ header; they all include <bits/c++config.h>,
 #    undef __USE_MINGW_ANSI_STDIO    // which ignores my #define above and sets this flag; re-clear it before including <stdio.h>
@@ -78,7 +77,7 @@ void srand(unsigned) __attribute__((deprecated("g_rand doesn't need this")));
 #define __has_include(x) false
 #endif
 
-// in case something is technically undefined behavior, but works as long as compiler can't prove that
+// in case something is technically undefined behavior, but works as long as compiler can't prove anything
 template<typename T> T launder(T v)
 {
 	__asm__("" : "+r"(v));
@@ -266,7 +265,7 @@ void free_test(void* ptr);
 #endif
 
 // These six act as their base functions if they return non-NULL, except they return anyptr and don't need explicit casts.
-// On NULL, try_ returns NULL, while xmalloc kills the process.
+// On failure, try_ returns NULL, while xmalloc kills the process.
 
 // Arlib recommends using xmalloc. It means a malloc call can terminate the process, but that's already the case - either directly,
 //  via Linux OOM killer, or indirectly, via the machine being bogged down with infinite swap until user reboots it.
@@ -287,9 +286,6 @@ anyptr xcalloc(size_t size, size_t count);
 inline anyptr try_calloc(size_t size, size_t count) { _test_malloc(); return calloc(size, count); }
 void* calloc(size_t,size_t) __attribute__((deprecated("use xcalloc or try_calloc instead")));
 
-
-//cast to void should be enough to shut up warn_unused_result, but...
-template<typename T> static inline void ignore(T t) {}
 
 template<typename T, typename T2> forceinline T reinterpret(T2 in)
 {
@@ -771,9 +767,7 @@ template<typename Tc, typename Ti> Tc* container_of(Ti* ptr, Ti Tc:: * memb)
 {
 	// https://wg21.link/P0908 proposes a better solution, but it was forgotten and not accepted
 	Tc* fake_object = (Tc*)0x12345678;  // doing math on a fake pointer is UB, but good luck proving that one is bogus
-#ifdef __GNUC__
-	__asm__("nop" : "+r"(fake_object)); // especially across an asm (both gcc and clang optimize out the asm and the fake pointer)
-#endif
+	fake_object = launder(fake_object); // especially across an asm (both gcc and clang will optimize out the fake pointer)
 	size_t offset = (uintptr_t)&(fake_object->*memb) - (uintptr_t)fake_object;
 	return (Tc*)((uint8_t*)ptr - offset);
 }

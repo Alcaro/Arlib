@@ -417,7 +417,8 @@ int main(int argc, char** argv)
 	SetCurrentDirectory("C:\\");
 	
 again:
-	socketlisten* listen = socketlisten::create(3339, runloop::global(), [](autoptr<socket> sock) {
+	socketlisten* listen = socketlisten::create(3339, runloop::global(),
+		[](autoptr<socket> sock) {
 			for (size_t n=0;n<handlers.size();n++)
 			{
 				if (!handlers[n].recv.alive()) handlers.remove(n--);

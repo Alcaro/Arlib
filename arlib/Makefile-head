@@ -51,33 +51,20 @@ ifeq ($(OS),Windows_NT)
   OS = windows
 endif
 ifeq ($(OS),)
-  dumpmachine := $(shell $(CXX) -dumpmachine)
-  ifneq ($(findstring mingw,$(dumpmachine)),)
+  DUMPMACHINE := $(shell $(CXX) -dumpmachine)
+  ifneq ($(findstring mingw,$(DUMPMACHINE)),)
     OS := windows
-  else ifneq ($(findstring linux,$(dumpmachine)),)
+  else ifneq ($(findstring linux,$(DUMPMACHINE)),)
     OS := linux
   else
-    $(error unrecognized OS $(dumpmachine))
+    $(error unrecognized OS $(DUMPMACHINE))
   endif
 endif
 
-#ifeq ($(OS),Windows_NT)
-#  OS = windows
-#else
-#  UNAME_S := $(shell uname -s)
-#  ifeq ($(UNAME_S),Linux)
-#    OS = linux
-#  else ifeq ($(UNAME_S),Darwin)
-#    OS = osx
-#  else ifeq ($(UNAME_S),)
-#    $(error couldn't execute uname -s)
-#  else
-#    $(error unrecognized OS $(UNAME_S))
-#  endif
-#endif
-
 ifeq ($(OS),windows)
-  DUMPMACHINE := $(shell $(CC) -dumpmachine)
+  ifeq ($(DUMPMACHINE),)
+    DUMPMACHINE := $(shell $(CC) -dumpmachine)
+  endif
   ifeq ($(DUMPMACHINE),i686-w64-mingw32)
     WINBITS = 32
   else ifeq ($(DUMPMACHINE),x86_64-w64-mingw32)
