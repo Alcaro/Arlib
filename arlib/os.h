@@ -187,8 +187,9 @@ public:
 		t.reset();
 	}
 	
-	// This is mostly the same as the global launder function, but guarantees that the input is computed for every iteration.
-	// Most of the time, your loop contains a function all, which is a sufficient compiler barrier. But this one's available if it's needed.
+	// This is mostly the same as the global launder function, but guarantees that the input is
+	//  computed for every iteration and not optimized out. A function call is a sufficient compiler
+	//  barrier most of the time, but it's available if needed.
 	template<typename T> static T launder(T v)
 	{
 		__asm__ volatile("" : "+r"(v));
@@ -197,6 +198,6 @@ public:
 };
 
 #ifdef _WIN32
-#define gmtime_r(a,b) (*(b)=*gmtime(a)) // this is safe, gmtime() returns a thread local
+#define gmtime_r(a,b) (*(b) = *gmtime(a)) // this is safe, gmtime() returns a thread local
 time_t timegm(struct tm * t); // similar to mktime, but UTC timezone
 #endif

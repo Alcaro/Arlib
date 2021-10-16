@@ -14,7 +14,7 @@
 // - require decimal point, even for integers
 // - choose fixed or scientific per shortest length, not based on the input's magnitude
 // - always use at least two digits in the exponent
-// all of which are in the rest suite, except >10000 chars
+// all of which are in the test suite, except >10000 chars
 #endif
 
 struct floatinf {

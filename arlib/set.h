@@ -413,7 +413,7 @@ public:
 	get_create(const Tkey& key, Tvc&& cr)
 	{
 		node* ret = items.get_or_null(key);
-		if (ret) return &ret->value;
+		if (ret) return ret->value;
 		else return items.get_create(node(key, cr()), true).value;
 	}
 	Tvalue& operator[](const Tkey& key) // C# does this better...
