@@ -18,7 +18,7 @@ ARSOCKET_SSL_WINDOWS = schannel bearssl
 # 1 - enable console window
 # 0 - disable console window, and delete every printf and puts call, since they don't work and just waste space
 # error - disable console window, and turn printf and puts into errors, as a reminder that they don't work
-# hybrid - disable console window, but compile printf/puts calls; if the program calls window_console_attach(), they will work
+# hybrid - disable console window, but compile printf/puts calls; if the program calls terminal_enable(), they will work
 # Ignored on Linux.
 ARTERMINAL = 1
 

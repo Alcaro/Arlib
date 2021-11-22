@@ -3,6 +3,33 @@
 #include "arlib.h"
 #include "libsodium-1.0.18-stable/src/libsodium/include/sodium.h"
 
+static uint8_t the_key[] = {
+#include "the_key.h"
+};
+static_assert(sizeof(the_key) == crypto_secretstream_xchacha20poly1305_KEYBYTES);
+
+static bool init_key(string key_text)
+{
+	if (!key_text)
+	{
+		return true;
+	}
+	else if (key_text.length() == sizeof(the_key)*2 && fromstringhex(key_text, the_key))
+	{
+		return true;
+	}
+	else if (key_text.length() <= sizeof(the_key))
+	{
+		memset(the_key, 0, sizeof(the_key));
+		memcpy(the_key, key_text.bytes().ptr(), key_text.length());
+		return true;
+	}
+	else
+	{
+		return false;
+	}
+}
+
 class receiver {
 	size_t pos = 0;
 	bytearray buf;
@@ -14,15 +41,6 @@ class receiver {
 	autoptr<socket> sock;
 	function<void(bytearray)> cb;
 	function<void()> error;
-	
-	static const uint8_t* the_key()
-	{
-		static const uint8_t ret[] = {
-#include "the_key.h"
-		};
-		static_assert(sizeof(ret) == crypto_secretstream_xchacha20poly1305_KEYBYTES);
-		return ret;
-	}
 	
 	void do_error()
 	{
@@ -62,7 +80,7 @@ class receiver {
 				if (!cryptrecv_inited)
 				{
 					if (buf.size() != crypto_secretstream_xchacha20poly1305_HEADERBYTES) return do_error();
-					crypto_secretstream_xchacha20poly1305_init_pull(&crypt_recv, buf.ptr(), the_key()); // oddly enough, this can't fail
+					crypto_secretstream_xchacha20poly1305_init_pull(&crypt_recv, buf.ptr(), the_key); // oddly enough, this can't fail
 					
 					cryptrecv_inited = true;
 					cb(bytearray());
@@ -95,7 +113,7 @@ public:
 		this->sock->callback(bind_this(&receiver::handle));
 		
 		uint8_t header[sizeof(uint32_t) + crypto_secretstream_xchacha20poly1305_HEADERBYTES];
-		crypto_secretstream_xchacha20poly1305_init_push(&crypt_send, header+sizeof(uint32_t), the_key());
+		crypto_secretstream_xchacha20poly1305_init_push(&crypt_send, header+sizeof(uint32_t), the_key);
 		writeu_le32(header, crypto_secretstream_xchacha20poly1305_HEADERBYTES);
 		this->sock->send(header);
 	}
@@ -128,9 +146,10 @@ public:
 };
 
 // wire format: everything is in chunks
-// chunk format: u32 ciphertext length, then libsodium crypto_secretstream_xchacha20poly1305 data, using a hardcoded key
+// chunk format: u32 ciphertext length, then libsodium crypto_secretstream_xchacha20poly1305 data; key agreement is a separate mechanism
 // first chunk must be the header (24 bytes), anything subsequent is body data (min 17 bytes)
 // applies in both directions
+// all pathnames must start with a /; readdir return value is filename only, no path
 // the tag byte is not used (other than libsodium detecting rekey requests)
 
 // chunk contents:

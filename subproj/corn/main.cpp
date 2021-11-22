@@ -527,7 +527,7 @@ GtkWidget* make_progress()
 void init_common()
 {
 	c_common.reset();
-	for (string line : file::readallt(file::exepath()+"common.txt").split("\n"))
+	for (string line : file::readallt(file::exedir()+"common.txt").split("\n"))
 	{
 		if (line)
 			c_common.add(MUSIC_DIR+line);

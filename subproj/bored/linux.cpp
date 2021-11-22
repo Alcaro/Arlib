@@ -5,6 +5,7 @@
 #include <fuse.h>
 #include <errno.h>
 #include "shared.h"
+#include <sys/ioctl.h>
 
 #if !defined(__O_LARGEFILE) || __O_LARGEFILE==0
 #undef __O_LARGEFILE
@@ -108,8 +109,6 @@ static arrayview<string> cache_dir_get(const char * path)
 struct my_file {
 	bool is_exec;
 	
-	string exec_contents;
-	
 	
 	int fd;
 	
@@ -153,39 +152,47 @@ struct my_file {
 };
 
 
+#define EXEC_PARAMS_SIZE 1024
+#define IOCTL_EXEC_PARAMS _IOC(_IOC_READ,0xB0,0,EXEC_PARAMS_SIZE)
+
 int main(int argc, char** argv)
 {
 	if (sodium_init() < 0) abort();
+	static string exec_contents = (cstring)"#!"+file::exepath()+" --remote-exec";
 	
 	// remote exec is implemented as file content
-	//  #!/home/alcaro/Desktop/bored/bored --remote-exec 192.168.0.1 /home/alcaro/Desktop/bored/mnt/ /Windows/System32/cmd.exe
+	//  #!/home/alcaro/Desktop/bored/bored --remote-exec
+	//  192.168.0.1 3339 hunter2 /home/alcaro/Desktop/bored/mnt/ /Windows/System32/cmd.exe
 	// argv[0] is /home/alcaro/Desktop/bored/bored
-	// argv[1] is --remote-exec 192.168.0.1 /home/alcaro/Desktop/bored/mnt/ /Windows/System32/cmd.exe
-	//  (identifier, host address, mount point, mount-relative executable)
+	// argv[1] is --remote-exec
 	// argv[2] is the .exe, possibly relative to caller process' cwd
 	// argv[3]+ is the actual arguments
-	array<string> remote_param;
-	bool is_remote_exec = false;
-	if (argv[1])
+	// argv[2] will be opened and a BoredomFS-only ioctl issued, returning linebreak-separated
+	//  IP address, port, key, mount path, mount-relative exe filename
+	
+	if (argv[1] && !strcmp(argv[1], "--remote-exec"))
 	{
-		remote_param = cstring(argv[1]).split<3>(" ");
-		is_remote_exec = (remote_param[0] == "--remote-exec");
-	}
-	
-	static string mountpoint;
-	if (is_remote_exec) mountpoint = remote_param[2];
-	else if (argc == 1) mountpoint = file::realpath("mnt");
-	else mountpoint = file::realpath(argv[1]);
-	if (!mountpoint.endswith("/")) mountpoint += "/";
-	
-	static string address;
-	
-	receiver recv;
-	recvp = &recv;
-	if (is_remote_exec)
-	{
-		address = remote_param[1];
-		recv.init(socket::create(address, 3339, runloop::global()),
+		char buf[EXEC_PARAMS_SIZE];
+		int fd = open(argv[2], O_RDONLY);
+		if (fd < 0 || ioctl(fd, IOCTL_EXEC_PARAMS, buf) < 0)
+		{
+			puts("internal error");
+			exit(1);
+		}
+		close(fd);
+		array<cstring> remote_param = cstring(buf).csplit("\n");
+		
+		if (!init_key(remote_param[2]))
+		{
+			puts("bad key");
+			return 1;
+		}
+		
+		string mountpoint = remote_param[3];
+		
+		receiver recv;
+		recvp = &recv;
+		recv.init(socket::create(remote_param[0], try_fromstring<uint16_t>(remote_param[1]), runloop::global()),
 		              [](bytearray by){ request_rsp = std::move(by); runloop::global()->exit(); },
 		              [](){ puts("connection failed"); exit(1); });
 		
@@ -196,7 +203,7 @@ int main(int argc, char** argv)
 			req.strnul(file::cwd().substr(mountpoint.length()-1, ~0));
 		else
 			req.strnul("/");
-		req.strnul(remote_param[3]);
+		req.strnul(remote_param[4]);
 		for (int i=3;i<argc;i++) req.strnul(argv[i]);
 		
 		bytearray rsp_buf = request(req.finish());
@@ -225,6 +232,35 @@ int main(int argc, char** argv)
 		runloop::global()->enter();
 		exit(1);
 	}
+	
+	string host;
+	static uint16_t port = 3339;
+	array<string> fuse_args;
+	string key_text;
+	string remote_exec;
+	
+	argparse args;
+	args.add('h', "host", &host);
+	args.add('p', "port", &port);
+	args.add('k', "key", &key_text);
+	args.add("", &fuse_args);
+	args.parse(argv);
+	
+	if (!init_key(key_text))
+	{
+		puts("bad key");
+		return 1;
+	}
+	
+	if (!fuse_args) fuse_args.append("mnt");
+	
+	static string mountpoint = file::realpath(fuse_args[fuse_args.size()-1]);
+	if (!mountpoint.endswith("/")) mountpoint += "/";
+	
+	static string address;
+	
+	receiver recv;
+	recvp = &recv;
 	
 	{
 		// process:
@@ -270,7 +306,9 @@ int main(int argc, char** argv)
 			}
 		};
 		
-		string tmp = file::readallt("hosts.txt");
+		string tmp;
+		if (host) tmp = host;
+		else tmp = file::readallt("hosts.txt");
 		state st;
 		for (cstring addr : tmp.csplit("\n"))
 		{
@@ -293,7 +331,7 @@ int main(int argc, char** argv)
 		
 		for (target& t : st.hosts)
 		{
-			t.recv.init(socket::create(t.address, 3339, runloop::global()),
+			t.recv.init(socket::create(t.address, port, runloop::global()),
 				[&t](bytearray by) { t.st->connect_done(t, true); },
 				[&t]() { t.st->connect_done(t, false); });
 		}
@@ -443,7 +481,6 @@ int main(int argc, char** argv)
 		{
 			my_file* f = new my_file;
 			f->is_exec = true;
-			f->exec_contents = (cstring)"#!"+file::exepath()+"bored --remote-exec "+address+" "+mountpoint+" "+path+"\n";
 			fi->fh = (uintptr_t)f;
 			return 0;
 		}
@@ -461,8 +498,8 @@ int main(int argc, char** argv)
 		
 		if (f->is_exec)
 		{
-			size_t actual = min(size, f->exec_contents.length()-offset);
-			memcpy(buf, f->exec_contents.bytes().ptr()+offset, actual);
+			size_t actual = min(size, exec_contents.length()-offset);
+			memcpy(buf, exec_contents.bytes().ptr()+offset, actual);
 			return actual;
 		}
 		
@@ -561,6 +598,20 @@ int main(int argc, char** argv)
 		if (rsp_buf) return 0;
 		else return -ENOENT;
 	};
+	f_ops.ioctl = [](const char * path, int cmd, void* arg,
+	                 struct fuse_file_info * fi, unsigned int flags, void* data) -> int
+	{
+		if ((unsigned int)cmd == IOCTL_EXEC_PARAMS)
+		{
+			string params = address+"\n"+tostring(port)+"\n"+tostringhex(the_key)+"\n"+mountpoint+"\n"+path;
+			if (params.length() >= EXEC_PARAMS_SIZE) return -ENOBUFS;
+			
+			memset(data, 0, EXEC_PARAMS_SIZE);
+			memcpy(data, params.bytes().ptr(), params.length());
+			return 0;
+		}
+		return -ENOSYS;
+	};
 	
 	array<const char *> my_argv;
 	my_argv.append(argv[0]);
@@ -571,8 +622,7 @@ int main(int argc, char** argv)
 	my_argv.append("-o"); my_argv.append("hard_remove"); // don't pretend to remove files (documented not recommended, I'll find out why)
 	my_argv.append("-o"); my_argv.append("atomic_o_trunc"); // pass O_TRUNC to open(), don't call truncate() first
 	my_argv.append("-o"); my_argv.append("big_writes"); // write more than 4KB at the time
-	if (argc == 1) my_argv.append(mountpoint);
-	for (int i=1;i<argc;i++) my_argv.append(argv[i]);
+	for (string& arg : fuse_args) my_argv.append(arg);
 	my_argv.append(NULL);
 	fuse_main(my_argv.size()-1, (char**)my_argv.ptr(), &f_ops, NULL);
 	return 0;

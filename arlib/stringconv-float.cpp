@@ -431,9 +431,9 @@ static string tostring_float_part2(bool negative, bool fixed, int exponent, uint
 		exponent++;
 	}
 	
-	char buf[64];
-	char* out = buf+32;
-	char* outend = buf+32;
+	char buf[23+5]; // float uses max 9 chars left and 4 right (-1.2345678e+23), or 17 left and 0 right (-1234567948140544)
+	char* out = buf+23; // double uses max 19+5 (-1.2345678901234567e+123) or 23+0 (-0.00012345678901234567)
+	char* outend = buf+23;
 	
 	if (fixed)
 	{
@@ -949,6 +949,8 @@ test("string conversion - float", "", "string")
 	assert_eq(tostring(1.262177448e-29f), "1.2621775e-29"); // one of three increment-last floats in this ruleset
 	assert_eq(tostring(1.262177598e-29f), "1.2621776e-29"); // (the other two are 1.5474251e+26f and 1.2379401e+27f)
 	assert_eq(tostring(4.30373586499999995214071901727947988547384738922119140625e-15f), "4.303736e-15"); // easy to round wrong
+	assert_eq(tostring(-1234567948140544.0f), "-1234567948140544"); // longest float
+	assert_eq(tostring(-1.2345678e+23f), "-1.2345678e+23"); // longest float in exponential form
 	
 	// there may be some numbers that give weird results if fpcw is set to float80 rather than float64 (i386 only)
 	// impossible for tostring (dragonbox uses memcpy on the float then exclusively integer math),

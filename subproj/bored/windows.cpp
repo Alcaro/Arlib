@@ -3,6 +3,9 @@
 #include "arlib.h"
 #include "shared.h"
 
+static string root = "C:/";
+static bool no_exec = false;
+
 struct linux_filetime {
 	uint32_t sec;
 	uint32_t nsec;
@@ -33,7 +36,7 @@ static void write_stat(bytestreamw& out, bool ok, const char * fn, DWORD attr,
 	uint8_t type;
 	if (!ok) type = 0;
 	else if (attr & FILE_ATTRIBUTE_DIRECTORY) type = 1;
-	else if (strstr(fn, ".exe") && strstr(fn, ".exe")[4]=='\0') type = 3;
+	else if (strstr(fn, ".exe") && strstr(fn, ".exe")[4]=='\0' && !no_exec) type = 3;
 	else type = 2;
 	out.u8(type);
 	
@@ -71,14 +74,27 @@ again:
 	// (Wine allows ReadFileEx on synchronous pipes, but detecting that would be more effort than it's worth)
 }
 
+class bored_bytestream : public bytestream
+{
+public:
+	using bytestream::bytestream;
+	
+	string pathname()
+	{
+		string tmp = strnul_ptr()+1;
+		if (!tmp) return root;
+		return root+file::sanitize_rel_path(tmp);
+	}
+};
+
 class handler;
-static bytearray reqexec_begin(handler& src, bytestream req);
+static bytearray reqexec_begin(handler& src, bored_bytestream req);
 class handler {
 public:
 	receiver recv;
 	array<HANDLE> fds;
 	
-	bytearray handle(uint32_t type, bytestream req)
+	bytearray handle(uint32_t type, bored_bytestream req)
 	{
 		//printf("handling %u\n", (unsigned)type);
 		
@@ -87,9 +103,7 @@ public:
 		{
 		case REQ_STAT:
 		{
-			const char * fn = req.strnul_ptr()+1;
-			if (!*fn) fn = ".";
-			
+			string fn = req.pathname();
 			WIN32_FILE_ATTRIBUTE_DATA stat = {};
 			bool ok = GetFileAttributesExA(fn, GetFileExInfoStandard, &stat);
 			
@@ -99,11 +113,8 @@ public:
 		break;
 		case REQ_READDIR:
 		{
-			const char * fn = req.strnul_ptr()+1;
-			if (!*fn) fn = ".";
-			
 			WIN32_FIND_DATA find;
-			HANDLE h = FindFirstFile(cstring(fn)+"/*", &find);
+			HANDLE h = FindFirstFile(req.pathname()+"/*", &find);
 			if (h == INVALID_HANDLE_VALUE)
 			{
 				if (GetLastError() == ERROR_FILE_NOT_FOUND) ret.u8(0); // special case empty dir... windows, why are you like this...
@@ -124,8 +135,7 @@ public:
 		
 		case REQ_OPEN:
 		{
-			const char * fn = req.strnul_ptr()+1;
-			if (!*fn) fn = ".";
+			string fn = req.pathname();
 			uint32_t my_flags = req.u32l();
 			
 			DWORD access = ((my_flags&8) ? (GENERIC_READ|FILE_APPEND_DATA) : (my_flags&3) ? (GENERIC_READ|GENERIC_WRITE) : GENERIC_READ);
@@ -189,27 +199,24 @@ public:
 		
 		case REQ_RENAME:
 		{
-			const char * src = req.strnul_ptr()+1;
-			const char * dst = req.strnul_ptr()+1;
+			string src = req.pathname();
+			string dst = req.pathname();
 			if (MoveFile(src, dst)) ret.u8(1);
 		}
 		break;
 		case REQ_DELETE:
 		{
-			const char * fn = req.strnul_ptr()+1;
-			if (DeleteFile(fn)) ret.u8(1);
+			if (DeleteFile(req.pathname())) ret.u8(1);
 		}
 		break;
 		case REQ_MKDIR:
 		{
-			const char * fn = req.strnul_ptr()+1;
-			if (CreateDirectory(fn, NULL)) ret.u8(1);
+			if (CreateDirectory(req.pathname(), NULL)) ret.u8(1);
 		}
 		break;
 		case REQ_RMDIR:
 		{
-			const char * fn = req.strnul_ptr()+1;
-			if (RemoveDirectory(fn)) ret.u8(1);
+			if (RemoveDirectory(req.pathname())) ret.u8(1);
 		}
 		break;
 		
@@ -224,6 +231,7 @@ public:
 		break;
 		case REQ_EXEC:
 		{
+			if (no_exec) break;
 			return reqexec_begin(*this, req);
 		}
 		break;
@@ -237,7 +245,7 @@ public:
 	{
 		if (by.size() < 4) return;
 //puts("-> "+tostringhex_dbg(by));
-		bytearray ret = handle(readu_le32(by.ptr()), bytestream(by.skip(4)));
+		bytearray ret = handle(readu_le32(by.ptr()), bored_bytestream(by.skip(4)));
 //puts("<- "+tostringhex_dbg(ret));
 		
 		if (recv.alive()) recv.send(ret);
@@ -353,15 +361,17 @@ public:
 	}
 };
 refarray<exechandler> exechandlers;
-static bytearray reqexec_begin(handler& src, bytestream req)
+static bytearray reqexec_begin(handler& src, bored_bytestream req)
 {
 	// the only way I can find to determine if a process is CLI or GUI is SHGetFileInfoW, which requires COM for whatever reason
 	// GetBinaryType exists, but doesn't differentiate CLI from GUI
 	// let's just pretend everything is CLI
 	
-	string cwd = "C:"+req.strnul();
+	string cwd = req.pathname();
 	
-	string exe = req.strnul().replace("/","\\"); // executing /windows/system32/cmd.exe is interpreted as 'md .exe' aka mkdir
+	// executing /windows/system32/cmd.exe is interpreted as '/c md .exe' aka mkdir
+	string exe = req.pathname().replace("/","\\");
+	
 	string commandline = "\""+exe+"\"";
 	while (req.remaining())
 	{
@@ -413,11 +423,30 @@ int main(int argc, char** argv)
 {
 	if (sodium_init() < 0) abort();
 	
+	terminal_enable();
+	
+	bool debug = false;
+	uint16_t port = 3339;
+	string key_text;
+	
+	argparse args;
+	args.add('r', "root", &root);
+	args.add('p', "port", &port);
+	args.add('k', "key", &key_text);
+	args.add('n', "no-exec", &no_exec);
+	args.parse(argv);
+	
+	if (!init_key(key_text))
+	{
+		puts("bad key");
+		return 1;
+	}
+	
 	WuTF_enable();
-	SetCurrentDirectory("C:\\");
+	SetCurrentDirectory(root+"/");
 	
 again:
-	socketlisten* listen = socketlisten::create(3339, runloop::global(),
+	socketlisten* listen = socketlisten::create(port, runloop::global(),
 		[](autoptr<socket> sock) {
 			for (size_t n=0;n<handlers.size();n++)
 			{
