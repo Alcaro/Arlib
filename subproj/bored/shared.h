@@ -146,10 +146,12 @@ public:
 };
 
 // wire format: everything is in chunks
-// chunk format: u32 ciphertext length, then libsodium crypto_secretstream_xchacha20poly1305 data; key agreement is a separate mechanism
+// chunk format: u32 ciphertext length, then libsodium crypto_secretstream_xchacha20poly1305 data
 // first chunk must be the header (24 bytes), anything subsequent is body data (min 17 bytes)
 // applies in both directions
+// key agreement is not covered by this protocol
 // all pathnames must start with a /; readdir return value is filename only, no path
+// all pathnames and filenames are utf8
 // the tag byte is not used (other than libsodium detecting rekey requests)
 
 // chunk contents:

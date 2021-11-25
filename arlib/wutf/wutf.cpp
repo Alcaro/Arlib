@@ -6,6 +6,9 @@
 #ifdef _WIN32
 #include "wutf.h"
 #include <windows.h>
+#include <winternl.h>
+#include <ntstatus.h>
+#include <stdio.h>
 
 #ifndef NTSTATUS
 #define NTSTATUS LONG
@@ -13,6 +16,8 @@
 #ifndef STATUS_SUCCESS
 #define STATUS_SUCCESS 0x00000000
 #endif
+
+static decltype(RtlAllocateHeap)* RtlAllocateHeap_ptr = NULL;
 
 static NTSTATUS WINAPI
 RtlMultiByteToUnicodeN_Utf(
@@ -71,7 +76,88 @@ RtlUnicodeToMultiByteSize_Utf(
 }
 
 
-//ignores invalid flags and parameters
+// these four call RtlMultiByteToUnicodeSize (or the opposite) only if NlsMbCodePageTag is true
+// if false, it just assumes 8bit length equals half the 16bit len
+static ULONG WINAPI
+RtlUnicodeStringToAnsiSize_Utf(
+                PCUNICODE_STRING UnicodeString)
+{
+	ULONG len;
+	RtlUnicodeToMultiByteSize_Utf(&len, UnicodeString->Buffer, UnicodeString->Length);
+	return len+1;
+}
+
+static NTSTATUS WINAPI
+RtlUnicodeStringToAnsiString_Utf(
+                PANSI_STRING     DestinationString,
+                PCUNICODE_STRING SourceString,
+                BOOLEAN          AllocateDestinationString)
+{
+	NTSTATUS ret = STATUS_SUCCESS;
+	int len = RtlUnicodeStringToAnsiSize_Utf(SourceString);
+	
+	DestinationString->Length = len-1;
+	if (AllocateDestinationString)
+	{
+		DestinationString->MaximumLength = len;
+		DestinationString->Buffer = (char*)RtlAllocateHeap_ptr(GetProcessHeap(), 0, len);
+		if (!DestinationString->Buffer)
+			return STATUS_NO_MEMORY;
+	}
+	
+	if (DestinationString->MaximumLength < len)
+	{
+		if (!DestinationString->MaximumLength)
+			return STATUS_BUFFER_OVERFLOW;
+		DestinationString->Length = DestinationString->MaximumLength - 1;
+		ret = STATUS_BUFFER_OVERFLOW;
+	}
+	
+	RtlUnicodeToMultiByteN_Utf(DestinationString->Buffer, DestinationString->Length, NULL, SourceString->Buffer, SourceString->Length);
+	DestinationString->Buffer[DestinationString->Length] = 0;
+	if (DestinationString->MaximumLength < len)
+		return STATUS_BUFFER_OVERFLOW;
+	return STATUS_SUCCESS;
+}
+
+static ULONG WINAPI
+RtlAnsiStringToUnicodeSize_Utf(
+                PCANSI_STRING AnsiString)
+{
+	ULONG len;
+	RtlMultiByteToUnicodeSize_Utf(&len, AnsiString->Buffer, AnsiString->Length);
+	return len+sizeof(uint16_t);
+}
+
+static NTSTATUS WINAPI
+RtlAnsiStringToUnicodeString_Utf(
+                PUNICODE_STRING DestinationString,
+                PCANSI_STRING   SourceString,
+                BOOLEAN         AllocateDestinationString)
+{
+	ULONG len = RtlAnsiStringToUnicodeSize_Utf(SourceString);
+	
+	if (len >= 65536)
+		return STATUS_BUFFER_OVERFLOW;
+	DestinationString->Length = len-sizeof(uint16_t);
+	
+	if (AllocateDestinationString)
+	{
+		DestinationString->MaximumLength = len;
+		DestinationString->Buffer = (wchar_t*)RtlAllocateHeap_ptr(GetProcessHeap(), 0, len);
+		if (!DestinationString->Buffer)
+			return STATUS_NO_MEMORY;
+	}
+	if (len > DestinationString->MaximumLength)
+		return STATUS_BUFFER_OVERFLOW;
+	
+	RtlMultiByteToUnicodeN_Utf(DestinationString->Buffer, DestinationString->Length, NULL, SourceString->Buffer, SourceString->Length);
+	DestinationString->Buffer[DestinationString->Length/sizeof(uint16_t)] = 0;
+	return STATUS_SUCCESS;
+}
+
+
+// ignores invalid flags and parameters
 static int WINAPI
 MultiByteToWideChar_Utf(UINT CodePage, DWORD dwFlags,
                         LPCSTR lpMultiByteStr, int cbMultiByte,
@@ -159,13 +245,15 @@ void WuTF_enable()
 #define STRINGIFY(x) STRINGIFY_(x)
 #define REDIR(dll, func) WuTF_redirect_function((WuTF_funcptr)GetProcAddress(dll, STRINGIFY(func)), (WuTF_funcptr)func##_Utf)
 	HMODULE ntdll = GetModuleHandle("ntdll.dll");
+	RtlAllocateHeap_ptr = (decltype(RtlAllocateHeap)*)GetProcAddress(ntdll, "RtlAllocateHeap");
+	
 	//list of possibly relevant functions in ntdll.dll (pulled from 'strings ntdll.dll'):
 	//some are documented at https://msdn.microsoft.com/en-us/library/windows/hardware/ff553354%28v=vs.85%29.aspx
 	//many are implemented in terms of each other, often rooting in the ones I've hijacked
 	//several others are just for legacy support and have few or no callers
 	// RtlAnsiCharToUnicodeChar
-	// RtlAnsiStringToUnicodeSize
-	// RtlAnsiStringToUnicodeString
+	REDIR(ntdll, RtlAnsiStringToUnicodeSize);
+	REDIR(ntdll, RtlAnsiStringToUnicodeString);
 	// RtlAppendAsciizToString
 	// RtlAppendPathElement
 	// RtlAppendStringToString
@@ -180,8 +268,8 @@ void WuTF_enable()
 	// RtlOemToUnicodeN
 	// RtlRunDecodeUnicodeString
 	// RtlRunEncodeUnicodeString
-	// RtlUnicodeStringToAnsiSize
-	// RtlUnicodeStringToAnsiString
+	REDIR(ntdll, RtlUnicodeStringToAnsiSize);
+	REDIR(ntdll, RtlUnicodeStringToAnsiString);
 	// RtlUnicodeStringToCountedOemString
 	// RtlUnicodeStringToInteger
 	// RtlUnicodeStringToOemSize

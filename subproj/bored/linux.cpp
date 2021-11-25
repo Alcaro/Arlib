@@ -11,8 +11,8 @@
 #undef __O_LARGEFILE
 #define __O_LARGEFILE 0x8000 // I don't know why the standard headers define this to zero
 #endif
-#ifndef FMODE_EXEC // not part of the Linux userspace or FUSE headers, other than a comment in asm-generic/fcntl.h
-#define FMODE_EXEC 0x20 // but probably still counts as a stable ABI
+#ifndef O_EXEC // not part of the Linux userspace or FUSE headers, other than a comment in asm-generic/fcntl.h (under the name FMODE_EXEC)
+#define O_EXEC 0x20 // but documented somewhat in <https://libfuse.github.io/doxygen/structfuse__operations.html>
 #endif
 
 static receiver* recvp;
@@ -109,7 +109,6 @@ static arrayview<string> cache_dir_get(const char * path)
 struct my_file {
 	bool is_exec;
 	
-	
 	int fd;
 	
 	// write cache
@@ -154,15 +153,15 @@ struct my_file {
 
 #define EXEC_PARAMS_SIZE 1024
 #define IOCTL_EXEC_PARAMS _IOC(_IOC_READ,0xB0,0,EXEC_PARAMS_SIZE)
+static_assert(EXEC_PARAMS_SIZE <= _IOC_SIZEMASK);
 
 int main(int argc, char** argv)
 {
 	if (sodium_init() < 0) abort();
 	static string exec_contents = (cstring)"#!"+file::exepath()+" --remote-exec";
 	
-	// remote exec is implemented as file content
-	//  #!/home/alcaro/Desktop/bored/bored --remote-exec
-	//  192.168.0.1 3339 hunter2 /home/alcaro/Desktop/bored/mnt/ /Windows/System32/cmd.exe
+	// remote exec is implemented as file content #!/home/alcaro/Desktop/bored/bored --remote-exec
+	// (FUSE docs <https://libfuse.github.io/doxygen/structfuse__operations.html> say O_EXEC is for permission checks only, but who cares)
 	// argv[0] is /home/alcaro/Desktop/bored/bored
 	// argv[1] is --remote-exec
 	// argv[2] is the .exe, possibly relative to caller process' cwd
@@ -477,7 +476,7 @@ int main(int argc, char** argv)
 	};
 	f_ops.open = [](const char * path, struct fuse_file_info * fi) -> int
 	{
-		if (fi->flags & FMODE_EXEC)
+		if (fi->flags & O_EXEC)
 		{
 			my_file* f = new my_file;
 			f->is_exec = true;

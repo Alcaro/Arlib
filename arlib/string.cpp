@@ -720,6 +720,8 @@ bool cstring::isutf8() const
 		uint32_t bits = head;
 		while (bytes != end && (*bytes&0xC0) == 0x80)
 		{
+			// if there are four or more continuations, the head will be shifted out of bits
+			// it'll end up between 0x80808080 and 0xBFBFBFBF, which doesn't match any approved range below
 			bits = bits<<8 | *bytes++;
 		}
 		
