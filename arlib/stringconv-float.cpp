@@ -613,7 +613,7 @@ test("string conversion - float", "", "string")
 	// 0.0000000000000000000000000703853069185120912085918801714030697411 <- float closest to the input (rounded)
 	// 0.0000000000000000000000000703853100000000022281692450609677778769 <- double closest to the input (rounded)
 	// 0.0000000000000000000000000703853130814879132477466099505324860128 <- float closest to the above double (rounded)
-	// this is the most well known such problematic number, one of few that's a valid output from tostring(float),
+	// this is the most well known such problematic number, one of few that's a possible output from tostring(float),
 	//  and the only one with <= 7 significand digits
 	assert(fromstring("7.038531e-26", f));
 	assert_ne(f, (float)7.038531e-26);
@@ -621,7 +621,7 @@ test("string conversion - float", "", "string")
 	static_assert(7.038531e-26f != (float)7.038531e-26); // test the compiler too
 	// but there are many more, for example
 	// 0.0000000000967498269000000000000000000000000000000000000000000000 <- input
-	// 0.0000000000967498234305530502297187922522425651550292968750000000 <- float closest to the input
+	// 0.0000000000967498234305530502297187922522425651550292968750000000 <- float closest to the input (exact)
 	// 0.0000000000967498269000000021833329810760915279388427734375000000 <- double closest to the input
 	// 0.0000000000967498303694469541369471698999404907226562500000000000 <- float closest to the above double
 	assert(fromstring("9.67498269e-11", f));
@@ -654,7 +654,7 @@ test("string conversion - float", "", "string")
 	assert_eq(f, 0);
 	assert( fromstring("0e+10000", f));
 	assert_eq(f, 0);
-	assert(!fromstring("1e99999999999999999999", f));
+	assert(!fromstring("1e9999999999", f));
 	assert_eq(f, HUGE_VALF);
 	assert(!fromstring("18446744073709551616e+1000000", f));
 	assert_eq(f, HUGE_VALF);

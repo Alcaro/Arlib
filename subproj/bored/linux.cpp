@@ -618,9 +618,10 @@ int main(int argc, char** argv)
 	my_argv.append("-f"); // foreground
 	my_argv.append("-s"); // single thread
 	my_argv.append("-o"); my_argv.append("auto_unmount"); // auto unmount on process termination
-	my_argv.append("-o"); my_argv.append("hard_remove"); // don't pretend to remove files (documented not recommended, I'll find out why)
+	my_argv.append("-o"); my_argv.append("hard_remove"); // don't pretend to remove files (windows doesn't support removed files anyways)
 	my_argv.append("-o"); my_argv.append("atomic_o_trunc"); // pass O_TRUNC to open(), don't call truncate() first
 	my_argv.append("-o"); my_argv.append("big_writes"); // write more than 4KB at the time
+	my_argv.append("-o"); my_argv.append("direct_io"); // disable caching (caching messes with execution of a freshly created remote file)
 	for (string& arg : fuse_args) my_argv.append(arg);
 	my_argv.append(NULL);
 	fuse_main(my_argv.size()-1, (char**)my_argv.ptr(), &f_ops, NULL);

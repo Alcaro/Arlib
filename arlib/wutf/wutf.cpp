@@ -219,10 +219,10 @@ static void redirect_machine(LPBYTE victim, LPBYTE replacement)
 #endif
 
 
-void WuTF_redirect_function(WuTF_funcptr victim, WuTF_funcptr replacement)
+static void WuTF_redirect_function(WuTF_funcptr victim, WuTF_funcptr replacement)
 {
 	DWORD prot;
-	//it's usually considered bad to have W+X on the same page, but the alternative is risking
+	//it's generally discouraged to have W+X on the same page, but the alternative is risking
 	// removing X from VirtualProtect or NtProtectVirtualMemory, and then I can't fix it.
 	//it doesn't matter, anyways; we (should be) called so early no hostile input has been processed yet
 	VirtualProtect((void*)victim, 64, PAGE_EXECUTE_READWRITE, &prot);
@@ -237,6 +237,9 @@ void WuTF_enable()
 	// doesn't seem settable via code, need to figure out how to get it into the makefiles
 	// (or should I emit some funny sections via a .cpp?)
 	// latest windows supporting the feature officially makes me a lot more comfortable hacking up old windowses
+	
+	SetConsoleOutputCP(CP_UTF8);
+	SetConsoleCP(CP_UTF8);
 	if (GetACP() == CP_UTF8) return;
 	
 	//it's safe to call this multiple times, that just replaces some bytes with their current values
