@@ -1,18 +1,28 @@
 #include "arlib.h"
 #include "obj/resources.h"
 #include <gtk/gtk.h>
+#ifdef ARGUI_GTK4
+#include <gdk/x11/gdkx.h>
+#endif
 #include <sys/stat.h>
 
-#include <gst/gst.h>
+//#define HAVE_GSTREAMER
+#define HAVE_FFMPEG
 
+#ifdef HAVE_GSTREAMER
+#include <gst/gst.h>
+#endif
+
+#ifdef HAVE_FFMPEG
 extern "C" { // ffmpeg devs refuse to add this for some unclear reason,
 #include <libavformat/avformat.h> // even though more ffmpeg callers seem to be C++ than C,
 #include <libavcodec/avcodec.h> // and common.h contains a #if defined(__cplusplus) && etc
 #include <libavdevice/avdevice.h>
 }
+#endif
 
 // this tool is designed for personal use only, hardcoded stuff is fine for all intended usecases
-#define MUSIC_DIR "/home/alcaro/Desktop/extramusic/"
+#define MUSIC_DIR "/home/walrus/Desktop/extramusic/"
 
 namespace {
 
@@ -31,13 +41,20 @@ struct textgrid {
 	{
 		widget = gtk_drawing_area_new();
 		
+#ifdef ARGUI_GTK3
 		auto draw_cb = decompose_lambda([this](cairo_t* cr, GtkWidget* widget)->gboolean
+#else
+		auto draw_cb = decompose_lambda([](void* user_data){ return user_data; },
+			[this](GtkDrawingArea* drawing_area, cairo_t* cr, int width, int height, void* user_data)
+#endif
 		{
 			GtkStyleContext* ctx = gtk_widget_get_style_context(widget);
 			if (!this->lay) this->lay = gtk_widget_create_pango_layout(widget, "");
 			
-			int full_width = gtk_widget_get_allocated_width(widget);
-			int full_height = gtk_widget_get_allocated_height(widget);
+#ifdef ARGUI_GTK3
+			int width = gtk_widget_get_allocated_width(widget);
+			int height = gtk_widget_get_allocated_height(widget);
+#endif
 			
 			int idx = 0;
 			for (int col=0;col<NUM_COLS;col++)
@@ -45,38 +62,48 @@ struct textgrid {
 			{
 				if (this->text[idx])
 				{
-					double loc_x1 =  col    * full_width  / (double)NUM_COLS;
-					double loc_x2 = (col+1) * full_width  / (double)NUM_COLS;
-					double loc_y1 =  row    * full_height / (double)NUM_ROWS;
-					double loc_y2 = (row+1) * full_height / (double)NUM_ROWS;
+					// Gtk knows the colors, but I can't find how to use them. Just hardcode something.
+					// It's less likely to be deprecated or otherwise break in Gtk5, anyways.
+					
+					// round to integer - subpixel rendering looks stupid
+					int loc_x1 =  col    * width  / NUM_COLS;
+					int loc_x2 = (col+1) * width  / NUM_COLS;
+					int loc_y1 =  row    * height / NUM_ROWS;
+					int loc_y2 = (row+1) * height / NUM_ROWS;
 					
 					cairo_reset_clip(cr);
+					cairo_set_source_rgb(cr, 0.0, 0.0, 0.0);
 					cairo_rectangle(cr, loc_x1, loc_y1, loc_x2-loc_x1, loc_y2-loc_y1);
 					cairo_clip(cr);
 					
 					if (this->focus_row[col] == row)
 					{
-						gtk_style_context_set_state(ctx, GTK_STATE_FLAG_SELECTED);
-						gtk_render_background(ctx, cr, loc_x1, loc_y1, loc_x2-loc_x1, loc_y2-loc_y1);
+						cairo_set_source_rgb(cr, 25/255.0, 132/255.0, 228/255.0);
+						cairo_rectangle(cr, loc_x1, loc_y1, loc_x2-loc_x1, loc_y2-loc_y1);
+						cairo_fill(cr);
+						cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
 					}
 					
 					pango_layout_set_text(lay, this->text[idx], -1);
 					double baseline_in_pos = pango_layout_get_baseline(lay); // where it is
 					double baseline_out_pos = (double)14/17 * (loc_y2-loc_y1); // where I want it
-					gtk_render_layout(ctx, cr, loc_x1, loc_y1 + baseline_out_pos - baseline_in_pos/PANGO_SCALE, lay);
 					
-					if (this->focus_row[col] == row)
-					{
-						gtk_style_context_set_state(ctx, GTK_STATE_FLAG_NORMAL);
-					}
+					cairo_move_to(cr, loc_x1, loc_y1 + (int)(baseline_out_pos - baseline_in_pos/PANGO_SCALE));
+					pango_cairo_show_layout(cr, lay);
 				}
 				idx++;
 			}
-			
+#ifdef ARGUI_GTK3
 			return false;
+#endif
 		});
+#ifdef ARGUI_GTK3
 		g_signal_connect_swapped(widget, "draw", G_CALLBACK(draw_cb.fp), draw_cb.ctx);
+#else
+		gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(widget), draw_cb.fp, draw_cb.ctx, NULL);
+#endif
 		
+#ifdef ARGUI_GTK3
 		auto click_cb = decompose_lambda([this](GdkEvent* event, GtkWidget* widget)->gboolean
 		{
 			if(0);
@@ -97,6 +124,33 @@ struct textgrid {
 		});
 		g_signal_connect_swapped(widget, "button-press-event", G_CALLBACK(click_cb.fp), click_cb.ctx);
 		gtk_widget_add_events(widget, GDK_BUTTON_PRESS_MASK);
+#else
+		auto click_cb = decompose_lambda([this](int n_press, double x, double y, GtkGestureClick* self) {
+			uint32_t button = gtk_gesture_single_get_current_button(GTK_GESTURE_SINGLE(self));
+			
+			GdkEvent* ev = gtk_event_controller_get_current_event(GTK_EVENT_CONTROLLER(self));
+			uint32_t mask = (GDK_SHIFT_MASK | GDK_CONTROL_MASK | GDK_ALT_MASK);
+			GdkModifierType mods = (GdkModifierType)(gdk_event_get_modifier_state(ev) & mask);
+			
+			if(0);
+			else if (button == GDK_BUTTON_PRIMARY && (mods&GDK_CONTROL_MASK)) {}
+			else if (button == GDK_BUTTON_PRIMARY && n_press == 2) {}
+			else if (button == GDK_BUTTON_MIDDLE) {}
+			else return;
+			
+			int col = x * NUM_COLS / gtk_widget_get_allocated_width(widget);
+			int row = y * NUM_ROWS / gtk_widget_get_allocated_height(widget);
+			this->onactivate[col](col, row);
+		});
+		GtkGesture* click_ctrl = gtk_gesture_click_new();
+		gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(click_ctrl), 0);
+		gtk_event_controller_set_propagation_phase(GTK_EVENT_CONTROLLER(click_ctrl), GTK_PHASE_CAPTURE);
+		gtk_widget_add_controller(widget, GTK_EVENT_CONTROLLER(click_ctrl));
+		g_signal_connect_swapped(click_ctrl, "pressed", G_CALLBACK(click_cb.fp), click_cb.ctx);
+#endif
+		
+		gtk_widget_set_hexpand(widget, true);
+		gtk_widget_set_vexpand(widget, true);
 		
 		for (int& foc : focus_row)
 			foc = -1;
@@ -110,12 +164,12 @@ GtkWindow* mainwnd = NULL;
 GQuark q_fname;
 
 class player_t {
+#ifdef HAVE_GSTREAMER
 	GstElement* gst_pipeline = NULL;
 	guint gst_bus_watch = 0;
 	
 	bool gst_play(cstring fn)
 	{
-return false; // gstreamer segfaults if ffmpeg is loaded into the process
 		stop();
 		
 		gst_pipeline = gst_parse_launch("filesrc location=\""+fn+"\" ! decodebin ! autoaudiosink", NULL);
@@ -164,12 +218,14 @@ puts("playing "+fn+" with gstreamer");
 		
 		return true;
 	}
+#endif
 	
 	
 	
 	
 	
 	
+#ifdef HAVE_FFMPEG
 	AVFormatContext* ff_demux = NULL;
 	AVCodecContext* ff_codec = NULL;
 	AVCodecParameters* ff_par = NULL;
@@ -188,8 +244,8 @@ puts("playing "+fn+" with gstreamer");
 		if (!ff_inited)
 		{
 			ff_inited = true;
-			av_register_all(); // not needed for ffmpeg >= 4.0 (april 2018)
-			avcodec_register_all();
+			//av_register_all(); // not needed for ffmpeg >= 4.0 (april 2018)
+			//avcodec_register_all();
 			avdevice_register_all();
 		}
 		
@@ -328,7 +384,7 @@ puts("playing "+fn+" with ffmpeg");
 		ff_packet->stream_index = 0;
 		ff_packet->size = ff_frame->nb_samples * ff_par->channels * bytes_per;
 		ff_packet->dts = ff_frame->pkt_dts;
-		ff_packet->duration = av_frame_get_pkt_duration(ff_frame);
+		ff_packet->duration = ff_frame->pkt_duration;
 		if (ff_packet->size) av_write_frame(ff_out, ff_packet);
 		
 		return true;
@@ -374,6 +430,7 @@ puts("playing "+fn+" with ffmpeg");
 		
 		return true;
 	}
+#endif
 	
 public:
 	function<void()> something_cb; // dumb name, but I can't think of anything better
@@ -381,18 +438,36 @@ public:
 	
 	void stop()
 	{
+#ifdef HAVE_FFMPEG
 		ff_stop();
+#endif
+#ifdef HAVE_GSTREAMER
 		gst_stop();
+#endif
 	}
 	
 	bool play(cstring fn)
 	{
-		return ff_play(fn) || gst_play(fn);
+		return
+#ifdef HAVE_FFMPEG
+			ff_play(fn) ||
+#endif
+#ifdef HAVE_GSTREAMER
+			gst_play(fn) ||
+#endif
+			false;
 	}
 	
 	bool playing(int* pos, int* durat)
 	{
-		return ff_playing(pos, durat) || gst_playing(pos, durat);
+		return
+#ifdef HAVE_FFMPEG
+			ff_playing(pos, durat) ||
+#endif
+#ifdef HAVE_GSTREAMER
+			gst_playing(pos, durat) ||
+#endif
+			false;
 	}
 } g_player;
 
@@ -400,8 +475,10 @@ void enqueue(cstring fn);
 void enqueue_real(string fn);
 
 GtkButton* btn_toggle;
+#ifdef ARGUI_GTK3
 GtkWidget* btnimg_stop;
 GtkWidget* btnimg_play;
+#endif
 
 struct column {
 	int col_start;
@@ -521,6 +598,7 @@ GtkWidget* make_progress()
 	gtk_progress_bar_set_show_text(progress, true);
 	gtk_progress_bar_set_text(progress, "");
 	gtk_progress_bar_set_fraction(progress, 0);
+	gtk_widget_set_valign(GTK_WIDGET(progress), GTK_ALIGN_CENTER);
 	return GTK_WIDGET(progress);
 }
 
@@ -594,7 +672,11 @@ void update_search()
 	if (c_search.items) prev_focus = c_search.items[search_focus].filename;
 	if (prev_focus) prev_focus = prev_focus.substr(strlen(MUSIC_DIR), ~0);
 	
+#ifdef ARGUI_GTK3
 	string key = gtk_entry_get_text(search_line);
+#else
+	string key = gtk_editable_get_text(GTK_EDITABLE(search_line));
+#endif
 	key = key.csplit<1>("*")[0];
 	
 	c_search.reset();
@@ -693,77 +775,99 @@ void update_search()
 	}
 }
 
+static gboolean search_kb(GtkEventControllerKey* self, guint keyval, guint keycode, GdkModifierType state, void* user_data)
+{
+	if (keyval == GDK_KEY_Up)
+	{
+		if (search_focus == 0)
+			search_focus = c_search.items.size()-1;
+		else
+			search_focus--;
+		c_search.focus(search_focus);
+		return GDK_EVENT_STOP;
+	}
+	if (keyval == GDK_KEY_Down)
+	{
+		if (search_focus == c_search.items.size()-1)
+			search_focus = 0;
+		else
+			search_focus++;
+		c_search.focus(search_focus);
+		return GDK_EVENT_STOP;
+	}
+	if (keyval == GDK_KEY_Return || keyval == GDK_KEY_KP_Enter)
+	{
+#ifdef ARGUI_GTK3
+		cstring search_text = gtk_entry_get_text(search_line);
+#else
+		cstring search_text = gtk_editable_get_text(GTK_EDITABLE(search_line));
+#endif
+		if (search_text == ".")
+		{
+			init_search();
+			init_common();
+		}
+		else if (search_text.endswith("*"))
+		{
+			for (column::node& item : c_search.items)
+				enqueue_real(item.filename);
+		}
+		else if (search_text.startswith("$"))
+		{
+			enqueue_real(search_text);
+		}
+		else if (c_search.items)
+		{
+			enqueue(c_search.items[search_focus].filename);
+		}
+		if ((state&GDK_SHIFT_MASK) == 0)
+		{
+#ifdef ARGUI_GTK3
+			gtk_entry_set_text(search_line, "");
+#else
+			gtk_editable_set_text(GTK_EDITABLE(search_line), ""); // calls remove_cb
+#endif
+		}
+		return GDK_EVENT_STOP;
+	}
+	if (keyval == GDK_KEY_Escape)
+	{
+#ifdef ARGUI_GTK3
+		gtk_entry_set_text(search_line, "");
+#else
+		gtk_editable_set_text(GTK_EDITABLE(search_line), "");
+#endif
+		return GDK_EVENT_STOP;
+	}
+	return GDK_EVENT_PROPAGATE;
+}
 GtkWidget* make_search()
 {
 	init_search();
 	
 	search_line = GTK_ENTRY(gtk_entry_new());
+#ifdef ARGUI_GTK3
 	auto key_cb = decompose_lambda([](GdkEvent* event, GtkWidget* widget)->gboolean
 	{
-		if (event->key.keyval == GDK_KEY_Up)
-		{
-			if (search_focus == 0)
-				search_focus = c_search.items.size()-1;
-			else
-				search_focus--;
-			c_search.focus(search_focus);
-			return GDK_EVENT_STOP;
-		}
-		if (event->key.keyval == GDK_KEY_Down)
-		{
-			if (search_focus == c_search.items.size()-1)
-				search_focus = 0;
-			else
-				search_focus++;
-			c_search.focus(search_focus);
-			return GDK_EVENT_STOP;
-		}
-		if (event->key.keyval == GDK_KEY_Return || event->key.keyval == GDK_KEY_KP_Enter)
-		{
-			cstring search_text = gtk_entry_get_text(search_line);
-			if (search_text == ".")
-			{
-				init_search();
-				init_common();
-			}
-			else if (search_text.endswith("*"))
-			{
-				for (column::node& item : c_search.items)
-					enqueue_real(item.filename);
-			}
-			else if (search_text.startswith("$"))
-			{
-				enqueue_real(search_text);
-			}
-			else if (c_search.items)
-			{
-				enqueue(c_search.items[search_focus].filename);
-			}
-			if ((event->key.state&GDK_SHIFT_MASK) == 0)
-				gtk_entry_set_text(search_line, ""); // calls remove_cb
-			return GDK_EVENT_STOP;
-		}
-		if (event->key.keyval == GDK_KEY_Escape)
-		{
-			gtk_entry_set_text(search_line, "");
-			return GDK_EVENT_STOP;
-		}
-		return GDK_EVENT_PROPAGATE;
+		return search_kb(nullptr, event->key.keyval, event->key.hardware_keycode, (GdkModifierType)event->key.state, nullptr);
 	});
 	g_signal_connect_swapped(search_line, "key-press-event", G_CALLBACK(key_cb.fp), key_cb.ctx);
+#else
+	GtkEventController* ctrlkey = gtk_event_controller_key_new();
+	gtk_widget_add_controller(GTK_WIDGET(search_line), ctrlkey);
+	gtk_event_controller_set_propagation_phase(ctrlkey, GTK_PHASE_CAPTURE);
+	g_signal_connect_swapped(ctrlkey, "key-pressed", G_CALLBACK(search_kb), NULL);
+#endif
+	
 	// GTK often passes functions with too few arguments if the latter ones aren't used (for example gtk_widget_hide_on_delete)
 	// it works on every ABI I'm aware of, but I'm 99% sure it's undefined behavior per the C++ standard, so I'm not gonna follow suit
-	auto insert_cb = decompose_lambda([](unsigned position, char* chars, unsigned n_chars, GtkEntryBuffer* buffer)
+	auto update_cb = decompose_lambda([](GParamSpec* pspec, GObject* self)
 	{
 		update_search();
 	});
-	g_signal_connect_swapped(gtk_entry_get_buffer(search_line), "inserted-text", G_CALLBACK(insert_cb.fp), insert_cb.ctx);
-	auto remove_cb = decompose_lambda([](unsigned position, unsigned n_chars, GtkEntryBuffer* buffer)
-	{
-		update_search();
-	});
-	g_signal_connect_swapped(gtk_entry_get_buffer(search_line), "deleted-text", G_CALLBACK(remove_cb.fp), remove_cb.ctx);
+	g_signal_connect_swapped(gtk_entry_get_buffer(search_line), "notify::text", G_CALLBACK(update_cb.fp), update_cb.ctx);
 	
+	gtk_widget_set_hexpand(GTK_WIDGET(search_line), true);
 	return GTK_WIDGET(search_line);
 }
 
@@ -827,7 +931,11 @@ void enqueue_real(string fn) // must take string, not cstring, otherwise it'll s
 void enqueue(cstring fn)
 {
 	int multiple = 1;
+#ifdef ARGUI_GTK3
 	const char * mul_str = strchr(gtk_entry_get_text(search_line), '*');
+#else
+	const char * mul_str = strchr(gtk_editable_get_text(GTK_EDITABLE(search_line)), '*');
+#endif
 	if (mul_str) fromstring(mul_str+1, multiple);
 	if (!multiple) multiple = 1;
 	for (int i=0;i<multiple;i++)
@@ -840,7 +948,11 @@ void progress_tick()
 	int pos;
 	int durat;
 	if (!g_player.playing(&pos, &durat)) return;
+#ifdef ARGUI_GTK3
 	gtk_button_set_image(btn_toggle, btnimg_stop);
+#else
+	gtk_button_set_icon_name(btn_toggle, "media-playback-stop");
+#endif
 	if (pos < 0) return;
 	
 	char buf[32];
@@ -862,13 +974,21 @@ void stop()
 	gtk_progress_bar_set_text(progress, "");
 	gtk_progress_bar_set_fraction(progress, 0);
 	
+#ifdef ARGUI_GTK3
 	gtk_button_set_image(btn_toggle, btnimg_play);
+#else
+	gtk_button_set_icon_name(btn_toggle, "media-playback-start");
+#endif
 }
 
 
 GtkWidget* make_button(const char * name, void(*cb)())
 {
+#ifdef ARGUI_GTK3
 	GtkButton* btn = GTK_BUTTON(gtk_button_new_from_icon_name(name, GTK_ICON_SIZE_BUTTON));
+#else
+	GtkButton* btn = GTK_BUTTON(gtk_button_new_from_icon_name(name));
+#endif
 	auto click_cb = decompose_lambda([cb](GtkButton* btn) { cb(); });
 	g_signal_connect_swapped(btn, "clicked", G_CALLBACK(click_cb.fp), click_cb.ctx);
 	return GTK_WIDGET(btn);
@@ -900,13 +1020,25 @@ void make_gui(GApplication* application)
 	q_fname = g_quark_from_static_string("corn-filename");
 	
 	if (application) mainwnd = GTK_WINDOW(gtk_application_window_new(GTK_APPLICATION(application)));
-	else mainwnd = GTK_WINDOW(gtk_window_new(GTK_WINDOW_TOPLEVEL));
+	else mainwnd = GTK_WINDOW(gtk_window_new(
+#ifdef ARGUI_GTK3
+	GTK_WINDOW_TOPLEVEL
+#endif
+	));
+	
+	gtk_window_set_title(mainwnd, "corn");
 	
 	// the correct solution would be gtk_main_quit + GDK_EVENT_STOP, and only if application==NULL,
 	// but the idle handler in ffmpeg somehow keeps the application alive, so let's just grab a bigger toy
+#ifdef ARGUI_GTK3
 	auto onclose_cb = decompose_lambda([](GdkEvent* event, GtkWidget* widget) -> gboolean { exit(0); });
 	g_signal_connect_swapped(mainwnd, "delete-event", G_CALLBACK(onclose_cb.fp), onclose_cb.ctx);
+#else
+	auto onclose_cb = decompose_lambda([](GtkWindow* self) -> gboolean { exit(0); });
+	g_signal_connect_swapped(mainwnd, "close-request", G_CALLBACK(onclose_cb.fp), onclose_cb.ctx);
+#endif
 	
+#ifdef ARGUI_GTK3
 	auto key_cb = decompose_lambda([](GdkEvent* event, GtkWidget* widget)->gboolean
 	{
 		if (!gtk_widget_is_focus(GTK_WIDGET(search_line)))
@@ -914,7 +1046,25 @@ void make_gui(GApplication* application)
 		return FALSE;
 	});
 	g_signal_connect_swapped(mainwnd, "key-press-event", G_CALLBACK(key_cb.fp), key_cb.ctx);
+#else
+	auto onkb_cb = decompose_lambda(
+		[](guint keyval, guint keycode, GdkModifierType state, GtkEventControllerKey* self) -> gboolean
+	{
+		GtkWidget* inner = GTK_WIDGET(gtk_editable_get_delegate(GTK_EDITABLE(search_line)));
+		if (!gtk_widget_is_focus(inner))
+		{
+			gtk_text_grab_focus_without_selecting(GTK_TEXT(inner));
+			return gtk_event_controller_key_forward(self, inner);
+		}
+		return GDK_EVENT_PROPAGATE;
+	});
+	GtkEventController* ctrlkey = gtk_event_controller_key_new();
+	gtk_widget_add_controller(GTK_WIDGET(mainwnd), ctrlkey);
+	gtk_event_controller_set_propagation_phase(ctrlkey, GTK_PHASE_CAPTURE);
+	g_signal_connect_swapped(ctrlkey, "key-pressed", G_CALLBACK(onkb_cb.fp), onkb_cb.ctx);
+#endif
 	
+#ifdef ARGUI_GTK3
 	GtkBox* box_upper = GTK_BOX(gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0));
 	gtk_box_pack_start(box_upper, make_search(), true, true, 0);
 	gtk_box_pack_start(box_upper, make_button("gtk-media-previous", playlist_prev), false, false, 0);
@@ -926,6 +1076,15 @@ void make_gui(GApplication* application)
 	gtk_box_pack_start(box_upper, GTK_WIDGET(btn_toggle), false, false, 0);
 	gtk_box_pack_start(box_upper, make_progress(), false, false, 0);
 	gtk_box_pack_start(box_upper, make_button("gtk-media-next", playlist_next), false, false, 0);
+#else
+	GtkBox* box_upper = GTK_BOX(gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0));
+	gtk_box_append(box_upper, make_search());
+	gtk_box_append(box_upper, make_button("media-skip-backward", playlist_prev));
+	btn_toggle = GTK_BUTTON(make_button("media-playback-start", playlist_toggle));
+	gtk_box_append(box_upper, GTK_WIDGET(btn_toggle));
+	gtk_box_append(box_upper, make_progress());
+	gtk_box_append(box_upper, make_button("media-skip-forward", playlist_next));
+#endif
 	
 	c_common.init(0,2, enqueue);
 	c_search.init(2,1, enqueue);
@@ -933,18 +1092,36 @@ void make_gui(GApplication* application)
 	grid.init();
 	
 	GtkBox* box_main = GTK_BOX(gtk_box_new(GTK_ORIENTATION_VERTICAL, 0));
+#ifdef ARGUI_GTK3
 	gtk_box_pack_start(box_main, GTK_WIDGET(box_upper), false, false, 0);
 	gtk_box_pack_start(box_main, GTK_WIDGET(grid.widget), true, true, 0);
 	
 	gtk_container_add(GTK_CONTAINER(mainwnd), GTK_WIDGET(box_main));
+#else
+	gtk_box_append(box_main, GTK_WIDGET(box_upper));
+	gtk_box_append(box_main, grid.widget);
+	
+	gtk_window_set_child(mainwnd, GTK_WIDGET(box_main));
+#endif
 	
 	init_common();
 	
 	gtk_window_set_resizable(mainwnd, true);
 	
-	gtk_window_resize(mainwnd, 1336, 1026);
+	gtk_window_set_default_size(mainwnd, 1336, 1026);
+#ifdef ARGUI_GTK3
 	gtk_widget_show_all(GTK_WIDGET(mainwnd));
-	gdk_window_move(gtk_widget_get_window(GTK_WIDGET(mainwnd)), 582, 0);
+#else
+	gtk_widget_show(GTK_WIDGET(mainwnd));
+#endif
+	
+#ifdef ARGUI_GTK3
+	gdk_window_move(gtk_widget_get_window(GTK_WIDGET(mainwnd)), 580, 0);
+#else
+	// why is gtk like this
+	GdkSurface* surf = gtk_native_get_surface(gtk_widget_get_native(GTK_WIDGET(mainwnd)));
+	XMoveWindow(gdk_x11_display_get_xdisplay(gdk_surface_get_display(surf)), gdk_x11_surface_get_xid(surf), 580, 0);
+#endif
 }
 
 
@@ -961,11 +1138,96 @@ void app_activate(GApplication* application, void* user_data)
 
 }
 
+
+#ifdef ARGUI_GTK4
+static bytearray pack_gresource(cstring name, bytesr body)
+{
+	array<cstring> nameparts = name.cspliti("/");
+	array<bytestreamw::pointer> filename_start;
+	array<bytestreamw::pointer> body_start;
+	array<bytestreamw::pointer> body_end;
+	
+	bytestreamw by;
+	by.text("GVariant"); // signature
+	by.u32l(0); // version
+	by.u32l(0); // options
+	
+	by.u32l(0x18); // root directory start
+	bytestreamw::pointer root_end = by.ptr32();
+	
+	by.u32l(0); // bloom size
+	by.u32l(1); // hash buckets (bucketing all to the same place is lazy, but for such a small resource pack, it makes no difference)
+	
+	by.u32l(0); // hash bucket start
+	
+	uint32_t id = 0;
+	uint32_t hash = 5381;
+	for (cstring s : nameparts)
+	{
+		for (uint8_t ch : s.bytes())
+		{
+			hash = (hash*33) + (int8_t)ch;
+		}
+		by.u32l(hash);
+		by.u32l(id-1); // parent "directory"
+		
+		filename_start.append(by.ptr32());
+		by.u16l(s.length());
+		if (id == nameparts.size()-1)
+			by.u8('v');
+		else
+			by.u8('L');
+		by.u8(0);
+		
+		body_start.append(by.ptr32());
+		body_end.append(by.ptr32());
+		
+		id++;
+	}
+	root_end.fill32l();
+	
+	id = 0;
+	for (cstring s : nameparts)
+	{
+		if (id == nameparts.size()-1)
+			break;
+		body_start[id].fill32l();
+		by.u32l(id+1);
+		body_end[id].fill32l();
+		
+		id++;
+	}
+	
+	by.align64();
+	body_start[id].fill32l();
+	by.u32l(body.size());
+	by.u32l(0); // flags
+	by.bytes(body);
+	by.u8(0);
+	
+	by.u8(0);
+	by.text("(uuay)");
+	body_end[id].fill32l();
+	
+	id = 0;
+	for (cstring s : nameparts)
+	{
+		filename_start[id++].fill32l();
+		by.strnul(s);
+	}
+	
+	return by.finish();
+}
+#endif
+
 #include <sys/resource.h>
 int main(int argc, char** argv)
 {
+#ifdef HAVE_GSTREAMER
 	gst_init(&argc, &argv);
-	arlib_init_manual_args(&argc, &argv);
+#endif
+	arlib_init();
+	g_set_prgname("corn");
 	
 	/*
 	(corn:2350): GLib-GObject-CRITICAL **: 14:58:36.794: g_object_ref: assertion 'G_IS_OBJECT (object)' failed
@@ -1005,16 +1267,24 @@ int main(int argc, char** argv)
 	// why does it even use libgstgl when there's no video output
 	g_log_set_always_fatal((GLogLevelFlags)0);
 	
+#ifdef ARGUI_GTK3
 	GInputStream* is = g_memory_input_stream_new_from_data(resources::icon, sizeof(resources::icon), NULL);
 	GdkPixbuf* pix = gdk_pixbuf_new_from_stream_at_scale(is, 64, 64, true, NULL, NULL);
 	gtk_window_set_default_icon(pix);
+#else
+	bytearray by = pack_gresource("/corn/scalable/apps/corn.svg", resources::icon);
+	g_resources_register(g_resource_new_from_data(g_bytes_new(by.ptr(), by.size()), NULL));
+	
+	gtk_icon_theme_add_resource_path(gtk_icon_theme_get_for_display(gdk_display_get_default()), "/corn/");
+	gtk_window_set_default_icon_name("corn");
+#endif
 	
 	if (argv[1] && (cstring)argv[1] == "--local")
 	{
 		make_gui(NULL);
 		char** arg = argv+2;
 		while (*arg) enqueue_real(*arg++);
-		gtk_main();
+		while (true) g_main_context_iteration(NULL, true);
 		return 0;
 	}
 	
