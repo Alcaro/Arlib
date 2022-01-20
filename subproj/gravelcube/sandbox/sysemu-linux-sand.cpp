@@ -561,7 +561,12 @@ static long syscall_emul(greg_t* regs, int errno)
 	WRAP3(readlink, char*, char*, size_t);
 	WRAP1(chdir, char*);
 	WRAP1(uname, struct utsname*);
+	case __NR_newfstatat:
+		if (*(char*)ARG2 == '\0' && ARG4 == AT_EMPTY_PATH)
+			return fstat(ARG1, (struct stat*)ARG3);
+		goto _default;
 	default:
+	_default:
 		error(ARG0, "unimplemeted in sysemu");
 		return -ENOSYS;
 	}

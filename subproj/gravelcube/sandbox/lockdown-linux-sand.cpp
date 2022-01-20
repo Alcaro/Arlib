@@ -108,7 +108,7 @@ void sandbox_exec_lockdown(const char * const * argv)
 	//  other resources. Consequently, to avoid errors, the child process may only execute
 	//  async-signal-safe operations until such time as one of the exec functions is called.
 	//This applies to clone() too. In particular, malloc must be avoided. Syscalls and stack is fine.
-	//It doesn't apply to the setuid version, but this file is x.
+	//It doesn't apply to the setuid version, but this file is used by both.
 	
 	//some of these steps depend on each other, don't swap them randomly
 	

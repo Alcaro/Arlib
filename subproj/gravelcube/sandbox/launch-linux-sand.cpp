@@ -145,15 +145,17 @@ pid_t sandproc::launch_impl(const char * program, array<const char*> argv, array
 		return -1;
 	
 	int socks[2];
-	if (socketpair(AF_UNIX, SOCK_SEQPACKET|SOCK_CLOEXEC, 0, socks)<0)
+	if (socketpair(AF_UNIX, SOCK_SEQPACKET|SOCK_CLOEXEC, 0, socks) < 0)
 		return -1;
 	
 	stdio_fd.append(socks[1]);
 	stdio_fd.append(preld_fd); // we could request preld from parent, but this is easier
 	
 	int clone_flags = CLONE_NEWUSER | CLONE_NEWPID | CLONE_NEWNET | CLONE_NEWCGROUP | CLONE_NEWIPC | CLONE_NEWNS | CLONE_NEWUTS;
-	clone_flags |= SIGCHLD; // termination signal, must be SIGCHLD for waitpid to work properly
-	pid_t pid = syscall(__NR_clone, clone_flags, NULL, NULL, NULL, NULL);
+	clone_flags |= CLONE_PIDFD;
+#ifdef __x86_64__
+	pid_t pid = syscall(__NR_clone, clone_flags, NULL, &this->pidfd, NULL, NULL);
+#endif
 	if (pid < 0)
 	{
 		if (errno == EPERM)

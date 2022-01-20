@@ -390,6 +390,9 @@ void sandproc::fs_grant_syslibs(cstring exe)
 	fs.grant_errno("/usr/share/locale/", ENOENT, false);
 	fs.grant_errno("/usr/share/locale-langpack/", ENOENT, false);
 	fs.grant_errno("/usr/lib/locale/", ENOENT, false);
+	fs.grant_errno("/lib/x86_64-linux-gnu/glibc-hwcaps/", ENOENT, false);
+	fs.grant_errno("/lib/x86_64-linux-gnu/tls/", ENOENT, false);
+	fs.grant_errno("/lib/x86_64-linux-gnu/x86_64/", ENOENT, false);
 	fs.grant_native("/etc/ld.so.cache");
 	fs.grant_tmp("/tmp/", 100);
 	if (exe)

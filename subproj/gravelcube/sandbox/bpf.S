@@ -34,11 +34,13 @@ jeq #__NR_readlink, emulate
 
 jeq #__NR_read, accept
 jeq #__NR_readv, accept
+jeq #__NR_pread64, accept
 jeq #__NR_write, accept
 jeq #__NR_writev, accept
 jeq #__NR_close, accept
 jeq #__NR_lseek, accept
 jeq #__NR_fstat, accept
+jeq #__NR_newfstatat, arg2_nul_only
 jeq #__NR_fcntl, fcntl
 jeq #__NR_fchmod, accept
 
@@ -73,7 +75,7 @@ jeq #__NR_wait4, wait4
 jeq #__NR_futex, futex
 
 jeq #__NR_execve, emulate
-jeq #__NR_execveat, execveat
+jeq #__NR_execveat, arg2_nul_only
 
 #PID is private, but it's in a PID namespace so it won't get the real one
 jeq #__NR_getpid, accept
@@ -139,7 +141,7 @@ jeq #F_DUPFD_CLOEXEC, accept
 jmp EINVAL
 
 
-execveat:
+arg2_nul_only:
 #int execveat(int dirfd, const char * pathname, char * const * argv, char * const * envp, int flags)
 #accept from sysemu, intercept from others
 #sysemu is detected by pathname == 0x00007fff'ffffefff (the last mappable byte) (also normal programs use execve instead)

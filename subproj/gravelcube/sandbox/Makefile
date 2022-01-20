@@ -57,7 +57,7 @@ endif
 
 sandbox/bpf.inc: sandbox/bpf.S sandbox/bpfasm.py
 	python3 sandbox/bpfasm.py $< $@
-$(call OBJMANGLE,DEFAULT,sandbox/launch-linux-sand.cpp): sandbox/launch-linux-sand.cpp sandbox/bpf.inc | obj
+$(call OBJMANGLE,DEFAULT,sandbox/lockdown-linux-sand.cpp): sandbox/lockdown-linux-sand.cpp sandbox/bpf.inc | obj
 
 
 PRELOADER_SOURCES := sandbox/preload-linux-sand.cpp sandbox/sysemu-linux-sand.cpp

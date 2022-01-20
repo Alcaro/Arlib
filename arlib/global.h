@@ -139,8 +139,8 @@ using std::nullptr_t;
 
 //some magic stolen from http://blogs.msdn.com/b/the1/archive/2004/05/07/128242.aspx
 //C++ can be so messy sometimes...
-template<typename T, size_t N> char(&ARRAY_SIZE_CORE(T(&x)[N]))[N];
-template<typename T> typename std::enable_if<sizeof(T)==0, T&>::type ARRAY_SIZE_CORE(T& x); // size-zero arrays are a special case
+template<typename T, size_t N> char(&ARRAY_SIZE_CORE(T(&)[N]))[N];
+template<typename T> typename std::enable_if<sizeof(T)==0, T&>::type ARRAY_SIZE_CORE(T&); // size-zero arrays are a special case
 #define ARRAY_SIZE(x) (sizeof(ARRAY_SIZE_CORE(x)))
 
 //just to make C++ an even bigger mess. based on https://github.com/swansontec/map-macro with some changes:

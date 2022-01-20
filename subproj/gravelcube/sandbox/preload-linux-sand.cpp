@@ -120,8 +120,10 @@ static inline Elf64_Ehdr* map_binary(int fd, uint8_t*& base, uint8_t* hbuf, size
 	read(fd, hbuf, buflen);
 	
 	Elf64_Ehdr* ehdr = (Elf64_Ehdr*)hbuf;
-	static const unsigned char exp_hdr[16] = { '\x7F', 'E', 'L', 'F', ELFCLASS64, ELFDATA2LSB, EV_CURRENT, ELFOSABI_SYSV, 0 };
-	if (memcmp(ehdr->e_ident, exp_hdr, 16) != 0) return NULL;
+	static const unsigned char exp_hdr[7] = { '\x7F', 'E', 'L', 'F', ELFCLASS64, ELFDATA2LSB, EV_CURRENT };
+	// next byte is either ELFOSABI_NONE or ELFOSABI_GNU, accept both
+	// then comes a bunch of unused bytes
+	if (memcmp(ehdr->e_ident, exp_hdr, 7) != 0) return NULL;
 	if (ehdr->e_type != ET_DYN) return NULL;
 	
 	Elf64_Phdr* phdr = (Elf64_Phdr*)(hbuf + ehdr->e_phoff);

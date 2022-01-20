@@ -30,8 +30,8 @@ test("sandbox", "", "sandbox")
 		// this will fail because can't access /lib64/ld-linux-x86-64.so.2
 		// (or /bin/true or whatever - no point caring exactly what file makes it blow up)
 		p.set_access_violation_cb(bind_lambda([&](cstring path, bool write) { has_access_fail = true; } ));
-		//p.set_stdout(process::output::create_stdout());
-		//p.set_stderr(process::output::create_stderr());
+		p.set_stdout(process::output::create_stdout());
+		p.set_stderr(process::output::create_stderr());
 		
 //puts("");
 //printf("%lu\n",time_us_ne());
@@ -48,8 +48,8 @@ test("sandbox", "", "sandbox")
 		p.onexit(break_runloop);
 		
 		p.set_access_violation_cb(bind_lambda([&](cstring path, bool write) { assert_unreachable(); } ));
-		//p.set_stdout(process::output::create_stdout());
-		//p.set_stderr(process::output::create_stderr());
+		p.set_stdout(process::output::create_stdout());
+		p.set_stderr(process::output::create_stderr());
 		p.fs_grant_syslibs(TRUE);
 		
 //printf("%lu\n",time_us_ne());
@@ -65,8 +65,8 @@ test("sandbox", "", "sandbox")
 		p.onexit(break_runloop);
 		
 		p.set_access_violation_cb(bind_lambda([&](cstring path, bool write) { assert_unreachable(); } ));
-		//p.set_stdout(process::output::create_stdout());
-		//p.set_stderr(process::output::create_stderr());
+		p.set_stdout(process::output::create_stdout());
+		p.set_stderr(process::output::create_stderr());
 		p.fs_grant_syslibs(FALSE);
 		
 //printf("%lu\n",time_us_ne());

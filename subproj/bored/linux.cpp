@@ -481,6 +481,10 @@ int main(int argc, char** argv)
 			my_file* f = new my_file;
 			f->is_exec = true;
 			fi->fh = (uintptr_t)f;
+			// disable page cache for exec requests
+			// direct_io reduces performance and disables mmap, but that's fine for a file that's just a shebang
+			// fi->keep_cache also exists, but it's off by default; I'm not sure how exactly kernel decides what to cache
+			fi->direct_io = true;
 			return 0;
 		}
 		
@@ -493,7 +497,7 @@ int main(int argc, char** argv)
 	};
 	f_ops.read = [](const char * path, char * buf, size_t size, off_t offset, struct fuse_file_info * fi) -> int
 	{
-		my_file* f = (my_file*)fi->fh;
+		my_file* f = (my_file*)(uintptr_t)fi->fh;
 		
 		if (f->is_exec)
 		{
@@ -616,13 +620,12 @@ int main(int argc, char** argv)
 	my_argv.append(argv[0]);
 	my_argv.append("-d"); // debug
 	my_argv.append("-f"); // foreground
+	// the vast majority of these belong in something like f_ops.flags, not the shell invocation
 	my_argv.append("-s"); // single thread
 	my_argv.append("-o"); my_argv.append("auto_unmount"); // auto unmount on process termination
 	my_argv.append("-o"); my_argv.append("hard_remove"); // don't pretend to remove files (windows doesn't support removed files anyways)
 	my_argv.append("-o"); my_argv.append("atomic_o_trunc"); // pass O_TRUNC to open(), don't call truncate() first
 	my_argv.append("-o"); my_argv.append("big_writes"); // write more than 4KB at the time
-	// disable cache disablement - breaks mmap()
-	//my_argv.append("-o"); my_argv.append("direct_io"); // disable caching (caching messes with execution of a freshly created remote file)
 	for (string& arg : fuse_args) my_argv.append(arg);
 	my_argv.append(NULL);
 	fuse_main(my_argv.size()-1, (char**)my_argv.ptr(), &f_ops, NULL);
