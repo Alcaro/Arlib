@@ -133,7 +133,7 @@ string process::find_prog(cstring prog)
 }
 
 
-pid_t process::launch_impl(const char * program, array<const char*> argv, array<int> stdio_fd)
+void process::launch_impl(const char * program, array<const char*> argv, array<int> stdio_fd)
 {
 #ifdef __x86_64__
 	pid_t ret = syscall(__NR_clone, CLONE_PIDFD, NULL, &this->pidfd, NULL, NULL);
@@ -153,8 +153,6 @@ pid_t process::launch_impl(const char * program, array<const char*> argv, array<
 		while (true)
 			_exit(EXIT_FAILURE);
 	}
-	
-	return ret;
 }
 
 bool process::launch(string prog, arrayview<string> args, bool override_argv0)
@@ -200,27 +198,31 @@ bool process::launch(string prog, arrayview<string> args, bool override_argv0)
 		return false;
 	}
 	
-	loop->set_fd(this->pidfd, [this](uintptr_t pidfd) {
-		siginfo_t inf;
-		waitid((idtype_t)P_PIDFD, pidfd, &inf, WEXITED); // extra cast because libc/kernel mismatch
-		if (inf.si_code == CLD_EXITED)
-			this->exitcode = inf.si_status;
-		else
-			this->exitcode = inf.si_status | 256;
-		loop->set_fd(pidfd, nullptr);
-		close(pidfd);
-		this->pidfd = -1;
-		this->onexit_cb(this->exitcode);
-	});
+	loop->set_fd(this->pidfd, bind_this(&process::reap));
 	
 	return true;
+}
+
+void process::reap(uintptr_t pidfd)
+{
+	siginfo_t inf;
+	waitid((idtype_t)P_PIDFD, pidfd, &inf, WEXITED); // extra cast because libc/kernel mismatch
+	if (inf.si_code == CLD_EXITED)
+		this->exitcode = inf.si_status;
+	else
+		this->exitcode = inf.si_status | 256;
+	loop->set_fd(pidfd, nullptr);
+	close(pidfd);
+	this->pidfd = -1;
+	this->onexit_cb(this->exitcode);
 }
 
 void process::terminate()
 {
 	if (running())
 	{
-		syscall(SYS_pidfd_send_signal, pidfd, SIGKILL, NULL, 0);
+		syscall(__NR_pidfd_send_signal, pidfd, SIGKILL, NULL, 0);
+		reap(this->pidfd);
 	}
 }
 
@@ -230,12 +232,6 @@ process::~process()
 	delete ch_stdin;
 	delete ch_stdout;
 	delete ch_stderr;
-	if (pidfd > 0)
-	{
-		loop->set_fd(pidfd, nullptr);
-		close(pidfd);
-	}
-	this->pidfd = -1;
 }
 
 

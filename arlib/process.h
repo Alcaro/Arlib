@@ -28,6 +28,8 @@ protected:
 	int exitcode = -1;
 	function<void(int)> onexit_cb;
 	
+	void reap(uintptr_t pidfd);
+	
 	
 	//Closes all open file descriptors in the process, except those which are numerically strictly less than lowfd.
 	//For example, closefrom(3) would close everything except stdin/stdout/stderr.
@@ -48,7 +50,7 @@ protected:
 #ifdef ARLIB_OVERRIDEABLE_PROCESS
 	virtual
 #endif
-	pid_t launch_impl(const char * program, array<const char*> argv, array<int> stdio_fd);
+	void launch_impl(const char * program, array<const char*> argv, array<int> stdio_fd);
 	
 private:
 #endif

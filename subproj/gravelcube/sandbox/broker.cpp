@@ -10,7 +10,7 @@
 #include <signal.h>
 #include <sys/wait.h>
 
-#include "internal-linux-sand.h"
+#include "internal.h"
 
 //TODO: when (if) AT_BENEATH is merged, hand out fds to the mount points to the child and allow openat(O_RDONLY|AT_BENEATH)
 //do not allow O_RDWR, max_write is mandatory
@@ -387,6 +387,7 @@ void sandproc::fs_grant_syslibs(cstring exe)
 	fs.grant_errno("/dev/", EACCES, false);
 	fs.grant_errno("/etc/ld.so.nohwcap", ENOENT, false);
 	fs.grant_errno("/etc/ld.so.preload", ENOENT, false);
+	fs.grant_errno("/etc/suid-debug", ENOENT, false);
 	fs.grant_errno("/usr/share/locale/", ENOENT, false);
 	fs.grant_errno("/usr/share/locale-langpack/", ENOENT, false);
 	fs.grant_errno("/usr/lib/locale/", ENOENT, false);

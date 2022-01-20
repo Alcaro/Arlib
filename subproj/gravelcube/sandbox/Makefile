@@ -57,12 +57,12 @@ endif
 
 sandbox/bpf.inc: sandbox/bpf.S sandbox/bpfasm.py
 	python3 sandbox/bpfasm.py $< $@
-$(call OBJMANGLE,DEFAULT,sandbox/lockdown-linux-sand.cpp): sandbox/lockdown-linux-sand.cpp sandbox/bpf.inc | obj
+$(call OBJMANGLE,DEFAULT,sandbox/lockdown.cpp): sandbox/lockdown.cpp sandbox/bpf.inc | obj
 
 
-PRELOADER_SOURCES := sandbox/preload-linux-sand.cpp sandbox/sysemu-linux-sand.cpp
+PRELOADER_SOURCES := sandbox/preload.cpp sandbox/sysemu.cpp
 PRELOADER_OBJS := $(call OBJMANGLE,ARSANDPL,$(PRELOADER_SOURCES))
-obj/ARSANDPL___%.cpp.o: $$(call SOURCENAME,$$@) sandbox/internal-linux-sand.h
+obj/ARSANDPL___%.cpp.o: $$(call SOURCENAME,$$@) sandbox/internal.h
 	$(ECHOQ) CXX $<
 	$(Q)$(CXX) -D SANDBOX_PRELOAD $(PRELOADER_CFLAGS) $(SETUID_CFLAGS) -c $< -o $@
 
@@ -74,10 +74,10 @@ obj/sand-preload-$(OBJNAME).elf: $(PRELOADER_OBJS) | obj
 	$(Q)objdump -R $@ 2>&1 | grep -A500 -E 'DYNAMIC RELOCATION RECORDS$$' || true
 	$(Q)objdump -R $@ 2>&1 | grep -qF 'DYNAMIC RELOCATION RECORDS (none)' || \
 	    objdump -R $@ 2>&1 | grep -qF 'not a dynamic object'
-$(call OBJMANGLE,DEFAULT,sandbox/preload-linux-sand.cpp): obj/sand-preload-$(OBJNAME).elf
+$(call OBJMANGLE,DEFAULT,sandbox/preload.cpp): obj/sand-preload-$(OBJNAME).elf
 
 
-SETUID_SOURCES := sandbox/lockdown-linux-sand.cpp
+SETUID_SOURCES := sandbox/lockdown.cpp
 SETUID_OBJS := $(call OBJMANGLE,ARSANDSU,$(SETUID_SOURCES))
 obj/ARSANDSU___%.cpp.o: $$(call SOURCENAME,$$@) | obj
 	$(ECHOQ) CXX $<

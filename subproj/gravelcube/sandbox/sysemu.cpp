@@ -126,7 +126,7 @@ static inline int fcntl(unsigned int fd, unsigned int cmd, unsigned long arg)
 }
 
 
-#include "internal-linux-sand.h"
+#include "internal.h"
 #define FD_PARENT 3
 static mutex broker_mut;
 

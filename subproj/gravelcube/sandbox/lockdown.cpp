@@ -23,7 +23,7 @@ void sandbox_exec_lockdown(const char * const * argv);
 #include <linux/filter.h>
 #include <linux/sched.h>
 #include <linux/seccomp.h>
-#include "internal-linux-sand.h"
+#include "internal.h"
 
 //#include <linux/ioprio.h> // ioprio_set - header doesn't exist for me, copying the content
 //I believe they count as userspace ABI, i.e. no meaningful license constraints
@@ -195,9 +195,10 @@ int main(int argc, char** argv)
 	if (geteuid() != 0) exit(1);
 	
 	int clone_flags = CLONE_NEWUSER | CLONE_NEWPID | CLONE_NEWNET | CLONE_NEWCGROUP | CLONE_NEWIPC | CLONE_NEWNS | CLONE_NEWUTS;
-	clone_flags |= SIGCHLD; // termination signal, must be SIGCHLD for waitpid to work properly
-	clone_flags |= CLONE_PARENT; // cloning the child's ppid allows the current process to terminate after setting up the child
-	pid_t pid = syscall(__NR_clone, clone_flags, NULL, NULL, NULL, NULL);
+	clone_flags |= CLONE_PIDFD;
+	clone_flags |= CLONE_PARENT; // don't let the child daemonize
+	int pidfd;
+	pid_t pid = syscall(__NR_clone, clone_flags, NULL, &pidfd, NULL, NULL);
 	
 	if (pid < 0) exit(1);
 	if (pid > 0)
@@ -206,20 +207,20 @@ int main(int argc, char** argv)
 		req_fail_fd = FD_BROKER;
 		
 		// set uid_map, so the process drops back down to the caller's uid
-		// the sandboxed process can't use its uid, but it looks weird in ps, and I'm not sure if you can kill() a setuid program
+		// the sandboxed process can't use its uid, but it looks weird in ps, and having a pidfd to a root process sounds scary
 		
 		// a process can (as far as I can see) not set its own uid_map, so let parent do that
 		// docs say it can, but testing just yields -EPERM
 		
-		char filename[32]; // like above; the rest of the string is 16 (nul included), but 10+16 <= 32
+		char filename[32]; // pid_t is int, INT_MIN is length 10, the rest of the string is 16 (including the nul), 10+16 <= 32
 		sprintf(filename, "/proc/%d/uid_map", pid);
 		int fd = require(open(filename, O_WRONLY));
-		char uid_map[32]; // uid_t is int, INT_MIN is length 10, the rest of the string is 9 (including the nul), 10+9 <= 32
+		char uid_map[32]; // like above; 10+9 <= 32
 		sprintf(uid_map, "65534 %d 1", getuid()); // fprintf would be easier, but it's harder to check error codes on that
 		require_eq(write(fd, uid_map, strlen(uid_map)), (ssize_t)strlen(uid_map));
 		require(close(fd));
 		
-		send(FD_BROKER, &pid, sizeof(pid_t), 0); // this is received in launch-linux-sand.cpp
+		send_fd(FD_BROKER, "", 1, 0, pidfd); // this is received in launch.cpp
 		exit(0); // the actual exit status doesn't matter, parent asked for no SIGCHLD
 	}
 	if (pid == 0)
@@ -229,7 +230,7 @@ int main(int argc, char** argv)
 		// wait for the above branch to finish, so setuid succeeds
 		// and for launcher to receive the pid from the parent process, so its { br_ping } doesn't do anything silly
 		char discard[1];
-		require_eq(recv(FD_BROKER, &discard, 1, 0), (ssize_t)1); // sent by launch-linux-sand.cpp after the pid is sent
+		require_eq(recv(FD_BROKER, &discard, 1, 0), (ssize_t)1); // sent by launch.cpp after the pidfd is sent
 		require(setuid(65534));
 		
 		sandbox_exec_lockdown(argv);

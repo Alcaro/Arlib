@@ -6,7 +6,7 @@
 #include <sys/wait.h>
 #include <linux/memfd.h> // documented as sys/memfd.h, but that file doesn't exist
 #include <linux/sched.h>
-#include "internal-linux-sand.h"
+#include "internal.h"
 
 /*
 //ensure a AF_UNIX SOCK_SEQPACKET socketpair can't specify dest_addr
@@ -112,13 +112,6 @@ template<typename T> inline T require_eq(T actual, T expected)
 	return actual;
 }
 
-static ssize_t recv_repeat(int sockfd, void* buf, size_t len, int flags)
-{
-again:
-	ssize_t ret = recv(sockfd, buf, len, flags);
-	if (ret == -1 && errno == EINTR) goto again;
-	return ret;
-}
 static ssize_t send_repeat(int sockfd, const void * buf, size_t len, int flags)
 {
 again:
@@ -130,7 +123,7 @@ again:
 __attribute__((noreturn))
 void sandbox_exec_lockdown(const char * const * argv);
 
-pid_t sandproc::launch_impl(const char * program, array<const char*> argv, array<int> stdio_fd)
+void sandproc::launch_impl(const char * program, array<const char*> argv, array<int> stdio_fd)
 {
 	// can't override argv[0] in sandbox, ld-linux won't understand that
 	// if you need a fake argv[0], redirect the chosen executable via sandbox policy
@@ -142,11 +135,11 @@ pid_t sandproc::launch_impl(const char * program, array<const char*> argv, array
 	//putting it before clone() allows sharing it between sandbox children
 	int preld_fd = preloader_fd();
 	if (preld_fd < 0)
-		return -1;
+		return;
 	
 	int socks[2];
 	if (socketpair(AF_UNIX, SOCK_SEQPACKET|SOCK_CLOEXEC, 0, socks) < 0)
-		return -1;
+		return;
 	
 	stdio_fd.append(socks[1]);
 	stdio_fd.append(preld_fd); // we could request preld from parent, but this is easier
@@ -162,9 +155,9 @@ pid_t sandproc::launch_impl(const char * program, array<const char*> argv, array
 		{
 			int socks2[2];
 			if (socketpair(AF_UNIX, SOCK_SEQPACKET|SOCK_CLOEXEC, 0, socks2) < 0)
-				return -1;
+				return;
 			
-			string setuid_path = file::exepath()+"gvc-setuid"; // do this before clone(), malloc isn't signal handler safe
+			string setuid_path = file::exedir()+"gvc-setuid"; // do this before clone(), malloc isn't signal handler safe
 			pid_t pid_setuid = syscall(__NR_clone, 0, NULL, NULL, NULL, NULL); // clone instead of fork to discard the SIGCHLD
 			if (pid_setuid < 0) {} // do nothing, fall through to the errno != EPERM clause
 			if (pid_setuid > 0)
@@ -174,11 +167,12 @@ pid_t sandproc::launch_impl(const char * program, array<const char*> argv, array
 				watch_add(socks[0]);
 				close(socks[1]);
 				
-				pid_t pid_child;
-				if (recv_repeat(socks[0], &pid_child, sizeof(pid_t), 0) != (ssize_t)sizeof(pid_t)) return -1;
-				if (send_repeat(socks[0], "", 1, 0) != (ssize_t)1) return -1;
+				char dummy[1];
+				if (recv_fd(socks[0], dummy, 1, 0, &this->pidfd) != 1) return;
+				if (this->pidfd < 0) return;
+				if (send_repeat(socks[0], "", 1, 0) != (ssize_t)1) { terminate(); return; }
 				
-				return pid_child;
+				return;
 			}
 			if (pid_setuid == 0)
 			{
@@ -190,7 +184,7 @@ pid_t sandproc::launch_impl(const char * program, array<const char*> argv, array
 		}
 		close(socks[0]);
 		close(socks[1]);
-		return -1;
+		return;
 	}
 	if (pid > 0)
 	{
@@ -198,7 +192,7 @@ pid_t sandproc::launch_impl(const char * program, array<const char*> argv, array
 		mainsock = socks[0];
 		watch_add(socks[0]);
 		close(socks[1]);
-		return pid;
+		return;
 	}
 	
 	// child path

@@ -80,7 +80,7 @@ class sandproc : public process {
 	sandcomm* conn = NULL;
 	
 	static int preloader_fd();
-	pid_t launch_impl(const char * program, array<const char*> argv, array<int> stdio_fd) override;
+	void launch_impl(const char * program, array<const char*> argv, array<int> stdio_fd) override;
 	
 public:
 	sandproc(runloop* loop) : process(loop) {}

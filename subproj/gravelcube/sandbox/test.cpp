@@ -1,5 +1,5 @@
-#include "arlib.h"
-#include "sandbox/sandbox.h"
+#include "../arlib.h"
+#include "sandbox.h"
 
 #include <unistd.h> // usleep
 #define TRUE "/bin/true"
@@ -47,7 +47,7 @@ test("sandbox", "", "sandbox")
 		sandproc p(loop);
 		p.onexit(break_runloop);
 		
-		p.set_access_violation_cb(bind_lambda([&](cstring path, bool write) { assert_unreachable(); } ));
+		p.set_access_violation_cb(bind_lambda([&](cstring path, bool write) { puts(""+path); assert_unreachable(); } ));
 		p.set_stdout(process::output::create_stdout());
 		p.set_stderr(process::output::create_stderr());
 		p.fs_grant_syslibs(TRUE);
@@ -64,7 +64,7 @@ test("sandbox", "", "sandbox")
 		sandproc p(loop);
 		p.onexit(break_runloop);
 		
-		p.set_access_violation_cb(bind_lambda([&](cstring path, bool write) { assert_unreachable(); } ));
+		p.set_access_violation_cb(bind_lambda([&](cstring path, bool write) { puts(""+path); assert_unreachable(); } ));
 		p.set_stdout(process::output::create_stdout());
 		p.set_stderr(process::output::create_stderr());
 		p.fs_grant_syslibs(FALSE);
