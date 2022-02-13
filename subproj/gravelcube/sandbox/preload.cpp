@@ -75,27 +75,27 @@ namespace mysand { namespace {
 
 static inline int open(const char * pathname, int flags, mode_t mode = 0)
 {
-	return syscall3(__NR_open, (long)pathname, flags, mode);
+	return syscall3<__NR_open>(pathname, flags, mode);
 }
 
 static inline ssize_t read(int fd, void * buf, size_t count)
 {
-	return syscall3(__NR_read, fd, (long)buf, count);
+	return syscall3<__NR_read>(fd, buf, count);
 }
 
 static inline int close(int fd)
 {
-	return syscall1(__NR_close, fd);
+	return syscall1<__NR_close>(fd);
 }
 
 static inline void* mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset)
 {
-	return (void*)syscall6(__NR_mmap, (long)addr, length, prot, flags, fd, offset);
+	return (void*)syscall6<__NR_mmap>(addr, length, prot, flags, fd, offset);
 }
 
 static inline int munmap(void* addr, size_t length)
 {
-	return syscall2(__NR_munmap, (long)addr, length);
+	return syscall2<__NR_munmap>(addr, length);
 }
 
 // Clang's __builtin_align_up would make more sense, but gcc doesn't have that

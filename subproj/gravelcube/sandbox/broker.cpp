@@ -19,7 +19,7 @@
 
 #include <sys/syscall.h>
 #include <linux/memfd.h>
-//glibc 2.27 (february 2018) adds this, probably won't interfere...
+// still no glibc wrapper as of 2.34 (august 2021)
 static inline int memfd_create(const char * name, unsigned int flags) { return syscall(__NR_memfd_create, name, flags); }
 
 void sandproc::filesystem::grant_native_redir(string cpath, string ppath, int max_write)

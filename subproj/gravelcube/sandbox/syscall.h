@@ -31,128 +31,86 @@
 #define REG_RET "eax"
 #endif
 
-//ideally, these functions could be inlined into the templates, but that fails due to
-// https://gcc.gnu.org/bugzilla/show_bug.cgi?id=33661 (and duplicates: 36080 64951 66393 80264)
-//it's said that making the regs volatile fixes it, but that would likely demand the 'correct' initialization order and yield worse code
-#if __GNUC__ >= 11
-#warning the gcc bug is gone as of january 2021, remove these extra steps
-#endif
-static inline long syscall6(long n, long a1, long a2, long a3, long a4, long a5, long a6)
+template<int nr, typename T1, typename T2, typename T3, typename T4, typename T5, typename T6>
+long syscall6(T1 a1, T2 a2, T3 a3, T4 a4, T5 a5, T6 a6)
 {
-	register long sysno __asm__(REG_SYSNO) = n;
-	register long a1r __asm__(REG_ARG1) = a1;
-	register long a2r __asm__(REG_ARG2) = a2;
-	register long a3r __asm__(REG_ARG3) = a3;
-	register long a4r __asm__(REG_ARG4) = a4;
-	register long a5r __asm__(REG_ARG5) = a5;
-	register long a6r __asm__(REG_ARG6) = a6;
+	register long sysno __asm__(REG_SYSNO) = nr;
+	register long a1r __asm__(REG_ARG1) = (long)a1;
+	register long a2r __asm__(REG_ARG2) = (long)a2;
+	register long a3r __asm__(REG_ARG3) = (long)a3;
+	register long a4r __asm__(REG_ARG4) = (long)a4;
+	register long a5r __asm__(REG_ARG5) = (long)a5;
+	register long a6r __asm__(REG_ARG6) = (long)a6;
 	register long ret __asm__(REG_RET);
 	__asm__ volatile(SYSCALL_INSTR : "=r"(ret) : "r"(sysno), "r"(a1r), "r"(a2r), "r"(a3r), "r"(a4r), "r"(a5r), "r"(a6r) : CLOBBER);
 	return ret;
 }
 
-static inline long syscall5(long n, long a1, long a2, long a3, long a4, long a5)
+template<int nr, typename T1, typename T2, typename T3, typename T4, typename T5>
+long syscall5(T1 a1, T2 a2, T3 a3, T4 a4, T5 a5)
 {
-	register long sysno __asm__(REG_SYSNO) = n;
-	register long a1r __asm__(REG_ARG1) = a1;
-	register long a2r __asm__(REG_ARG2) = a2;
-	register long a3r __asm__(REG_ARG3) = a3;
-	register long a4r __asm__(REG_ARG4) = a4;
-	register long a5r __asm__(REG_ARG5) = a5;
+	register long sysno __asm__(REG_SYSNO) = nr;
+	register long a1r __asm__(REG_ARG1) = (long)a1;
+	register long a2r __asm__(REG_ARG2) = (long)a2;
+	register long a3r __asm__(REG_ARG3) = (long)a3;
+	register long a4r __asm__(REG_ARG4) = (long)a4;
+	register long a5r __asm__(REG_ARG5) = (long)a5;
 	register long ret __asm__(REG_RET);
 	__asm__ volatile(SYSCALL_INSTR : "=r"(ret) : "r"(sysno), "r"(a1r), "r"(a2r), "r"(a3r), "r"(a4r), "r"(a5r) : CLOBBER);
 	return ret;
 }
 
-static inline long syscall4(long n, long a1, long a2, long a3, long a4)
+template<int nr, typename T1, typename T2, typename T3, typename T4>
+long syscall4(T1 a1, T2 a2, T3 a3, T4 a4)
 {
-	register long sysno __asm__(REG_SYSNO) = n;
-	register long a1r __asm__(REG_ARG1) = a1;
-	register long a2r __asm__(REG_ARG2) = a2;
-	register long a3r __asm__(REG_ARG3) = a3;
-	register long a4r __asm__(REG_ARG4) = a4;
+	register long sysno __asm__(REG_SYSNO) = nr;
+	register long a1r __asm__(REG_ARG1) = (long)a1;
+	register long a2r __asm__(REG_ARG2) = (long)a2;
+	register long a3r __asm__(REG_ARG3) = (long)a3;
+	register long a4r __asm__(REG_ARG4) = (long)a4;
 	register long ret __asm__(REG_RET);
 	__asm__ volatile(SYSCALL_INSTR : "=r"(ret) : "r"(sysno), "r"(a1r), "r"(a2r), "r"(a3r), "r"(a4r) : CLOBBER);
 	return ret;
 }
 
-static inline long syscall3(long n, long a1, long a2, long a3)
+template<int nr, typename T1, typename T2, typename T3>
+long syscall3(T1 a1, T2 a2, T3 a3)
 {
-	register long sysno __asm__(REG_SYSNO) = n;
-	register long a1r __asm__(REG_ARG1) = a1;
-	register long a2r __asm__(REG_ARG2) = a2;
-	register long a3r __asm__(REG_ARG3) = a3;
+	register long sysno __asm__(REG_SYSNO) = nr;
+	register long a1r __asm__(REG_ARG1) = (long)a1;
+	register long a2r __asm__(REG_ARG2) = (long)a2;
+	register long a3r __asm__(REG_ARG3) = (long)a3;
 	register long ret __asm__(REG_RET);
 	__asm__ volatile(SYSCALL_INSTR : "=r"(ret) : "r"(sysno), "r"(a1r), "r"(a2r), "r"(a3r) : CLOBBER);
 	return ret;
 }
 
-static inline long syscall2(long n, long a1, long a2)
+template<int nr, typename T1, typename T2>
+long syscall2(T1 a1, T2 a2)
 {
-	register long sysno __asm__(REG_SYSNO) = n;
-	register long a1r __asm__(REG_ARG1) = a1;
-	register long a2r __asm__(REG_ARG2) = a2;
+	register long sysno __asm__(REG_SYSNO) = nr;
+	register long a1r __asm__(REG_ARG1) = (long)a1;
+	register long a2r __asm__(REG_ARG2) = (long)a2;
 	register long ret __asm__(REG_RET);
 	__asm__ volatile(SYSCALL_INSTR : "=r"(ret) : "r"(sysno), "r"(a1r), "r"(a2r) : CLOBBER);
 	return ret;
 }
 
-static inline long syscall1(long n, long a1)
+template<int nr, typename T1>
+long syscall1(T1 a1)
 {
-	register long sysno __asm__(REG_SYSNO) = n;
-	register long a1r __asm__(REG_ARG1) = a1;
+	register long sysno __asm__(REG_SYSNO) = nr;
+	register long a1r __asm__(REG_ARG1) = (long)a1;
 	register long ret __asm__(REG_RET);
 	__asm__ volatile(SYSCALL_INSTR : "=r"(ret) : "r"(sysno), "r"(a1r) : CLOBBER);
 	return ret;
 }
 
-static inline long syscall0(long n)
+template<int nr>
+long syscall0()
 {
-	register long sysno __asm__(REG_SYSNO) = n;
+	register long sysno __asm__(REG_SYSNO) = nr;
 	register long ret __asm__(REG_RET);
 	__asm__ volatile(SYSCALL_INSTR : "=r"(ret) : "r"(sysno) : CLOBBER);
 	return ret;
-}
-
-
-template<int nr, typename T1, typename T2, typename T3, typename T4, typename T5, typename T6>
-long syscall(T1 a1, T2 a2, T3 a3, T4 a4, T5 a5, T6 a6)
-{
-	return syscall6(nr, (long)a1, (long)a2, (long)a3, (long)a4, (long)a5, (long)a6);
-}
-
-template<int nr, typename T1, typename T2, typename T3, typename T4, typename T5>
-long syscall(T1 a1, T2 a2, T3 a3, T4 a4, T5 a5)
-{
-	return syscall5(nr, (long)a1, (long)a2, (long)a3, (long)a4, (long)a5);
-}
-
-template<int nr, typename T1, typename T2, typename T3, typename T4>
-long syscall(T1 a1, T2 a2, T3 a3, T4 a4)
-{
-	return syscall4(nr, (long)a1, (long)a2, (long)a3, (long)a4);
-}
-
-template<int nr, typename T1, typename T2, typename T3>
-long syscall(T1 a1, T2 a2, T3 a3)
-{
-	return syscall3(nr, (long)a1, (long)a2, (long)a3);
-}
-
-template<int nr, typename T1, typename T2>
-long syscall(T1 a1, T2 a2)
-{
-	return syscall2(nr, (long)a1, (long)a2);
-}
-
-template<int nr, typename T1>
-long syscall(T1 a1)
-{
-	return syscall1(nr, (long)a1);
-}
-
-template<int nr>
-long syscall()
-{
-	return syscall0(nr);
 }

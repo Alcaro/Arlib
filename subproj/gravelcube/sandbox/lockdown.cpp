@@ -1,11 +1,10 @@
 // This program is intended to be setuid. It sets up some namespaces, a seccomp filter, and various other security restrictions.
 // It contains zero input-dependent branches; the only input it takes at all is kernel error codes and return values,
 //  reading and discarding one byte from a socket, and passing argv to execveat() once all restrictions are in place.
-// It is only 250 lines of code, and does not call into any other file, other than libc.
+// It is only 250 lines of code, and does not call into any other file, other than libc, internal.h, and (arguably) bpf.S/bpf.inc.
 // Ideally, it wouldn't be needed, but as long as user namespaces are root-only on some distros, those distros need this thing.
 // If unprivileged user namespaces are enabled on your distro, this binary won't be used and can safely be removed.
 
-__attribute__((noreturn))
 void sandbox_exec_lockdown(const char * const * argv);
 
 #include <stddef.h>
@@ -56,7 +55,7 @@ inline void require_b(bool expected)
 	if (!expected)
 	{
 #ifdef SANDBOX_SETUID
-		// a message of length != sizeof(pid_t) to tell parent that something failed
+		// a message without a fd, to tell parent that something failed
 		// can't just terminate; the wrapper's child will keep the socket alive, causing a deadlock
 		// doesn't apply to failure before calling clone(); if the aforementioned child doesn't exist, it can't hold anything alive
 		if (req_fail_fd != -1) send(req_fail_fd, "", 1, 0);
@@ -192,8 +191,6 @@ void sandbox_exec_lockdown(const char * const * argv)
 
 int main(int argc, char** argv)
 {
-	if (geteuid() != 0) exit(1);
-	
 	int clone_flags = CLONE_NEWUSER | CLONE_NEWPID | CLONE_NEWNET | CLONE_NEWCGROUP | CLONE_NEWIPC | CLONE_NEWNS | CLONE_NEWUTS;
 	clone_flags |= CLONE_PIDFD;
 	clone_flags |= CLONE_PARENT; // don't let the child daemonize
@@ -234,6 +231,7 @@ int main(int argc, char** argv)
 		require(setuid(65534));
 		
 		sandbox_exec_lockdown(argv);
+		exit(1); // sandbox_exec_lockdown() shouldn't return, but let's not assume things in a setuid
 	}
 }
 #endif

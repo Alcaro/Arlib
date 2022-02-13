@@ -812,6 +812,14 @@ static gboolean search_kb(GtkEventControllerKey* self, guint keyval, guint keyco
 			for (column::node& item : c_search.items)
 				enqueue_real(item.filename);
 		}
+		else if (search_text.endswith("*?"))
+		{
+			array<size_t> tmp;
+			for (size_t n : range(c_search.items.size()))
+				tmp.insert(g_rand(n+1), n);
+			for (size_t n : tmp)
+				enqueue_real(c_search.items[n].filename);
+		}
 		else if (search_text.startswith("$"))
 		{
 			enqueue_real(search_text);

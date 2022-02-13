@@ -34,6 +34,7 @@
 #    define _CRT_SECURE_NO_WARNINGS
 #  endif
 #  ifdef __MINGW32__
+#    define _FILE_OFFSET_BITS 64
 // mingw *really* wants to define its own printf/scanf, which adds ~20KB random stuff to the binary
 // (on some 32bit mingw versions, it also adds a dependency on libgcc_s_sjlj-1.dll)
 // extra kilobytes and dlls is the opposite of what I want, and my want is stronger, so here's some shenanigans
@@ -866,7 +867,7 @@ using std::signbit;
 //     - runloop::global()
 //     - socket::create_ssl() SChannel backend (BearSSL is safe; OpenSSL is not supported on Windows)
 //     - window_*
-//     - mutex as a global variable, if ARXPSUPPORT (safe if XP support is disabled, class member, or both)
+//     - mutex as a global variable, if ARXPSUPPORT (safe if class member, if XP support is disabled, or both)
 //     - semaphore as a global variable
 //     - WuTF (not supported in DLLs at all)
 // - To avoid crashes if atexit() calls an unloaded DLL, and to allow globals in EXE paths, globals' constructors are not run either.

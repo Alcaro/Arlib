@@ -63,7 +63,7 @@ static inline string tostringhex_dbg(const arrayvieww<uint8_t>& item) { return t
 static inline string tostringhex_dbg(const array<uint8_t>& item) { return tostringhex_dbg((arrayview<uint8_t>)item); }
 
 
-#ifdef ARLIB_TESTRUNNER
+#ifdef ARLIB_TEST
 class _testdecl {
 public:
 	_testdecl(void(*func)(), const char * filename, int line, const char * name, const char * requires, const char * provides);

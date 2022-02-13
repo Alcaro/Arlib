@@ -669,20 +669,17 @@ test("string conversion - string to float", "", "string")
 	// 0.0000000000967498303694469541369471698999404907226562500000000000 <- float closest to the above double
 	testfromfloat("9.67498269e-11", 9.67498269e-11f);
 	static_assert(9.67498269e-11f != (float)9.67498269e-11);
-	
-	testfromfloat("1.199999988079071",  // 1.1999999880790710000000000000 <- input
+	testfromfloat("1.199999988079071",     // 1.1999999880790710000000000000 <- input
 	                  1.199999988079071f); // 1.1999999284744262695312500000 <- float closest to the input
 	static_assert(1.199999988079071f !=    // 1.1999999880790710449218750000 <- double closest to the input
 	       (float)1.199999988079071);      // 1.2000000476837158203125000000 <- float closest to the above double
-	
-	testfromfloat("1591091017e+10",  // 15910910170000000000.0 <- input
+	testfromfloat("1591091017e+10",     // 15910910170000000000.0 <- input
 	                  1591091017e+10f); // 15910910719755812864.0 <- float closest to the input
 	static_assert(1591091017e+10f !=    // 15910910169999998976.0 <- double closest to the input
 	       (float)1591091017e+10);      // 15910909620244185088.0 <- float closest to the above double
-	
 	// which also have the property that both significand and 10**abs(exponent) are exactly representable as double,
 	//  so the correct double can be calculated with two integer to double conversions and a multiplication or division,
-	//  but correct float can't
+	//  but correct float would yield double rounding
 	
 	testfromfloat("340282346638528859811704183484516925440", 340282346638528859811704183484516925440.0f); // max possible float; a few higher values round down to that,
 	testfromfloat("340282356779733661637539395458142568448", HUGE_VALF, false); // but anything too big should be rejected
@@ -981,6 +978,7 @@ test("string conversion - string to float", "", "string")
 	               "1142408800030775170625915670728657003151953664260769822494937951845801530895238439819708403389937873"
 	               "2414634842056080000272705311068273879077914449185347715987501628125488627684932015189916680282517302"
 	               "99953143924168545708663913273994694463908672332763671875e-319", 3.2379e-319);
+	
 	testfromfloat("33554431", 33554432.0f); // rounds up to next power of two
 	testfromfloat("0.0000000000000000000000000000000000000000000014012984643248170709237295832899161312802619418765157717"
 	              "5706828388979108268586060148663818836212158203125", 1e-45f); // smallest subnormal float
@@ -996,7 +994,6 @@ test("string conversion - string to float", "", "string")
 	testfromfloat("0.0000000000000000000000000000000000000000000007006492321624085354618647916449580656401309709382578858"
 	              "7853414194489554134293030074331909418106079101562500000000000000000000000000000000000000000000000000001",
 	              1e-45f);
-	
 }
 
 test("string conversion - float to string", "", "string")

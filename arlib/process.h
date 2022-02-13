@@ -17,6 +17,7 @@ private:
 	output* ch_stdout = NULL;
 	output* ch_stderr = NULL;
 	
+	function<void(int)> onexit_cb;
 #ifdef __linux__
 	void on_sigchld();
 	
@@ -26,10 +27,8 @@ public:
 protected:
 	int pidfd = -1;
 	int exitcode = -1;
-	function<void(int)> onexit_cb;
 	
 	void reap(uintptr_t pidfd);
-	
 	
 	//Closes all open file descriptors in the process, except those which are numerically strictly less than lowfd.
 	//For example, closefrom(3) would close everything except stdin/stdout/stderr.
@@ -45,8 +44,7 @@ protected:
 	static string find_prog(cstring prog);
 	
 	//stdio_fd is an array of { stdin, stdout, stderr } and should be sent to set_fds (possibly with a few additions) post-fork.
-	//May modify its arguments arbitrarily.
-	//Must store a pidfd to the appropriate struct member.
+	//The function may modify its arguments arbitrarily. The function must store a pidfd to the appropriate struct member.
 #ifdef ARLIB_OVERRIDEABLE_PROCESS
 	virtual
 #endif

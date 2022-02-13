@@ -69,60 +69,60 @@ static inline size_t strlen(const char * str)
 
 static inline int close(int fd)
 {
-	return syscall1(__NR_close, fd);
+	return syscall1<__NR_close>(fd);
 }
 
 static inline void exit_group(int status)
 {
-	syscall1(__NR_exit_group, status);
+	syscall1<__NR_exit_group>(status);
 	__builtin_unreachable();
 }
 
 static inline ssize_t write(int fd, const void * buf, size_t count)
 {
-	return syscall3(__NR_write, fd, (long)buf, count);
+	return syscall3<__NR_write>(fd, buf, count);
 }
 
 #define fstat fstat_ // gcc claims a few syscalls are ambiguous, the outer (extern) one being as good as this one
 static inline int fstat(int fd, struct stat * buf)
 {
-	return syscall2(__NR_fstat, fd, (long)buf);
+	return syscall2<__NR_fstat>(fd, buf);
 }
 
 static inline int fchmod(int fd, mode_t mode)
 {
-	return syscall2(__NR_fchmod, fd, mode);
+	return syscall2<__NR_fchmod>(fd, mode);
 }
 
 #define send send_
 static inline ssize_t send(int sockfd, const void * buf, size_t len, int flags)
 {
-	return syscall6(__NR_sendto, sockfd, (long)buf, len, flags, (long)NULL, 0); // no send syscall
+	return syscall6<__NR_sendto>(sockfd, buf, len, flags, nullptr, 0); // no send syscall
 }
 
 static inline int dup2(int oldfd, int newfd)
 {
-	return syscall2(__NR_dup2, oldfd, newfd);
+	return syscall2<__NR_dup2>(oldfd, newfd);
 }
 
 #define recvmsg recvmsg_
 static inline ssize_t recvmsg(int sockfd, struct msghdr * msg, int flags)
 {
-	return syscall3(__NR_recvmsg, sockfd, (long)msg, flags);
+	return syscall3<__NR_recvmsg>(sockfd, msg, flags);
 }
 
 static inline void* mmap(void* addr, size_t length, int prot, int flags, int fd, off_t offset)
 {
-	return (void*)syscall6(__NR_mmap, (long)addr, length, prot, flags, fd, offset);
+	return (void*)syscall6<__NR_mmap>(addr, length, prot, flags, fd, offset);
 }
 
 static inline int fcntl(unsigned int fd, unsigned int cmd)
 {
-	return syscall2(__NR_fcntl, fd, cmd);
+	return syscall2<__NR_fcntl>(fd, cmd);
 }
 static inline int fcntl(unsigned int fd, unsigned int cmd, unsigned long arg)
 {
-	return syscall3(__NR_fcntl, fd, cmd, arg);
+	return syscall3<__NR_fcntl>(fd, cmd, arg);
 }
 
 
@@ -338,8 +338,8 @@ static inline pid_t clone(unsigned long clone_flags, unsigned long newsp,
 	{
 		child_tidptr = NULL;
 	}
-	pid_t ret = syscall5(__NR_clone, required_flags, newsp, (long)NULL, (long)child_tidptr, tls);
-	//pid_t ret = syscall5(__NR_clone, clone_flags, newsp, (long)parent_tidptr, (long)0x12345678, tls);
+	pid_t ret = syscall5<__NR_clone>(required_flags, newsp, nullptr, child_tidptr, tls);
+	//pid_t ret = syscall5<__NR_clone>(clone_flags, newsp, parent_tidptr, 0x12345678, tls);
 	if (ret<0)
 	{
 		//couldn't fork
@@ -423,7 +423,7 @@ static inline int execveat(int dirfd, const char * pathname, char * const * argv
 	intptr_t mmap_ret = (intptr_t)mmap((void*)execveat_gate_page, 4096, PROT_READ, MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED, -1, 0);
 	if (mmap_ret < 0) return mmap_ret;
 	
-	return syscall5(__NR_execveat, FD_EMUL, (long)execveat_gate, (long)new_argv, (long)new_envp, AT_EMPTY_PATH);
+	return syscall5<__NR_execveat>(FD_EMUL, execveat_gate, new_argv, new_envp, AT_EMPTY_PATH);
 }
 
 static inline int execve(const char * filename, char * const argv[], char * const envp[])
@@ -618,7 +618,7 @@ struct kabi_sigaction {
 
 static inline int rt_sigaction(int sig, const struct sigaction * act, struct sigaction * oact, size_t sigsetsize)
 {
-	return syscall4(__NR_rt_sigaction, sig, (long)act, (long)oact, sigsetsize);
+	return syscall4<__NR_rt_sigaction>(sig, act, oact, sigsetsize);
 }
 
 extern "C" void restore_rt();

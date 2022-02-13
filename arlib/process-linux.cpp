@@ -1,20 +1,15 @@
 #include "process.h"
 
 #ifdef __linux__
-#include <spawn.h>
-#include <errno.h>
-#include <unistd.h>
 #include <fcntl.h>
 #include <sys/syscall.h>
 #include <sys/wait.h>
+#include <linux/sched.h>
 #include <linux/wait.h>
 #include <signal.h>
-#include <limits.h>
-#include <poll.h>
-#include "set.h"
-#include "file.h"
+#include <errno.h>
 
-// for porting to other unixen, a SIGCHLD handler can be extracted from commit 8c7c1d
+// too bad pidfd is linux only, sigchld is such an enormous pain
 
 //atoi is locale-aware, not gonna trust that to not call malloc or otherwise be stupid
 static int atoi_simple(const char * text)
