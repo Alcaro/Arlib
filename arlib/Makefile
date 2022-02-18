@@ -408,6 +408,8 @@ TRUE_CFLAGS := -std=c99 $(CCXXFLAGS) $(CONF_CFLAGS) $(CFLAGS)
 # - Overloading operator[] depending on whether it's a read or write access, int x = std::map[key_t] mutating is silly
 #     not sure if map[key].foo.bar() should count as read or write; not all wishes are realistic
 # - Modules, if they're good (I haven't looked into them, it's easy to make a bad module system)
+# - Virtual constants - constants stored directly in the vtable (as opposed to a function that returns the constant)
+# C++20 is released, but I'm choosing to ignore it until Ubuntu 22.04 releases. I'd rather not demand anything newer than latest Ubuntu LTS.
 TRUE_CXXFLAGS := -std=c++17 -fno-rtti $(CCXXFLAGS) $(CONF_CXXFLAGS) $(CXXFLAGS)
 TRUE_LFLAGS := $(CONF_LFLAGS) $(LFLAGS)
 

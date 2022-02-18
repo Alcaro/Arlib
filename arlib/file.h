@@ -79,13 +79,19 @@ public:
 		m_wr_existing,    // Fails if the file doesn't exist.
 		m_replace,        // If the file exists, it's either deleted and recreated, or truncated.
 		m_create_excl,    // Fails if the file does exist.
+		
+		m_exclusive = 8, // OR with any other mode. Tries to claim exclusive write access, or with m_read, simply deny all writers.
+		                 // The request may be bypassable on some OSes.
 	};
 	
 	class mmapw_t;
 	class mmap_t : public arrayview<uint8_t>, nocopy {
 		friend class file2;
-		mmap_t(uint8_t * ptr, size_t count) : arrayview(ptr, count) {}
-		void unmap();
+		friend class mmapw_t;
+		static void map(bytesr& by, file2& src, bool writable);
+		static void unmap(bytesr& by);
+		
+		void unmap() { unmap(*this); }
 		void move_from(mmap_t& other) { items = other.items; count = other.count; other.items = nullptr; other.count = 0; }
 		void move_from(mmapw_t& other) { items = other.items; count = other.count; other.items = nullptr; other.count = 0; }
 	public:
@@ -98,8 +104,7 @@ public:
 	};
 	class mmapw_t : public arrayvieww<uint8_t>, nocopy {
 		friend class file2;
-		mmapw_t(uint8_t * ptr, size_t count) : arrayvieww(ptr, count) {}
-		void unmap();
+		void unmap() { mmap_t::unmap(*this); }
 		void move_from(mmapw_t& other) { items = other.items; count = other.count; other.items = nullptr; other.count = 0; }
 	public:
 		mmapw_t() {}
@@ -163,12 +168,25 @@ public:
 	// As long as the file is mapped, it can't be resized.
 	mmap_t mmap() { return mmapw(false); }
 	static mmap_t mmap(cstring filename) { return file2(filename).mmap(); }
-	mmapw_t mmapw(bool writable = true); // If not writable, the compiler will let you write, but doing so will segfault at runtime.
+	// If not writable, the compiler will let you write, but doing so will segfault at runtime.
+	mmapw_t mmapw(bool writable = true)
+	{
+		mmapw_t ret;
+		mmap_t::map(ret, *this, writable);
+		return ret;
+	}
 	static mmapw_t mmapw(cstring filename) { return file2(filename, m_wr_existing).mmapw(); }
 	
 	// Resizes the file, and its associated mmap object. Same as unmapping, resizing and remapping, but optimizes slightly better.
 	bool resize(off_t newsize, mmap_t& map);
 	bool resize(off_t newsize, mmapw_t& map, bool writable = true);
+	
+	// Flushes write() calls to disk. Normally done automatically after a second or so.
+#ifndef __unix__
+	void sync();
+#else
+	void sync() { fdatasync(fd); }
+#endif
 	
 	// Flushes the mapped bytes to disk; they will remain there even if power is cut immediately after return.
 	// Input must be mapped from this file object.
