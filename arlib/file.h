@@ -81,7 +81,7 @@ public:
 		m_create_excl,    // Fails if the file does exist.
 		
 		m_exclusive = 8, // OR with any other mode. Tries to claim exclusive write access, or with m_read, simply deny all writers.
-		                 // The request may be bypassable on some OSes.
+		                 // The request may be bypassable on some OSes. However, if both processes use Arlib, the second one will be stopped.
 	};
 	
 	class mmapw_t;
@@ -92,8 +92,7 @@ public:
 		static void unmap(bytesr& by);
 		
 		void unmap() { unmap(*this); }
-		void move_from(mmap_t& other) { items = other.items; count = other.count; other.items = nullptr; other.count = 0; }
-		void move_from(mmapw_t& other) { items = other.items; count = other.count; other.items = nullptr; other.count = 0; }
+		void move_from(bytesr& other) { arrayview::operator=(other); other = nullptr; }
 	public:
 		mmap_t() {}
 		mmap_t(mmap_t&& other) { move_from(other); }
@@ -105,7 +104,7 @@ public:
 	class mmapw_t : public arrayvieww<uint8_t>, nocopy {
 		friend class file2;
 		void unmap() { mmap_t::unmap(*this); }
-		void move_from(mmapw_t& other) { items = other.items; count = other.count; other.items = nullptr; other.count = 0; }
+		void move_from(bytesr& other) { arrayview::operator=(other); other = nullptr; }
 	public:
 		mmapw_t() {}
 		mmapw_t(mmapw_t&& other) { move_from(other); }
@@ -124,19 +123,18 @@ public:
 	operator bool() const { return fd != null_fd; }
 	
 	void create_usurp(fd_t fd) { reset(); this->fd = fd; }
-	void create_dup(fd_t fd); // If this is too slow, consider using create_usurp() and release_handle().
 	fd_t peek_handle() { return this->fd; }
 	fd_t release_handle() { fd_t ret = this->fd; this->fd = null_fd; return ret; }
+	void create_dup(fd_t fd); // consider create_usurp() and release_handle(), if possible; they're faster
 	
 #ifndef __unix__
 	// All return number of bytes processed. 0 means both EOF and error, return can't be negative.
-	// Can only process up to 2**31-1 bytes at the time.
-	// On journaling or COW filesystems, writes that don't cross a sector boundary (min 512) are atomic and ordered, including writev.
+	// Max size is 2**31-1 bytes, for both reads and writes.
 	size_t read(bytesw by);
 	size_t pread(off_t pos, bytesw by); // The p variants will not affect the current write pointer.
 	size_t write(bytesr by);
 	size_t pwrite(off_t pos, bytesr by);
-	size_t writev(arrayview<iovec> iov); // No preadv, hard to know sizes before reading.
+	size_t writev(arrayview<iovec> iov); // No readv, hard to know sizes before reading.
 	size_t pwritev(off_t pos, arrayview<iovec> iov);
 	// TODO: async read/write (io_uring or WriteFileEx), but as a separate class (windows needs FILE_FLAG_OVERLAPPED)
 	
@@ -156,7 +154,7 @@ public:
 	
 	size_t sector_size() { struct stat st; fstat(fd, &st); return st.st_blksize; }
 	
-	off_t size() { struct stat st; if (fstat(fd, &st) < 0) return 0; return st.st_size; }
+	off_t size() { struct stat st; fstat(fd, &st); return st.st_size; }
 	bool resize(off_t newsize) { return (ftruncate(fd, newsize) == 0); }
 	//void seek(off_t pos);
 	//off_t tell() { 
@@ -178,8 +176,11 @@ public:
 	static mmapw_t mmapw(cstring filename) { return file2(filename, m_wr_existing).mmapw(); }
 	
 	// Resizes the file, and its associated mmap object. Same as unmapping, resizing and remapping, but optimizes slightly better.
-	bool resize(off_t newsize, mmap_t& map);
-	bool resize(off_t newsize, mmapw_t& map, bool writable = true);
+	bool resize(off_t newsize, mmap_t& map) { return resize(newsize, (bytesr&)map, false); }
+	bool resize(off_t newsize, mmapw_t& map, bool writable = true) { return resize(newsize, (bytesr&)map, writable); }
+private:
+	bool resize(off_t newsize, bytesr& map, bool writable);
+public:
 	
 	// Flushes write() calls to disk. Normally done automatically after a second or so.
 #ifndef __unix__
@@ -188,8 +189,7 @@ public:
 	void sync() { fdatasync(fd); }
 #endif
 	
-	// Flushes the mapped bytes to disk; they will remain there even if power is cut immediately after return.
-	// Input must be mapped from this file object.
+	// Flushes the mapped bytes to disk. Input must be mapped from this file object.
 	// Would fit better directly on mmapw_t, but a full flush on Windows requires both FlushViewOfFile and FlushFileBuffers.
 #ifndef __unix__
 	void sync_map(const mmapw_t& map);

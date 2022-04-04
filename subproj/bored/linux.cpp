@@ -601,6 +601,30 @@ int main(int argc, char** argv)
 		if (rsp_buf) return 0;
 		else return -ENOENT;
 	};
+	f_ops.statfs = [](const char * path, struct statvfs * buf) -> int
+	{
+		bytestreamw req;
+		req.u32l(REQ_STATFS);
+		bytearray rsp_buf = request(req.finish());
+		uint64_t total = readu_le64(rsp_buf.ptr()+0);
+		uint64_t free = readu_le64(rsp_buf.ptr()+8);
+		
+		buf->f_bsize = 512;
+		buf->f_frsize = 512;
+		buf->f_blocks = total/512;
+		buf->f_bfree = free/512;
+		buf->f_bavail = free/512;
+		buf->f_files = 0;
+		buf->f_ffree = 0;
+		buf->f_favail = 0;
+#ifndef NTFS_SB_MAGIC
+#define NTFS_SB_MAGIC 0x5346544e
+#endif
+		buf->f_fsid = NTFS_SB_MAGIC;
+		buf->f_flag = ST_NOATIME|ST_NODEV|ST_NOSUID;
+		buf->f_namemax = 0;
+		return 0;
+	};
 	f_ops.ioctl = [](const char * path, int cmd, void* arg,
 	                 struct fuse_file_info * fi, unsigned int flags, void* data) -> int
 	{

@@ -7,7 +7,7 @@
 // - all writes are ordered; each will complete before the next one starts
 // - writes <= sector size are atomic
 // - sector size is at least 512
-// which I believe are guaranteed by all journaling and COW file systems.
+// which I believe (but didn't verify) are guaranteed by all journaling and COW file systems.
 // If these assumptions are false (for example on FAT32), data loss may result if the machine is unexpectedly powered off.
 class staticmap : nocopy {
 	file2 f;

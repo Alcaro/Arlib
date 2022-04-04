@@ -239,6 +239,13 @@ public:
 // response:
 // - u8 success (always 1, or blank on failure)
 
+#define REQ_STATFS 11
+// request:
+// - (empty)
+// response:
+// - u64 filesystem size (bytes)
+// - u64 filesystem freespace
+
 
 #define REQ_PING 100
 // request:

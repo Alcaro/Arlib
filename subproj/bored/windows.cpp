@@ -219,6 +219,14 @@ public:
 			if (RemoveDirectory(req.pathname())) ret.u8(1);
 		}
 		break;
+		case REQ_STATFS:
+		{
+			ULARGE_INTEGER total, free;
+			GetDiskFreeSpaceExA(root, NULL, &total, &free);
+			ret.u64l(total.QuadPart);
+			ret.u64l(free.QuadPart);
+		}
+		break;
 		
 		case REQ_PING:
 		{

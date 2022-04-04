@@ -10,7 +10,7 @@ It exists for several reasons:
 - The std:: types often contain strange guarantees whose existence increase the constant factor of
     every operation (for example, std::unordered_map must be implemented as an array of linked
     lists, open addressing is forbidden), even if I have no use for such guarantees.
-- I care a lot about binary size and easy distribution (one single file, no DLLs) on Windows, and
+- I prioritize binary size and easy distribution on Windows (one single file, no DLLs), and
     including libstdc++ would often triple the program size.
 - And, most importantly, every feature I implement is a feature I fully understand, so I can debug
     it, debug other instances of the same protocol or format, know which edge cases are likely to

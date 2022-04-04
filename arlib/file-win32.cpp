@@ -445,6 +445,8 @@ void file2::mmap_t::map(bytesr& by, file2& src, bool writable)
 }
 void file2::mmap_t::unmap(bytesr& by)
 {
-	UnmapViewOfFile(by.ptr());
+	if (by.size())
+		UnmapViewOfFile(by.ptr());
+	by = nullptr;
 }
 #endif

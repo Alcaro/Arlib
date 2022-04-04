@@ -143,16 +143,9 @@ bool file::mkdir(cstring filename)
 }
 #endif
 
-bool file2::resize(off_t newsize, mmap_t& map)
+bool file2::resize(off_t newsize, bytesr& map, bool writable)
 {
-	map.unmap();
-	if (!resize(newsize)) return false;
-	mmap_t::map(map, *this, false);
-	return (map.size() != 0);
-}
-bool file2::resize(off_t newsize, mmapw_t& map, bool writable)
-{
-	map.unmap();
+	mmap_t::unmap(map);
 	if (!resize(newsize)) return false;
 	mmap_t::map(map, *this, writable);
 	return (map.size() != 0);

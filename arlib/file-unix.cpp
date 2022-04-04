@@ -217,10 +217,13 @@ bool file2::open(cstring filename, mode m)
 void file2::mmap_t::map(bytesr& by, file2& src, bool writable)
 {
 	by = nullptr;
+	
 	size_t size = src.size();
 	if (!size) return;
+	
 	uint8_t * data = (uint8_t*)::mmap(NULL, size, PROT_READ | (writable * PROT_WRITE), MAP_SHARED, src.fd, 0);
 	if (data == MAP_FAILED) return;
+	
 	by = { data, size };
 }
 void file2::mmap_t::unmap(bytesr& by)
