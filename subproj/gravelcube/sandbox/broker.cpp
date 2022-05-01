@@ -17,11 +17,6 @@
 //this will improve performance by not involving broker for the vast majority of open()s
 //it's still open/openat/sigreturn, but it's way better than open/sendto/recvfrom/openat/sendmsg/sigreturn
 
-#include <sys/syscall.h>
-#include <linux/memfd.h>
-// still no glibc wrapper as of 2.34 (august 2021)
-static inline int memfd_create(const char * name, unsigned int flags) { return syscall(__NR_memfd_create, name, flags); }
-
 void sandproc::filesystem::grant_native_redir(string cpath, string ppath, int max_write)
 {
 	if (ppath[0] != '/') abort();

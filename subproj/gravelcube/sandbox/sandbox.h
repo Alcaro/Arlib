@@ -1,3 +1,5 @@
+// TODO: check how much of this can be replaced with https://www.kernel.org/doc/html/v5.15/userspace-api/landlock.html
+
 #pragma once
 #include "../arlib.h"
 #include <errno.h>

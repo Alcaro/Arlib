@@ -1,7 +1,7 @@
 #include "arlib.h"
 #include "obj/resources.h"
 #include <gtk/gtk.h>
-#ifdef ARGUI_GTK4
+#ifdef ARLIB_GUI_GTK4
 #include <gdk/x11/gdkx.h>
 #endif
 #include <sys/stat.h>
@@ -41,7 +41,7 @@ struct textgrid {
 	{
 		widget = gtk_drawing_area_new();
 		
-#ifdef ARGUI_GTK3
+#ifdef ARLIB_GUI_GTK3
 		auto draw_cb = decompose_lambda([this](cairo_t* cr, GtkWidget* widget)->gboolean
 #else
 		auto draw_cb = decompose_lambda([](void* user_data){ return user_data; },
@@ -51,7 +51,7 @@ struct textgrid {
 			GtkStyleContext* ctx = gtk_widget_get_style_context(widget);
 			if (!this->lay) this->lay = gtk_widget_create_pango_layout(widget, "");
 			
-#ifdef ARGUI_GTK3
+#ifdef ARLIB_GUI_GTK3
 			int width = gtk_widget_get_allocated_width(widget);
 			int height = gtk_widget_get_allocated_height(widget);
 #endif
@@ -93,17 +93,17 @@ struct textgrid {
 				}
 				idx++;
 			}
-#ifdef ARGUI_GTK3
+#ifdef ARLIB_GUI_GTK3
 			return false;
 #endif
 		});
-#ifdef ARGUI_GTK3
+#ifdef ARLIB_GUI_GTK3
 		g_signal_connect_swapped(widget, "draw", G_CALLBACK(draw_cb.fp), draw_cb.ctx);
 #else
 		gtk_drawing_area_set_draw_func(GTK_DRAWING_AREA(widget), draw_cb.fp, draw_cb.ctx, NULL);
 #endif
 		
-#ifdef ARGUI_GTK3
+#ifdef ARLIB_GUI_GTK3
 		auto click_cb = decompose_lambda([this](GdkEvent* event, GtkWidget* widget)->gboolean
 		{
 			if(0);
@@ -238,7 +238,7 @@ puts("playing "+fn+" with gstreamer");
 	
 	runloop::g_timer ff_idle;
 	
-	bool ff_play(cstring fn)
+	bool ff_play(cstrnul fn)
 	{
 		static bool ff_inited = false;
 		if (!ff_inited)
@@ -260,7 +260,7 @@ puts("playing "+fn+" with gstreamer");
 		ff_out = avformat_alloc_context();
 		ff_out->oformat = av_output_audio_device_next(NULL);
 		
-		avformat_open_input(&ff_demux, fn.c_str(), NULL, NULL);
+		avformat_open_input(&ff_demux, fn, NULL, NULL);
 		if (!ff_demux)
 			goto fail;
 		
@@ -446,7 +446,7 @@ public:
 #endif
 	}
 	
-	bool play(cstring fn)
+	bool play(cstrnul fn)
 	{
 		return
 #ifdef HAVE_FFMPEG
@@ -475,7 +475,7 @@ void enqueue(cstring fn);
 void enqueue_real(string fn);
 
 GtkButton* btn_toggle;
-#ifdef ARGUI_GTK3
+#ifdef ARLIB_GUI_GTK3
 GtkWidget* btnimg_stop;
 GtkWidget* btnimg_play;
 #endif
@@ -672,7 +672,7 @@ void update_search()
 	if (c_search.items) prev_focus = c_search.items[search_focus].filename;
 	if (prev_focus) prev_focus = prev_focus.substr(strlen(MUSIC_DIR), ~0);
 	
-#ifdef ARGUI_GTK3
+#ifdef ARLIB_GUI_GTK3
 	string key = gtk_entry_get_text(search_line);
 #else
 	string key = gtk_editable_get_text(GTK_EDITABLE(search_line));
@@ -797,7 +797,7 @@ static gboolean search_kb(GtkEventControllerKey* self, guint keyval, guint keyco
 	}
 	if (keyval == GDK_KEY_Return || keyval == GDK_KEY_KP_Enter)
 	{
-#ifdef ARGUI_GTK3
+#ifdef ARLIB_GUI_GTK3
 		cstring search_text = gtk_entry_get_text(search_line);
 #else
 		cstring search_text = gtk_editable_get_text(GTK_EDITABLE(search_line));
@@ -830,7 +830,7 @@ static gboolean search_kb(GtkEventControllerKey* self, guint keyval, guint keyco
 		}
 		if ((state&GDK_SHIFT_MASK) == 0)
 		{
-#ifdef ARGUI_GTK3
+#ifdef ARLIB_GUI_GTK3
 			gtk_entry_set_text(search_line, "");
 #else
 			gtk_editable_set_text(GTK_EDITABLE(search_line), ""); // calls remove_cb
@@ -840,7 +840,7 @@ static gboolean search_kb(GtkEventControllerKey* self, guint keyval, guint keyco
 	}
 	if (keyval == GDK_KEY_Escape)
 	{
-#ifdef ARGUI_GTK3
+#ifdef ARLIB_GUI_GTK3
 		gtk_entry_set_text(search_line, "");
 #else
 		gtk_editable_set_text(GTK_EDITABLE(search_line), "");
@@ -854,7 +854,7 @@ GtkWidget* make_search()
 	init_search();
 	
 	search_line = GTK_ENTRY(gtk_entry_new());
-#ifdef ARGUI_GTK3
+#ifdef ARLIB_GUI_GTK3
 	auto key_cb = decompose_lambda([](GdkEvent* event, GtkWidget* widget)->gboolean
 	{
 		return search_kb(nullptr, event->key.keyval, event->key.hardware_keycode, (GdkModifierType)event->key.state, nullptr);
@@ -939,7 +939,7 @@ void enqueue_real(string fn) // must take string, not cstring, otherwise it'll s
 void enqueue(cstring fn)
 {
 	int multiple = 1;
-#ifdef ARGUI_GTK3
+#ifdef ARLIB_GUI_GTK3
 	const char * mul_str = strchr(gtk_entry_get_text(search_line), '*');
 #else
 	const char * mul_str = strchr(gtk_editable_get_text(GTK_EDITABLE(search_line)), '*');
@@ -956,7 +956,7 @@ void progress_tick()
 	int pos;
 	int durat;
 	if (!g_player.playing(&pos, &durat)) return;
-#ifdef ARGUI_GTK3
+#ifdef ARLIB_GUI_GTK3
 	gtk_button_set_image(btn_toggle, btnimg_stop);
 #else
 	gtk_button_set_icon_name(btn_toggle, "media-playback-stop");
@@ -982,7 +982,7 @@ void stop()
 	gtk_progress_bar_set_text(progress, "");
 	gtk_progress_bar_set_fraction(progress, 0);
 	
-#ifdef ARGUI_GTK3
+#ifdef ARLIB_GUI_GTK3
 	gtk_button_set_image(btn_toggle, btnimg_play);
 #else
 	gtk_button_set_icon_name(btn_toggle, "media-playback-start");
@@ -992,7 +992,7 @@ void stop()
 
 GtkWidget* make_button(const char * name, void(*cb)())
 {
-#ifdef ARGUI_GTK3
+#ifdef ARLIB_GUI_GTK3
 	GtkButton* btn = GTK_BUTTON(gtk_button_new_from_icon_name(name, GTK_ICON_SIZE_BUTTON));
 #else
 	GtkButton* btn = GTK_BUTTON(gtk_button_new_from_icon_name(name));
@@ -1029,7 +1029,7 @@ void make_gui(GApplication* application)
 	
 	if (application) mainwnd = GTK_WINDOW(gtk_application_window_new(GTK_APPLICATION(application)));
 	else mainwnd = GTK_WINDOW(gtk_window_new(
-#ifdef ARGUI_GTK3
+#ifdef ARLIB_GUI_GTK3
 	GTK_WINDOW_TOPLEVEL
 #endif
 	));
@@ -1038,7 +1038,7 @@ void make_gui(GApplication* application)
 	
 	// the correct solution would be gtk_main_quit + GDK_EVENT_STOP, and only if application==NULL,
 	// but the idle handler in ffmpeg somehow keeps the application alive, so let's just grab a bigger toy
-#ifdef ARGUI_GTK3
+#ifdef ARLIB_GUI_GTK3
 	auto onclose_cb = decompose_lambda([](GdkEvent* event, GtkWidget* widget) -> gboolean { exit(0); });
 	g_signal_connect_swapped(mainwnd, "delete-event", G_CALLBACK(onclose_cb.fp), onclose_cb.ctx);
 #else
@@ -1046,7 +1046,7 @@ void make_gui(GApplication* application)
 	g_signal_connect_swapped(mainwnd, "close-request", G_CALLBACK(onclose_cb.fp), onclose_cb.ctx);
 #endif
 	
-#ifdef ARGUI_GTK3
+#ifdef ARLIB_GUI_GTK3
 	auto key_cb = decompose_lambda([](GdkEvent* event, GtkWidget* widget)->gboolean
 	{
 		if (!gtk_widget_is_focus(GTK_WIDGET(search_line)))
@@ -1072,7 +1072,7 @@ void make_gui(GApplication* application)
 	g_signal_connect_swapped(ctrlkey, "key-pressed", G_CALLBACK(onkb_cb.fp), onkb_cb.ctx);
 #endif
 	
-#ifdef ARGUI_GTK3
+#ifdef ARLIB_GUI_GTK3
 	GtkBox* box_upper = GTK_BOX(gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0));
 	gtk_box_pack_start(box_upper, make_search(), true, true, 0);
 	gtk_box_pack_start(box_upper, make_button("gtk-media-previous", playlist_prev), false, false, 0);
@@ -1100,7 +1100,7 @@ void make_gui(GApplication* application)
 	grid.init();
 	
 	GtkBox* box_main = GTK_BOX(gtk_box_new(GTK_ORIENTATION_VERTICAL, 0));
-#ifdef ARGUI_GTK3
+#ifdef ARLIB_GUI_GTK3
 	gtk_box_pack_start(box_main, GTK_WIDGET(box_upper), false, false, 0);
 	gtk_box_pack_start(box_main, GTK_WIDGET(grid.widget), true, true, 0);
 	
@@ -1117,13 +1117,13 @@ void make_gui(GApplication* application)
 	gtk_window_set_resizable(mainwnd, true);
 	
 	gtk_window_set_default_size(mainwnd, 1336, 1026);
-#ifdef ARGUI_GTK3
+#ifdef ARLIB_GUI_GTK3
 	gtk_widget_show_all(GTK_WIDGET(mainwnd));
 #else
 	gtk_widget_show(GTK_WIDGET(mainwnd));
 #endif
 	
-#ifdef ARGUI_GTK3
+#ifdef ARLIB_GUI_GTK3
 	gdk_window_move(gtk_widget_get_window(GTK_WIDGET(mainwnd)), 580, 0);
 #else
 	// why is gtk like this
@@ -1147,7 +1147,7 @@ void app_activate(GApplication* application, void* user_data)
 }
 
 
-#ifdef ARGUI_GTK4
+#ifdef ARLIB_GUI_GTK4
 static bytearray pack_gresource(cstring name, bytesr body)
 {
 	array<cstring> nameparts = name.cspliti("/");
@@ -1275,7 +1275,7 @@ int main(int argc, char** argv)
 	// why does it even use libgstgl when there's no video output
 	g_log_set_always_fatal((GLogLevelFlags)0);
 	
-#ifdef ARGUI_GTK3
+#ifdef ARLIB_GUI_GTK3
 	GInputStream* is = g_memory_input_stream_new_from_data(resources::icon, sizeof(resources::icon), NULL);
 	GdkPixbuf* pix = gdk_pixbuf_new_from_stream_at_scale(is, 64, 64, true, NULL, NULL);
 	gtk_window_set_default_icon(pix);

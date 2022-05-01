@@ -6,26 +6,9 @@
 static string root = "C:/";
 static bool no_exec = false;
 
-struct linux_filetime {
-	uint32_t sec;
-	uint32_t nsec;
-};
-static linux_filetime filetime_to_linux(FILETIME time)
-{
-	ULARGE_INTEGER tmp;
-	tmp.LowPart = time.dwLowDateTime;
-	tmp.HighPart = time.dwHighDateTime;
-	
-	linux_filetime ret;
-#define WINDOWS_TICK 10000000
-#define SEC_TO_UNIX_EPOCH 11644473600LL
-	ret.sec = tmp.QuadPart / WINDOWS_TICK - SEC_TO_UNIX_EPOCH;
-	ret.nsec = tmp.QuadPart % WINDOWS_TICK * (1000000000/WINDOWS_TICK);
-	return ret;
-}
 static void filetime_to_linux(bytestreamw& out, FILETIME time)
 {
-	linux_filetime ltime = filetime_to_linux(time);
+	timestamp ltime = timestamp::from_native(time);
 	out.u32l(ltime.sec);
 	out.u32l(ltime.nsec);
 }
@@ -51,7 +34,7 @@ static void create_pipe_rdasync(HANDLE* rd, HANDLE* wr)
 	static uint32_t uniq = 0;
 	uint32_t start = GetCurrentProcessId()*65537; // Windows PIDs are usually in the low thousands
 again:
-	char name[32];
+	char name[32]; // uses 14+16+1=31
 	sprintf(name, "\\\\.\\pipe\\arlib%.8X"
 #ifdef ARTYPE_DLL
 		// DLLs are always at a multiple of 64K, and current hardware only supports 48bit address, so middle 32 bits are known unique
