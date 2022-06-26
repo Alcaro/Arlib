@@ -7,6 +7,8 @@
 #include "shared.h"
 #include <sys/ioctl.h>
 
+#error todo: rewrite to coro based runloop
+
 #if !defined(__O_LARGEFILE) || __O_LARGEFILE==0
 #undef __O_LARGEFILE
 #define __O_LARGEFILE 0x8000 // I don't know why the standard headers define this to zero
@@ -122,7 +124,7 @@ struct my_file {
 		if (!wrc_size) return;
 //printf("write %u to %zu\n", wrc_size, wrc_offset);
 		
-		bytestreamw req;
+		bytestreamw_dyn req;
 		req.u32l(REQ_WRITE);
 		req.u32l(fd);
 		req.u64l(wrc_offset);
@@ -195,7 +197,7 @@ int main(int argc, char** argv)
 		              [](bytearray by){ request_rsp = std::move(by); runloop::global()->exit(); },
 		              [](){ puts("connection failed"); exit(1); });
 		
-		bytestreamw req;
+		bytestreamw_dyn req;
 		req.u32l(REQ_EXEC);
 		
 		if (file::cwd().startswith(mountpoint))
@@ -350,7 +352,7 @@ int main(int argc, char** argv)
 	}
 	
 	auto perftest = [](size_t sendamt, size_t recvamt, size_t count){
-		bytestreamw a;
+		bytestreamw_dyn a;
 		a.u32l(REQ_PING);
 		a.u32l(recvamt);
 		for (size_t i=0;i<sendamt;i++) a.u8(0);
@@ -386,7 +388,7 @@ int main(int argc, char** argv)
 	{
 		if (cache_get(path, stbuf)) return 0;
 		
-		bytestreamw req;
+		bytestreamw_dyn req;
 		req.u32l(REQ_STAT);
 		req.strnul(path);
 		bytearray rsp_buf = request(req.finish());
@@ -411,7 +413,7 @@ int main(int argc, char** argv)
 			return 0;
 		}
 		
-		bytestreamw req;
+		bytestreamw_dyn req;
 		req.u32l(REQ_READDIR);
 		req.strnul(path);
 		bytearray rsp_buf = request(req.finish());
@@ -458,7 +460,7 @@ int main(int argc, char** argv)
 		if (linux_flags & O_APPEND) my_flags |= 8;
 		if (linux_flags & O_NOATIME) my_flags |= 16;
 		
-		bytestreamw req;
+		bytestreamw_dyn req;
 		req.u32l(REQ_OPEN);
 		req.strnul(path);
 		req.u32l(my_flags);
@@ -508,7 +510,7 @@ int main(int argc, char** argv)
 		
 		f->flush();
 		
-		bytestreamw req;
+		bytestreamw_dyn req;
 		req.u32l(REQ_READ);
 		req.u32l(f->fd);
 		req.u64l(offset);
@@ -544,7 +546,7 @@ int main(int argc, char** argv)
 		f->flush();
 		bool wrc_ok = f->wrc_ok;
 		
-		bytestreamw req;
+		bytestreamw_dyn req;
 		req.u32l(REQ_CLOSE);
 		req.u32l(f->fd);
 		request(req.finish()); // ignore return value
@@ -556,7 +558,7 @@ int main(int argc, char** argv)
 	{
 		g_cache_revalidate = 0;
 		
-		bytestreamw req;
+		bytestreamw_dyn req;
 		req.u32l(REQ_RENAME);
 		req.strnul(oldpath);
 		req.strnul(newpath);
@@ -569,7 +571,7 @@ int main(int argc, char** argv)
 	{
 		g_cache_revalidate = 0;
 		
-		bytestreamw req;
+		bytestreamw_dyn req;
 		req.u32l(REQ_DELETE);
 		req.strnul(path);
 		
@@ -581,7 +583,7 @@ int main(int argc, char** argv)
 	{
 		g_cache_revalidate = 0;
 		
-		bytestreamw req;
+		bytestreamw_dyn req;
 		req.u32l(REQ_MKDIR);
 		req.strnul(path);
 		
@@ -593,7 +595,7 @@ int main(int argc, char** argv)
 	{
 		g_cache_revalidate = 0;
 		
-		bytestreamw req;
+		bytestreamw_dyn req;
 		req.u32l(REQ_RMDIR);
 		req.strnul(path);
 		
@@ -603,7 +605,7 @@ int main(int argc, char** argv)
 	};
 	f_ops.statfs = [](const char * path, struct statvfs * buf) -> int
 	{
-		bytestreamw req;
+		bytestreamw_dyn req;
 		req.u32l(REQ_STATFS);
 		bytearray rsp_buf = request(req.finish());
 		uint64_t total = readu_le64(rsp_buf.ptr()+0);

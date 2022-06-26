@@ -3,17 +3,19 @@
 #include "arlib.h"
 #include "shared.h"
 
+#error todo: rewrite to coro based runloop
+
 static string root = "C:/";
 static bool no_exec = false;
 
-static void filetime_to_linux(bytestreamw& out, FILETIME time)
+static void filetime_to_linux(bytestreamw_dyn& out, FILETIME time)
 {
 	timestamp ltime = timestamp::from_native(time);
 	out.u32l(ltime.sec);
 	out.u32l(ltime.nsec);
 }
 
-static void write_stat(bytestreamw& out, bool ok, const char * fn, DWORD attr,
+static void write_stat(bytestreamw_dyn& out, bool ok, const char * fn, DWORD attr,
                        uint32_t fszlo, uint32_t fszhi, FILETIME time_access, FILETIME time_modify)
 {
 	uint8_t type;
@@ -81,7 +83,7 @@ public:
 	{
 		//printf("handling %u\n", (unsigned)type);
 		
-		bytestreamw ret;
+		bytestreamw_dyn ret;
 		switch (type)
 		{
 		case REQ_STAT:

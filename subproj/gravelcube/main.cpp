@@ -41,9 +41,9 @@ int main(int argc, char** argv)
 	ch.fs_hide("/usr/bin/grep");
 	ch.fs_grant("/bin/grep");
 	
+	array<string> sysnames;
 	if (verbose)
 	{
-		array<string> sysnames;
 		for (cstring line : file::readallt("/usr/include/x86_64-linux-gnu/asm/unistd_64.h").split("\n"))
 		{
 			if (line.startswith("#define __NR_"))

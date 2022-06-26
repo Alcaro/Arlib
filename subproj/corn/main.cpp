@@ -236,8 +236,6 @@ puts("playing "+fn+" with gstreamer");
 	int64_t ff_position;
 	int ff_stream_index;
 	
-	runloop::g_timer ff_idle;
-	
 	bool ff_play(cstrnul fn)
 	{
 		static bool ff_inited = false;
@@ -285,9 +283,6 @@ puts("playing "+fn+" with gstreamer");
 		
 		if (!ff_do_packet(true)) goto fail;
 puts("playing "+fn+" with ffmpeg");
-		
-		ff_idle.set_idle(bind_this(&player_t::ff_cb));
-		something_cb();
 		
 		return true;
 		
@@ -390,19 +385,6 @@ puts("playing "+fn+" with ffmpeg");
 		return true;
 	}
 	
-	void ff_cb()
-	{
-		if (ff_do_packet(false))
-		{
-			ff_idle.set_idle(bind_this(&player_t::ff_cb));
-		}
-		else
-		{
-			ff_stop();
-			finish_cb();
-		}
-	}
-	
 	void ff_stop(bool write_trailer = true)
 	{
 		if (!ff_demux) return;
@@ -418,7 +400,19 @@ puts("playing "+fn+" with ffmpeg");
 		avformat_close_input(&ff_out); // avformat_close_output doesn't even exist
 		avcodec_free_context(&ff_codec);
 		ff_buf.reset();
-		ff_idle.reset();
+	}
+	
+	void ff_step()
+	{
+		if (ff_do_packet(false))
+		{
+			something_cb();
+		}
+		else
+		{
+			ff_stop(true);
+			finish_cb();
+		}
 	}
 	
 	bool ff_playing(int* pos, int* durat)
@@ -468,6 +462,18 @@ public:
 			gst_playing(pos, durat) ||
 #endif
 			false;
+	}
+	
+	bool step()
+	{
+#ifdef HAVE_FFMPEG
+		if (ff_playing(nullptr, nullptr))
+		{
+			ff_step();
+			return true;
+		}
+#endif
+		return false;
 	}
 } g_player;
 
@@ -880,11 +886,14 @@ GtkWidget* make_search()
 }
 
 
-runloop::g_timer progress_timer;
+//runloop::g_timer progress_timer;
 
 void progress_tick();
 void stop();
 size_t playlist_cur_idx = 0;
+
+guint idle_id = 0;
+
 void playlist_run()
 {
 again:
@@ -911,7 +920,21 @@ again:
 	};
 	g_player.something_cb = progress_tick;
 	g_player.play(next);
-	progress_timer.set_repeat(1000, progress_tick);
+	
+	if (idle_id == 0)
+	{
+		idle_id = g_idle_add([](void*)->gboolean{
+			if (g_player.step())
+			{
+				return G_SOURCE_CONTINUE;
+			}
+			else
+			{
+				idle_id = 0;
+				return G_SOURCE_REMOVE;
+			}
+		}, nullptr);
+	}
 }
 void enqueue_real(string fn) // must take string, not cstring, otherwise it'll screw up if the first element in the playlist is replayed
 {
@@ -951,17 +974,23 @@ void enqueue(cstring fn)
 }
 
 
+static int progress_prev_pos = -2;
+
 void progress_tick()
 {
 	int pos;
 	int durat;
-	if (!g_player.playing(&pos, &durat)) return;
+	if (!g_player.playing(&pos, &durat))
+		return;
 #ifdef ARLIB_GUI_GTK3
 	gtk_button_set_image(btn_toggle, btnimg_stop);
 #else
 	gtk_button_set_icon_name(btn_toggle, "media-playback-stop");
 #endif
 	if (pos < 0) return;
+	if (pos == progress_prev_pos)
+		return;
+	progress_prev_pos = pos;
 	
 	char buf[32];
 	if (durat >= 0)
@@ -978,7 +1007,7 @@ void stop()
 {
 	g_player.stop();
 	
-	progress_timer.reset();
+	//progress_timer.reset();
 	gtk_progress_bar_set_text(progress, "");
 	gtk_progress_bar_set_fraction(progress, 0);
 	
@@ -987,6 +1016,7 @@ void stop()
 #else
 	gtk_button_set_icon_name(btn_toggle, "media-playback-start");
 #endif
+	progress_prev_pos = -2;
 }
 
 
@@ -1287,18 +1317,23 @@ int main(int argc, char** argv)
 	gtk_window_set_default_icon_name("corn");
 #endif
 	
+	// this tool doesn't use Arlib runloop at all
+	// g_application_run requires taking every Arlib source and placing in the GLib runloop,
+	//  which works badly with Arlib sources being oneshot and O(1) to allocate
+	
 	if (argv[1] && (cstring)argv[1] == "--local")
 	{
 		make_gui(NULL);
 		char** arg = argv+2;
 		while (*arg) enqueue_real(*arg++);
-		while (true) g_main_context_iteration(NULL, true);
+		while (true)
+			g_main_context_iteration(nullptr, true);
 		return 0;
 	}
 	
 	GtkApplication* app = gtk_application_new("se.muncher.corn", G_APPLICATION_HANDLES_OPEN);
-	g_signal_connect(app, "activate", G_CALLBACK(app_activate), NULL);
-	g_signal_connect(app, "open", G_CALLBACK(app_open), NULL);
+	g_signal_connect(app, "activate", G_CALLBACK(app_activate), nullptr);
+	g_signal_connect(app, "open", G_CALLBACK(app_open), nullptr);
 	
 	return g_application_run(G_APPLICATION(app), argc, argv);
 }
