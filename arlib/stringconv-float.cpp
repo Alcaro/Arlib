@@ -13,7 +13,7 @@
 
 #include <charconv> // this includes <cctype> in gcc <= 11.3, which does not like Arlib's overridden ctype functions
 #if __GNUC__ >= 12
-#warning rearrange the includes
+//#warning rearrange the includes
 #endif
 #endif
 

@@ -6,9 +6,9 @@ namespace {
 static int test_state = 0;
 
 class inner_awaitable_t {
-	// ideally, this would be producer_fn<float, &inner_awaitable_t::prod, &inner_awaitable_t::cancel> prod,
+	// ideally, this would be producer<float, &inner_awaitable_t::prod, &inner_awaitable_t::cancel> prod,
 	// but c++ doesn't accept that kind of self/forward references
-	struct prod_t : public producer_fn<float, prod_t> {
+	struct prod_t : public producer<float, prod_t> {
 		void cancel() { container_of<&inner_awaitable_t::prod>(this)->cancel(); }
 	} prod;
 	
@@ -19,8 +19,7 @@ public:
 	}
 	async<float> start_sync()
 	{
-		prod.complete(1234.5);
-		return &prod;
+		return prod.complete_sync(1234.5);
 	}
 	void cancel()
 	{
@@ -40,7 +39,7 @@ public:
 		prod.complete(1234.5);
 	}
 };
-inner_awaitable_t inner_awaitable;
+static inner_awaitable_t inner_awaitable;
 
 async<int> coro_sync()
 {
@@ -110,10 +109,10 @@ static cancellable_coro coro_call_fn()
 }
 
 class fn_caller {
-	struct wait_t : public waiter_fn<int, wait_t> {
+	struct wait_t : public waiter<int, wait_t> {
 		void complete(int val) { container_of<&fn_caller::wait>(this)->complete1(val); }
 	} wait;
-	struct wait2_t : public waiter_fn<float, wait2_t> {
+	struct wait2_t : public waiter<float, wait2_t> {
 		void complete(float val) { container_of<&fn_caller::wait2>(this)->complete2(val); }
 	} wait2;
 	int state = 0;
@@ -190,6 +189,8 @@ public:
 };
 
 }
+
+co_test("runloop co_test", "", "runloop") { co_return; } // empty test - make sure it completes synchronously
 
 test("runloop coroutines", "", "runloop")
 {
@@ -294,6 +295,42 @@ test("runloop coroutines", "", "runloop")
 		assert_eq(test_state++, 6);
 	}
 	assert_eq(test_state++, 9);
+	
+	{
+		struct waiter_t : public waiter<int, waiter_t> {
+			int val = -1;
+			void complete(int val)
+			{
+				assert_eq(val, 42);
+				assert_eq(this->val, -1);
+				this->val = val;
+			}
+		};
+		waiter_t wait;
+		coro_sync().then(&wait);
+		assert_eq(wait.val, 42);
+		wait.cancel();
+		wait.cancel();
+	}
+	
+	for (int i=0;i<5;i++) // run it a few times, to ensure inner_awaitable's state is correctly reset
+	{
+		struct waiter_t : public waiter<int, waiter_t> {
+			int val = -1;
+			void complete(int val)
+			{
+				assert_eq(val, 42);
+				assert_eq(this->val, -1);
+				this->val = val;
+			}
+		};
+		test_state = 7;
+		waiter_t wait;
+		coro_async().then(&wait);
+		assert_eq(wait.val, -1);
+		wait.cancel();
+		wait.cancel();
+	}
 }
 
 
@@ -310,22 +347,6 @@ co_test("runloop timeouts", "", "runloop")
 	co_await runloop2::await_timeout(timestamp::in_ms(-1000));
 	timestamp t3 = timestamp::now();
 	assert_range((t3-t2).ms(), 0, 100);
-	
-	struct prod_t : public producer_fn<ssize_t, prod_t> {
-		void cancel() {}
-	} prod;
-	
-	ssize_t n = co_await async<ssize_t>(&prod).with_timeout<-5>(timestamp::in_ms(10));
-	assert_eq(n, -5);
-	
-	prod.complete(42);
-	n = co_await async<ssize_t>(&prod).with_timeout<-5>(timestamp::in_ms(1000));
-	assert_eq(n, 42);
-	
-	bool b = co_await runloop2::await_timeout(timestamp::in_ms(10)).with_timeout(timestamp::in_ms(100));
-	assert_eq(b, true);
-	b = co_await runloop2::await_timeout(timestamp::in_ms(100)).with_timeout(timestamp::in_ms(10));
-	assert_eq(b, false);
 }
 
 
@@ -343,9 +364,11 @@ static async<void> mut_test(co_mutex& mut, int& state, int a, int b, int c)
 
 static void my_cancel(async<void> event)
 {
-	struct noop_waiter_t : public waiter_fn<void, noop_waiter_t> { void complete() { __builtin_trap(); } };
+	struct noop_waiter_t : public waiter<void, noop_waiter_t> { void complete() { __builtin_trap(); } };
 	noop_waiter_t wait;
 	event.then(&wait);
+	wait.cancel();
+	wait.cancel();
 }
 
 static void test1(std::initializer_list<int> holder)
@@ -372,7 +395,7 @@ static void test1(std::initializer_list<int> holder)
 	assert_eq(state, end);
 }
 
-test("co_mutex", "", "")
+test("runloop co_mutex", "", "")
 {
 	co_mutex mut;
 	int state = 0;

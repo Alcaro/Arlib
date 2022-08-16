@@ -31,106 +31,64 @@ static bool init_key(string key_text)
 }
 
 class receiver {
-	size_t pos = 0;
-	bytearray buf;
+	socketbuf sock;
 	
-	bool cryptrecv_inited = false;
 	crypto_secretstream_xchacha20poly1305_state crypt_recv;
 	crypto_secretstream_xchacha20poly1305_state crypt_send;
 	
-	autoptr<socket> sock;
-	function<void(bytearray)> cb;
-	function<void()> error;
-	
-	void do_error()
-	{
-		stop();
-		error();
-	}
-	
-	void handle()
-	{
-		if (!buf) buf.resize(4);
-		
-		// libsodium doesn't support splitting concatenated variable-width input, have to prefix unencrypted length
-		if (pos < 4)
-		{
-			int n = sock->recv(buf.skip(pos));
-			if (n < 0) return do_error();
-			
-			pos += n;
-			if (pos == 4)
-			{
-				uint32_t len = readu_le32(buf.ptr());
-				if (len > 16*1024*1024) return do_error();
-				if (len < crypto_secretstream_xchacha20poly1305_ABYTES) return do_error();
-				buf.resize(len);
-			}
-		}
-		else
-		{
-			int n = sock->recv(buf.skip(pos-4));
-			if (n < 0) return do_error();
-			pos += n;
-			
-			if (pos-4 == buf.size())
-			{
-				pos = 0;
-				
-				if (!cryptrecv_inited)
-				{
-					if (buf.size() != crypto_secretstream_xchacha20poly1305_HEADERBYTES) return do_error();
-					crypto_secretstream_xchacha20poly1305_init_pull(&crypt_recv, buf.ptr(), the_key); // oddly enough, this can't fail
-					
-					cryptrecv_inited = true;
-					cb(bytearray());
-				}
-				else
-				{
-					// weird how this one doesn't let me decrypt into the input buffer, forces me to make extra pointless allocations
-					// but BoredomFS isn't exactly well designed anyways, it's good enough
-					bytearray plain;
-					plain.resize(buf.size() - crypto_secretstream_xchacha20poly1305_ABYTES);
-					if (crypto_secretstream_xchacha20poly1305_pull(
-							&crypt_recv, plain.ptr(), NULL, NULL, buf.ptr(), buf.size(), NULL, 0) != 0)
-						return do_error();
-					cb(std::move(plain));
-				}
-				buf.reset();
-			}
-		}
-	}
+	bool error_init() { sock = nullptr; return false; }
+	bytesr error_recv() { sock = nullptr; return nullptr; }
 	
 public:
 	receiver() {}
 	
-	void init(autoptr<socket> sock, function<void(bytearray)> cb, function<void()> error)
+	async<bool> init(cstring host, uint16_t port)
 	{
-		this->sock = std::move(sock);
-		this->cb = cb;
-		this->error = error;
-		
-		this->sock->callback(bind_this(&receiver::handle));
+puts("init a "+host);
+		sock = co_await socket2::create(host, port);
+puts("init b "+host);
+		if (!sock)
+			co_return error_init();
 		
 		uint8_t header[sizeof(uint32_t) + crypto_secretstream_xchacha20poly1305_HEADERBYTES];
 		crypto_secretstream_xchacha20poly1305_init_push(&crypt_send, header+sizeof(uint32_t), the_key);
 		writeu_le32(header, crypto_secretstream_xchacha20poly1305_HEADERBYTES);
-		this->sock->send(header);
-	}
-	void consume(receiver& prev)
-	{
-		cryptrecv_inited = prev.cryptrecv_inited;
-		crypt_recv = prev.crypt_recv;
-		crypt_send = prev.crypt_send;
+		sock.send(bytesr(header));
 		
-		pos = prev.pos;
-		buf = std::move(prev.buf);
-		sock = prev.sock.release();
-		sock->callback(bind_this(&receiver::handle));
+puts("init c "+host);
+		uint32_t len = co_await sock.u32l();
+puts("init d "+host);
+		if (len != crypto_secretstream_xchacha20poly1305_HEADERBYTES)
+			co_return error_init();
+puts("init e "+host);
+		bytesr by = co_await sock.bytes(len);
+		crypto_secretstream_xchacha20poly1305_init_pull(&crypt_recv, by.ptr(), the_key); // oddly enough, this can't fail
+puts("init f "+host);
+		co_return true;
 	}
-	void callback(function<void(bytearray)> cb, function<void()> error) { this->cb = cb; this->error = error; }
 	
-	void stop() { sock = NULL; }
+	async<bytearray> recv()
+	{
+		uint32_t len = co_await sock.u32l();
+		if (len > 16*1024*1024) co_return error_recv();
+		if (len < crypto_secretstream_xchacha20poly1305_ABYTES) co_return error_recv();
+		
+		bytesr by = co_await sock.bytes(len);
+		bytearray plain;
+		plain.resize(by.size() - crypto_secretstream_xchacha20poly1305_ABYTES);
+		if (crypto_secretstream_xchacha20poly1305_pull(
+				&crypt_recv, plain.ptr(), NULL, NULL, by.ptr(), by.size(), NULL, 0) != 0)
+			co_return error_recv();
+		
+		co_return plain;
+	}
+	
+	async<bytearray> request(bytesr by)
+	{
+		send(by);
+		return recv();
+	}
+	
 	bool alive() { return sock; }
 	
 	void send(bytesr by)
@@ -141,7 +99,7 @@ public:
 		
 		// always successful
 		crypto_secretstream_xchacha20poly1305_push(&crypt_send, crypt.ptr()+sizeof(uint32_t), NULL, by.ptr(), by.size(), NULL, 0, 0);
-		sock->send(crypt);
+		sock.send(crypt);
 	}
 };
 

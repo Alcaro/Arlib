@@ -92,7 +92,8 @@ template<typename T> T launder(T v)
 template<typename T> T uninitialized()
 {
 	T out;
-	__asm__ volatile("" : "=r"(out)); // optimizes better with volatile - without it, calling twice will insert empty asm once and copy result
+	// optimizes better with volatile - without it, calling twice will insert empty asm once and copy result
+	__asm__ volatile("" : "=r"(out));
 	return out;
 }
 
@@ -304,11 +305,11 @@ void* malloc(size_t) __attribute__((deprecated("use xmalloc or try_malloc instea
 
 anyptr xrealloc(anyptr ptr, size_t size);
 inline anyptr try_realloc(anyptr ptr, size_t size) { if ((void*)ptr) _test_free(); if (size) _test_malloc(); return realloc(ptr, size); }
-void* realloc(void*,size_t) __attribute__((deprecated("use xrealloc or try_realloc instead")));
+void* realloc(void*, size_t) __attribute__((deprecated("use xrealloc or try_realloc instead")));
 
 anyptr xcalloc(size_t size, size_t count);
 inline anyptr try_calloc(size_t size, size_t count) { _test_malloc(); return calloc(size, count); }
-void* calloc(size_t,size_t) __attribute__((deprecated("use xcalloc or try_calloc instead")));
+void* calloc(size_t, size_t) __attribute__((deprecated("use xcalloc or try_calloc instead")));
 
 
 template<typename T, typename T2> forceinline T reinterpret(T2 in)
@@ -367,14 +368,20 @@ struct empty_class {};
 #ifndef ARLIB_STANDALONE
 template<typename T>
 class autoptr : nocopy {
-	T* ptr = NULL;
+	T* ptr = nullptr;
+	void reset_to(T* newptr) // don't just delete ptr, could cause trouble if T's dtor resumes a coroutines which calls operator=
+	{
+		T* prev = ptr;
+		ptr = newptr;
+		delete prev;
+	}
 public:
 	autoptr() = default;
 	autoptr(T* ptr) : ptr(ptr) {}
-	autoptr(autoptr<T>&& other) { ptr = other.ptr; other.ptr = NULL; }
-	autoptr<T>& operator=(T* ptr) { delete this->ptr; this->ptr = ptr; return *this; }
-	autoptr<T>& operator=(autoptr<T>&& other) { delete this->ptr; ptr = other.ptr; other.ptr = NULL; return *this; }
-	T* release() { T* ret = ptr; ptr = NULL; return ret; }
+	autoptr(autoptr<T>&& other) { reset_to(other.release()); }
+	autoptr<T>& operator=(T* ptr) { reset_to(ptr); return *this; }
+	autoptr<T>& operator=(autoptr<T>&& other) { reset_to(other.release()); return *this; }
+	T* release() { T* ret = ptr; ptr = nullptr; return ret; }
 	T* operator->() { return ptr; }
 	T& operator*() { return *ptr; }
 	const T* operator->() const { return ptr; }
@@ -382,7 +389,7 @@ public:
 	operator T*() { return ptr; }
 	operator const T*() const { return ptr; }
 	explicit operator bool() const { return ptr; }
-	~autoptr() { delete ptr; }
+	~autoptr() { reset_to(nullptr); }
 };
 
 template<typename T>
@@ -554,6 +561,7 @@ public:
 };
 
 // Like the above, but does not track its content type; caller has to do that.
+// Can be called storage_for if used with exactly one template argument.
 template<typename... Ts>
 class variant_raw {
 	template<typename T>
@@ -969,10 +977,10 @@ public:
 #endif
 #endif
 
-// Linux kernel has a macro for this, but non-expressions (like member names) in macros look wrong
+// inspired by the Linux kernel macro, but using a member pointer looks cleaner; non-expressions (like member names) in macros look wrong
 template<typename Tc, typename Ti> Tc* container_of(Ti* ptr, Ti Tc:: * memb)
 {
-	// https://wg21.link/P0908 proposes a better solution, but it was forgotten and not accepted
+	// https://wg21.link/P0908 proposes a better implementation, but it was forgotten and not accepted
 	Tc* fake_object = (Tc*)0x12345678;  // doing math on a fake pointer is UB, but good luck proving that one is bogus
 	fake_object = launder(fake_object); // especially across an asm (both gcc and clang will optimize out the fake pointer)
 	size_t offset = (uintptr_t)&(fake_object->*memb) - (uintptr_t)fake_object;
@@ -1100,19 +1108,17 @@ void arlib_hybrid_dll_init();
 static inline void arlib_hybrid_dll_init() {}
 #endif
 
-//If an interface defines a function to set some state, and a callback for when this state changes,
-// calling that function will not trigger the state callback.
-//An implementation may, at its sole discretion, choose to define any implementation of undefined
+// An implementation may, at its sole discretion, choose to define any implementation of undefined
 // behaviour, including reasonable ones. The user may, of course, not rely on that.
 
-//This file, and many other parts of Arlib, uses a weird mix between Windows- and Linux-style
+// This file, and many other parts of Arlib, uses a weird mix between Windows- and Linux-style
 // filenames and paths. This is intentional; the author prefers Linux-style paths and directory
 // structures, but Windows file extensions. .exe is less ambigous than no extension, and 'so' is a
 // word while 'dll' is not; however, Windows' insistence on overloading the escape character is
 // irritating. Since this excludes following any single OS, the rest is personal preference.
 
-//Documentation is mandatory: if any question about the object's usage is not answered by reading
+// Documentation is mandatory: if any question about the object's usage is not answered by reading
 // the header, there's a bug (either more docs are needed, or the thing is badly designed). However,
-// 'documentation' includes the function and parameter names, not just comments; there is only one
+// documentation includes the function and parameter names, not just comments; there is only one
 // plausible behavior for cstring::length(), so additional comments would just be noise.
 // https://i.redd.it/3adwp98dswi21.jpg

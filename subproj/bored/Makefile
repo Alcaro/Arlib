@@ -2,6 +2,7 @@ include arlib/Makefile-head
 
 PROGRAM = bored
 ARSOCKET = 1
+ARSOCKET_SSL = no
 ARTERMINAL = hybrid
 ARWUTF = 1
 ARXPSUPPORT = 32

@@ -133,7 +133,7 @@ public:
 	~function() { unref(); }
 	
 	function(Tfpr fp) { init_free(fp); }
-	function(nullptr_t) { init_null(); }
+	function(std::nullptr_t) { init_null(); }
 	
 	template<typename Tl>
 	function(Tl lambda,

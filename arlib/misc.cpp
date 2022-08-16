@@ -109,7 +109,7 @@ void debugc8(const char * prefix, const __m128i& vals) { printf("%s ", prefix); 
 //  need to override them, so they can be counted, leak checked, and rejected in test_nomalloc
 //  Valgrind overrides my new/delete override with an LD_PRELOAD, but Valgrind has its own leak checker,
 //   and new is only used for classes with vtables that don't make sense to use in test_nomalloc anyways
-//  (I can disable valgrind's override by compiling with -s, but that has the obvious side effects.)
+//  (I can confuse and disable valgrind's override by compiling with -s, but that has the obvious side effects.)
 #if defined(__MINGW32__) || defined(ARLIB_TESTRUNNER)
 void* operator new(std::size_t n) _GLIBCXX_THROW(std::bad_alloc) { return try_malloc(n); }
 //Valgrind 3.13 overrides operator delete(void*), but not delete(void*,size_t)
@@ -252,8 +252,8 @@ static int y()
 		assert_eq(g_x, 1);
 		return 42;
 	}
-	//assert(false); // should be unreachable
-	//return 0; // but clang doesn't 
+	assert_unreachable(); // both gcc and clang think this is reachable and throw warnings
+	return -1;
 }
 test("contextmanager", "", "")
 {

@@ -7,8 +7,6 @@
 #include "shared.h"
 #include <sys/ioctl.h>
 
-#error todo: rewrite to coro based runloop
-
 #if !defined(__O_LARGEFILE) || __O_LARGEFILE==0
 #undef __O_LARGEFILE
 #define __O_LARGEFILE 0x8000 // I don't know why the standard headers define this to zero
@@ -23,7 +21,9 @@ static bytearray request(bytesr by)
 {
 	recvp->send(by);
 //puts("-> "+tostringhex(tmp)+tostringhex(by));
-	runloop::global()->enter();
+	runloop2::run([]() -> async<void> {
+		request_rsp = co_await recvp->recv();
+	}());
 //puts("<- "+tostringhex(request_rsp));
 	return std::move(request_rsp);
 }
@@ -162,14 +162,15 @@ int main(int argc, char** argv)
 	if (sodium_init() < 0) abort();
 	static string exec_contents = (cstring)"#!"+file::exepath()+" --remote-exec";
 	
-	// remote exec is implemented as file content #!/home/alcaro/Desktop/bored/bored --remote-exec
+	// remote exec is implemented as file content #!/home/walrus/Desktop/bored/bored --remote-exec
 	// (FUSE docs <https://libfuse.github.io/doxygen/structfuse__operations.html> say O_EXEC is for permission checks only, but who cares)
-	// argv[0] is /home/alcaro/Desktop/bored/bored
+	// argv[0] is /home/walrus/Desktop/bored/bored
 	// argv[1] is --remote-exec
 	// argv[2] is the .exe, possibly relative to caller process' cwd
 	// argv[3]+ is the actual arguments
 	// argv[2] will be opened and a BoredomFS-only ioctl issued, returning linebreak-separated
 	//  IP address, port, key, mount path, mount-relative exe filename
+	//  I could've put this stuff in the file content, but its size is limited to 128 and can't fit the key
 	
 	if (argv[1] && !strcmp(argv[1], "--remote-exec"))
 	{
@@ -191,46 +192,62 @@ int main(int argc, char** argv)
 		
 		string mountpoint = remote_param[3];
 		
-		receiver recv;
-		recvp = &recv;
-		recv.init(socket::create(remote_param[0], try_fromstring<uint16_t>(remote_param[1]), runloop::global()),
-		              [](bytearray by){ request_rsp = std::move(by); runloop::global()->exit(); },
-		              [](){ puts("connection failed"); exit(1); });
-		
-		bytestreamw_dyn req;
-		req.u32l(REQ_EXEC);
-		
-		if (file::cwd().startswith(mountpoint))
-			req.strnul(file::cwd().substr(mountpoint.length()-1, ~0));
-		else
-			req.strnul("/");
-		req.strnul(remote_param[4]);
-		for (int i=3;i<argc;i++) req.strnul(argv[i]);
-		
-		bytearray rsp_buf = request(req.finish());
-		recv.callback([&](bytearray by){
-			if (by.size() < 4) return;
-			uint32_t type = readu_le32(by.ptr());
-			if (type == REQ_EXEC_STDOUT)
-				(void)! write(1, by.ptr()+4, by.size()-4);
-			if (type == REQ_EXEC_EXIT && by.size() == 8)
-				exit(readu_le32(by.ptr()+4));
-		}, [](){ puts("sock error"); exit(1); });
-		runloop::global()->set_fd(0, [](uintptr_t){
-			uint8_t buf[1024];
-			int n = read(0, buf+sizeof(uint32_t), sizeof(buf)-sizeof(uint32_t));
-			if (n <= 0)
+		auto my_coro = [&]() -> async<void> {
+			receiver recv;
+			co_await recv.init(remote_param[0], try_fromstring<uint16_t>(remote_param[1]));
+			if (!recv.alive())
 			{
-				uint8_t msg[sizeof(uint32_t)];
-				writeu_le32(msg, REQ_EXEC_STDIN_CLOSE);
-				recvp->send(msg);
-				runloop::global()->set_fd(0, nullptr);
-				return;
+				puts("connection failed");
+				exit(1);
 			}
-			writeu_le32(buf, REQ_EXEC_STDIN);
-			recvp->send(bytesr(buf, sizeof(uint32_t)+n));
-		});
-		runloop::global()->enter();
+			
+			bytestreamw_dyn req;
+			req.u32l(REQ_EXEC);
+			
+			if (file::cwd().startswith(mountpoint))
+				req.strnul(file::cwd().substr(mountpoint.length()-1, ~0));
+			else
+				req.strnul("/");
+			req.strnul(remote_param[4]);
+			for (int i=3;i<argc;i++) req.strnul(argv[i]);
+			
+			bytearray rsp_buf = co_await recv.request(req.finish());
+			
+			auto my_inner_coro = [&]() -> async<void> {
+				while (true)
+				{
+					bytesr by = co_await recv.recv();
+					if (!recv.alive() || by.size() < 4)
+					{
+						puts("sock error");
+						exit(1);
+					}
+					uint32_t type = readu_le32(by.ptr());
+					if (type == REQ_EXEC_STDOUT)
+						(void)! write(1, by.ptr()+4, by.size()-4);
+					if (type == REQ_EXEC_EXIT && by.size() == 8)
+						exit(readu_le32(by.ptr()+4));
+				}
+			};
+			runloop2::detach(my_inner_coro());
+			
+			while (true)
+			{
+				co_await runloop2::await_read(STDIN_FILENO);
+				uint8_t buf[1024];
+				int n = read(0, buf+sizeof(uint32_t), sizeof(buf)-sizeof(uint32_t));
+				if (n <= 0)
+				{
+					uint8_t msg[sizeof(uint32_t)];
+					writeu_le32(msg, REQ_EXEC_STDIN_CLOSE);
+					recv.send(msg);
+				}
+				writeu_le32(buf, REQ_EXEC_STDIN);
+				recv.send(bytesr(buf, sizeof(uint32_t)+n));
+			}
+		};
+		
+		runloop2::run(my_coro());
 		exit(1);
 	}
 	
@@ -275,80 +292,40 @@ int main(int argc, char** argv)
 		//     overwrite out with current one's receiver
 		// - if all fail: terminate process
 		
-		struct state;
-		struct target {
-			state* st;
-			size_t idx;
-			cstring address;
+		static size_t n_completed = 0;
+		static size_t n_total = 0;
+		static size_t idx_best_success = SIZE_MAX;
+		
+		auto try_connect = [](size_t idx, cstring addr, uint16_t port) -> async<void> {
 			receiver recv;
-			
-			void connect_done(bool success);
+			co_await recv.init(addr, port);
+			n_completed++;
+			if (recv.alive() && idx < idx_best_success)
+				*recvp = std::move(recv);
+			co_await runloop2::await_timeout(timestamp::in_ms(100));
+			n_completed = n_total;
 		};
 		
-		struct state {
-			size_t n_total;
-			size_t n_finished;
-			size_t chosen_idx;
-			DECL_G_TIMER(timeout, state);
-			array<target> hosts;
-			
-			void connect_done(target& t, bool success)
-			{
-				if (success && t.idx < chosen_idx)
-				{
-					if (chosen_idx == n_total)
-						timeout.set_once(100, [](){ runloop::global()->exit(); });
-					chosen_idx = t.idx;
-				}
-				
-				n_finished++;
-				if (n_finished == n_total && chosen_idx == n_total)
-					runloop::global()->exit();
-			}
-		};
+		co_holder children;
 		
 		string tmp;
 		if (host) tmp = host;
 		else tmp = file::readallt("hosts.txt");
-		state st;
 		for (cstring addr : tmp.csplit("\n"))
 		{
 			if (!addr || addr[0] == '#') continue;
-			target& t = st.hosts.append();
-			t.st = &st;
-			t.idx = st.hosts.size()-1;
-			t.address = addr;
+			children.add(try_connect(n_total++, addr, port));
 		}
-		if (!st.hosts)
+		if (!n_total)
 		{
 			puts("error: no host address configured");
 			puts("put the IP or domain name of your desired target in hosts.txt");
 			puts("if your target is on DHCP or otherwise has a variable address, list all possible ones; each will be tried in order");
 			exit(1);
 		}
-		st.n_total = st.hosts.size();
-		st.n_finished = 0;
-		st.chosen_idx = st.hosts.size();
 		
-		for (target& t : st.hosts)
-		{
-			t.recv.init(socket::create(t.address, port, runloop::global()),
-				[&t](bytearray by) { t.st->connect_done(t, true); },
-				[&t]() { t.st->connect_done(t, false); });
-		}
-		
-		runloop::global()->enter();
-		if (st.chosen_idx == st.n_total)
-		{
-			puts("connections failed");
-			exit(1);
-		}
-		
-		recv.consume(st.hosts[st.chosen_idx].recv);
-		recv.callback([](bytearray by){ request_rsp = std::move(by); runloop::global()->exit(); },
-		              [](){ puts("failed"); exit(1); });
-		address = st.hosts[st.chosen_idx].address;
-		st.hosts.reset();
+		while (n_completed < n_total)
+			runloop2::step();
 	}
 	
 	auto perftest = [](size_t sendamt, size_t recvamt, size_t count){

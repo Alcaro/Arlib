@@ -1,25 +1,11 @@
 #include "arlib.h"
+#include "play.h"
 #include "obj/resources.h"
 #include <gtk/gtk.h>
 #ifdef ARLIB_GUI_GTK4
 #include <gdk/x11/gdkx.h>
 #endif
 #include <sys/stat.h>
-
-//#define HAVE_GSTREAMER
-#define HAVE_FFMPEG
-
-#ifdef HAVE_GSTREAMER
-#include <gst/gst.h>
-#endif
-
-#ifdef HAVE_FFMPEG
-extern "C" { // ffmpeg devs refuse to add this for some unclear reason,
-#include <libavformat/avformat.h> // even though more ffmpeg callers seem to be C++ than C,
-#include <libavcodec/avcodec.h> // and common.h contains a #if defined(__cplusplus) && etc
-#include <libavdevice/avdevice.h>
-}
-#endif
 
 // this tool is designed for personal use only, hardcoded stuff is fine for all intended usecases
 #define MUSIC_DIR "/home/walrus/Desktop/extramusic/"
@@ -163,322 +149,8 @@ textgrid grid;
 GtkWindow* mainwnd = NULL;
 GQuark q_fname;
 
-class player_t {
-#ifdef HAVE_GSTREAMER
-	GstElement* gst_pipeline = NULL;
-	guint gst_bus_watch = 0;
-	
-	bool gst_play(cstring fn)
-	{
-		stop();
-		
-		gst_pipeline = gst_parse_launch("filesrc location=\""+fn+"\" ! decodebin ! autoaudiosink", NULL);
-		if (!gst_pipeline) return false;
-puts("playing "+fn+" with gstreamer");
-		gst_element_set_state(gst_pipeline, GST_STATE_PLAYING);
-		
-		GstBus* bus = gst_element_get_bus(gst_pipeline);
-		gst_bus_watch = gst_bus_add_watch(bus, [](GstBus* bus, GstMessage* message, void* user_data)->gboolean {
-				player_t* this_ = (player_t*)user_data;
-				this_->something_cb();
-				if (message->type == GST_MESSAGE_EOS)
-				{
-					this_->gst_bus_watch = 0;
-					this_->gst_stop();
-					this_->finish_cb();
-					return G_SOURCE_REMOVE;
-				}
-				return G_SOURCE_CONTINUE;
-			}, this);
-		gst_object_unref(bus);
-		
-		return true;
-	}
-	
-	void gst_stop()
-	{
-		if (!gst_pipeline) return;
-		gst_element_set_state(gst_pipeline, GST_STATE_NULL);
-		gst_object_unref(gst_pipeline);
-		gst_pipeline = NULL;
-		if (gst_bus_watch != 0) g_source_remove(gst_bus_watch);
-	}
-	
-	bool gst_playing(int* pos, int* durat)
-	{
-		if (!gst_pipeline) return false;
-		
-		int64_t song_at;
-		int64_t song_len;
-		gst_element_query_position(gst_pipeline, GST_FORMAT_TIME, &song_at);
-		gst_element_query_duration(gst_pipeline, GST_FORMAT_TIME, &song_len);
-		
-		if (pos) *pos = GST_CLOCK_TIME_IS_VALID(song_at) ? (song_at+500000000)/1000000000 : -1;
-		if (durat) *durat = GST_CLOCK_TIME_IS_VALID(song_len) ? (song_len+500000000)/1000000000 : -1;
-		
-		return true;
-	}
-#endif
-	
-	
-	
-	
-	
-	
-#ifdef HAVE_FFMPEG
-	AVFormatContext* ff_demux = NULL;
-	AVCodecContext* ff_codec = NULL;
-	AVCodecParameters* ff_par = NULL;
-	AVFrame* ff_frame = NULL;
-	AVPacket* ff_packet = NULL;
-	AVFormatContext* ff_out = NULL;
-	array<uint8_t> ff_buf;
-	int64_t ff_position;
-	int ff_stream_index;
-	
-	bool ff_play(cstrnul fn)
-	{
-		static bool ff_inited = false;
-		if (!ff_inited)
-		{
-			ff_inited = true;
-			//av_register_all(); // not needed for ffmpeg >= 4.0 (april 2018)
-			//avcodec_register_all();
-			avdevice_register_all();
-		}
-		
-		ff_demux = NULL;
-		ff_codec = NULL;
-		ff_par = NULL;
-		ff_frame = av_frame_alloc();
-		ff_packet = av_packet_alloc();
-		
-		AVCodec* codectype = NULL;
-		
-		ff_out = avformat_alloc_context();
-		ff_out->oformat = av_output_audio_device_next(NULL);
-		
-		avformat_open_input(&ff_demux, fn, NULL, NULL);
-		if (!ff_demux)
-			goto fail;
-		
-		avformat_find_stream_info(ff_demux, NULL);
-		for (size_t i : range(ff_demux->nb_streams))
-		{
-			ff_par = ff_demux->streams[i]->codecpar;
-			if (ff_par->codec_type == AVMEDIA_TYPE_AUDIO)
-			{
-				ff_stream_index = i;
-				codectype = avcodec_find_decoder(ff_par->codec_id);
-				ff_codec = avcodec_alloc_context3(codectype);
-				avcodec_parameters_to_context(ff_codec, ff_par);
-				avcodec_open2(ff_codec, codectype, NULL);
-				break;
-			}
-		}
-		if (!ff_par || !ff_codec)
-			goto fail;
-		
-		ff_position = 0;
-		
-		if (!ff_do_packet(true)) goto fail;
-puts("playing "+fn+" with ffmpeg");
-		
-		return true;
-		
-	fail:
-		ff_stop(false);
-		return false;
-	}
-	
-	bool ff_do_packet(bool first)
-	{
-	again:
-		if (av_read_frame(ff_demux, ff_packet) < 0) return false;
-		
-		auto x = dtor([&](){ av_packet_unref(ff_packet); }); // ffmpeg packet memory management is weird
-		// and now-inaccurate docs of old ffmpeg versions show up on google and tell me to use av_free_packet, not av_packet_unref
-		// https://ffmpeg.org/doxygen/0.11/group__lavf__decoding.html#g4fdb3084415a82e3810de6ee60e46a61
-		
-		if (ff_packet->stream_index != ff_stream_index) goto again; // discard video frames
-		
-		avcodec_send_packet(ff_codec, ff_packet);
-		avcodec_receive_frame(ff_codec, ff_frame);
-		
-		if (ff_frame->format == AV_SAMPLE_FMT_NONE) goto again; // rare, but not nonexistent
-		
-		// av_frame_get_best_effort_timestamp exists, but I can't figure out what unit it uses
-		// and anything based on input position is a few seconds (audio buffer size) too high
-		ff_position += ff_frame->nb_samples;
-		
-		static const AVCodecID codecs[] = {
-			AV_CODEC_ID_PCM_U8,                                    // AV_SAMPLE_FMT_U8
-			AV_NE(AV_CODEC_ID_PCM_S16BE, AV_CODEC_ID_PCM_S16LE),   // AV_SAMPLE_FMT_S16
-			AV_NE(AV_CODEC_ID_PCM_S32BE, AV_CODEC_ID_PCM_S32LE),   // AV_SAMPLE_FMT_S32
-			AV_NE(AV_CODEC_ID_PCM_F32BE, AV_CODEC_ID_PCM_F32LE),   // AV_SAMPLE_FMT_FLT
-			AV_NE(AV_CODEC_ID_PCM_F64BE, AV_CODEC_ID_PCM_F64LE),   // AV_SAMPLE_FMT_DBL
-			AV_CODEC_ID_PCM_U8,                                    // AV_SAMPLE_FMT_U8P
-			AV_NE(AV_CODEC_ID_PCM_S16BE, AV_CODEC_ID_PCM_S16LE),   // AV_SAMPLE_FMT_S16P
-			AV_NE(AV_CODEC_ID_PCM_S32BE, AV_CODEC_ID_PCM_S32LE),   // AV_SAMPLE_FMT_S32P
-			AV_NE(AV_CODEC_ID_PCM_F32BE, AV_CODEC_ID_PCM_F32LE),   // AV_SAMPLE_FMT_FLTP
-			AV_NE(AV_CODEC_ID_PCM_F64BE, AV_CODEC_ID_PCM_F64LE),   // AV_SAMPLE_FMT_DBLP
-			AV_NE(AV_CODEC_ID_PCM_S64BE, AV_CODEC_ID_PCM_S64LE),   // AV_SAMPLE_FMT_S64
-			AV_NE(AV_CODEC_ID_PCM_S64BE, AV_CODEC_ID_PCM_S64LE),   // AV_SAMPLE_FMT_S64P
-		};
-		static const uint8_t fmtdescs[] = {
-			1,       // AV_SAMPLE_FMT_U8
-			2,       // AV_SAMPLE_FMT_S16
-			4,       // AV_SAMPLE_FMT_S32
-			4,       // AV_SAMPLE_FMT_FLT
-			8,       // AV_SAMPLE_FMT_DBL
-			1 | 128, // AV_SAMPLE_FMT_U8P
-			2 | 128, // AV_SAMPLE_FMT_S16P
-			4 | 128, // AV_SAMPLE_FMT_S32P
-			4 | 128, // AV_SAMPLE_FMT_FLTP
-			8 | 128, // AV_SAMPLE_FMT_DBLP
-			8,       // AV_SAMPLE_FMT_S64
-			8 | 128, // AV_SAMPLE_FMT_S64P
-		};
-		
-		if (first)
-		{
-			if (ff_frame->format >= AV_SAMPLE_FMT_NB) return false;
-			
-			AVStream* outstrm = avformat_new_stream(ff_out, NULL);
-			outstrm->codecpar->codec_type = AVMEDIA_TYPE_AUDIO;
-			outstrm->codecpar->codec_id = codecs[ff_frame->format];
-			outstrm->codecpar->channels = ff_par->channels;
-			outstrm->codecpar->sample_rate = ff_par->sample_rate;
-			if (avformat_write_header(ff_out, NULL) < 0)
-				return false;
-		}
-		
-		uint8_t fmtdesc = fmtdescs[ff_frame->format];
-		uint8_t bytes_per = fmtdesc&15;
-		
-		// codec IDs exist for a couple of planar formats, but not all, so deinterleave manually
-		// (and the ones that exist aren't supported by ffmpeg alsa backend)
-		if (fmtdesc&128)
-		{
-			ff_buf.reserve(ff_frame->nb_samples * ff_par->channels * bytes_per);
-			
-			uint8_t** chans = (uint8_t**)ff_frame->data;
-			uint8_t* iter = ff_buf.ptr();
-			for (size_t s : range(ff_frame->nb_samples))
-			for (size_t c : range(ff_par->channels))
-			for (size_t b : range(bytes_per))
-				*iter++ = chans[c][s*bytes_per+b]; // this could be optimized, but no real point
-			
-			ff_packet->data = (uint8_t*)ff_buf.ptr();
-		}
-		else
-		{
-			ff_packet->data = ff_frame->data[0];
-		}
-		
-		ff_packet->stream_index = 0;
-		ff_packet->size = ff_frame->nb_samples * ff_par->channels * bytes_per;
-		ff_packet->dts = ff_frame->pkt_dts;
-		ff_packet->duration = ff_frame->pkt_duration;
-		if (ff_packet->size) av_write_frame(ff_out, ff_packet);
-		
-		return true;
-	}
-	
-	void ff_stop(bool write_trailer = true)
-	{
-		if (!ff_demux) return;
-		
-		// av_write_trailer (actually ff_alsa_close) calls snd_pcm_drain, which blocks while the buffer drains (it's always full)
-		// it's correct at the end of the song, but a few seconds of latency on the skip button is not quite desirable
-		// I don't know if there's any sensible solution without writing my own alsa/pulse backend
-		if (write_trailer) av_write_trailer(ff_out);
-		
-		av_frame_free(&ff_frame);
-		av_packet_free(&ff_packet);
-		avformat_close_input(&ff_demux); // I'm not sure how ffmpeg defines input and output, but it works
-		avformat_close_input(&ff_out); // avformat_close_output doesn't even exist
-		avcodec_free_context(&ff_codec);
-		ff_buf.reset();
-	}
-	
-	void ff_step()
-	{
-		if (ff_do_packet(false))
-		{
-			something_cb();
-		}
-		else
-		{
-			ff_stop(true);
-			finish_cb();
-		}
-	}
-	
-	bool ff_playing(int* pos, int* durat)
-	{
-		if (!ff_demux) return false;
-		
-		if (pos) *pos = ff_position / ff_par->sample_rate;
-		if (durat) *durat = ff_demux->duration / AV_TIME_BASE;
-		
-		return true;
-	}
-#endif
-	
-public:
-	function<void()> something_cb; // dumb name, but I can't think of anything better
-	function<void()> finish_cb;
-	
-	void stop()
-	{
-#ifdef HAVE_FFMPEG
-		ff_stop();
-#endif
-#ifdef HAVE_GSTREAMER
-		gst_stop();
-#endif
-	}
-	
-	bool play(cstrnul fn)
-	{
-		return
-#ifdef HAVE_FFMPEG
-			ff_play(fn) ||
-#endif
-#ifdef HAVE_GSTREAMER
-			gst_play(fn) ||
-#endif
-			false;
-	}
-	
-	bool playing(int* pos, int* durat)
-	{
-		return
-#ifdef HAVE_FFMPEG
-			ff_playing(pos, durat) ||
-#endif
-#ifdef HAVE_GSTREAMER
-			gst_playing(pos, durat) ||
-#endif
-			false;
-	}
-	
-	bool step()
-	{
-#ifdef HAVE_FFMPEG
-		if (ff_playing(nullptr, nullptr))
-		{
-			ff_step();
-			return true;
-		}
-#endif
-		return false;
-	}
-} g_player;
-
 void enqueue(cstring fn);
-void enqueue_real(string fn);
+void enqueue_real(cstring fn);
 
 GtkButton* btn_toggle;
 #ifdef ARLIB_GUI_GTK3
@@ -886,13 +558,9 @@ GtkWidget* make_search()
 }
 
 
-//runloop::g_timer progress_timer;
-
-void progress_tick();
+void progress_tick(int pos, int durat);
 void stop();
 size_t playlist_cur_idx = 0;
-
-guint idle_id = 0;
 
 void playlist_run()
 {
@@ -907,7 +575,7 @@ again:
 		goto again;
 	}
 	c_playlist.focus(playlist_cur_idx);
-	g_player.finish_cb = [](){
+	xz_finish = []() {
 		column::node& n = c_playlist.items[playlist_cur_idx];
 		if (n.at != n.total)
 		{
@@ -918,25 +586,20 @@ again:
 			playlist_cur_idx++;
 		playlist_run();
 	};
-	g_player.something_cb = progress_tick;
-	g_player.play(next);
-	
-	if (idle_id == 0)
-	{
-		idle_id = g_idle_add([](void*)->gboolean{
-			if (g_player.step())
-			{
-				return G_SOURCE_CONTINUE;
-			}
-			else
-			{
-				idle_id = 0;
-				return G_SOURCE_REMOVE;
-			}
-		}, nullptr);
-	}
+	xz_repeat = []() -> bool {
+		column::node& n = c_playlist.items[playlist_cur_idx];
+		if (n.at != n.total)
+		{
+			n.at++;
+			c_playlist.render(playlist_cur_idx);
+			return true;
+		}
+		else return false;
+	};
+	xz_progress = progress_tick;
+	xz_play(next);
 }
-void enqueue_real(string fn) // must take string, not cstring, otherwise it'll screw up if the first element in the playlist is replayed
+void enqueue_real(cstring fn)
 {
 	if (!fn) return;
 	if (playlist_cur_idx && playlist_cur_idx == c_playlist.items.size() && fn == c_playlist.items[playlist_cur_idx-1].filename)
@@ -954,10 +617,10 @@ void enqueue_real(string fn) // must take string, not cstring, otherwise it'll s
 		playlist_cur_idx--;
 		c_playlist.remove_first();
 		c_playlist.focus(playlist_cur_idx);
-		
 		c_playlist.add(fn);
 	}
-	if (!g_player.playing(NULL,NULL)) playlist_run();
+	if (!xz_active)
+		playlist_run();
 }
 void enqueue(cstring fn)
 {
@@ -969,27 +632,26 @@ void enqueue(cstring fn)
 #endif
 	if (mul_str) fromstring(mul_str+1, multiple);
 	if (!multiple) multiple = 1;
+	string fn_copy = fn; // in case fn points to the first playlist entry
 	for (int i=0;i<multiple;i++)
-		enqueue_real(fn);
+		enqueue_real(fn_copy);
 }
 
 
 static int progress_prev_pos = -2;
 
-void progress_tick()
+void progress_tick(int pos, int durat)
 {
-	int pos;
-	int durat;
-	if (!g_player.playing(&pos, &durat))
-		return;
-#ifdef ARLIB_GUI_GTK3
-	gtk_button_set_image(btn_toggle, btnimg_stop);
-#else
-	gtk_button_set_icon_name(btn_toggle, "media-playback-stop");
-#endif
 	if (pos < 0) return;
 	if (pos == progress_prev_pos)
 		return;
+#ifdef ARLIB_GUI_GTK3
+	if (progress_prev_pos < 0)
+		gtk_button_set_image(btn_toggle, btnimg_stop);
+#else
+	if (progress_prev_pos < 0)
+		gtk_button_set_icon_name(btn_toggle, "media-playback-stop");
+#endif
 	progress_prev_pos = pos;
 	
 	char buf[32];
@@ -1005,7 +667,7 @@ void progress_tick()
 
 void stop()
 {
-	g_player.stop();
+	xz_stop();
 	
 	//progress_timer.reset();
 	gtk_progress_bar_set_text(progress, "");
@@ -1048,7 +710,7 @@ void playlist_next()
 }
 void playlist_toggle()
 {
-	if (g_player.playing(NULL,NULL)) stop();
+	if (xz_active) stop();
 	else playlist_run();
 }
 
@@ -1077,11 +739,11 @@ void make_gui(GApplication* application)
 #endif
 	
 #ifdef ARLIB_GUI_GTK3
-	auto key_cb = decompose_lambda([](GdkEvent* event, GtkWidget* widget)->gboolean
+	auto key_cb = decompose_lambda([](GdkEvent* event, GtkWidget* widget) -> gboolean
 	{
 		if (!gtk_widget_is_focus(GTK_WIDGET(search_line)))
 			gtk_widget_grab_focus(GTK_WIDGET(search_line));
-		return FALSE;
+		return GDK_EVENT_PROPAGATE;
 	});
 	g_signal_connect_swapped(mainwnd, "key-press-event", G_CALLBACK(key_cb.fp), key_cb.ctx);
 #else
@@ -1154,11 +816,11 @@ void make_gui(GApplication* application)
 #endif
 	
 #ifdef ARLIB_GUI_GTK3
-	gdk_window_move(gtk_widget_get_window(GTK_WIDGET(mainwnd)), 580, 0);
+	gdk_window_move(gtk_widget_get_window(GTK_WIDGET(mainwnd)), 582, 0);
 #else
 	// why is gtk like this
 	GdkSurface* surf = gtk_native_get_surface(gtk_widget_get_native(GTK_WIDGET(mainwnd)));
-	XMoveWindow(gdk_x11_display_get_xdisplay(gdk_surface_get_display(surf)), gdk_x11_surface_get_xid(surf), 580, 0);
+	XMoveWindow(gdk_x11_display_get_xdisplay(gdk_surface_get_display(surf)), gdk_x11_surface_get_xid(surf), 582, 0);
 #endif
 }
 
@@ -1166,7 +828,8 @@ void make_gui(GApplication* application)
 void app_open(GApplication* application, GFile* * files, int n_files, char* hint, void* user_data)
 {
 	make_gui(application);
-	for (int i : range(n_files)) enqueue_real(g_file_peek_path(files[i]));
+	for (int i : range(n_files))
+		enqueue_real(g_file_peek_path(files[i]));
 }
 
 void app_activate(GApplication* application, void* user_data)
@@ -1261,49 +924,8 @@ static bytearray pack_gresource(cstring name, bytesr body)
 #include <sys/resource.h>
 int main(int argc, char** argv)
 {
-#ifdef HAVE_GSTREAMER
-	gst_init(&argc, &argv);
-#endif
 	arlib_init();
 	g_set_prgname("corn");
-	
-	/*
-	(corn:2350): GLib-GObject-CRITICAL **: 14:58:36.794: g_object_ref: assertion 'G_IS_OBJECT (object)' failed
-	
-	Thread 329 "gldisplay-event" received signal SIGTRAP, Trace/breakpoint trap.
-	[Switching to Thread 0x7fffb2df8700 (LWP 5929)]
-	0x00007ffff7580ea1 in ?? () from /usr/lib/x86_64-linux-gnu/libglib-2.0.so.0
-	(gdb) bt
-	#0  0x00007ffff7580ea1 in  () at /usr/lib/x86_64-linux-gnu/libglib-2.0.so.0
-	#1  0x00007ffff75821dd in g_logv ()
-		at /usr/lib/x86_64-linux-gnu/libglib-2.0.so.0
-	#2  0x00007ffff758231f in g_log ()
-		at /usr/lib/x86_64-linux-gnu/libglib-2.0.so.0
-	#3  0x00007ffff785ac3c in g_object_ref ()
-		at /usr/lib/x86_64-linux-gnu/libgobject-2.0.so.0
-	#4  0x00007ffff7aca5e7 in gst_object_ref ()
-		at /usr/lib/x86_64-linux-gnu/libgstreamer-1.0.so.0
-	#5  0x00007fffc0cc78a1 in  () at /usr/lib/x86_64-linux-gnu/libgstgl-1.0.so.0
-	#6  0x00007fffc0cc7ccc in  () at /usr/lib/x86_64-linux-gnu/libgstgl-1.0.so.0
-	#7  0x00007fffc0cc8fcc in  () at /usr/lib/x86_64-linux-gnu/libgstgl-1.0.so.0
-	#8  0x00007ffff757b417 in g_main_context_dispatch ()
-		at /usr/lib/x86_64-linux-gnu/libglib-2.0.so.0
-	#9  0x00007ffff757b650 in  () at /usr/lib/x86_64-linux-gnu/libglib-2.0.so.0
-	#10 0x00007ffff757b962 in g_main_loop_run ()
-		at /usr/lib/x86_64-linux-gnu/libglib-2.0.so.0
-	#11 0x00007fffc0ca07f7 in  () at /usr/lib/x86_64-linux-gnu/libgstgl-1.0.so.0
-	#12 0x00007ffff75a3175 in  () at /usr/lib/x86_64-linux-gnu/libglib-2.0.so.0
-	#13 0x00007ffff4ac46db in start_thread (arg=0x7fffb2df8700)
-		at pthread_create.c:463
-	#14 0x00007ffff5209a3f in clone ()
-		at ../sysdeps/unix/sysv/linux/x86_64/clone.S:95
-	(gdb) c
-	Continuing.
-	
-	(corn:2350): GStreamer-CRITICAL **: 15:01:41.883: gst_object_unref: assertion '((GObject *) object)->ref_count > 0' failed
-	*/
-	// why does it even use libgstgl when there's no video output
-	g_log_set_always_fatal((GLogLevelFlags)0);
 	
 #ifdef ARLIB_GUI_GTK3
 	GInputStream* is = g_memory_input_stream_new_from_data(resources::icon, sizeof(resources::icon), NULL);
@@ -1320,6 +942,7 @@ int main(int argc, char** argv)
 	// this tool doesn't use Arlib runloop at all
 	// g_application_run requires taking every Arlib source and placing in the GLib runloop,
 	//  which works badly with Arlib sources being oneshot and O(1) to allocate
+	// (it's doable, but pointless, the only thing GtkApplication has to offer is this single instance thing)
 	
 	if (argv[1] && (cstring)argv[1] == "--local")
 	{

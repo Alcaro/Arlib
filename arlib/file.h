@@ -60,6 +60,8 @@ typedef off64_t off_t;
 static_assert(sizeof(off_t) == 8);
 #endif
 
+template<typename T> class async;
+
 class file2 : nocopy {
 #ifdef __unix__
 	typedef int fd_t;
@@ -205,6 +207,26 @@ public:
 	void sync_map(const mmapw_t& map) { msync((void*)map.ptr(), map.size(), MS_SYNC); }
 #endif
 #undef null_fd
+	
+	// Reads the entire file in a single function call.
+	// Max size is 16MB; for anything bigger, use mmap() or a file object.
+	static bytearray readall(cstrnul filename)
+	{
+		file2 f(filename);
+		if (!f)
+			return {};
+		size_t len = f.size();
+		if (len > 16*1024*1024)
+			return {};
+		bytearray ret;
+		ret.resize(len);
+		if (f.read(ret) != len)
+			return {};
+		return ret;
+	}
+	
+	// Like the above, but also accepts URIs (file, http or https).
+	static async<bytearray> readall_full(cstrnul path);
 };
 
 class file : nocopy {

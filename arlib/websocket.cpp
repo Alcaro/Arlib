@@ -5,7 +5,7 @@
 
 async<bool> websocket::connect(cstring target, arrayview<string> headers)
 {
-	sock = nullptr;
+	sock.reset();
 	
 	http_t::location loc;
 	if (!loc.parse(target))
@@ -16,21 +16,21 @@ async<bool> websocket::connect(cstring target, arrayview<string> headers)
 	}
 	
 	if (loc.scheme == "ws")
-		sock = co_await cb_mksock(false, loc.domain, 80);
+		sock = co_await cb_mksock(false, loc.host, 80);
 #ifdef ARLIB_SSL
 	else if (loc.scheme == "wss")
-		sock = co_await cb_mksock(true, loc.domain, 443);
+		sock = co_await cb_mksock(true, loc.host, 443);
 #endif
-	else
+	if (!sock)
 		goto fail;
 	
 	sock.send_buf("GET ",loc.path," HTTP/1.1\r\n"
-				  "Host: ",loc.domain,"\r\n"
-				  "Connection: upgrade\r\n"
-				  "Upgrade: websocket\r\n"
-				  //"Origin: ",loc.domain,"\r\n"
-				  "Sec-WebSocket-Version: 13\r\n"
-				  "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"); // TODO: de-hardcode this
+	              "Host: ",loc.host,"\r\n"
+	              "Connection: upgrade\r\n"
+	              "Upgrade: websocket\r\n"
+	              //"Origin: ",loc.domain,"\r\n"
+	              "Sec-WebSocket-Version: 13\r\n"
+	              "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"); // could de-hardcode this, but no real point
 	for (cstring s : headers)
 	{
 		sock.send_buf(s, "\r\n");
@@ -39,6 +39,8 @@ async<bool> websocket::connect(cstring target, arrayview<string> headers)
 	sock.send_flush();
 	
 	if (!co_await sock.await_send())
+		goto fail;
+	if (!sock) // did someone .reset() us right here?
 		goto fail;
 	
 	cstring line = co_await sock.line();
@@ -56,7 +58,6 @@ async<bool> websocket::connect(cstring target, arrayview<string> headers)
 	co_return true;
 }
 
-// The returned bytesr is valid until next function call on this object.
 async<bytesr> websocket::msg(int* type)
 {
 	if (type)
@@ -84,7 +85,7 @@ async<bytesr> websocket::msg(int* type)
 		if (size64 > 0x7FFFFFFFFFFFFFFF) goto fail; // spec says size can't be this big, unclear why
 		size = size64;
 	}
-	// else nothing
+	// else keep size as is
 	
 	bytesr by = co_await sock.bytes(size);
 	if (!sock) co_return nullptr;
@@ -93,7 +94,10 @@ async<bytesr> websocket::msg(int* type)
 	// I've never seen em
 	
 	if ((type_raw&0x0F) == t_close)
+	{
 		sock = nullptr;
+		by = nullptr; // TODO: keep this one alive a little longer, and return it
+	}
 	if (type)
 		*type = (type_raw&0x0F);
 	co_return by;
@@ -127,8 +131,7 @@ void websocket::send(bytesr by, int type)
 }
 
 #include "test.h"
-//co_test("websocket", "tcp,ssl,bytepipe", "websocket")
-co_test("websocket", "", "websocket")
+co_test("websocket", "tcp,ssl,bytepipe", "websocket")
 {
 	test_skip("takes two seconds");
 	
