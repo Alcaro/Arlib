@@ -324,6 +324,11 @@ public:
 			else
 				first = min(first, n.sent);
 		}
+		if (first == timestamp::at_never())
+		{
+			recv_w.cancel();
+			sock = nullptr;
+		}
 		if (first != timestamp::at_never() && !time_w.is_waiting())
 			runloop2::await_timeout(first + duration::ms(5000)).then(&time_w);
 	}

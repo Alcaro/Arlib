@@ -134,7 +134,7 @@ public:
 	// TODO: add a way to request chunked http response
 	// TODO: find a usecase for requesting chunked http response
 	
-	function<async<autoptr<socket2>>(bool ssl, cstrnul domain, int port)> cb_mksock = socket2::create_sslmaybe;
+	function<async<autoptr<socket2>>(bool ssl, cstrnul domain, uint16_t port)> cb_mksock = socket2::create_sslmaybe;
 	
 private:
 	socketbuf sock;
@@ -170,7 +170,7 @@ public:
 	async<rsp> request(bad_req q) = delete;
 	
 	// To replace the socket creation function. Intended for proxy support, but can be used for other purposes.
-	void wrap_socks(function<async<autoptr<socket2>>(bool ssl, cstrnul domain, int port)> cb) { cb_mksock = cb; }
+	void wrap_socks(function<async<autoptr<socket2>>(bool ssl, cstrnul domain, uint16_t port)> cb) { cb_mksock = cb; }
 	
 	static async<rsp> get(cstring url);
 	

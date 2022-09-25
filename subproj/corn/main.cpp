@@ -829,7 +829,11 @@ void app_open(GApplication* application, GFile* * files, int n_files, char* hint
 {
 	make_gui(application);
 	for (int i : range(n_files))
-		enqueue_real(g_file_peek_path(files[i]));
+	{
+		const char * fn = g_file_peek_path(files[i]);
+		if (fn)
+			enqueue_real(fn);
+	}
 }
 
 void app_activate(GApplication* application, void* user_data)

@@ -20,7 +20,7 @@ namespace {
 static int fixret(int ret)
 {
 	if (ret > 0) return ret;
-	if (ret == 0) return -1;
+	if (ret == 0) { errno = ESHUTDOWN; return -1; }
 	if (ret < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) return 0;
 	return -1;
 }
@@ -114,7 +114,10 @@ async<autoptr<socket2>> socket2::create(address addr)
 	socklen_t len = sizeof(error);
 	getsockopt(fd, SOL_SOCKET, SO_ERROR, (char*)&error, &len);
 	if (error != 0)
+	{
+		errno = error;
 		goto fail;
+	}
 	
 	co_return new socket2_impl(fd);
 }
@@ -253,7 +256,7 @@ void socketbuf::recv_complete_null()
 	this->recv_op = op_none;
 #endif
 	// these branches yield identical machine code and should be merged
-	// (they won't)
+	// (they aren't)
 	if (op == op_u8)
 		recv_prod.get<producer_t<uint8_t>>().complete(0);
 	else if (op <= op_u16l)

@@ -301,7 +301,10 @@ int main(int argc, char** argv)
 			co_await recv.init(addr, port);
 			n_completed++;
 			if (recv.alive() && idx < idx_best_success)
+			{
 				*recvp = std::move(recv);
+				idx_best_success = idx;
+			}
 			co_await runloop2::await_timeout(timestamp::in_ms(100));
 			n_completed = n_total;
 		};

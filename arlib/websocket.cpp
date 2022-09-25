@@ -24,6 +24,7 @@ async<bool> websocket::connect(cstring target, arrayview<string> headers)
 	if (!sock)
 		goto fail;
 	
+	// websocket handshake looks like http, but rfc 6455 section 1.7 says it's a strictly separate protocol
 	sock.send_buf("GET ",loc.path," HTTP/1.1\r\n"
 	              "Host: ",loc.host,"\r\n"
 	              "Connection: upgrade\r\n"
@@ -58,11 +59,12 @@ async<bool> websocket::connect(cstring target, arrayview<string> headers)
 	co_return true;
 }
 
-async<bytesr> websocket::msg(int* type)
+async<bytesr> websocket::msg(int* type, bool all)
 {
 	if (type)
 		*type = 0;
 	
+again:
 	uint8_t type_raw = co_await sock.u8();
 	size_t size = co_await sock.u8();
 	if (size & 0x80) // the mask bit; https://datatracker.ietf.org/doc/html/rfc6455#section-5.1 says only client can set it
@@ -90,13 +92,20 @@ async<bytesr> websocket::msg(int* type)
 	bytesr by = co_await sock.bytes(size);
 	if (!sock) co_return nullptr;
 	
-	// spec says server may send ping and pong, as well as fragmented messages
-	// I've never seen em
-	
+	// most websocket servers don't send pings, but I've seen a few
+	// spec also allows fragmented messages, but I've never seen that one
 	if ((type_raw&0x0F) == t_close)
 	{
 		sock = nullptr;
 		by = nullptr; // TODO: keep this one alive a little longer, and return it
+		// but only if type != nullptr
+	}
+	else if (type_raw & 0x08)
+	{
+		if ((type_raw&0x0F) == t_ping)
+			send(by, t_pong);
+		if (!all)
+			goto again;
 	}
 	if (type)
 		*type = (type_raw&0x0F);

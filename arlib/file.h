@@ -467,6 +467,7 @@ public:
 	static bool unlink(cstring filename); // Returns whether the file is now gone. If the file didn't exist, returns true.
 	static cstring dirname(cstring path){ return path.substr(0, path.lastindexof("/")+1); } // If the input path is a directory, the basename is blank.
 	static cstring basename(cstring path) { return path.substr(path.lastindexof("/")+1, ~0); }
+	static cstrnul basename(cstrnul path) { return path.substr_nul(path.lastindexof("/")+1); }
 	static string change_ext(cstring path, cstring new_ext); // new_ext should be ".bin" (can be blank)
 	
 	// Takes a byte sequence supposedly representing a relative file path from an untrusted source (for example a ZIP file).
@@ -519,7 +520,7 @@ public:
 	
 	//Returns the location of the currently executing code, whether that's EXE or DLL.
 	//May be blank if the path can't be determined. The cstring is owned by Arlib and lives forever.
-	static cstring exepath();
+	static cstrnul exepath();
 	//Returns the directory of the above.
 	static cstring exedir();
 	//Returns the current working directory.

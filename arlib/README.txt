@@ -28,8 +28,8 @@ As such, outsider contributions would be unexpected. Bug reports are welcome, bu
   anything about feature requests and pull requests; simplicity is also a feature.
 
 I have rewritten parts of Arlib many times, and there are still a few pieces that need rewrites as
-  soon as I can think of a better design, or additional usecases for various functionality. Each
-  rewrite is a thing I've learned not to do, and I intend to keep learning.
+  soon as I can think of a better design. Each rewrite is a thing I've learned not to do, and I
+  intend to keep learning.
 
 I care only about the final state of my tools, not the way there; I will fix imperfections whenever
   I find them. As such, change frequency is high, and a commit for each change would be quite noisy,

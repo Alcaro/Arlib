@@ -61,6 +61,7 @@ public:
 		{
 			size_t idx = idx_for(n);
 			wait_fd[idx].fd = ~freelist;
+			wait_fd[idx].revents = 0; // zero this one, in case poll() claimed it's active but it's not dispatched yet
 			freelist = idx;
 		}
 		
@@ -263,7 +264,7 @@ public:
 		
 		if (ret && has_gui_events)
 		{
-			// if there are many events of different priorities ready to run, g_main_context_prepare only considers those of highest priority
+			// if there are many events of different priorities ready to run, g_main_context_prepare only processes those of highest priority
 			// loop a few more times until glib is done with everything
 			wait = false;
 			goto again;

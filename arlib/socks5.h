@@ -1,5 +1,4 @@
 #pragma once
-#ifdef ARLIB_SOCKET
 #include "socket.h"
 
 class socks5 {
@@ -30,4 +29,3 @@ public:
 		co_return co_await socket2::wrap_sslmaybe(ssl, co_await create(domain, port), domain);
 	}
 };
-#endif

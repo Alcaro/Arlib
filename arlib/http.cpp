@@ -104,10 +104,10 @@ void http_t::send_request(const req& q, const location& loc)
 	bool httpConnection = false;
 	for (cstring head : q.headers)
 	{
-		if (head.startswith("Host:")) httpHost = true;
-		if (head.startswith("Content-Length:")) httpContentLength = true;
-		if (head.startswith("Content-Type:")) httpContentType = true;
-		if (head.startswith("Connection:")) httpConnection = true;
+		if (head.istartswith("Host:")) httpHost = true;
+		if (head.istartswith("Content-Length:")) httpContentLength = true;
+		if (head.istartswith("Content-Type:")) httpContentType = true;
+		if (head.istartswith("Connection:")) httpConnection = true;
 		sock.send_buf(head, "\r\n");
 	}
 	

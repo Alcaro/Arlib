@@ -198,6 +198,8 @@ template<typename T> class producer_coro;
 template<typename T> class waiter_coro;
 template<typename T, typename T2 = void> class producer;
 template<typename T, typename T2 = void> class waiter;
+template<typename R1, typename R2> class multi_waiter_t;
+template<typename R1, typename R2> class multi_waiter2_t;
 
 // c++ needs an absurd amount of trickery around optional parameters...
 template<typename T> using empty_if_void = std::conditional_t<std::is_same_v<T, void>, empty_class, T>;
@@ -269,11 +271,21 @@ template<typename T>
 class async : public waiter_base<T> {
 	template<typename Tf> friend class waiter_coro;
 	template<typename Tf, typename Tf2> friend class producer;
+	template<typename R1, typename R2> friend class multi_waiter_t;
+	template<typename R1, typename R2> friend class multi_waiter2_t;
 	
 	static const bool value_in_prod = (sizeof(empty_if_void<T>) <= sizeof(producer_base<T>*));
 	
 	[[no_unique_address]]
 	std::conditional_t<value_in_prod, empty_class, variant_raw<empty_if_void<T>>> value;
+	
+	void mark_consumed()
+	{
+#ifndef ARLIB_OPT
+		this->prod = nullptr;
+		this->complete = (typename waiter_base<T>::complete_t)(void*)1;
+#endif
+	}
 	
 	variant_raw<T>* get_store()
 	{
@@ -288,11 +300,20 @@ class async : public waiter_base<T> {
 	}
 	T get_value()
 	{
-		T ret = get_store()->template get_destruct<T>();
 #ifndef ARLIB_OPT
-		this->prod = nullptr;
+		if (!is_complete())
+			debug_fatal_stack("can't call get_value if this async didn't complete synchronously");
 #endif
-		return ret;
+		if constexpr (std::is_same_v<T, void>)
+		{
+			mark_consumed();
+		}
+		else
+		{
+			T ret = get_store()->template get_destruct<T>();
+			mark_consumed();
+			return ret;
+		}
 	}
 	
 	template<typename Tx = T> static
@@ -336,13 +357,6 @@ class async : public waiter_base<T> {
 		this->set_value(std::move(val));
 	}
 	
-	void consume_sync()
-	{
-#ifndef ARLIB_OPT
-		this->complete = (typename waiter_base<T>::complete_t)(void*)1;
-#endif
-	}
-	
 public:
 	async(producer_base<T>* prod) : waiter_base<T>(&async::complete_s)
 	{
@@ -350,12 +364,18 @@ public:
 		prod->wait = this;
 	}
 	async(const async&) = delete;
-	async(async&& other) = default;
+	async(async&& other) : waiter_base<T>(std::move((waiter_base<T>&)other))
+	{
+		this->value = other.value;
+		other.mark_consumed();
+	}
 	~async()
 	{
 #ifndef ARLIB_OPT
-		if (is_complete() || this->prod)
-			debug_fatal_stack("can't discard an async without calling .then()");
+		if (is_complete())
+			debug_fatal_stack("can't discard a sync async without calling .then()");
+		if (this->prod)
+			debug_fatal_stack("can't discard a waiting async without calling .then()");
 #endif
 		this->prod = nullptr; // null it out, in case the return value is here (nulling here allows parent's dtor to be optimized out)
 	}
@@ -367,11 +387,15 @@ public:
 	{
 		if (is_complete())
 		{
-			consume_sync();
 			if constexpr (std::is_same_v<T, void>)
+			{
+				get_value();
 				next->complete(next);
+			}
 			else
+			{
 				next->complete(next, get_value());
+			}
 		}
 		else
 		{
@@ -553,17 +577,18 @@ class waiter_coro : public waiter_base<T> {
 	{
 		if (src->is_complete())
 		{
-			src->consume_sync();
 			this->complete = nullptr;
 			if constexpr (!std::is_same_v<T, void>)
 				this->contents.template construct<T>(src->get_value());
+			else
+				src->get_value();
 		}
 		else
 		{
 			this->prod = src->prod;
 			this->prod->wait = this;
+			src->prod = nullptr;
 		}
-		src->prod = nullptr;
 	}
 	waiter_coro(const waiter_coro&) = delete;
 	
@@ -818,3 +843,115 @@ public:
 #endif
 	}
 };
+
+template<typename R1, typename R2>
+class multi_waiter_t {
+	variant_raw<std::coroutine_handle<>, variant<R1, R2>> contents;
+	
+	void complete_inner(variant<R1, R2> val)
+	{
+		std::coroutine_handle<> coro = contents.template get_destruct<std::coroutine_handle<>>();
+		contents.template construct<variant<R1, R2>>(std::move(val));
+		coro.resume();
+	}
+	
+	void complete()
+	{
+		variant<R1, R2> var;
+		var.template construct<void>();
+		complete_inner(std::move(var));
+	}
+	
+	template<typename T>
+	void complete(T val)
+	{
+		variant<R1, R2> var;
+		var.template construct<T>(val);
+		complete_inner(std::move(var));
+	}
+	
+	struct wait1_t : public waiter<R1, wait1_t> {
+		template<typename R1x = R1>
+		std::enable_if_t<std::is_same_v<R1x, void>>
+		complete()
+		{
+			container_of<&multi_waiter_t::wait1>(this)->complete();
+		}
+		template<typename R1x = R1>
+		std::enable_if_t<!std::is_same_v<R1x, void>>
+		complete(R1x val)
+		{
+			container_of<&multi_waiter_t::wait1>(this)->complete(std::move(val));
+		}
+	} wait1;
+	
+	struct wait2_t : public waiter<R2, wait2_t> {
+		template<typename R2x = R2>
+		std::enable_if_t<std::is_same_v<R2x, void>>
+		complete()
+		{
+			container_of<&multi_waiter_t::wait2>(this)->complete();
+		}
+		template<typename R2x = R2>
+		std::enable_if_t<!std::is_same_v<R2x, void>>
+		complete(R2x val)
+		{
+			container_of<&multi_waiter_t::wait2>(this)->complete(std::move(val));
+		}
+	} wait2;
+	
+public:
+	multi_waiter_t(async<R1> a1, async<R2> a2)
+	{
+		if (a1.is_complete())
+		{
+			variant<R1, R2> var;
+			if constexpr (std::is_same_v<R1, void>)
+			{
+				a1.get_value();
+				var.template construct<R1>();
+			}
+			else
+			{
+				var.template construct<R1>(a1.get_value());
+			}
+			contents.template construct<variant<R1, R2>>(std::move(var));
+			
+			if (a2.is_complete())
+				a2.get_value(); // just discard it
+			else
+				a2.then(&wait2);
+		}
+		else if (a2.is_complete())
+		{
+			a1.then(&wait1);
+			wait1.cancel(); // and cancel it so await_ready doesn't do anything silly (cancel not needed in the above branch)
+			
+			variant<R1, R2> var;
+			if constexpr (std::is_same_v<R2, void>)
+			{
+				a2.get_value();
+				var.template construct<R2>();
+			}
+			else
+			{
+				var.template construct<R2>(a2.get_value());
+			}
+			contents.template construct<variant<R1, R2>>(std::move(var));
+		}
+		else
+		{
+			a1.then(&wait1);
+			a2.then(&wait2);
+		}
+	}
+	
+	bool await_ready() { return (!wait1.is_waiting()); }
+	void await_suspend(std::coroutine_handle<> coro) { contents.template construct<std::coroutine_handle<>>(coro); }
+	variant<R1, R2> await_resume() { return contents.template get_destruct<variant<R1, R2>>(); }
+};
+template<typename R1, typename R2>
+multi_waiter_t<R1, R2> multi_waiter(async<R1> a1, async<R2> a2)
+{
+	return { std::move(a1), std::move(a2) };
+}

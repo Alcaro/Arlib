@@ -418,3 +418,97 @@ test("runloop co_mutex", "", "")
 	testcall(test1({ 1,2,13, 3,-1,-1, 4,-1,-1, 5,-1,-1, 6,14,15, 7,-1,-1,  8,-1,-1,  9,-1,-1,  10,-1,-1, 11,-1,-1, 12,-1,-1 }));
 	testcall(test1({ 1,2,13, 3,14,15, 4,16,17, 5,18,19, 6,20,21, 7,22,23,  8,24,25,  9,26,27,  10,28,29, 11,-1,-1, 12,-1,-1 }));
 }
+
+#ifdef __unix__
+#include <fcntl.h>
+#include <unistd.h>
+#define HANDLE int
+static int mkevent() { return open("/bin/sh", O_RDONLY); } // Returns an fd that will immediately signal readability.
+static void rmevent(int fd) { close(fd); }
+static async<void> my_await(int fd) { return runloop2::await_read(fd); }
+#endif
+
+#ifdef _WIN32
+#include <windows.h>
+static HANDLE mkevent() { return CreateEvent(nullptr, true, true, nullptr); }
+static void rmevent(HANDLE h) { CloseHandle(h); }
+static async<void> my_await(HANDLE h) { return runloop2::await_handle(h); }
+#endif
+
+test("runloop dispatch", "", "")
+{
+	// if two fds are active simultaneously, and dispatching one cancels the other, the other may not be dispatched
+	// (doesn't matter which one is activated, as long as the other is not)
+	// this doesn't really test anything on windows, since WaitForMultipleObjects only returns a single ready object
+	struct my_pair {
+		struct waiter1 : public waiter<void, waiter1> {
+			void complete()
+			{
+				my_pair* self = container_of<&my_pair::wait1>(this);
+				assert(self->wait2.is_waiting());
+				self->wait2.cancel();
+			}
+		} wait1;
+		struct waiter2 : public waiter<void, waiter2> {
+			void complete()
+			{
+				my_pair* self = container_of<&my_pair::wait2>(this);
+				assert(self->wait1.is_waiting());
+				self->wait1.cancel();
+			}
+		} wait2;
+	};
+	my_pair waiters;
+	
+	HANDLE fd1 = mkevent();
+	HANDLE fd2 = mkevent();
+	my_await(fd1).then(&waiters.wait1);
+	my_await(fd2).then(&waiters.wait2);
+	
+	while (waiters.wait1.is_waiting() || waiters.wait1.is_waiting())
+	{
+		assert(waiters.wait1.is_waiting() && waiters.wait1.is_waiting());
+		runloop2::step();
+	}
+	
+	rmevent(fd1);
+	rmevent(fd2);
+}
+
+co_test("runloop multi_waiter", "", "")
+{
+	{
+		producer<int> wait1;
+		producer<void> wait2;
+		async<int> async1 = &wait1;
+		async<void> async2 = &wait2;
+		assert(!multi_waiter(std::move(async1), std::move(async2)).await_ready()); // abandon the wait
+	}
+	{
+		producer<int> wait1;
+		async<int> async1 = &wait1;
+		assert((co_await multi_waiter(std::move(async1), runloop2::await_timeout(timestamp::in_ms(1)))).contains<void>());
+	}
+	{
+		producer<int> wait1;
+		producer<void> wait2;
+		async<int> async1 = &wait1;
+		async<void> async2 = wait2.complete_sync();
+		assert((co_await multi_waiter(std::move(async1), std::move(async2))).contains<void>());
+	}
+	{
+		producer<int> wait1;
+		producer<void> wait2;
+		async<int> async1 = wait1.complete_sync(42);
+		async<void> async2 = &wait2;
+		assert((co_await multi_waiter(std::move(async1), std::move(async2))).contains<int>());
+	}
+	{
+		// not sure what the correct answer is for this input; just don't crash and I'm happy
+		producer<int> wait1;
+		producer<float> wait2;
+		async<int> async1 = wait1.complete_sync(42);
+		async<float> async2 = wait2.complete_sync(123.45f);
+		co_await multi_waiter(std::move(async1), std::move(async2));
+	}
+}

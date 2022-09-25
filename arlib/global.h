@@ -5,9 +5,21 @@
 #endif
 #define _strdup strdup //and windows is being windows as usual
 
-//these shouldn't be needed with modern compilers, according to
-//https://stackoverflow.com/questions/8132399/how-to-printf-uint64-t-fails-with-spurious-trailing-in-format
-//but mingw 8.1.0 needs it anyways for whatever reason
+#if defined(__clang__)
+#if __clang__ < 14
+#error "unsupported clang version; if you're feeling brave, you're welcome to remove this check, but no complaining if it breaks"
+#endif
+#elif defined(__GNUC__)
+#if __GNUC__ < 11
+#error "unsupported gcc version; if you're feeling brave, you're welcome to remove this check, but no complaining if it breaks"
+#endif
+#else
+#warning "unknown or unsupported compiler; feel free to try, but no complaining if it breaks"
+#endif
+
+// these shouldn't be needed with modern compilers, according to
+// https://stackoverflow.com/questions/8132399/how-to-printf-uint64-t-fails-with-spurious-trailing-in-format
+// but mingw needs it anyways for whatever reason (last checked on 11.2.0)
 #ifndef __STDC_LIMIT_MACROS
 #define __STDC_LIMIT_MACROS 1
 #define __STDC_FORMAT_MACROS 1
@@ -293,21 +305,25 @@ void free_test(void* ptr);
 // On failure, try_ returns NULL, while xmalloc kills the process.
 
 // Arlib recommends using xmalloc. It means a malloc call can terminate the process, but that's already the case - either directly,
-//  via Linux OOM killer, or indirectly, via the machine being bogged down with infinite swap until user reboots it.
+//  via Linux OOM killer, or indirectly, if the machine gets stuck swapping and nothing else until user pokes taskmgr or the power button.
 // OOM should be handled by regularly saving all valuable to data to disk. This also protects against program crashes, power outages, etc.
 
-// On systems without swap or overcommit, malloc return value should of course be checked - but such systems are usually
-//  microcontrollers where malloc isn't allowed anyways, or retrocomputers that Arlib doesn't target.
+// On systems without swap or overcommit, the above won't happen, and malloc return value should be checked -
+//  but such systems are usually microcontrollers where malloc isn't allowed anyways, or retrocomputers that Arlib doesn't target.
+// It's also difficult to test, and difficult to figure out what to do instead. For Arlib's purposes, it's not worth the effort.
 
-anyptr xmalloc(size_t size);
+void* xmalloc_inner(size_t size); // gcc optimizes void* on object file boundary better than struct, so separate function it is
+inline anyptr xmalloc(size_t size) { return xmalloc_inner(size); }
 inline anyptr try_malloc(size_t size) { _test_malloc(); return malloc(size); }
 void* malloc(size_t) __attribute__((deprecated("use xmalloc or try_malloc instead")));
 
-anyptr xrealloc(anyptr ptr, size_t size);
-inline anyptr try_realloc(anyptr ptr, size_t size) { if ((void*)ptr) _test_free(); if (size) _test_malloc(); return realloc(ptr, size); }
+void* xrealloc_inner(void* ptr, size_t size);
+inline anyptr xrealloc(void* ptr, size_t size) { return xrealloc_inner(ptr, size); }
+inline anyptr try_realloc(void* ptr, size_t size) { if ((void*)ptr) _test_free(); if (size) _test_malloc(); return realloc(ptr, size); }
 void* realloc(void*, size_t) __attribute__((deprecated("use xrealloc or try_realloc instead")));
 
-anyptr xcalloc(size_t size, size_t count);
+void* xcalloc_inner(size_t size, size_t count);
+inline anyptr xcalloc(size_t size, size_t count) { return xcalloc_inner(size, count); }
 inline anyptr try_calloc(size_t size, size_t count) { _test_malloc(); return calloc(size, count); }
 void* calloc(size_t, size_t) __attribute__((deprecated("use xcalloc or try_calloc instead")));
 
@@ -429,13 +445,6 @@ class variant {
 	
 	template<typename T> static constexpr int state_for() { return state_for_inner<1, T, Ts...>(); }
 	
-	template<typename T> static constexpr size_t my_sizeof()
-	{
-		if constexpr (std::is_same_v<T, void>)
-			return 0;
-		else
-			return sizeof(T);
-	}
 	template<typename T> static constexpr size_t my_alignof()
 	{
 		if constexpr (std::is_same_v<T, void>)
@@ -443,20 +452,27 @@ class variant {
 		else
 			return alignof(T);
 	}
+	template<typename T> static constexpr size_t my_padded_sizeof()
+	{
+		if constexpr (std::is_same_v<T, void>)
+			return 0;
+		else
+			return alignof(T)+sizeof(T);
+	}
 	
-	char state_id = 0;
-	alignas(max(my_alignof<Ts>()...)) char buf[max(my_sizeof<Ts>()...)];
+	alignas(max(my_alignof<Ts>()...)) char buf[max(my_padded_sizeof<Ts>()...)];
+	char& state_id() { return buf[0]; }
+	template<typename T> T* buf_for() { return (T*)(buf+alignof(T)); }
 	
 	
 	template<typename T>
-	forceinline int assert_contains()
+	forceinline void assert_contains()
 	{
-		constexpr int type_idx = state_for<T>();
 #ifndef ARLIB_OPT
-		if (type_idx != state_id)
+		constexpr int type_idx = state_for<T>();
+		if (type_idx != state_id())
 			abort();
 #endif
-		return type_idx;
 	}
 	
 	template<int n>
@@ -466,31 +482,31 @@ class variant {
 	template<int n, typename T, typename... Tsi>
 	void destruct_all()
 	{
-		if (state_id == n+1)
+		if (state_id() == n+1)
 		{
 			if constexpr (!std::is_same_v<T, void>)
-				((T*)buf)->~T();
+				buf_for<T>()->~T();
 		}
 		else
 			destruct_all<n+1, Tsi...>();
 	}
 public:
-	bool empty() { return state_id == 0; }
+	bool empty() { return state_id() == 0; }
 	
 	template<typename T>
 	bool contains()
 	{
-		return state_id == state_for<T>();
+		return state_id() == state_for<T>();
 	}
 	
 	template<typename T>
-	T& get() { assert_contains<T>(); return *(T*)buf; }
+	T& get() { assert_contains<T>(); return *buf_for<T>(); }
 	
 	template<typename T>
 	T* try_get()
 	{
 		if (contains<T>())
-			return (T*)buf;
+			return buf_for<T>();
 		else
 			return nullptr;
 	}
@@ -499,12 +515,12 @@ public:
 	void construct(Tsi&&... args)
 	{
 #ifndef ARLIB_OPT
-		if (state_id != 0)
+		if (state_id() != 0)
 			abort();
 #endif
-		state_id = state_for<T>();
+		state_id() = state_for<T>();
 		if constexpr (!std::is_same_v<T, void>)
-			new((T*)buf) T(std::forward<Tsi>(args)...);
+			new(buf_for<T>()) T(std::forward<Tsi>(args)...);
 		else
 			static_assert(sizeof...(Tsi) == 0);
 	}
@@ -514,8 +530,8 @@ public:
 	{
 		assert_contains<T>();
 		if constexpr (!std::is_same_v<T, void>)
-			((T*)buf)->~T();
-		state_id = 0;
+			buf_for<T>()->~T();
+		state_id() = 0;
 	}
 	
 	// Extracts the given contents, then deletes it from this object.
@@ -523,11 +539,11 @@ public:
 	T get_destruct()
 	{
 		assert_contains<T>();
-		T* obj = (T*)buf;
+		T* obj = buf_for<T>();
 		T ret = std::move(*obj);
 		if constexpr (!std::is_same_v<T, void>)
 			obj->~T();
-		state_id = 0;
+		state_id() = 0;
 		return ret;
 	}
 	
@@ -535,23 +551,21 @@ public:
 	void destruct_any()
 	{
 		destruct_all<0, Ts...>();
-		state_id = 0;
+		state_id() = 0;
 	}
 	
-	variant() {}
+	variant() { state_id() = 0; }
 	variant(const variant&) = delete;
 	variant(variant&& other)
 	{
-		state_id = other.state_id;
 		memcpy(buf, other.buf, sizeof(buf));
-		other.state_id = 0;
+		other.state_id() = 0;
 	}
 	variant& operator=(const variant& other) = delete;
 	variant& operator=(variant&& other)
 	{
-		state_id = other.state_id;
 		memcpy(buf, other.buf, sizeof(buf));
-		other.state_id = 0;
+		other.state_id() = 0;
 		return *this;
 	}
 	~variant()
@@ -981,7 +995,7 @@ public:
 template<typename Tc, typename Ti> Tc* container_of(Ti* ptr, Ti Tc:: * memb)
 {
 	// https://wg21.link/P0908 proposes a better implementation, but it was forgotten and not accepted
-	Tc* fake_object = (Tc*)0x12345678;  // doing math on a fake pointer is UB, but good luck proving that one is bogus
+	Tc* fake_object = (Tc*)0x12345678;  // doing math on a fake pointer is UB, but good luck proving it's bogus
 	fake_object = launder(fake_object); // especially across an asm (both gcc and clang will optimize out the fake pointer)
 	size_t offset = (uintptr_t)&(fake_object->*memb) - (uintptr_t)fake_object;
 	return (Tc*)((uint8_t*)ptr - offset);

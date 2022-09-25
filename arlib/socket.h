@@ -47,15 +47,18 @@ public:
 	
 	virtual ~socket2() {}
 	
-	// Like the recv syscall, can return fewer bytes than requested, including zero. If so, call the function again.
+	// Like the recv syscall, can return fewer bytes than requested. If so, await can_recv() again.
 	// Two different parts of the program may await can_recv() and can_send() simultaneously, but only one of each per socket.
-	// Asking for zero bytes is undefined behavior. However, it can be returned, and means try again.
+	// A return value of zero does not mean TCP FIN; it means successfully read zero bytes (EAGAIN/EWOULDBLOCK).
+	// Errors, like ECONNRESET, return -1 and accurate errno. TCP FIN returns -1, and errno ESHUTDOWN (I couldn't find a better one).
+	// The buffer must be at least one byte; zero is undefined behavior.
 	virtual ssize_t recv_sync(bytesw by) = 0;
 	virtual ssize_t send_sync(bytesr by) = 0;
 	virtual async<void> can_recv() = 0;
 	virtual async<void> can_send() = 0;
 	
 	// These will accept a port from the domain name, if one is provided.
+	// create() will set errno correctly on failure (ENOENT if DNS fails to resolve), but wrap_ssl and create_ssl will not.
 	static async<autoptr<socket2>> create(cstring host, uint16_t port);
 #ifdef ARLIB_SSL
 	static async<autoptr<socket2>> create_ssl(cstring host, uint16_t port);

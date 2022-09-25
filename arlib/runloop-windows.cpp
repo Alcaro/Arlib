@@ -1,6 +1,9 @@
 #ifdef _WIN32
 #include "runloop2.h"
 #include <windows.h>
+#ifdef ARLIB_SOCKET
+#include "socket.h"
+#endif
 
 #if defined(ARLIB_GAME) || defined(ARLIB_GUI)
 #define ENABLE_MSGPUMP
@@ -106,14 +109,14 @@ public:
 			dur = { 0, 0 };
 		
 		uint32_t wait_ret;
+#ifdef ENABLE_MSGPUMP
 		if (has_gui_events)
 		{
-#ifdef ENABLE_MSGPUMP
 			wait_ret = MsgWaitForMultipleObjectsEx(n_hs, hs, dur.ms(), QS_ALLEVENTS, MWMO_ALERTABLE|MWMO_INPUTAVAILABLE);
 			_window_process_events();
-#endif
 		}
 		else
+#endif
 		{
 			if (n_hs == 0) { SleepEx(dur.ms(), true); wait_ret = WAIT_TIMEOUT; }
 			else wait_ret = WaitForMultipleObjectsEx(n_hs, hs, false, dur.ms(), true);

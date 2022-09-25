@@ -17,7 +17,7 @@ static void malloc_fail(size_t size)
 	debug_fatal(buf);
 }
 
-anyptr xmalloc(size_t size)
+void* xmalloc_inner(size_t size)
 {
 	_test_malloc();
 	if (size >= 0x80000000) malloc_fail(size);
@@ -25,7 +25,7 @@ anyptr xmalloc(size_t size)
 	if (size && !ret) malloc_fail(size);
 	return ret;
 }
-anyptr xrealloc(anyptr ptr, size_t size)
+void* xrealloc_inner(void* ptr, size_t size)
 {
 	if ((void*)ptr) _test_free();
 	if (size) _test_malloc();
@@ -34,7 +34,7 @@ anyptr xrealloc(anyptr ptr, size_t size)
 	if (size && !ret) malloc_fail(size);
 	return ret;
 }
-anyptr xcalloc(size_t size, size_t count)
+void* xcalloc_inner(size_t size, size_t count)
 {
 	_test_malloc();
 	void* ret = try_calloc(size, count);

@@ -1,11 +1,12 @@
 #ifdef ARLIB_SOCKET
 #include "socket.h"
+#include <errno.h>
 
 async<autoptr<socket2>> socket2::create(cstring host, uint16_t port)
 {
 	cstring domain = socket2::address::split_port(host, &port);
 	address ip = (co_await socket2::dns(domain)).with_port(port);
-	if (!ip) co_return nullptr;
+	if (!ip) { errno = ENOENT; co_return nullptr; }
 	co_return co_await socket2::create(ip);
 }
 #ifdef ARLIB_SSL
