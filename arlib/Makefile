@@ -136,10 +136,13 @@ ifeq ($(OS),windows)
   ifeq ($(ARTYPE),hybrid)
     DEFINES += ARLIB_HYBRID_DLL
     CONF_CFLAGS += -fpic
-    CONF_LFLAGS += -Wl,--dynamicbase
   endif
   #surprisingly, this is still not default as of mingw 8.1.0 (to check, objdump -x | grep DllCharacteristics, 0x0100 bit is nxcompat)
-  CONF_LFLAGS += -Wl,--nxcompat -ladvapi32
+  CONF_LFLAGS += -Wl,--nxcompat
+  #this one isn't on by default either (todo: check which objdump flag it is)
+  CONF_LFLAGS += -Wl,--dynamicbase
+  #todo: check which symbols are imported from here
+  CONF_LFLAGS += -ladvapi32
   ifeq ($(ARXPSUPPORT),1)
     DEFINES += _WIN32_WINNT=_WIN32_WINNT_WINXP
   endif
@@ -314,9 +317,9 @@ ifeq ($(ARSOCKET),1)
   #SOURCES_ARLIB += arlib/socket/*.cpp
   DEFINES += ARLIB_SOCKET
   
-  # TODO: change this when/if I reenable openssl and schannel
-  ARSOCKET_SSL ?= bearssl
+  # TODO: change this when/if I reenable schannel
   ifeq ($(OS),windows)
+    ARSOCKET_SSL ?= bearssl
     CONF_LFLAGS += -lws2_32 -liphlpapi
     ifdef ARSOCKET_SSL_WINDOWS
       ARSOCKET_SSL := $(ARSOCKET_SSL_WINDOWS)
@@ -349,6 +352,7 @@ ifeq ($(ARSOCKET),1)
     OBJS_LATE += arlib/deps/bearssl-0.6/build-$(OS)$(WINBITS)/libbearssl.a
     arlib/deps/bearssl-0.6/build-$(OS)$(WINBITS)/libbearssl.a:
       # BearSSL detects mingw32-make as Unix; override some variables into something shell-neutral
+	  @mkdir -p arlib/deps/bearssl-0.6/build-$(OS)$(WINBITS)/
 	  @echo Signature: 8a477f597d28d172789f06886806bc55 > arlib/deps/bearssl-0.6/build-$(OS)$(WINBITS)/CACHEDIR.TAG
 	  $(MAKE) -C arlib/deps/bearssl-0.6/ lib CFLAGS='$(OPTFLAGS) -fpic' BUILD=build-$(OS)$(WINBITS) OBJDIR=build-$(OS)$(WINBITS) CC=$(CC) MKDIR=mkdir
   endif

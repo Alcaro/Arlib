@@ -11,7 +11,6 @@ ARWUTF = 0
 ARSOCKET = 1
 #valid values: openssl (default), bearssl, no (can enable multiple, if space separated, but it's useful only for testing)
 ARSOCKET_SSL = openssl bearssl
-ARSOCKET_SSL = bearssl
 #valid values: schannel (default unless ARSOCKET_SSL is set), bearssl, no (others may work, not tested)
 ARSOCKET_SSL_WINDOWS = schannel bearssl
 # Controls whether the program has a console window on Windows.

@@ -329,7 +329,7 @@ void init_search()
 	search_filenames.reset();
 	init_search_recurse("");
 }
-void update_search()
+int penalty_for(arrayview<cstring> words, cstring fn)
 {
 	//rules:
 	// each potential match must contain every word in the filename (including directory, but not MUSIC_DIR), in order, case insensitive
@@ -346,6 +346,51 @@ void update_search()
 	//exception: if input is blank, output is blank, not even the entry saying so
 	//(implementation doubles the penalty, so it's all integers)
 	
+	int penalty = 0;
+	
+	if (fn.contains("/x/") || fn.contains("/x-"))
+		penalty += 1000;
+	if (fn.endswith(".png") || fn.endswith(".jpg") || fn.endswith(".txt") || fn.endswith(".pdf"))
+		penalty += 1000;
+	
+	size_t last_slash = fn.lastindexof("/");
+	if (last_slash != (size_t)-1)
+		penalty += 2;
+	
+	size_t search_at = 0;
+	for (size_t word_at : range(words.size()))
+	{
+		size_t min_idx = search_at;
+		if (word_at == words.size()-1 && last_slash != (size_t)-1)
+		{
+			if (fn.iindexof(words[word_at], last_slash) == (size_t)-1) penalty += 100;
+		}
+		size_t next_start = fn.iindexof(words[word_at], min_idx);
+		if (next_start == (size_t)-1)
+			return -1;
+		
+		size_t skipped = search_at;
+		if (next_start>0 && fn[next_start-1]!='/')
+		{
+			while (skipped < next_start)
+			{
+				if (isalnum(fn[skipped]))
+				{
+					if (word_at == 0) penalty += 3;
+					else penalty += 2;
+					break;
+				}
+				skipped++;
+			}
+		}
+		
+		search_at = next_start + words[word_at].length();
+	}
+	
+	return penalty;
+}
+void update_search()
+{
 	string prev_focus;
 	if (c_search.items) prev_focus = c_search.items[search_focus].filename;
 	if (prev_focus) prev_focus = prev_focus.substr(strlen(MUSIC_DIR), ~0);
@@ -370,46 +415,9 @@ void update_search()
 	
 	for (cstring fn : search_filenames)
 	{
-		int penalty = 0;
-		
-		if (fn.contains("/x/") || fn.contains("/x-"))
-			penalty += 5;
-		
-		size_t last_slash = fn.lastindexof("/");
-		if (last_slash != (size_t)-1)
-			penalty += 2;
-		
-		size_t search_at = 0;
-		for (size_t word_at : range(words.size()))
-		{
-			size_t min_idx = search_at;
-			if (word_at == words.size()-1 && last_slash != (size_t)-1)
-			{
-				if (fn.iindexof(words[word_at], last_slash) == (size_t)-1) penalty += 100;
-			}
-			size_t next_start = fn.iindexof(words[word_at], min_idx);
-			if (next_start == (size_t)-1) goto not_match;
-			
-			size_t skipped = search_at;
-			if (next_start>0 && fn[next_start-1]!='/')
-			{
-				while (skipped < next_start)
-				{
-					if (isalnum(fn[skipped]))
-					{
-						if (word_at == 0) penalty += 3;
-						else penalty += 2;
-						break;
-					}
-					skipped++;
-				}
-			}
-			
-			search_at = next_start + words[word_at].length();
-		}
-		
-		matches.append({ fn, penalty });
-	not_match: ;
+		int penalty = penalty_for(words, fn);
+		if (penalty >= 0)
+			matches.append({ fn, penalty });
 	}
 	
 	matches.sort([](match_t& a, match_t& b) {
@@ -485,18 +493,29 @@ static gboolean search_kb(GtkEventControllerKey* self, guint keyval, guint keyco
 			init_search();
 			init_common();
 		}
-		else if (search_text.endswith("*"))
+		else if (search_text.endswith("*") || search_text.endswith("*?"))
 		{
+			array<cstring> results;
+			
+			bool any_good = false;
+			array<cstring> words = search_text.crsplit<1>("*")[0].csplit(" ");
 			for (column::node& item : c_search.items)
-				enqueue_real(item.filename);
-		}
-		else if (search_text.endswith("*?"))
-		{
-			array<size_t> tmp;
-			for (size_t n : range(c_search.items.size()))
-				tmp.insert(g_rand(n+1), n);
-			for (size_t n : tmp)
-				enqueue_real(c_search.items[n].filename);
+			{
+				int penalty = penalty_for(words, item.filename);
+				if (penalty < 1000)
+					any_good = true;
+				if (penalty < 1000 || !any_good)
+					results.append(item.filename);
+			}
+			if (search_text.endswith("*?"))
+			{
+				for (size_t n=1;n<results.size();n++)
+				{
+					results.swap(g_rand(n+1), n);
+				}
+			}
+			for (cstring fn : results)
+				enqueue_real(fn);
 		}
 		else if (search_text.startswith("$"))
 		{
