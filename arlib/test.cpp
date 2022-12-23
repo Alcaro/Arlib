@@ -185,9 +185,12 @@ void _testfail(cstring why, cstring file, int line)
 	_testfail(why+stack(file, line));
 }
 
-void _testcmpfail(cstring name, cstring file, int line, cstring expected, cstring actual)
+void _testcmpfail(cstring name, cstring file, int line, cstring lhs, cstring rhs)
 {
-	_testfail("\nFailed assertion "+name+stack(file, line)+"\nexpected: "+expected+"\nactual:   "+actual);
+	if (lhs || rhs)
+		_testfail("Failed assertion "+name+stack(file, line)+"\nlhs: "+lhs+"\nrhs: "+rhs);
+	else
+		_testfail("Failed assertion "+name+stack(file, line));
 }
 
 void _test_skip(cstring why)
@@ -572,8 +575,8 @@ void free_test(void* ptr) { _test_free(); free(ptr); }
 
 void _test_run_coro(async<void> inner)
 {
-	waiter<void, void> wait_co;
-	waiter<void, void> wait_time;
+	waiter<void> wait_co;
+	waiter<void> wait_time;
 	inner.then(&wait_co);
 	runloop2::await_timeout(timestamp::now()+duration::ms(10000)).then(&wait_time);
 	while (wait_co.is_waiting() && wait_time.is_waiting())
@@ -630,5 +633,71 @@ test("tests themselves (4/8)", "test2,test3", "test4")
 	assert_eq(testnum, 3);
 	testnum = 4;
 }
+
+/*
+template<typename T> class test_wrapper;
+template<typename T>
+inline void assert_bottom(const char * text, const char * file, int line, test_wrapper<T> var)
+{
+	if ((var.root && !var.val) || !var.success)
+		_testcmpfail(text, file, line, var.lhs, var.rhs);
+}
+
+template<>
+class test_wrapper<void> {
+public:
+	template<typename T>
+	test_wrapper<T> operator<<(T other)
+	{
+		return test_wrapper<T>(other);
+	}
+};
+
+template<typename T>
+class test_wrapper {
+	template<typename T2> friend class test_wrapper;
+	template<typename T2> friend inline void assert_bottom(const char * text, const char * file, int line, test_wrapper<T2> var);
+	
+	T val;
+	bool success;
+	bool root;
+	string lhs;
+	string rhs;
+	
+	test_wrapper(T val) : val(val), success(true), root(true) {}
+	
+	template<typename T2>
+	test_wrapper(test_wrapper<T2>* prev, bool success, auto lhs, T rhs) : val(rhs), success(success), root(false)
+	{
+		if (prev && !prev->success)
+		{
+			this->success = false;
+			this->lhs = prev->lhs;
+			this->rhs = prev->rhs;
+		}
+		else if (!success)
+		{
+			this->lhs = tostring_dbg(lhs);
+			this->rhs = tostring_dbg(rhs);
+		}
+	}
+	
+public:
+	template<typename T2> test_wrapper<T2> operator==(const T2& other) { return { this, val == other, val, other }; }
+	template<typename T2> test_wrapper<T2> operator!=(const T2& other) { return { this, val != other, val, other }; }
+	template<typename T2> test_wrapper<T2> operator<(const T2& other) { return { this, val < other, val, other }; }
+	template<typename T2> test_wrapper<T2> operator>(const T2& other) { return { this, val > other, val, other }; }
+	template<typename T2> test_wrapper<T2> operator<=(const T2& other) { return { this, val <= other, val, other }; }
+	template<typename T2> test_wrapper<T2> operator>=(const T2& other) { return { this, val >= other, val, other }; }
+};
+
+#define assert2(...) assert_bottom(#__VA_ARGS__, __FILE__, __LINE__, (test_wrapper<void>() << __VA_ARGS__))
+test("xtest1", "", "") { assert2(true); }
+test("xtest2", "", "") { assert2(false); }
+test("xtest3", "", "") { assert2(2+2 == 5); }
+test("xtest4", "", "") { assert2(1 < 2 < 3); }
+test("xtest5", "", "") { assert2(1 < 0 < 3); }
+test("xtest6", "", "") { assert2(1 < 4 < 3); }
+*/
 #endif
 #endif

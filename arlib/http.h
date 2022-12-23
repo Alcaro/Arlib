@@ -134,9 +134,9 @@ public:
 	// TODO: add a way to request chunked http response
 	// TODO: find a usecase for requesting chunked http response
 	
+private:
 	function<async<autoptr<socket2>>(bool ssl, cstrnul domain, uint16_t port)> cb_mksock = socket2::create_sslmaybe;
 	
-private:
 	socketbuf sock;
 	uint32_t sock_generation = 0; // Used to check if the socket was broken while waiting for mut2.
 	uint16_t sock_sent = 0; // Used to check if anything was pipelined then cancelled, while waiting for mut2.

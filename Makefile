@@ -12,7 +12,8 @@ ARSOCKET = 1
 #valid values: openssl (default), bearssl, no (can enable multiple, if space separated, but it's useful only for testing)
 ARSOCKET_SSL = openssl bearssl
 #valid values: schannel (default unless ARSOCKET_SSL is set), bearssl, no (others may work, not tested)
-ARSOCKET_SSL_WINDOWS = schannel bearssl
+#ARSOCKET_SSL_WINDOWS = schannel bearssl
+ARSOCKET_SSL_WINDOWS = bearssl
 # Controls whether the program has a console window on Windows.
 # Valid values: 0, 1 (default if ARGUI and ARGAME are disabled), error (default if ARGUI or ARGAME is enabled), hybrid
 # 1 - enable console window

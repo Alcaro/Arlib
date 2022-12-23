@@ -37,9 +37,8 @@ public:
 	
 	class fds_t {
 		struct waiter_node {
-			struct prod_t : public producer<void, prod_t> {
-				void cancel() { get_loop().fds.cancel(container_of<&waiter_node::prod>(this)); }
-			} prod;
+			producer<void> prod = make_producer<&waiter_node::prod, &waiter_node::cancel>();
+			void cancel() { get_loop().fds.cancel(this); }
 		};
 		array<waiter_node> waiting; // a merged array would be cleaner, but two separate means I can pass wait_fd directly to kernel
 	public:
@@ -146,9 +145,8 @@ public:
 	
 	class timeout_t {
 		struct waiter_node {
-			struct prod_t : public producer<void, prod_t> {
-				void cancel() { get_loop().timeouts.cancel(container_of<&waiter_node::prod>(this)); }
-			} prod;
+			producer<void> prod = make_producer<&waiter_node::prod, &waiter_node::cancel>();
+			void cancel() { get_loop().timeouts.cancel(this); }
 			timestamp timeout;
 		};
 	public:
@@ -375,7 +373,7 @@ namespace runloop2 {
 	bool step(bool wait) { return get_loop().step(wait); }
 	void run(async<void> event)
 	{
-		waiter<void, void> wait;
+		waiter<void> wait;
 		event.then(&wait);
 		auto& loop = get_loop();
 		while (wait.is_waiting())
@@ -383,6 +381,7 @@ namespace runloop2 {
 	}
 	async<void> await_fd(int fd, bool want_write) { return get_loop().await_fd(fd, want_write); }
 	async<void> await_timeout(timestamp timeout) { return get_loop().await_timeout(timeout); }
+	async<void> in_ms(int ms) { return get_loop().await_timeout(timestamp::in_ms(ms)); }
 #ifdef ARLIB_SOCKET
 	void* get_dns() { return get_loop().get_dns(); }
 #endif

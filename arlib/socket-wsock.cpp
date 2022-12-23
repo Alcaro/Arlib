@@ -60,9 +60,7 @@ public:
 	
 	MAKE_DESTRUCTIBLE_FROM_CALLBACK();
 	
-	struct waiter_t : public waiter<void, waiter_t> {
-		void complete() { container_of<&socket2_impl::wait>(this)->complete(); }
-	} wait;
+	waiter<void> wait = make_waiter<&socket2_impl::wait, &socket2_impl::complete>();
 	producer<void> prod_recv;
 	producer<void> prod_send;
 	
@@ -81,10 +79,8 @@ public:
 			prod_send.complete();
 	}
 	
-	socket2_impl(SOCKET fd, WSAEVENT ev) : fd(fd), ev(ev)
-	{
-		runloop2::await_handle(ev).then(&wait);
-	}
+	socket2_impl(SOCKET fd, WSAEVENT ev) : fd(fd), ev(ev) {}
+	
 	ssize_t recv_sync(bytesw by) override
 	{
 		return fixret(::recv(this->fd, (char*)by.ptr(), by.size(), MSG_NOSIGNAL));
@@ -95,12 +91,16 @@ public:
 	}
 	async<void> can_recv() override
 	{
+		if (ev_active == 0)
+			runloop2::await_handle(ev).then(&wait);
 		ev_active |= FD_READ;
 		WSAEventSelect(fd, ev, ev_active);
 		return &prod_recv;
 	}
 	async<void> can_send() override
 	{
+		if (ev_active == 0)
+			runloop2::await_handle(ev).then(&wait);
 		// this one claims to be not level triggered, but it works for me
 		ev_active |= FD_WRITE;
 		WSAEventSelect(fd, ev, ev_active);

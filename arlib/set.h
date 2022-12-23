@@ -160,9 +160,9 @@ class set : public linqbase<set<T>> {
 		if (!m_data)
 			rehash(m_valid.size());
 		
-		size_t pos = known_new ? -1 : find_pos_insert(item);
+		size_t pos = known_new ? 0 : find_pos_insert(item);
 		
-		if (pos == (size_t)-1 || !m_valid[pos])
+		if (known_new || !m_valid[pos])
 		{
 			grow();
 			pos = find_pos_insert(item); // recalculate this, grow() may have moved it
@@ -198,6 +198,7 @@ class set : public linqbase<set<T>> {
 				new(&m_data[i]) T(other.m_data[i]);
 			}
 		}
+		rehash(m_valid.size());
 	}
 	void construct(set&& other)
 	{

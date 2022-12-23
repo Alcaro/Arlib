@@ -7,50 +7,59 @@
 
 namespace {
 
+// putting those as statics in the class gives weird linker errors
 static SSL_CTX* g_ctx;
 static BIO_METHOD* g_bio_meth;
 
-static void initialize()
-{
-	g_ctx = SSL_CTX_new(TLS_client_method());
-	SSL_CTX_set_default_verify_paths(g_ctx); // don't know why this one isn't on by default
-	
-	g_bio_meth = BIO_meth_new(BIO_get_new_index() | BIO_TYPE_SOURCE_SINK, "arlib");
-	BIO_meth_set_write_ex(g_bio_meth, [](BIO* bio, const char * data, size_t dlen, size_t* written) -> int {
-		socket2* sock = (socket2*)BIO_get_data(bio);
-		ssize_t n = sock->send_sync(bytesr((uint8_t*)data, dlen));
-		BIO_clear_retry_flags(bio);
-		if (n == 0)
-			BIO_set_retry_write(bio);
-		if (n <= 0)
-			return 0;
-		*written = n;
-		return 1;
-	});
-	BIO_meth_set_read_ex(g_bio_meth, [](BIO* bio, char * data, size_t dlen, size_t* readbytes) -> int {
-		socket2* sock = (socket2*)BIO_get_data(bio);
-		ssize_t n = sock->recv_sync(bytesw((uint8_t*)data, dlen));
-		BIO_clear_retry_flags(bio);
-		if (n == 0)
-			BIO_set_retry_read(bio);
-		if (n <= 0)
-			return 0;
-		*readbytes = n;
-		return 1;
-	});
-	BIO_meth_set_ctrl(g_bio_meth, [](BIO* bio, int cmd, long larg, void* parg) -> long
-		{
-			// the default ctrl handler returns -2 for everything
-			// despite https://www.openssl.org/docs/man3.0/man3/BIO_ctrl.html saying unfamiliar ioctls should return 0
-			// (and FLUSH needs to return success for some reason)
-			if (cmd == BIO_CTRL_FLUSH)
-				return 1;
-			return 0;
-		});
-}
-
 class socket2_openssl : public socket2 {
 public:
+	static void initialize()
+	{
+		g_ctx = SSL_CTX_new(TLS_client_method());
+		SSL_CTX_set_default_verify_paths(g_ctx); // don't know why this one isn't on by default
+		
+		g_bio_meth = BIO_meth_new(BIO_get_new_index() | BIO_TYPE_SOURCE_SINK, "arlib");
+		BIO_meth_set_write_ex(g_bio_meth, [](BIO* bio, const char * data, size_t dlen, size_t* written) -> int {
+			socket2_openssl* ossl = (socket2_openssl*)BIO_get_data(bio);
+			if (!ossl->sock)
+				return 0;
+			ssize_t n = ossl->sock->send_sync(bytesr((uint8_t*)data, dlen));
+			BIO_clear_retry_flags(bio);
+			if (n == 0)
+				BIO_set_retry_write(bio);
+			if (n < 0)
+				ossl->sock = nullptr;
+			if (n <= 0)
+				return 0;
+			*written = n;
+			return 1;
+		});
+		BIO_meth_set_read_ex(g_bio_meth, [](BIO* bio, char * data, size_t dlen, size_t* readbytes) -> int {
+			socket2_openssl* ossl = (socket2_openssl*)BIO_get_data(bio);
+			if (!ossl->sock)
+				return 0;
+			ssize_t n = ossl->sock->recv_sync(bytesw((uint8_t*)data, dlen));
+			BIO_clear_retry_flags(bio);
+			if (n == 0)
+				BIO_set_retry_read(bio);
+			if (n < 0)
+				ossl->sock = nullptr;
+			if (n <= 0)
+				return 0;
+			*readbytes = n;
+			return 1;
+		});
+		BIO_meth_set_ctrl(g_bio_meth, [](BIO* bio, int cmd, long larg, void* parg) -> long
+			{
+				// the default ctrl handler returns -2 for everything
+				// despite https://www.openssl.org/docs/man3.0/man3/BIO_ctrl.html saying unfamiliar ioctls should return 0
+				// (and FLUSH needs to return success for some reason)
+				if (cmd == BIO_CTRL_FLUSH)
+					return 1;
+				return 0;
+			});
+	}
+	
 	autoptr<socket2> sock;
 	SSL* ssl;
 	enum { block_none, block_send, block_recv };
@@ -73,14 +82,14 @@ public:
 		else
 		{
 			BIO* bio = BIO_new(g_bio_meth);
-			BIO_set_data(bio, sock);
+			BIO_set_data(bio, (socket2_openssl*)this);
 			SSL_set_bio(ssl, bio, bio);
 		}
 		SSL_set_mode(ssl, SSL_MODE_ENABLE_PARTIAL_WRITE | SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
 		
 		SSL_set_verify(ssl, SSL_VERIFY_PEER, nullptr); // don't know why this one is off by default either
-		SSL_set1_host(ssl, domain.c_str().c_str()); // needed for hostname verification; don't know why they're different functions
-		SSL_set_tlsext_host_name(ssl, domain.c_str().c_str()); // needed for SNI
+		SSL_set1_host(ssl, domain.c_str().c_str()); // needed for hostname verification
+		SSL_set_tlsext_host_name(ssl, domain.c_str().c_str()); // needed for SNI; don't know why they're different functions
 	}
 	
 	ssize_t process_ret(int success, size_t& amount, uint8_t& block)
@@ -111,12 +120,12 @@ public:
 	producer<void> sendapp_p;
 	producer<void> recvapp_p;
 	
-	struct waitsend_t : public waiter<void, waitsend_t> {
-		void complete() { container_of<&socket2_openssl::wait_send>(this)->wait_done(block_send); }
-	} wait_send;
-	struct waitrecv_t : public waiter<void, waitrecv_t> {
-		void complete() { container_of<&socket2_openssl::wait_recv>(this)->wait_done(block_recv); }
-	} wait_recv;
+	waiter<void> wait_send = make_waiter<&socket2_openssl::wait_send, &socket2_openssl::wait_send_done>();
+	waiter<void> wait_recv = make_waiter<&socket2_openssl::wait_recv, &socket2_openssl::wait_recv_done>();
+	
+	void wait_send_done() { wait_done(block_send); }
+	void wait_recv_done() { wait_done(block_recv); }
+	
 	void wait_done(uint8_t op)
 	{
 		if (send_block == op)
@@ -131,7 +140,7 @@ public:
 	
 	async<void> prepare_wait(producer<void>& prod, uint8_t op)
 	{
-		if (op == block_none)
+		if (op == block_none || !sock)
 			return prod.complete_sync();
 		if (op == block_send && !wait_send.is_waiting())
 			sock->can_send().then(&wait_send);
@@ -165,13 +174,11 @@ static bool initialized = false;
 static void try_initialize()
 {
 	if (!initialized)
-		initialize();
+		socket2_openssl::initialize();
 	initialized = true;
 }
-//this is more to initialize this thing before the actual ssl tests than a real test
-//most of them are in a runloop, but initialization takes longer (36ms) than the runloop watchdog (3ms)
-//this is also why it provides 'tcp' rather than 'ssl';
-// if it provides 'ssl', it could run after the other SSL tests so they fail the watchdog
+//this is more to initialize this thing before the actual ssl tests than a real test, so latency isn't misattributed too badly
+//this is also why it provides 'tcp' rather than 'ssl'; if it provides 'ssl', it could run after the other SSL tests
 //I could put it on the oninit, but that'd take 1.5 seconds under Valgrind even if nothing tested uses sockets
 test("OpenSSL init", "", "tcp")
 {
@@ -179,7 +186,7 @@ test("OpenSSL init", "", "tcp")
 	try_initialize();
 }
 #else
-oninit() { initialize(); }
+oninit() { socket2_openssl::initialize(); }
 #endif
 }
 

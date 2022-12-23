@@ -5,11 +5,9 @@
 #include "http.h"
 #include "json.h"
 
-//TODO: fetch howsmyssl, ensure the only failure is the session cache
-//TODO: some of these tests could be made cleaner with runloop::step()
-
 static async<void> socket_test_http(socket2* sock)
 {
+	assert(sock);
 	const char * http_get =
 		"GET / HTTP/1.1\r\n"
 		"Host: example.com\r\n" // this is wrong host, so we'll get a 400 or 404 or whatever

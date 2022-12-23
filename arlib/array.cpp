@@ -305,4 +305,21 @@ test("bitarray", "", "array")
 		assert_eq(tostring(b), "0000000000000000000000000000000000000000000000000000000000000000");
 	}
 }
+
+// these tests pass if they compiles
+inline arrayview<int> test_ret_arrayview()
+{
+	static const int y[4] = { 1, 2, 3, 4 };
+	return y;
+}
+inline arrayvieww<int> test_ret_arrayvieww()
+{
+	static int y[4] = { 1, 2, 3, 4 };
+	return y;
+}
+inline array<int> test_ret_array()
+{
+	int y[4] = { 1, 2, 3, 4 };
+	return y;
+}
 #endif

@@ -523,6 +523,11 @@ public:
 		clone(arrayview<T>(ptr, count));
 	}
 	
+	template<size_t N> array(T (&ptr)[N])
+	{
+		clone(arrayview<T>(ptr, N));
+	}
+	
 	array<T>& operator=(array<T> other)
 	{
 		swap(other);
@@ -548,6 +553,12 @@ public:
 			free(this->items);
 			clone(other);
 		}
+		return *this;
+	}
+	
+	template<size_t N> array<T>& operator=(T (&ptr)[N])
+	{
+		this->operator=(arrayview<T>(ptr));
 		return *this;
 	}
 	
@@ -645,7 +656,7 @@ template<typename T> inline array<T> operator+(arrayview<T> left, arrayview<T> r
 
 
 
-//Sized (or static) array - saves an allocation when returning fixed-size arrays, like string.split<N> or pack_le32
+// Sized (or static) array - saves an allocation when returning fixed-size arrays, like string.split<N> or pack_le32.
 template<typename T, size_t N> class sarray {
 	T storage[N];
 public:
@@ -744,7 +755,7 @@ public:
 		new(&items[wr]) T(std::move(item));
 		wr++;
 	}
-	// The popped ref is valid until 
+	// The popped ref is valid until the next operation on this object.
 	T& pop_ref()
 	{
 		return items[rd++];

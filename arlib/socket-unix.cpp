@@ -192,17 +192,17 @@ void socketbuf::socket_failed()
 		// the numeric branches yield identical machine code and should be merged
 		// (they aren't)
 		if (op == op_u8)
-			recv_prod.get<producer_t<uint8_t>>().complete(0);
+			recv_prod.get<producer_t<uint8_t>>().inner.complete(0);
 		else if (op <= op_u16l)
-			recv_prod.get<producer_t<uint16_t>>().complete(0);
+			recv_prod.get<producer_t<uint16_t>>().inner.complete(0);
 		else if (op <= op_u32l)
-			recv_prod.get<producer_t<uint32_t>>().complete(0);
+			recv_prod.get<producer_t<uint32_t>>().inner.complete(0);
 		else if (op <= op_u64l)
-			recv_prod.get<producer_t<uint64_t>>().complete(0);
+			recv_prod.get<producer_t<uint64_t>>().inner.complete(0);
 		else if (op == op_bytesr)
-			recv_prod.get<producer_t<bytesr>>().complete(nullptr);
+			recv_prod.get<producer_t<bytesr>>().inner.complete(nullptr);
 		else if (op == op_line)
-			recv_prod.get<producer_t<cstring>>().complete("");
+			recv_prod.get<producer_t<cstring>>().inner.complete("");
 		else
 			__builtin_unreachable();
 	}
@@ -228,7 +228,7 @@ void socketbuf::recv_complete(size_t prev_size)
 		if (line || recv_by.size() >= recv_bytes)
 		{
 			this->recv_op = op_none;
-			recv_prod.get<producer_t<cstring>>().complete(line);
+			recv_prod.get<producer_t<cstring>>().inner.complete(line);
 		}
 		else
 			sock->can_recv().then(&recv_wait);
@@ -236,21 +236,21 @@ void socketbuf::recv_complete(size_t prev_size)
 	else if (recv_op == op_bytesr_partial && recv_by.size() >= 1)
 	{
 		this->recv_op = op_none;
-		recv_prod.get<producer_t<bytesr>>().complete(recv_by.pull(min(recv_bytes, recv_by.size())));
+		recv_prod.get<producer_t<bytesr>>().inner.complete(recv_by.pull(min(recv_bytes, recv_by.size())));
 	}
 	else if (recv_by.size() >= recv_bytes)
 	{
 		op_t op = this->recv_op;
 		this->recv_op = op_none;
 		// don't bother destructing these guys, their dtor is empty anyways (other than an assert)
-		if (op == op_u8) recv_prod.get<producer_t<uint8_t>>().complete(readu_le8(recv_by.pull(1).ptr()));
-		else if (op == op_u16b) recv_prod.get<producer_t<uint16_t>>().complete(readu_be16(recv_by.pull(2).ptr()));
-		else if (op == op_u16l) recv_prod.get<producer_t<uint16_t>>().complete(readu_le16(recv_by.pull(2).ptr()));
-		else if (op == op_u32b) recv_prod.get<producer_t<uint32_t>>().complete(readu_be32(recv_by.pull(4).ptr()));
-		else if (op == op_u32l) recv_prod.get<producer_t<uint32_t>>().complete(readu_le32(recv_by.pull(4).ptr()));
-		else if (op == op_u64b) recv_prod.get<producer_t<uint64_t>>().complete(readu_be64(recv_by.pull(8).ptr()));
-		else if (op == op_u64l) recv_prod.get<producer_t<uint64_t>>().complete(readu_le64(recv_by.pull(8).ptr()));
-		else if (op == op_bytesr) recv_prod.get<producer_t<bytesr>>().complete(recv_by.pull(recv_bytes));
+		if (op == op_u8) recv_prod.get<producer_t<uint8_t>>().inner.complete(readu_le8(recv_by.pull(1).ptr()));
+		else if (op == op_u16b) recv_prod.get<producer_t<uint16_t>>().inner.complete(readu_be16(recv_by.pull(2).ptr()));
+		else if (op == op_u16l) recv_prod.get<producer_t<uint16_t>>().inner.complete(readu_le16(recv_by.pull(2).ptr()));
+		else if (op == op_u32b) recv_prod.get<producer_t<uint32_t>>().inner.complete(readu_be32(recv_by.pull(4).ptr()));
+		else if (op == op_u32l) recv_prod.get<producer_t<uint32_t>>().inner.complete(readu_le32(recv_by.pull(4).ptr()));
+		else if (op == op_u64b) recv_prod.get<producer_t<uint64_t>>().inner.complete(readu_be64(recv_by.pull(8).ptr()));
+		else if (op == op_u64l) recv_prod.get<producer_t<uint64_t>>().inner.complete(readu_le64(recv_by.pull(8).ptr()));
+		else if (op == op_bytesr) recv_prod.get<producer_t<bytesr>>().inner.complete(recv_by.pull(recv_bytes));
 		else __builtin_unreachable();
 	}
 	else

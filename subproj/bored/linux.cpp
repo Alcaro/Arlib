@@ -305,7 +305,7 @@ int main(int argc, char** argv)
 				*recvp = std::move(recv);
 				idx_best_success = idx;
 			}
-			co_await runloop2::await_timeout(timestamp::in_ms(100));
+			co_await runloop2::in_ms(100);
 			n_completed = n_total;
 		};
 		

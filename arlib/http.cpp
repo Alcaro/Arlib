@@ -651,7 +651,9 @@ co_test("http 12", "tcp", "http")
 	
 	// then send two requests, and cancel the second
 	http_t::req q2 = { "https://floating.muncher.se/arlib/test2.txt" };
-	struct waiter2_t : public waiter<http_t::rsp, waiter2_t> {
+	
+	struct waiter2_t {
+		waiter<http_t::rsp> wait = make_waiter<&waiter2_t::wait, &waiter2_t::complete>();
 		co_wait_token cont;
 		
 		void complete(http_t::rsp r2)
@@ -661,13 +663,11 @@ co_test("http 12", "tcp", "http")
 			cont.complete();
 		}
 	} wait2;
-	http.request(q2).then(&wait2);
+	http.request(q2).then(&wait2.wait);
 	
 	{
 		http_t::req q3 = { "https://floating.muncher.se/arlib/test3.txt" };
-		struct waiter3_t : public waiter<http_t::rsp, waiter3_t> {
-			void complete(http_t::rsp val) { assert_unreachable(); }
-		} wait3;
+		waiter<http_t::rsp> wait3 = make_waiter<[](http_t::rsp val){ assert_unreachable(); }>();
 		http.request(q3).then(&wait3);
 	}
 	

@@ -150,9 +150,7 @@ public:
 class socketlisten {
 #ifdef __unix__
 	int fd = -1;
-	struct waiter_t : public waiter<void, waiter_t> {
-		void complete() { container_of<&socketlisten::wait>(this)->on_readable(); }
-	} wait;
+	waiter<void> wait = make_waiter<&socketlisten::wait, &socketlisten::on_readable>();
 	socketlisten(int fd, function<void(autoptr<socket2>)> cb);
 	void on_readable();
 #endif
@@ -186,9 +184,13 @@ class socketbuf {
 	size_t recv_bytes; // or max length for op_line
 	
 	template<typename T>
-	struct producer_t : public producer<T, producer_t<T>> {
-		// extra declval to work around https://github.com/llvm/llvm-project/issues/55812
-		void cancel() { container_of<&socketbuf::recv_prod>((decltype(std::declval<socketbuf>().recv_prod)*)this)->recv_cancel(); }
+	struct producer_t {
+		producer<T> inner = make_producer<&producer_t::inner, &producer_t::cancel>();
+		void cancel()
+		{
+			// extra declval to work around https://github.com/llvm/llvm-project/issues/55812
+			container_of<&socketbuf::recv_prod>((decltype(std::declval<socketbuf>().recv_prod)*)this)->recv_cancel();
+		}
 	};
 	variant_raw<producer_t<uint8_t>, producer_t<uint16_t>, producer_t<uint32_t>, producer_t<uint64_t>,
 	            producer_t<bytesr>, producer_t<cstring>> recv_prod;
@@ -200,9 +202,7 @@ class socketbuf {
 		recv_wait.cancel();
 	}
 	
-	struct waiter_t : public waiter<void, waiter_t> {
-		void complete() { container_of<&socketbuf::recv_wait>(this)->recv_ready(); }
-	} recv_wait;
+	waiter<void> recv_wait = make_waiter<&socketbuf::recv_wait, &socketbuf::recv_ready>();
 	void recv_ready();
 	void recv_complete(size_t prev_size);
 	
@@ -217,7 +217,7 @@ class socketbuf {
 			debug_fatal_stack("can't read from a socketbuf twice");
 #endif
 		this->recv_op = op;
-		async<T> ret = recv_prod.construct<producer_t<T>>();
+		async<T> ret = &recv_prod.construct<producer_t<T>>()->inner;
 		recv_complete(0);
 		return ret;
 	}
@@ -307,12 +307,10 @@ public:
 private:
 	bytepipe send_by;
 	
-	struct send_waiter_t : public waiter<void, send_waiter_t> {
-		void complete() { container_of<&socketbuf::send_wait>(this)->send_ready(); }
-	} send_wait;
-	struct send_producer_t : public producer<bool, send_producer_t> {
-		void cancel() { container_of<&socketbuf::send_prod>(this)->send_wait.cancel(); }
-	} send_prod;
+	waiter<void> send_wait = make_waiter<&socketbuf::send_wait, &socketbuf::send_ready>();
+	producer<bool> send_prod = make_producer<&socketbuf::send_prod, &socketbuf::send_prod_cancel>();
+	void send_prod_cancel() { send_wait.cancel(); }
+	
 	void send_ready();
 	void send_prepare();
 public:
