@@ -87,16 +87,21 @@ public:
 		}
 		SSL_set_mode(ssl, SSL_MODE_ENABLE_PARTIAL_WRITE | SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
 		
-		SSL_set_verify(ssl, SSL_VERIFY_PEER, nullptr); // don't know why this one is off by default either
+		SSL_set_verify(ssl, SSL_VERIFY_PEER, nullptr); // don't know why this one is off by default
 		SSL_set1_host(ssl, domain.c_str().c_str()); // needed for hostname verification
 		SSL_set_tlsext_host_name(ssl, domain.c_str().c_str()); // needed for SNI; don't know why they're different functions
 	}
 	
 	ssize_t process_ret(int success, size_t& amount, uint8_t& block)
 	{
-		if (success) { block = block_none; return amount; }
-		else if (SSL_want_read(ssl)) { block = block_recv; return 0; }
-		else if (SSL_want_write(ssl)) { block = block_send; return 0; }
+		if (success > 0)
+		{
+			block = block_none;
+			return amount;
+		}
+		int err = SSL_get_error(ssl, success);
+		if (err == SSL_ERROR_WANT_READ) { block = block_recv; return 0; }
+		else if (err == SSL_ERROR_WANT_WRITE) { block = block_send; return 0; }
 		else { sock = nullptr; return -1; }
 	}
 	
@@ -177,9 +182,9 @@ static void try_initialize()
 		socket2_openssl::initialize();
 	initialized = true;
 }
-//this is more to initialize this thing before the actual ssl tests than a real test, so latency isn't misattributed too badly
-//this is also why it provides 'tcp' rather than 'ssl'; if it provides 'ssl', it could run after the other SSL tests
-//I could put it on the oninit, but that'd take 1.5 seconds under Valgrind even if nothing tested uses sockets
+// this isn't a real test; it's to initialize this thing before the actual ssl tests, so latency isn't misattributed too badly
+// this is also why it provides 'tcp' rather than 'ssl'; if it provides 'ssl', it could run after the other SSL tests
+// I could put it on the oninit, but that'd take 1.5 seconds under Valgrind even if nothing tested uses sockets
 test("OpenSSL init", "", "tcp")
 {
 	test_skip("kinda slow");
@@ -202,9 +207,10 @@ async<autoptr<socket2>> socket2::wrap_ssl_openssl(autoptr<socket2> inner, cstrin
 	while (true)
 	{
 		size_t dummy = 0;
-		if (SSL_connect(ossl->ssl) > 0)
+		int ret = SSL_connect(ossl->ssl);
+		if (ret > 0)
 			break;
-		ossl->process_ret(0, dummy, ossl->recv_block);
+		ossl->process_ret(ret, dummy, ossl->recv_block);
 		if (!ossl->sock)
 			co_return nullptr;
 		co_await ossl->can_recv();

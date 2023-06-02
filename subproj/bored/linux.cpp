@@ -178,15 +178,15 @@ int main(int argc, char** argv)
 		int fd = open(argv[2], O_RDONLY);
 		if (fd < 0 || ioctl(fd, IOCTL_EXEC_PARAMS, buf) < 0)
 		{
-			puts("internal error");
-			exit(1);
+			puts("bored: internal error");
+			return 1;
 		}
 		close(fd);
 		array<cstring> remote_param = cstring(buf).csplit("\n");
 		
 		if (!init_key(remote_param[2]))
 		{
-			puts("bad key");
+			puts("bored: bad key");
 			return 1;
 		}
 		
@@ -197,8 +197,8 @@ int main(int argc, char** argv)
 			co_await recv.init(remote_param[0], try_fromstring<uint16_t>(remote_param[1]));
 			if (!recv.alive())
 			{
-				puts("connection failed");
-				exit(1);
+				puts("bored: connection failed");
+				_exit(1);
 			}
 			
 			bytestreamw_dyn req;
@@ -207,7 +207,7 @@ int main(int argc, char** argv)
 			if (file::cwd().startswith(mountpoint))
 				req.strnul(file::cwd().substr(mountpoint.length()-1, ~0));
 			else
-				req.strnul("/");
+				req.strnul(file::dirname(remote_param[4]));
 			req.strnul(remote_param[4]);
 			for (int i=3;i<argc;i++) req.strnul(argv[i]);
 			
@@ -216,17 +216,17 @@ int main(int argc, char** argv)
 			auto my_inner_coro = [&]() -> async<void> {
 				while (true)
 				{
-					bytesr by = co_await recv.recv();
+					bytearray by = co_await recv.recv();
 					if (!recv.alive() || by.size() < 4)
 					{
-						puts("sock error");
-						exit(1);
+						puts("bored: sock error");
+						_exit(1);
 					}
 					uint32_t type = readu_le32(by.ptr());
 					if (type == REQ_EXEC_STDOUT)
 						(void)! write(1, by.ptr()+4, by.size()-4);
 					if (type == REQ_EXEC_EXIT && by.size() == 8)
-						exit(readu_le32(by.ptr()+4));
+						_exit(readu_le32(by.ptr()+4));
 				}
 			};
 			runloop2::detach(my_inner_coro());
@@ -302,8 +302,10 @@ int main(int argc, char** argv)
 			n_completed++;
 			if (recv.alive() && idx < idx_best_success)
 			{
+puts("connected "+addr);
 				*recvp = std::move(recv);
 				idx_best_success = idx;
+				address = addr;
 			}
 			co_await runloop2::in_ms(100);
 			n_completed = n_total;
@@ -350,6 +352,7 @@ int main(int argc, char** argv)
 		if (recvamt) printf("got %zu*%zu=%zu bytes", recvamt, count, recvamt*count);
 		printf(" in %zums, %f KB/s\n", ms, (double)(sendamt+recvamt)*count*1000/ms/1024);
 	};
+	puts("connected");
 	
 	//perftest(512, 0, 512);
 	//perftest(4096, 0, 512);

@@ -106,9 +106,9 @@ public:
 	}
 };
 
-// There's also a polymorphic waiter. It's a normal class, not a template.
-// It has the same members as a normal waiter, except you can't pass it to async::then().
-// Instead, you must call my_async.then(make_waiter()).
+// There's also a polymorphic waiter.
+// It has the same members as a normal waiter, except you can't pass it directly to async::then().
+// Instead, you must call my_async.then(waiter.with(make_waiter<>())).
 template<typename T>
 class waiter_polymorph {
 public:
@@ -161,6 +161,7 @@ namespace runloop2 {
 // Allocating and deallocating is O(1), with no malloc or syscalls.
 // The object also allows calling a function on each object on resize.
 // The intended usecase is storing an array of some struct containing producer or waiter, hence why it's in this file.
+// For waiter<void> with empty handler, consider instead co_holder.
 template<typename T, auto get_freelist, auto on_move = nullptr>
 class allocatable_array {
 public:
@@ -275,7 +276,7 @@ public:
 	void cancel() { waiter<T>::cancel(); }
 	void moved() { waiter<T>::moved(); }
 	
-	waiter<T>* with(waiter<T>::complete_t fn)
+	waiter<T>* with(typename waiter<T>::complete_t fn)
 	{
 		this->complete = fn;
 		return this;
@@ -283,7 +284,7 @@ public:
 };
 
 template<auto memb, auto fn, typename Twait, typename Towner, typename Targ>
-waiter<Targ>::complete_t
+typename waiter<Targ>::complete_t
 make_waiter_inner_bind(Twait Towner:: * memb_, void(Towner::*fn_)(Targ)) requires (!std::is_same_v<Targ, void>)
 {
 	static_assert(std::is_same_v<Twait, waiter<Targ>> || std::is_same_v<Twait, waiter_polymorph<Targ>>);
@@ -294,7 +295,7 @@ make_waiter_inner_bind(Twait Towner:: * memb_, void(Towner::*fn_)(Targ)) require
 	};
 }
 template<auto memb, auto fn, typename Twait, typename Towner>
-waiter<void>::complete_t
+typename waiter<void>::complete_t
 make_waiter_inner_bind(Twait Towner:: * memb_, void(Towner::*fn_)())
 {
 	static_assert(std::is_same_v<Twait, waiter<void>> || std::is_same_v<Twait, waiter_polymorph<void>>);
@@ -311,13 +312,13 @@ auto make_waiter()
 }
 
 template<typename Tl, typename Targ>
-waiter<Targ>::complete_t
+typename waiter<Targ>::complete_t
 make_waiter_inner_lambda(void(Tl::*fn_)(Targ val) const) requires (!std::is_same_v<Targ, void>)
 {
 	return [](waiter<Targ>* self, Targ val) { self->prod = nullptr; Tl()(std::move(val)); };
 }
 template<typename Tl>
-waiter<void>::complete_t
+typename waiter<void>::complete_t
 make_waiter_inner_lambda(void(Tl::*fn_)() const)
 {
 	return [](waiter<void>* self) { self->prod = nullptr; Tl()(); };
@@ -367,7 +368,7 @@ public:
 		this->wait = nullptr;
 #ifndef ARLIB_OPT
 		if (wait == nullptr)
-			debug_fatal_stack("attempt to complete() a producer with no waiter; did you mean complete_sync()?");
+			debug_fatal_stack("attempt to complete() a producer with no waiter; did you mean complete_sync()?\n");
 #endif
 		wait->prod = nullptr; // if it crashes here, you probably called complete when you meant complete_sync
 		wait->complete(wait);
@@ -379,7 +380,7 @@ public:
 		this->wait = nullptr;
 #ifndef ARLIB_OPT
 		if (wait == nullptr)
-			debug_fatal_stack("attempt to complete() a producer with no waiter; did you mean complete_sync()?");
+			debug_fatal_stack("attempt to complete() a producer with no waiter; did you mean complete_sync()?\n");
 #endif
 		wait->prod = nullptr; // if it crashes here, you probably called complete when you meant complete_sync
 		wait->complete(wait, std::move(val));
@@ -404,13 +405,13 @@ public:
 	~producer()
 	{
 		if (wait)
-			debug_fatal_stack("can't destruct a producer with a connected waiter, destroy the waiter first");
+			debug_fatal_stack("can't destruct a producer with a connected waiter, destroy the waiter first\n");
 	}
 #endif
 };
 
 template<auto memb, auto fn_cancel, typename Tprod, typename Towner>
-producer<Tprod>::cancel_t
+typename producer<Tprod>::cancel_t
 make_producer_inner_bind(producer<Tprod> Towner:: * memb_, void(Towner::*fn_cancel_)())
 {
 	return [](producer<Tprod>* self)
@@ -476,7 +477,7 @@ class async : public waiter<T> {
 	{
 #ifndef ARLIB_OPT
 		if (!is_complete())
-			debug_fatal_stack("can't call get_value if this async didn't complete synchronously");
+			debug_fatal_stack("can't call get_value if this async didn't complete synchronously\n");
 #endif
 		if constexpr (std::is_same_v<T, void>)
 		{
@@ -542,9 +543,9 @@ public:
 	{
 #ifndef ARLIB_OPT
 		if (is_complete())
-			debug_fatal_stack("can't discard a sync async without calling .then()");
+			debug_fatal_stack("can't discard a sync async without calling .then()\n");
 		if (this->prod)
-			debug_fatal_stack("can't discard a waiting async without calling .then()");
+			debug_fatal_stack("can't discard a waiting async without calling .then()\n");
 #endif
 		this->prod = nullptr; // null it out, in case the return value is here (nulling here allows parent's dtor to be optimized out)
 	}
@@ -571,7 +572,7 @@ public:
 #ifndef ARLIB_OPT
 			if (next->prod)
 			{
-				debug_warn_stack("attempted to assign a producer to an already-busy waiter");
+				debug_warn_stack("attempted to assign a producer to an already-busy waiter\n");
 				next->cancel();
 			}
 #endif
@@ -716,16 +717,17 @@ public:
 		}
 		size_t sz = waiters.size();
 		waiters.resize(sz*2);
-		item.then(&waiters[sz]);
 		for (waiter<void>& wait : waiters)
 		{
 			wait.moved();
 		}
+		item.then(&waiters[sz]);
 	}
 	void reset()
 	{
 		for (waiter<void>& wait : waiters)
 			wait.cancel();
+		waiters.resize(8);
 	}
 };
 

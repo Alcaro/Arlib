@@ -21,6 +21,7 @@
 //  Landlock is not a complete sandbox in 5.13, but it's a good start, and it seems to complement seccomp-bpf quite well
 //  more specifically, banning FS_READ_DIR on / should restrict the filesystem well enough that I don't need the last mappable page hack,
 //    and it may also offer a variant of RESOLVE_BENEATH (not sure)
+//[6.3 / april 2023] memfd_create(MFD_EXEC) (already used, just listed here as a todo to remove its ifdef)
 //[not usable in its current state] RESOLVE_BENEATH
 //  RESOLVE_BENEATH will improve performance by not involving broker for the vast majority of open()s
 //  it's still open/openat/sigreturn, but it's way better than open/sendto/recvfrom/openat/sendmsg/sigreturn
@@ -35,7 +36,7 @@
 //  yet another way to delete that last mappable page hack
 //[no patch exists] pidfd for SECCOMP_RET_USER_NOTIF and process_vm_readv
 //  would change open/sendto/recvfrom/openat/sendmsg/sigreturn to open/usernotif/openat/vm_readv/usernotif-return
-//  the current pid-based mechanism allows leaking the address space of unsandboxed processes, if the pid is reused
+//  using pids for that allows leaking the address space of unsandboxed processes, if the pid is reused
 //  could also be solved with an unsandboxed broker in the child's pid namespace,
 //    but the extra process may cost more performance than the removed syscalls save
 //[not usable in its current state] eBPF

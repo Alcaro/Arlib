@@ -382,7 +382,6 @@ static bool same_name(bytestream first, bytestream second)
 
 static bool skip_name(bytestream& stream)
 {
-	size_t maxpos = stream.tell();
 	while (true)
 	{
 		if (stream.remaining() < 1) return false;

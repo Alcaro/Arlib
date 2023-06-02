@@ -52,7 +52,7 @@ static int req_fail_fd = -1;
 //these could be overloads, but for security-critical code, explicit is good
 inline void require_b(bool expected)
 {
-	if (!expected)
+	while (!expected) // loop this - it shouldn't return, but this is highly sensitive code, better defend against even crazy cases
 	{
 #ifdef SANDBOX_SETUID
 		// a message without a fd, to tell parent that something failed

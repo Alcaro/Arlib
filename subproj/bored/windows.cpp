@@ -3,8 +3,6 @@
 #include "arlib.h"
 #include "shared.h"
 
-#error todo: rewrite to coro based runloop
-
 static string root = "C:/";
 static bool no_exec = false;
 
@@ -68,7 +66,7 @@ public:
 	{
 		string tmp = strnul_ptr()+1;
 		if (!tmp) return root;
-		return root+file::sanitize_rel_path(tmp);
+		return root + file::sanitize_rel_path(tmp);
 	}
 };
 
@@ -77,6 +75,8 @@ static bytearray reqexec_begin(handler& src, bored_bytestream req);
 class handler {
 public:
 	receiver recv;
+	waiter<bool> wait1 = make_waiter<&handler::wait1, &handler::on_init_done>();
+	waiter<bytearray> wait2 = make_waiter<&handler::wait2, &handler::on_msg>();
 	array<HANDLE> fds;
 	
 	bytearray handle(uint32_t type, bored_bytestream req)
@@ -236,17 +236,28 @@ public:
 	
 	void on_msg(bytearray by)
 	{
-		if (by.size() < 4) return;
+		if (by.size() < 4)
+			return recv.terminate();
 //puts("-> "+tostringhex_dbg(by));
 		bytearray ret = handle(readu_le32(by.ptr()), bored_bytestream(by.skip(4)));
 //puts("<- "+tostringhex_dbg(ret));
 		
-		if (recv.alive()) recv.send(ret);
+		if (recv.alive())
+		{
+			recv.send(ret);
+			recv.recv().then(&wait2);
+		}
 	}
 	
-	handler(autoptr<socket> sock)
+	void on_init_done(bool success)
 	{
-		recv.init(std::move(sock), bind_this(&handler::on_msg), [this](){ this->recv.stop(); });
+		if (success)
+			recv.recv().then(&wait2);
+	}
+	
+	handler(autoptr<socket2> sock)
+	{
+		recv.init(std::move(sock)).then(&wait1);
 	}
 	
 	~handler()
@@ -263,6 +274,7 @@ refarray<handler> handlers;
 class exechandler {
 public:
 	receiver recv;
+	waiter<bytearray> wait = make_waiter<&exechandler::wait, &exechandler::sock_msg>();
 	
 	HANDLE hproc;
 	HANDLE stdin_wr;
@@ -313,6 +325,11 @@ public:
 	
 	void sock_msg(bytearray bytes)
 	{
+		if (bytes.size() < 4)
+		{
+			sock_err();
+			return;
+		}
 		switch (readu_le32(bytes.ptr()))
 		{
 		case REQ_EXEC_STDIN:
@@ -335,11 +352,14 @@ public:
 		}
 		break;
 		}
+		
+		if (recv.alive())
+			recv.recv().then(&wait);
 	}
 	
 	void sock_err()
 	{
-		recv.stop();
+		recv.terminate();
 		if (hproc) TerminateProcess(hproc, 0);
 		if (stdout_rd) CloseHandle(stdout_rd);
 		stdout_rd = NULL;
@@ -400,11 +420,11 @@ static bytearray reqexec_begin(handler& src, bored_bytestream req)
 	
 	exechandler& hdlr = exechandlers.append();
 	hdlr.recv.consume(src.recv);
-	hdlr.recv.callback(bind_ptr(&exechandler::sock_msg, &hdlr), bind_ptr(&exechandler::sock_err, &hdlr));
 	hdlr.hproc = pi.hProcess;
 	hdlr.stdin_wr = stdin_wr;
 	hdlr.stdout_rd = stdout_rd;
 	hdlr.alert_completion(0, 0);
+	hdlr.recv.recv().then(&hdlr.wait);
 	
 	uint8_t ok[] = { 1 };
 	hdlr.recv.send(ok);
@@ -439,15 +459,18 @@ int main(int argc, char** argv)
 	SetCurrentDirectory(root+"/");
 	
 again:
-	socketlisten* listen = socketlisten::create(port, runloop::global(),
-		[](autoptr<socket> sock) {
+	autoptr<socketlisten> listen = socketlisten::create(port,
+		[](autoptr<socket2> sock) {
+printf("NEW=%p\n",(socket2*)sock);
 			for (size_t n=0;n<handlers.size();n++)
 			{
-				if (!handlers[n].recv.alive()) handlers.remove(n--);
+				if (!handlers[n].recv.alive())
+					handlers.remove(n--);
 			}
 			for (size_t n=0;n<exechandlers.size();n++)
 			{
-				if (!exechandlers[n].recv.alive() && !exechandlers[n].stdout_active) exechandlers.remove(n--);
+				if (!exechandlers[n].recv.alive() && !exechandlers[n].stdout_active)
+					exechandlers.remove(n--);
 			}
 			handlers.append(std::move(sock));
 puts("now have "+tostring(handlers.size())+"+"+tostring(exechandlers.size())+" sockets");
@@ -459,7 +482,8 @@ puts("now have "+tostring(handlers.size())+"+"+tostring(exechandlers.size())+" s
 		goto again;
 	}
 	puts("ready");
-	runloop::global()->enter();
+	while (true)
+		runloop2::step();
 	return 0;
 }
 #endif

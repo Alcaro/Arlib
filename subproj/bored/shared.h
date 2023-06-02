@@ -36,35 +36,38 @@ class receiver {
 	crypto_secretstream_xchacha20poly1305_state crypt_recv;
 	crypto_secretstream_xchacha20poly1305_state crypt_send;
 	
-	bool error_init() { sock = nullptr; return false; }
-	bytesr error_recv() { sock = nullptr; return nullptr; }
+	bool error_init() { terminate(); return false; }
+	bytesr error_recv() { terminate(); return nullptr; }
 	
 public:
 	receiver() {}
 	
 	async<bool> init(cstring host, uint16_t port)
 	{
-puts("init a "+host);
-		sock = co_await socket2::create(host, port);
-puts("init b "+host);
-		if (!sock)
+		co_return co_await this->init(co_await socket2::create(host, port));
+	}
+	async<bool> init(autoptr<socket2> sock_)
+	{
+		if (!sock_)
 			co_return error_init();
-		
+		this->sock = std::move(sock_);
 		uint8_t header[sizeof(uint32_t) + crypto_secretstream_xchacha20poly1305_HEADERBYTES];
 		crypto_secretstream_xchacha20poly1305_init_push(&crypt_send, header+sizeof(uint32_t), the_key);
 		writeu_le32(header, crypto_secretstream_xchacha20poly1305_HEADERBYTES);
 		sock.send(bytesr(header));
 		
-puts("init c "+host);
 		uint32_t len = co_await sock.u32l();
-puts("init d "+host);
 		if (len != crypto_secretstream_xchacha20poly1305_HEADERBYTES)
 			co_return error_init();
-puts("init e "+host);
 		bytesr by = co_await sock.bytes(len);
 		crypto_secretstream_xchacha20poly1305_init_pull(&crypt_recv, by.ptr(), the_key); // oddly enough, this can't fail
-puts("init f "+host);
 		co_return true;
+	}
+	void consume(receiver& prev)
+	{
+		sock = std::move(prev.sock);
+		crypt_recv = prev.crypt_recv;
+		crypt_send = prev.crypt_send;
 	}
 	
 	async<bytearray> recv()
@@ -89,6 +92,7 @@ puts("init f "+host);
 		return recv();
 	}
 	
+	void terminate() { sock = nullptr; }
 	bool alive() { return sock; }
 	
 	void send(bytesr by)

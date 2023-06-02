@@ -212,7 +212,7 @@ public:
 
 #ifdef ARLIB_THREAD
 static DWORD tls_id;
-oninit()
+oninit_early()
 {
 	tls_id = TlsAlloc();
 	runloop2_windows* g_loop = new runloop2_windows();
@@ -223,13 +223,13 @@ oninit()
 }
 runloop2_windows& get_loop()
 {
-	// TODO: creating a thread should also create a runloop
-	return *(runloop2_windows*)TlsGetValue(tls_id);
-}
-ondeinit()
-{
-	delete &get_loop();
-	TlsFree(tls_id);
+	runloop2_windows* ret = (runloop2_windows*)TlsGetValue(tls_id);
+	if (!ret)
+	{
+		ret = new runloop2_windows();
+		TlsSetValue(tls_id, ret);
+	}
+	return *ret;
 }
 
 #else

@@ -494,14 +494,13 @@ int main(int argc, char* argv[])
 			n_free = 0;
 			n_malloc_block = 0;
 			try {
-				uint64_t start_time = time_us_ne();
+				timer t;
 				runloop2::test_begin();
 				cur_test->func();
 				runloop2::test_end();
 				if (pass == 1)
 					assert_eq(n_malloc, n_free);
-				uint64_t end_time = time_us_ne();
-				uint64_t time_us = end_time - start_time;
+				uint64_t time_us = t.us();
 				uint64_t time_lim = (all_tests ? 5000*1000 : 500*1000);
 				assert_eq(n_malloc_block, 0);
 				if (time_us > time_lim)

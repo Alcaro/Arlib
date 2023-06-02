@@ -1,9 +1,7 @@
-#if defined(ARLIB_SOCKET)
+#if defined(ARLIB_SOCKET) && defined(__unix__)
 #include "socket.h"
 #undef socket
-#endif
 
-#if defined(ARLIB_SOCKET) && defined(__unix__)
 #include <sys/socket.h>
 #include <netinet/tcp.h>
 #include <arpa/inet.h>
@@ -27,7 +25,7 @@ static int fixret(int ret)
 
 static int my_setsockopt(int fd, int level, int option_name, const void * option_value, socklen_t option_len)
 {
-	return ::setsockopt(fd, level, option_name, (char*)/*lol windows*/option_value, option_len);
+	return setsockopt(fd, level, option_name, option_value, option_len);
 }
 static int my_setsockopt(int fd, int level, int option_name, int option_value)
 {
@@ -35,7 +33,7 @@ static int my_setsockopt(int fd, int level, int option_name, int option_value)
 }
 #define setsockopt my_setsockopt
 
-static void configure_fd(int fd)
+static void configure_sock(int fd)
 {
 	//because 30 second pauses are unequivocally detestable
 	timeval timeout;
@@ -67,8 +65,8 @@ class socket2_impl : public socket2 {
 public:
 	int fd;
 	socket2_impl(int fd) : fd(fd) {}
-	ssize_t recv_sync(bytesw by) override { return fixret(::recv(fd, (char*)by.ptr(), by.size(), MSG_DONTWAIT|MSG_NOSIGNAL)); }
-	ssize_t send_sync(bytesr by) override { return fixret(::send(fd, (char*)by.ptr(), by.size(), MSG_DONTWAIT|MSG_NOSIGNAL)); }
+	ssize_t recv_sync(bytesw by) override { assert(by); return fixret(::recv(fd, (char*)by.ptr(), by.size(), MSG_DONTWAIT|MSG_NOSIGNAL)); }
+	ssize_t send_sync(bytesr by) override { assert(by); return fixret(::send(fd, (char*)by.ptr(), by.size(), MSG_DONTWAIT|MSG_NOSIGNAL)); }
 	async<void> can_recv() override { return runloop2::await_read(fd); }
 	async<void> can_send() override { return runloop2::await_write(fd); }
 	int get_fd() override { return fd; }
@@ -85,7 +83,7 @@ async<autoptr<socket2>> socket2::create(address addr)
 	if (fd < 0)
 		co_return nullptr;
 	
-	configure_fd(fd);
+	configure_sock(fd);
 	
 	if (connect(fd, addr.as_native(), sizeof(addr)) != 0 && errno != EINPROGRESS)
 	{
@@ -122,7 +120,7 @@ autoptr<socket2_udp> socket2_udp::create(socket2::address ip)
 ssize_t socket2_udp::recv_sync(bytesw by, socket2::address* sender)
 {
 	socklen_t addrsize = sender ? sizeof(*sender) : 0;
-	return fixret(::recvfrom(fd, by.ptr(), by.size(), MSG_DONTWAIT|MSG_NOSIGNAL, sender->as_native(), &addrsize));
+	return fixret(::recvfrom(fd, by.ptr(), by.size(), MSG_DONTWAIT|MSG_NOSIGNAL, socket2::address::as_native(sender), &addrsize));
 }
 
 void socket2_udp::send(bytesr by)
@@ -131,20 +129,14 @@ void socket2_udp::send(bytesr by)
 }
 
 
-autoptr<socketlisten> socketlisten::create(uint16_t port, function<void(autoptr<socket2>)> cb)
+autoptr<socketlisten> socketlisten::create(const socket2::address & addr, function<void(autoptr<socket2>)> cb)
 {
-	struct sockaddr_in6 sa; // IN6ADDR_ANY_INIT should work, but doesn't.
-	memset(&sa, 0, sizeof(sa));
-	sa.sin6_family = AF_INET6;
-	sa.sin6_addr = in6addr_any;
-	sa.sin6_port = htons(port);
-	
 	int fd = mksocket(AF_INET6, SOCK_STREAM, 0);
 	if (fd < 0) return nullptr;
 	
 	if (setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, false) < 0) goto fail;
 	if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, true) < 0) goto fail;
-	if (bind(fd, (struct sockaddr*)&sa, sizeof(sa)) < 0) goto fail;
+	if (bind(fd, addr.as_native(), sizeof(addr)) < 0) goto fail;
 	if (listen(fd, 10) < 0) goto fail;
 	return new socketlisten(fd, std::move(cb));
 	
@@ -153,13 +145,19 @@ fail:
 	return nullptr;
 }
 
+autoptr<socketlisten> socketlisten::create(uint16_t port, function<void(autoptr<socket2>)> cb)
+{
+	static const uint8_t localhost[16] = { 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1 };
+	return create(socket2::address(localhost, port), cb);
+}
+
 socketlisten::socketlisten(int fd, function<void(autoptr<socket2>)> cb) : fd(fd), cb(std::move(cb))
 {
 	setblock(fd, false);
 	runloop2::await_read(fd).then(&wait);
 }
 
-void socketlisten::on_readable()
+void socketlisten::on_incoming()
 {
 #ifdef __linux__
 	int nfd = accept4(this->fd, NULL, NULL, SOCK_CLOEXEC);
@@ -168,7 +166,7 @@ void socketlisten::on_readable()
 #endif
 	if (nfd >= 0)
 	{
-		configure_fd(nfd);
+		configure_sock(nfd);
 		this->cb(new socket2_impl(nfd));
 	}
 	runloop2::await_read(fd).then(&wait);
@@ -178,6 +176,8 @@ void socketlisten::on_readable()
 
 #ifdef ARLIB_SOCKET
 // no need to copy these to the windows side
+#include "socket.h"
+
 void socketbuf::socket_failed()
 {
 	send_wait.cancel();
@@ -298,7 +298,8 @@ void socketbuf::send_prepare()
 {
 	if (send_by.size())
 	{
-		sock->can_send().then(&send_wait);
+		if (!send_wait.is_waiting())
+			sock->can_send().then(&send_wait);
 	}
 	else
 	{

@@ -73,7 +73,11 @@ int sandproc::preloader_fd()
 	static int s_fd = 0;
 	if (lock_read<lock_loose>(&s_fd)) return s_fd;
 	
+#ifdef MFD_EXEC // this ifdef can be removed once kernel >= 6.3 is required
+	int fd = syscall(__NR_memfd_create, "gvc-preload", MFD_CLOEXEC|MFD_ALLOW_SEALING|MFD_EXEC);
+#else
 	int fd = syscall(__NR_memfd_create, "gvc-preload", MFD_CLOEXEC|MFD_ALLOW_SEALING);
+#endif
 	if (fd < 0)
 		goto fail;
 	if (write(fd, sandbox_preload_bin, sandbox_preload_len) != sandbox_preload_len)

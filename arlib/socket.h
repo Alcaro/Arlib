@@ -21,18 +21,22 @@ public:
 		
 		address() { memset(_space, 0, sizeof(_space)); }
 		address(bytesr by, uint16_t port = 0); // Input must be 0, 4 or 16 bytes.
-		address(cstring str, uint16_t port = 0); // If port is not zero, the string is allowed to contain a port, which replaces the argument.
+		address(cstring str, uint16_t port = 0) { parse(str, port); }
 		address(const address&) = default;
 		
-		operator bool();
+		operator bool() const;
+		
+		// On failure, family is set to AF_UNSPEC. If port is not zero, the string is allowed to contain a port, which replaces the argument.
+		bool parse(cstring str, uint16_t port = 0);
 		
 		// These two will return the address without port.
-		bytesr as_bytes(); // 4 or 16 bytes, or 0 if empty.
-		string as_str();
+		bytesr as_bytes() const; // 4 or 16 bytes, or 0 if empty.
+		string as_str() const;
 		
-		struct sockaddr * as_native() { return (struct sockaddr*)_space; }
+		struct sockaddr * as_native() const { return (struct sockaddr*)_space; }
+		static struct sockaddr * as_native(address* addr) { return (struct sockaddr*)addr; } // for use if addr is potentially null
 		
-		uint16_t port();
+		uint16_t port() const;
 		void set_port(uint16_t newport);
 		address& with_port(uint16_t newport) { set_port(newport); return *this; }
 		
@@ -43,6 +47,16 @@ public:
 		static cstring parse_domain(cstring host, uint16_t* port = nullptr);
 		
 		static cstring split_port(cstring host, uint16_t* port);
+	};
+	class netmask {
+		uint16_t family;
+		uint16_t bits;
+		uint8_t addr[16];
+	public:
+		netmask() { family = 0; }
+		netmask(cstring str) { parse(str); }
+		bool parse(cstring str);
+		bool matches(const address& addr) const;
 	};
 	
 	virtual ~socket2() {}
@@ -59,7 +73,7 @@ public:
 	
 #ifdef __unix__
 	// If positive, reading or writing this fd is equivalent to recv_sync and send_sync. Can be used for ktls, but little or nothing else.
-	// Only implemented for socket2::create(), everything else will return -1. Sockets are not allowed to.
+	// Only implemented for socket2::create(), everything else will return -1.
 	virtual int get_fd() { return -1; }
 #else
 	int get_fd() { return -1; }
@@ -90,6 +104,8 @@ public:
 	{
 #if defined(ARLIB_SSL_OPENSSL)
 		return wrap_ssl_openssl(std::move(inner), domain);
+#elif defined(ARLIB_SSL_SCHANNEL)
+		return wrap_ssl_schannel(std::move(inner), domain);
 #elif defined(ARLIB_SSL_BEARSSL)
 		return wrap_ssl_bearssl(std::move(inner), domain);
 #else
@@ -99,6 +115,9 @@ public:
 	
 #ifdef ARLIB_SSL_OPENSSL
 	static async<autoptr<socket2>> wrap_ssl_openssl(autoptr<socket2> inner, cstring domain);
+#endif
+#ifdef ARLIB_SSL_SCHANNEL
+	static async<autoptr<socket2>> wrap_ssl_schannel(autoptr<socket2> inner, cstring domain);
 #endif
 #ifdef ARLIB_SSL_BEARSSL
 	static async<autoptr<socket2>> wrap_ssl_bearssl(autoptr<socket2> inner, cstring domain);
@@ -110,6 +129,8 @@ public:
 	static void* dns_create();
 	static void dns_destroy(void* dns);
 };
+
+using mksocket_t = function<async<autoptr<socket2>>(bool ssl, cstring domain, uint16_t port)>;
 
 #ifdef __unix__
 class socket2_udp {
@@ -129,39 +150,53 @@ public:
 #endif
 #ifdef _WIN32
 class socket2_udp {
-	SOCKET fd;
+	SOCKET sock;
 	WSAEVENT ev;
 	socket2::address addr;
 	
-	socket2_udp(SOCKET fd, socket2::address addr) : fd(fd), addr(addr) { ev = CreateEvent(NULL, false, false, NULL); }
+	socket2_udp(SOCKET sock, socket2::address addr) : sock(sock), addr(addr) { ev = CreateEvent(NULL, false, false, NULL); }
 public:
 	static autoptr<socket2_udp> create(socket2::address ip);
 	
-	async<void> can_recv() { WSAEventSelect(fd, ev, FD_READ); return runloop2::await_handle(ev); }
+	async<void> can_recv() { WSAEventSelect(sock, ev, FD_READ); return runloop2::await_handle(ev); }
 	ssize_t recv_sync(bytesw by, socket2::address* sender = nullptr);
 	void send(bytesr by);
 	
-	~socket2_udp() { WSACloseEvent(ev); closesocket(fd); }
+	~socket2_udp() { WSACloseEvent(ev); closesocket(sock); }
 };
 #endif
 
 // The socketlisten is a TCP server.
 // Since it can yield multiple sockets, and there's little or no need for state management here, it's not a coroutine; it takes a callback.
-class socketlisten {
 #ifdef __unix__
+class socketlisten {
 	int fd = -1;
-	waiter<void> wait = make_waiter<&socketlisten::wait, &socketlisten::on_readable>();
-	socketlisten(int fd, function<void(autoptr<socket2>)> cb);
-	void on_readable();
-#endif
-#ifdef _WIN32
-	SOCKET fd = INVALID_SOCKET;
-#endif
+	waiter<void> wait = make_waiter<&socketlisten::wait, &socketlisten::on_incoming>();
 	function<void(autoptr<socket2>)> cb;
+	
+	socketlisten(int fd, function<void(autoptr<socket2>)> cb);
+	void on_incoming();
 public:
+	static autoptr<socketlisten> create(const socket2::address & addr, function<void(autoptr<socket2>)> cb);
 	static autoptr<socketlisten> create(uint16_t port, function<void(autoptr<socket2>)> cb);
 	~socketlisten() { close(fd); }
 };
+#endif
+#ifdef _WIN32
+class socketlisten {
+	SOCKET sock = INVALID_SOCKET;
+	HANDLE ev = NULL;
+	waiter<void> wait = make_waiter<&socketlisten::wait, &socketlisten::on_incoming>();
+	function<void(autoptr<socket2>)> cb;
+	
+	socketlisten(SOCKET fd, function<void(autoptr<socket2>)> cb);
+	void on_incoming();
+public:
+	static autoptr<socketlisten> create(const socket2::address & addr, function<void(autoptr<socket2>)> cb);
+	static autoptr<socketlisten> create(uint16_t port, function<void(autoptr<socket2>)> cb);
+	~socketlisten();
+};
+#endif
 
 // A socketbuf is a convenience wrapper to read structured data from the socket. Ask for N bytes and you get N bytes, no need for loops.
 // On the send side, it converts send to memcpy, making it act as if it's synchronous and allowing multiple concurrent writers.
@@ -318,7 +353,8 @@ public:
 	void send(cstring str) { return send(str.bytes()); }
 	void send(const char * str) { return send(bytesr((uint8_t*)str, strlen(str))); }
 	
-	// send_buf collects incoming bytes, and does not send them 
+	// send_buf collects incoming bytes, and does not send them until send_flush() is called
+	// don't mix with send()
 	void send_buf(bytesr by) { send_by.push(by); }
 	template<typename... Ts> void send_buf(Ts... args) { send_by.push_text(args...); }
 	void send_flush() { send_ready(); }
@@ -328,7 +364,7 @@ public:
 	
 	// Completes when the object has nothing left to send.
 	// This may be immediately, or may take longer than expected if another coroutine sends something while you're waiting.
-	// Only one coroutine may await sends; concurrency here is not allowed.
+	// Only one coroutine per socketbuf may await sends; concurrency here is not allowed.
 	// Returns whether the sends succeeded.
 	async<bool> await_send()
 	{

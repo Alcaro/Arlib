@@ -350,7 +350,13 @@ int penalty_for(arrayview<cstring> words, cstring fn)
 	
 	if (fn.contains("/x/") || fn.contains("/x-"))
 		penalty += 1000;
-	if (fn.endswith(".png") || fn.endswith(".jpg") || fn.endswith(".txt") || fn.endswith(".pdf"))
+	if (fn.endswith(".png") || fn.endswith(".jpg"))
+		penalty += 1000;
+	if (fn.endswith(".txt") || fn.endswith(".pdf"))
+		penalty += 1000;
+	if (fn.endswith(".db") || fn.endswith(".ini"))
+		penalty += 1000;
+	if (fn.endswith(".zip") || fn.endswith(".rar"))
 		penalty += 1000;
 	
 	size_t last_slash = fn.lastindexof("/");

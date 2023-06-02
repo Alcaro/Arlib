@@ -174,6 +174,8 @@ public:
 	timeout_t timeouts;
 	
 	
+	// TODO: find a way to move this to a global array of 0ms timeouts
+	// without getting into trouble regarding threading
 	fifo<std::coroutine_handle<>> scheduled;
 	
 	
@@ -232,7 +234,11 @@ public:
 		test_has_runloop = true;
 		test_iter_end();
 #endif
-		ppoll(fds.wait_fd.ptr(), fds.wait_fd.size(), (struct timespec*)&dur, nullptr);
+		size_t n_fds_to_poll = fds.n_wait_fds();
+#ifdef ARLIB_GUI_GTK3
+		n_fds_to_poll += gmain_n_pollfd;
+#endif
+		ppoll(fds.wait_fd.ptr(), n_fds_to_poll, (struct timespec*)&dur, nullptr);
 #ifdef ARLIB_TESTRUNNER
 		test_iter_begin();
 #endif
@@ -296,12 +302,12 @@ public:
 	
 #ifdef ARLIB_SOCKET
 	void* dns = nullptr;
-#ifndef ARLIB_THREAD
 	runloop2_poll()
 	{
+#ifndef ARLIB_THREAD
 		dns = socket2::dns_create();
-	}
 #endif
+	}
 	~runloop2_poll()
 	{
 #if defined(ARLIB_THREAD) || defined(ARLIB_TESTRUNNER)
@@ -329,10 +335,20 @@ public:
 		if (test_has_runloop)
 			_test_runloop_latency(timestamp::now() - last_iter);
 	}
+	
+	size_t n_global_waits;
+	
 	void test_begin()
 	{
 		test_has_runloop = false;
 		test_iter_begin();
+		
+		n_global_waits = 0;
+		for (size_t n=0;n<fds.n_wait_fds();n++)
+		{
+			if (fds.wait_fd[n].fd >= 0)
+				n_global_waits++;
+		}
 	}
 	void test_end()
 	{
@@ -344,8 +360,13 @@ public:
 			dns = nullptr;
 		}
 #endif
+		size_t n_wait_fds = 0;
 		for (size_t n=0;n<fds.n_wait_fds();n++)
-			assert(fds.wait_fd[n].fd < 0);
+		{
+			if (fds.wait_fd[n].fd >= 0)
+				n_wait_fds++;
+		}
+		assert_eq(n_global_waits, n_wait_fds);
 		for (auto& node : timeouts.waiting)
 			assert(!node.prod.has_waiter());
 		assert(scheduled.empty());
@@ -354,16 +375,26 @@ public:
 };
 
 #ifdef ARLIB_THREAD
-thread_local
-#endif
-static runloop2_poll loop;
-runloop2_poll& get_loop() { return loop; }
+static thread_local runloop2_poll* g_loop;
+runloop2_poll& get_loop()
+{
+	runloop2_poll*& loop = g_loop;
+	if (!loop)
+		loop = new runloop2_poll();
+	return *loop;
+}
 
-#if defined(ARLIB_THREAD) && defined(ARLIB_GUI_GTK3)
+#ifdef ARLIB_GUI_GTK3
 oninit()
 {
 	get_loop().has_gui_events = true;
 }
+#endif
+
+#else
+__attribute__((init_priority(101))) // objects without a constructor priority are constructed after ones with
+static runloop2_poll g_loop;
+runloop2_poll& get_loop() { return g_loop; }
 #endif
 
 }
