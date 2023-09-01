@@ -358,6 +358,10 @@ int penalty_for(arrayview<cstring> words, cstring fn)
 		penalty += 1000;
 	if (fn.endswith(".zip") || fn.endswith(".rar"))
 		penalty += 1000;
+	if (fn.endswith(".m3u") || fn.endswith(".pls"))
+		penalty += 1000;
+	if (fn.endswith(".htm") || fn.endswith(".html"))
+		penalty += 1000;
 	
 	size_t last_slash = fn.lastindexof("/");
 	if (last_slash != (size_t)-1)
@@ -971,7 +975,7 @@ int main(int argc, char** argv)
 	// this tool doesn't use Arlib runloop at all
 	// g_application_run requires taking every Arlib source and placing in the GLib runloop,
 	//  which works badly with Arlib sources being oneshot and O(1) to allocate
-	// (it's doable, but pointless, the only thing GtkApplication has to offer is this single instance thing)
+	// (it's doable, but pointless. It's easier to just put everything in GLib, it's not like there's many)
 	
 	if (argv[1] && (cstring)argv[1] == "--local")
 	{

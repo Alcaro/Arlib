@@ -1,6 +1,19 @@
 #include "arlib.h"
 
-// Contrary to how it looks, this program does have usecases.
+// Contrary to how it may look, this program does have usecases.
+
+/*
+static async<void> coro()
+{
+	autoptr<socket2_udp> sock = socket2_udp::create(co_await socket2::dns_port("muncher.se", 9));
+	while (true)
+	{
+		co_await runloop2::in_ms(100);
+		static const uint8_t dummy[1]={'a'};
+		sock->send(dummy);
+	}
+}
+*/
 
 static async<void> coro()
 {

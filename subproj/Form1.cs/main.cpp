@@ -62,21 +62,39 @@ printf("SSID=%s\n",ssid);
 	return ret;
 }
 
+static waiter<void> guestwnet_coro;
 static async<void> accept_guestwnet_eula()
 {
 	bool first = true;
+	if (false)
+	{
+	again_sleep:
+		co_await runloop2::await_timeout(timestamp::in_ms(15000));
+	}
 again:
 	http_t::rsp rsp1 = co_await http_t::get("http://neverssl.com/");
 	cstring location = rsp1.header("Location");
 	puts(format("guestwnet eula: ",rsp1.status," ",location));
-	if (rsp1.status == http_t::e_connect && first)
+	if (rsp1.status == http_t::e_connect)
 	{
-		co_await runloop2::await_timeout(timestamp::in_ms(2000));
+		puts("retry...");
+		if (first)
+			co_await runloop2::await_timeout(timestamp::in_ms(2000));
+		else
+			co_await runloop2::await_timeout(timestamp::in_ms(5000));
 		first = false;
 		goto again;
 	}
-	if (rsp1.status != 200 || !location)
+	if (rsp1.status == 200 && !location)
+	{
+		puts("done already.");
 		co_return;
+	}
+	if (rsp1.status != 200 || !location)
+	{
+		printf("failed... %d\n", rsp1.status);
+		goto again_sleep;
+	}
 	
 	http_t http;
 	
@@ -99,7 +117,7 @@ again:
 	}
 	puts(format("guestwnet eula: ",cookie_portal));
 	if (!cookie_portal)
-		co_return;
+		goto again_sleep;
 	
 	http_t::req q4 = { q3.loc };
 	q4.loc.path = "/portal/DoCoA.action";
@@ -107,6 +125,8 @@ again:
 	q4.body = ("delayToCoA=0&coaType=Reauth&waitForCoA=true&portalSessionId="+cookie_portal).bytes();
 	http_t::rsp rsp4 = co_await http.request(q4);
 	puts(format("guestwnet eula: ",rsp4.status," ",rsp4.text()));
+	if (rsp4.status != 200)
+		goto again_sleep;
 }
 
 static void set_proxy_state(bool enable)
@@ -122,7 +142,10 @@ static void process_primary_connection(const char * path)
 {
 	bool guestwnet = is_guestwnet(path);
 	if (guestwnet)
-		runloop2::detach(accept_guestwnet_eula());
+	{
+		if (!guestwnet_coro.is_waiting())
+			accept_guestwnet_eula().then(&guestwnet_coro);
+	}
 	set_proxy_state(guestwnet);
 }
 
@@ -406,7 +429,7 @@ public:
 		bool v5_auth_sent = false;
 		
 	again:
-		if (n_recv == ARRAY_SIZE(buf)) // unlikely, but can happen if a goofy client submits an overlong domain name
+		if ((size_t)n_recv == ARRAY_SIZE(buf)) // unlikely, but can happen if a goofy client submits an overlong domain name
 			co_return;
 		co_await sock->can_recv();
 		ssize_t n_this = sock->recv_sync(bytesw(buf).skip(n_recv));

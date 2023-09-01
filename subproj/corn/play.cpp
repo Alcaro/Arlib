@@ -180,6 +180,8 @@ class pulseaudio {
 	pa_sample_spec spec;
 	function<void(size_t nbytes)> req_bytes;
 	
+	bytesr my_saved;
+	
 public:
 	pulseaudio()
 	{
@@ -199,6 +201,7 @@ private:
 	void begin()
 	{
 		cancel();
+		my_saved = nullptr;
 		
 		if (pa_context_get_state(pa_ctx) != PA_CONTEXT_READY)
 		{
@@ -211,13 +214,37 @@ private:
 		
 		pa_strm = pa_stream_new(pa_ctx, "audio", &spec, NULL);
 		pa_stream_set_write_callback(pa_strm,
-			[](pa_stream* p, size_t nbytes, void* userdata) { ((pulseaudio*)userdata)->req_bytes(nbytes); }, this);
+			[](pa_stream* p, size_t nbytes, void* userdata) { ((pulseaudio*)userdata)->req_bytes_first(nbytes); }, this);
 		pa_stream_connect_playback(pa_strm, nullptr, nullptr, PA_STREAM_NOFLAGS, nullptr, nullptr);
 	}
 	
-public:
-	void write(bytesr by)
+	void req_bytes_first(size_t nbytes)
 	{
+		if (my_saved)
+		{
+			size_t req = nbytes;
+			nbytes -= my_saved.size();
+			write(my_saved, req);
+			if ((ssize_t)nbytes <= 0)
+				return;
+		}
+		req_bytes(nbytes);
+	}
+	
+public:
+	void write(bytesr by, size_t requested)
+	{
+		size_t num_wr = max(requested, 65536);
+		if (by.size() > num_wr)
+		{
+			// I have to chunk the buffer like this, or Pipewire gets stuck
+			my_saved = by.skip(num_wr);
+			by = by.slice(0, num_wr);
+		}
+		else
+		{
+			my_saved = nullptr;
+		}
 		pa_stream_write(pa_strm, by.ptr(), by.size(), nullptr, 0, PA_SEEK_RELATIVE);
 	}
 	
@@ -228,6 +255,9 @@ public:
 	{
 		this->finished = finished;
 		pa_stream_set_write_callback(pa_strm, nullptr, nullptr);
+		if (my_saved)
+			pa_stream_write(pa_strm, my_saved.ptr(), my_saved.size(), nullptr, 0, PA_SEEK_RELATIVE);
+		my_saved = nullptr;
 		pa_stream_drain(pa_strm, [](pa_stream* s, int success, void* userdata) {
 			((pulseaudio*)userdata)->finished();
 		}, this);
@@ -296,20 +326,17 @@ bool xz_play(cstrnul fn)
 			bytesr by = ff.read_packet();
 			if (by)
 			{
-				pa.write(by); // this can be more than requested; doesn't matter, it accepts the extra bytes too
+				pa.write(by, nbytes); // this can be more than requested; doesn't matter, it buffers the extra bytes for later
 				nbytes -= by.size();
+			}
+			else if (xz_repeat())
+			{
+				ff.rewind();
 			}
 			else
 			{
-				if (xz_repeat())
-				{
-					ff.rewind();
-				}
-				else
-				{
-					ff.stop();
-					pa.finish(xz_finish);
-				}
+				ff.stop();
+				pa.finish(xz_finish);
 				break;
 			}
 		}
