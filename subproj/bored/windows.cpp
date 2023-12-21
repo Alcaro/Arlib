@@ -81,8 +81,7 @@ public:
 	
 	bytearray handle(uint32_t type, bored_bytestream req)
 	{
-		//printf("handling %u\n", (unsigned)type);
-		
+//printf("handling %u\n", (unsigned)type);
 		bytestreamw_dyn ret;
 		switch (type)
 		{
@@ -286,6 +285,8 @@ public:
 	
 	void alert_completion(DWORD dwErrorCode, DWORD dwNumberOfBytesTransfered)
 	{
+//printf("iocompl=%lu,%lu\n",dwErrorCode,dwNumberOfBytesTransfered);
+//Sleep(100);
 		stdout_active = false;
 		if (!recv.alive()) return;
 		
@@ -297,8 +298,9 @@ public:
 		if (dwErrorCode == 0)
 		{
 			stdout_ov = {};
-			ReadFileEx(stdout_rd, stdout_buf+sizeof(uint32_t), sizeof(stdout_buf)-sizeof(uint32_t), &stdout_ov, alert_completion);
 			stdout_active = true;
+			bool ok = ReadFileEx(stdout_rd, stdout_buf+sizeof(uint32_t), sizeof(stdout_buf)-sizeof(uint32_t), &stdout_ov, alert_completion);
+			if (!ok) dwErrorCode = ERROR_BROKEN_PIPE;
 		}
 		if (dwErrorCode != 0)
 		{
@@ -412,7 +414,9 @@ static bytearray reqexec_begin(handler& src, bored_bytestream req)
 	si.hStdInput = stdin_rd;
 	si.dwFlags |= STARTF_USESTDHANDLES;
 	
+	SetErrorMode(SEM_NOGPFAULTERRORBOX); // error mode is inherited by child processes
 	if (!CreateProcess(exe, (char*)commandline.bytes().ptr(), NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL, cwd, &si, &pi)) return {};
+	SetErrorMode(0); // but I still want the error box for BoredomFS itself, so I notice what happened
 	
 	CloseHandle(pi.hThread);
 	CloseHandle(stdout_wr);
@@ -457,6 +461,7 @@ int main(int argc, char** argv)
 	
 	WuTF_enable();
 	SetCurrentDirectory(root+"/");
+	
 	
 again:
 	autoptr<socketlisten> listen = socketlisten::create(port,

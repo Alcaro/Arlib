@@ -1,7 +1,5 @@
 #include "arlib.h"
 
-// Contrary to how it may look, this program does have usecases.
-
 /*
 static async<void> coro()
 {
@@ -25,6 +23,8 @@ static async<void> coro()
 	autoptr<socket2> sock = co_await socket2::create("muncher.se", 9);
 	if (!sock)
 	{
+		// This branch never happens.
+		// Nevertheless, this program does perform a meaningful operation.
 		system("newnet");
 		goto again;
 	}

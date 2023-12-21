@@ -1,6 +1,7 @@
 #include "arlib.h"
 #include <fcntl.h>
 #include <sys/sendfile.h>
+#include<errno.h>
 
 static const char * timefmt = "%Y-%m-%d %H:%M:%S";
 static time_t parse_time(cstrnul str)
@@ -169,7 +170,7 @@ static void statx_parse_time(cstring str, struct statx_timestamp * out)
 {
 	array<cstring> parts = str.csplit<1>(".");
 	fromstring(parts[0], out->tv_sec);
-	fromstring(parts[1], out->tv_nsec);
+	fromstring((parts[1]+"000000000").substr(0, 9), out->tv_nsec);
 }
 
 static void statx_cache_create(cstring path, cstring local, cstring remote_addr)
@@ -311,7 +312,8 @@ static bool sync_dir(group& g, cstring dir)
 		struct statx & stat2 = pair.value.stat2;
 		newer_t newer = is_newer(g, stat1, stat2);
 		struct timespec new_time = { stat1.stx_mtime.tv_sec, stat1.stx_mtime.tv_nsec };
-		if (newer & n_dir2)
+		//if (newer & n_dir2)
+		if (stat2.stx_mtime.tv_sec > stat1.stx_mtime.tv_sec)
 			new_time = { stat2.stx_mtime.tv_sec, stat2.stx_mtime.tv_nsec };
 		struct timespec new_times[2] = { new_time, new_time }; // have to set both ctime and mtime, ctime=UTIME_OMIT makes it ignore mtime
 		if (newer == n_neither)

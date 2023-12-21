@@ -360,7 +360,9 @@ int penalty_for(arrayview<cstring> words, cstring fn)
 		penalty += 1000;
 	if (fn.endswith(".m3u") || fn.endswith(".pls"))
 		penalty += 1000;
-	if (fn.endswith(".htm") || fn.endswith(".html"))
+	if (fn.endswith(".htm") || fn.endswith(".html") || fn.endswith(".url") || fn.endswith(".nfo"))
+		penalty += 1000;
+	if (fn.endswith(".mid"))
 		penalty += 1000;
 	
 	size_t last_slash = fn.lastindexof("/");

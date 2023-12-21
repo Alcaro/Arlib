@@ -20,7 +20,7 @@ static bytearray request_rsp;
 static bytearray request(bytesr by)
 {
 	recvp->send(by);
-//puts("-> "+tostringhex(tmp)+tostringhex(by));
+//puts("-> "+tostringhex(by));
 	runloop2::run([]() -> async<void> {
 		request_rsp = co_await recvp->recv();
 	}());
@@ -331,6 +331,11 @@ puts("connected "+addr);
 		
 		while (n_completed < n_total)
 			runloop2::step();
+	}
+	if (!recv.alive())
+	{
+		puts("failed to connect");
+		return 1;
 	}
 	
 	auto perftest = [](size_t sendamt, size_t recvamt, size_t count){
