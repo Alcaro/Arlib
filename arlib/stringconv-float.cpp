@@ -497,17 +497,37 @@ string tostring_float(T f)
 	return tostring_float_part2(signbit(f), fixed, r.exponent, r.significand);
 }
 
+// algorithm from https://github.com/jk-jeon/dragonbox/issues/62
+// returns number of deleted zeroes
+static int trim_trailing_zeroes(uint64_t& n)
+{
+	// allegedly valid up to 0x400000000000005f; dragonbox only needs up to 0x001fffffffffffff
+	// for 32bit, use 42949673, 42949673, 1288490189 and 429496731; valid up to 0x4000004b, needs 0x00ffffff
+	int ret = 0;
+again:
+	uint64_t mod = n * 14941862699704736809u;
+	if (mod < 184467440737095517)
+	{
+		ret += 2;
+		n = mod >> 2;
+		goto again;
+	}
+	mod = n * 5534023222112865485;
+	if (mod < 1844674407370955163)
+	{
+		ret += 1;
+		n = mod >> 1;
+	}
+	return ret;
+}
+
 // separate function so the template doesn't duplicate it
 static string tostring_float_part2(bool negative, bool fixed, int exponent, uint64_t significand)
 {
 	if (!fixed || exponent < 0)
 	{
 		// this is an infinite loop if significand == 0, but zero is an integer, so exponent=1 and this isn't entered
-		while (significand%10 == 0)
-		{
-			significand /= 10;
-			exponent++;
-		}
+		exponent += trim_trailing_zeroes(significand);
 	}
 	
 	char buf[23+5]; // float uses max 9 chars left and 4 right (-1.2345678e+23), or 17 left and 0 right (-1234567948140544)
@@ -567,7 +587,7 @@ string tostring(float f) { return tostring_float<float>(f); }
 
 #include "test.h"
 
-template<typename T> void testundec(cstring S, T V, bool ret = true)
+template<typename T> void testfromfloat(cstring S, T V, bool ret = true)
 {
 	testctx(S)
 	{
@@ -590,8 +610,8 @@ template<typename T> void testundec(cstring S, T V, bool ret = true)
 		}
 	}
 }
-#define testfromfloat(...) testcall(testundec<float>(__VA_ARGS__))
-#define testfromdouble(...) testcall(testundec<double>(__VA_ARGS__))
+#define testfromfloat(...) testcall(testfromfloat<float>(__VA_ARGS__))
+#define testfromdouble(...) testcall(testfromfloat<double>(__VA_ARGS__))
 
 test("float precision", "", "")
 {

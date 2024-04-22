@@ -295,6 +295,7 @@ GtkEntry* search_line;
 size_t search_focus = 0;
 
 array<string> search_filenames;
+map<string,string> symlink_filenames;
 void init_search_recurse(cstring path)
 {
 	DIR* dir = opendir(MUSIC_DIR + path);
@@ -309,24 +310,42 @@ void init_search_recurse(cstring path)
 		}
 		
 		string childpath = path + ent->d_name;
-		bool is_dir;
+		int type;
 		if (ent->d_type == DT_UNKNOWN)
 		{
 			struct stat st;
-			stat(MUSIC_DIR + childpath, &st);
-			is_dir = (S_ISDIR(st.st_mode));
+			lstat(MUSIC_DIR + childpath, &st);
+			type = (st.st_mode & S_IFMT);
 		}
-		else if (ent->d_type == DT_DIR) is_dir = true;
-		else is_dir = false;
+		else
+		{
+			static_assert(S_IFIFO == DT_FIFO<<12);
+			static_assert(S_IFCHR == DT_CHR<<12);
+			static_assert(S_IFDIR == DT_DIR<<12);
+			static_assert(S_IFBLK == DT_BLK<<12);
+			static_assert(S_IFREG == DT_REG<<12);
+			static_assert(S_IFLNK == DT_LNK<<12);
+			static_assert(S_IFSOCK == DT_SOCK<<12);
+			// DT_WHT is 14, but S_IFWHT doesn't exist
+			type = ent->d_type << 12;
+		}
 		
-		if (is_dir) init_search_recurse(childpath+"/");
-		else search_filenames.append(childpath);
+		if(0);
+		else if (type == S_IFLNK)
+		{
+			search_filenames.append(childpath);
+			symlink_filenames.insert(childpath, file::resolve(file::dirname(childpath), file::readlink(MUSIC_DIR + childpath)));
+		}
+		else if (type == S_IFDIR) init_search_recurse(childpath+"/");
+		else if (type == S_IFREG) search_filenames.append(childpath);
+		else puts("unknown filetype "+childpath);
 	}
 	closedir(dir);
 }
 void init_search()
 {
 	search_filenames.reset();
+	symlink_filenames.reset();
 	init_search_recurse("");
 }
 int penalty_for(arrayview<cstring> words, cstring fn)
@@ -421,6 +440,10 @@ void update_search()
 	struct match_t {
 		cstring fn;
 		int penalty;
+		bool operator<(const match_t& other) const {
+			if (this->penalty != other.penalty) return this->penalty < other.penalty;
+			return string::inatless(this->fn.replace("/","\1"), other.fn.replace("/","\1"));
+		};
 	};
 	array<match_t> matches;
 	array<cstring> words = key.csplit(" ");
@@ -432,13 +455,21 @@ void update_search()
 			matches.append({ fn, penalty });
 	}
 	
-	matches.sort([](match_t& a, match_t& b) {
-		if (a.penalty != b.penalty) return a.penalty < b.penalty;
-		return string::inatless(a.fn, b.fn);
-	});
+	// heapsort allows me to stop after grabbing the first ~60 items, and not sort the entire 20000-element array
+	size_t n_matches_full = matches.size();
+	prioqueue<match_t> matches_q(std::move(matches));
+	set<cstring> seen_fns;
+	while (matches_q.size() && matches.size() <= c_search.capacity)
+	{
+		match_t m = matches_q.pop();
+		cstring real_fn = symlink_filenames.get_or(m.fn, m.fn);
+		if (seen_fns.contains(real_fn))
+			continue;
+		seen_fns.add(real_fn);
+		matches.append(m);
+	}
 	
 	c_search.reset();
-	size_t n_matches_full = matches.size();
 	if (matches.size() > c_search.capacity)
 	{
 		int max_penalty = matches[c_search.capacity-1].penalty;
@@ -689,10 +720,16 @@ void progress_tick(int pos, int durat)
 	if (durat >= 0)
 	{
 		sprintf(buf, "%u:%.2u / %u:%.2u", pos/60, pos%60, durat/60, durat%60);
-		gtk_progress_bar_set_fraction(progress, (double)pos/durat);
+		if (durat == 0)
+			gtk_progress_bar_set_fraction(progress, 0.0);
+		else
+			gtk_progress_bar_set_fraction(progress, (double)pos/durat);
 	}
 	else
+	{
 		sprintf(buf, "%u:%.2u / ?:??", pos/60, pos%60);
+		gtk_progress_bar_set_fraction(progress, 0.00);
+	}
 	gtk_progress_bar_set_text(progress, buf);
 }
 

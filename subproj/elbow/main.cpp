@@ -24,8 +24,7 @@ struct group {
 	string direction;
 	array<string> dirs;
 	
-	template<typename T>
-	void serialize(T& s)
+	void serialize(auto& s)
 	{
 		s.items(
 			"a", dir_a,
@@ -70,8 +69,7 @@ struct config {
 	string ssh[2];
 	array<group> groups;
 	
-	template<typename T>
-	void serialize(T& s)
+	void serialize(auto& s)
 	{
 		string last_run_s;
 		if (s.serializing)
@@ -203,6 +201,8 @@ static void statx_cache_create(cstring path, cstring local, cstring remote_addr)
 			stx.stx_mode = S_IFDIR;
 		else if (type == 'l')
 			stx.stx_mode = S_IFLNK;
+		else if (type == 's') // ignore sockets
+			continue;
 		else
 		{
 			puts("find returned unknown type "+parts[0]+" for "+parts[5]);
