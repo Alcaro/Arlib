@@ -381,7 +381,7 @@ static bool fromstring_float(const char * start, const char * end, double& out, 
 	if (bin_exponent+1023+61 <= 0) // subnormal (or rounded to zero)
 	{
 		mantissa >>= -(bin_exponent+1023+61);
-		out = reinterpret<double>(mantissa>>10);
+		out = transmute<double>(mantissa>>10);
 	}
 	else if (bin_exponent >= fi->max_bin_exp) // infinite
 	{
@@ -390,7 +390,7 @@ static bool fromstring_float(const char * start, const char * end, double& out, 
 	}
 	else // normal (or subnormal float - the double/float cast will handle that)
 	{
-		out = reinterpret<double>(((uint64_t)(bin_exponent+1023+61)<<52) | (mantissa<<3>>12));
+		out = transmute<double>(((uint64_t)(bin_exponent+1023+61)<<52) | (mantissa<<3>>12));
 	}
 	
 done:
@@ -597,8 +597,8 @@ template<typename T> void testfromfloat(cstring S, T V, bool ret = true)
 		// bitcast it - -0.0 and nan equality is funny
 		using Ti = std::conditional_t<sizeof(T)==sizeof(uint32_t), uint32_t, uint64_t>;
 		static_assert(sizeof(T) == sizeof(Ti));
-		Ti ai = reinterpret<Ti>(a);
-		Ti Vi = reinterpret<Ti>(V);
+		Ti ai = transmute<Ti>(a);
+		Ti Vi = transmute<Ti>(V);
 		if (ai != Vi)
 		{
 			test_nothrow
@@ -1090,10 +1090,10 @@ test("string conversion - float to string", "", "string")
 	assert_eq(tostring(-10.01), "-10.01");
 	assert_eq(tostring(-1000000000000000.0), "-1000000000000000");
 	assert_eq(tostring(-10000000000000000.0), "-1e+16");
-	assert_eq(tostring(reinterpret<float>(0x7F800000)), "inf");
-	assert_eq(tostring(reinterpret<float>(0x7F800001)), "nan");
-	assert_eq(tostring(reinterpret<float>(0x7FFFFFFF)), "nan");
-	assert_eq(tostring(reinterpret<float>(0xFFFFFFFF)), "nan");
+	assert_eq(tostring(transmute<float>(0x7F800000)), "inf");
+	assert_eq(tostring(transmute<float>(0x7F800001)), "nan");
+	assert_eq(tostring(transmute<float>(0x7FFFFFFF)), "nan");
+	assert_eq(tostring(transmute<float>(0xFFFFFFFF)), "nan");
 	
 	assert_eq(tostring(0.1+0.2), "0.30000000000000004");
 	assert_eq(tostring(0.7-0.4), "0.29999999999999993");

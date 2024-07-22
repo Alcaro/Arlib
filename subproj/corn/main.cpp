@@ -369,19 +369,19 @@ int penalty_for(arrayview<cstring> words, cstring fn)
 	
 	if (fn.contains("/x/") || fn.contains("/x-"))
 		penalty += 1000;
-	if (fn.endswith(".png") || fn.endswith(".jpg"))
+	if (fn.iendswith(".png") || fn.iendswith(".jpg"))
 		penalty += 1000;
-	if (fn.endswith(".txt") || fn.endswith(".pdf"))
+	if (fn.iendswith(".txt") || fn.iendswith(".pdf"))
 		penalty += 1000;
-	if (fn.endswith(".db") || fn.endswith(".ini"))
+	if (fn.iendswith(".db") || fn.iendswith(".ini"))
 		penalty += 1000;
-	if (fn.endswith(".zip") || fn.endswith(".rar"))
+	if (fn.iendswith(".zip") || fn.iendswith(".rar") || fn.iendswith(".7z"))
 		penalty += 1000;
-	if (fn.endswith(".m3u") || fn.endswith(".pls"))
+	if (fn.iendswith(".m3u") || fn.iendswith(".pls"))
 		penalty += 1000;
-	if (fn.endswith(".htm") || fn.endswith(".html") || fn.endswith(".url") || fn.endswith(".nfo"))
+	if (fn.iendswith(".htm") || fn.iendswith(".html") || fn.iendswith(".url") || fn.iendswith(".nfo"))
 		penalty += 1000;
-	if (fn.endswith(".mid"))
+	if (fn.iendswith(".mid"))
 		penalty += 1000;
 	
 	size_t last_slash = fn.lastindexof("/");

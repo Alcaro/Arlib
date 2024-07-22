@@ -22,6 +22,7 @@ struct group {
 	string dir_a;
 	string dir_b;
 	string direction;
+	string unlink;
 	array<string> dirs;
 	
 	void serialize(auto& s)
@@ -30,6 +31,7 @@ struct group {
 			"a", dir_a,
 			"b", dir_b,
 			"direction", ser_include_if_true(direction),
+			"unlink", ser_include_if_true(unlink),
 			"dirs", dirs);
 	}
 	
@@ -60,6 +62,7 @@ struct cli_config {
 	bool dry_run;
 	bool direction_push;
 	bool direction_pull;
+	bool allow_unlink;
 };
 struct config {
 	time_t last_run;
@@ -353,7 +356,10 @@ static bool sync_dir(group& g, cstring dir)
 			{
 				puts("unlink "+fullpath_wrong);
 				if (cfg_cli.dry_run) continue;
-				puts("todo");
+				if (cfg_cli.allow_unlink || g.unlink == "true")
+					unlink(fullpath_wrong);
+				else
+					puts("todo");
 			}
 			continue;
 		}
@@ -408,6 +414,7 @@ int main(int argc, char** argv)
 	args.add("dry-run", &cfg_cli.dry_run);
 	args.add("push", &cfg_cli.direction_push);
 	args.add("pull", &cfg_cli.direction_pull);
+	args.add("unlink", &cfg_cli.allow_unlink);
 	args.add("", &cfgpath);
 	args.parse(argv);
 	
