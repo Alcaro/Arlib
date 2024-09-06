@@ -20,7 +20,7 @@ test("sandbox", "", "sandbox")
 	runloop* loop = runloop::global();
 	//ugly, but the alternative is nesting lambdas forever or busywait. and I need a way to break it anyways
 	int status;
-	function<void(int lstatus)> break_runloop = bind_lambda([&](int lstatus) { status = lstatus; loop->exit(); });
+	function<void(int lstatus)> break_runloop = [&](int lstatus) { status = lstatus; loop->exit(); };
 	
 	{
 		sandproc p(loop);
@@ -29,7 +29,7 @@ test("sandbox", "", "sandbox")
 		bool has_access_fail = false;
 		// this will fail because can't access /lib64/ld-linux-x86-64.so.2
 		// (or /bin/true or whatever - no point caring exactly what file makes it blow up)
-		p.set_access_violation_cb(bind_lambda([&](cstring path, bool write) { has_access_fail = true; } ));
+		p.set_access_violation_cb([&](cstring path, bool write) { has_access_fail = true; });
 		p.set_stdout(process::output::create_stdout());
 		p.set_stderr(process::output::create_stderr());
 		
@@ -47,7 +47,7 @@ test("sandbox", "", "sandbox")
 		sandproc p(loop);
 		p.onexit(break_runloop);
 		
-		p.set_access_violation_cb(bind_lambda([&](cstring path, bool write) { puts(""+path); assert_unreachable(); } ));
+		p.set_access_violation_cb([&](cstring path, bool write) { puts(""+path); assert_unreachable(); });
 		p.set_stdout(process::output::create_stdout());
 		p.set_stderr(process::output::create_stderr());
 		p.fs_grant_syslibs(TRUE);
@@ -64,7 +64,7 @@ test("sandbox", "", "sandbox")
 		sandproc p(loop);
 		p.onexit(break_runloop);
 		
-		p.set_access_violation_cb(bind_lambda([&](cstring path, bool write) { puts(""+path); assert_unreachable(); } ));
+		p.set_access_violation_cb([&](cstring path, bool write) { puts(""+path); assert_unreachable(); });
 		p.set_stdout(process::output::create_stdout());
 		p.set_stderr(process::output::create_stderr());
 		p.fs_grant_syslibs(FALSE);
@@ -81,14 +81,14 @@ test("sandbox", "", "sandbox")
 	//{
 	//	sandproc p(loop);
 	//	
-	//	p.set_access_violation_cb(bind_lambda([&](cstring path, bool write) { assert_unreachable(); } ));
+	//	p.set_access_violation_cb([&](cstring path, bool write) { assert_unreachable(); });
 	//	p.fs_grant_syslibs("/bin/cat");
 	//	p.fs_grant("/dev/pts/0");
 	//	
 	//	assert(p.launch("/bin/cat", "/dev/pts/0"));
 	//	
-	//	loop->set_timer_once(1000, bind_lambda([&]() { assert(p.running()); }));
-	//	loop->set_timer_once(10000, bind_lambda([&]() { abort(); }));
+	//	loop->set_timer_once(1000, [&]() { assert(p.running()); });
+	//	loop->set_timer_once(10000, [&]() { abort(); });
 	//	loop->enter();
 	//}
 }

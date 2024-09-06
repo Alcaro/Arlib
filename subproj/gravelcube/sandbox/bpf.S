@@ -1,3 +1,5 @@
+# todo: kernel >= 6.11 allows statx(filename=NULL) with AT_EMPTY_PATH; check if execveat got the same treatment
+
 let arch = (offsetof(struct seccomp_data, arch))
 let sysno = (offsetof(struct seccomp_data, nr))
 let arg1l = (offsetof(struct seccomp_data, args[0]))

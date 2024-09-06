@@ -240,7 +240,7 @@ static arrayview<dir_entry> statx_cache_get(cstring dirname)
 		key = key.substr(statx_prefix.length(), ~0);
 	else
 	{
-		puts("illegal argument to statx_cache_get");
+		puts("illegal argument to statx_cache_get, "+key+" didn't start with "+statx_prefix);
 		return nullptr;
 	}
 	while (key.contains("//"))
