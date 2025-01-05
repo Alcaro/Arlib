@@ -59,6 +59,22 @@ string tostring_dbg(const map<Tkey,Tvalue>& item)
 	return ret + "}";
 }
 
+template<size_t n>
+string tostring_dbg(const bitset<n>& item)
+{
+	string ret;
+	for (size_t i=0;i<item.size();i++)
+		ret += item[i] ? '1' : '0';
+	return ret;
+}
+static inline string tostring_dbg(const bitarray& item)
+{
+	string ret;
+	for (size_t i=0;i<item.size();i++)
+		ret += item[i] ? '1' : '0';
+	return ret;
+}
+
 template<typename T>
 string tostringhex_dbg(const T& item) { return tostringhex(item); }
 string tostringhex_dbg(const arrayview<uint8_t>& item);
@@ -254,90 +270,41 @@ void _test_coro_exception();
 // If test is still successful, returns false.
 bool test_rethrow();
 
-#if defined(__clang__)
-// I am not proud of this code.
-struct assert_reached_t {
-	assert_reached_t * link;
-	const char * file;
-	int lineno;
-};
-
+struct assert_reached_t;
 __attribute__((unused))
-static assert_reached_t* assert_reached_impl(assert_reached_t* n)
-{
-	static assert_reached_t* root = NULL;
-	if (!n) return root;
-	n->link = root;
-	root = n;
-	return NULL;
-}
-
-#define assert_reached()                                             \
-	do {                                                             \
-		static assert_reached_t node = { NULL, __FILE__, __LINE__ }; \
-		struct x { __attribute__((constructor)) static void y() {    \
-			assert_reached_impl(&node); } };                         \
-		node.file = NULL;                                            \
-	} while(0)
-
+static assert_reached_t* first = nullptr;
+struct assert_reached_t {
+	assert_reached_t * next;
+	const char * file;
+	int line;
+	bool reached;
+	
+	assert_reached_t(const char * file, int line)
+	{
+		this->file = file;
+		this->line = line;
+		this->reached = false;
+		this->next = first;
+		first = this;
+	}
+};
+template<typename file, int line> assert_reached_t assert_reached_node { file()(), line };
+#define assert_reached() do { assert_reached_node<decltype([](){ return __FILE__; }), __LINE__>.reached = true; } while(0)
 __attribute__((unused))
 static void assert_all_reached()
 {
-	assert_reached_t* node = assert_reached_impl(NULL);
-	test_nothrow {
-		while (node) {
-			if (node->file) _testfail("assert_reached() wasn't", node->file, node->lineno);
-			node = node->link;
+	assert_reached_t* link = first;
+	assert(link);
+	while (link)
+	{
+		if (!link->reached)
+		{
+			testctx(cstring(link->file)+":"+tostring(link->line))
+				assert(link->reached);
 		}
+		link = link->next;
 	}
 }
-
-#elif defined(__GNUC__) && defined(__linux__)
-// and this one is even worse, but I couldn't find anything better that GCC supports
-//  (other than gcov, which doesn't integrate with my testing framework, and interacts poorly with same-line if-return).
-// Both implementations give false negatives if compiler deletes the code as provably unreachable,
-//  and I don't know what happens if the function is inlined, a template, or otherwise duplicated.
-#define assert_reached()                                \
-	do {                                                \
-		__asm__ volatile(                               \
-			".pushsection .data\n"                      \
-			".subsection 2\n"                           \
-			".LCreached%=: .int " STR(__LINE__) "\n"    \
-			".popsection\n"                             \
-			"{movl $0, .LCreached%=(%%rip)"             \
-			"|mov dword ptr [.LCreached%=+%%rip], 0}\n" \
-			:); /* happy code */                        \
-	} while(0) // (%= and {|} only exist in extended asm, which needs a :)
-#define assert_all_reached()                                               \
-	do {                                                                   \
-		int* iter;                                                         \
-		int* end;                                                          \
-		__asm__ volatile(                                                  \
-			".pushsection .data\n"                                         \
-			".subsection 1\n"                                              \
-			".LCreached_init:\n"                                           \
-			".subsection 3\n"                                              \
-			".LCreached_fini:\n"                                           \
-			".popsection\n"                                                \
-			"lea {.LCreached_init(%%rip), %0"                              \
-			    "|%0, [.LCreached_init+%%rip]}\n"                          \
-			"lea {.LCreached_fini(%%rip), %1"                              \
-			    "|%1, [.LCreached_fini+%%rip]}\n"                          \
-			: "=r"(iter), "=r"(end));                                      \
-		test_nothrow {                                                     \
-			while (iter < end)                                             \
-			{                                                              \
-				if (*iter)                                                 \
-					_testfail("assert_reached() wasn't", __FILE__, *iter); \
-				iter++;                                                    \
-			}                                                              \
-		}                                                                  \
-	} while(0)
-#else
-// is this even possible without gcc extensions or a custom build step?
-#define assert_reached()
-#define assert_all_reached() test_inconclusive("assert_reached() isn't implemented on this platform")
-#endif
 
 #define main not_quite_main
 int not_quite_main(int argc, char** argv);

@@ -8,6 +8,7 @@
 #include "bytepipe.h"
 #include "endian.h"
 #include "file.h"
+#include "os.h"
 #include <unistd.h>
 
 #ifdef _WIN32

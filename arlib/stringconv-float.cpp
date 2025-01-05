@@ -12,6 +12,10 @@
 //#define HAVE_FROM_CHARS
 
 #include <charconv> // this includes <cctype> in gcc <= 11.3, which does not like Arlib's overridden ctype functions
+#ifdef HAVE_FROM_CHARS
+#include <system_error>
+#endif
+
 #if __GNUC__ >= 12
 //#warning rearrange the includes
 #endif
@@ -27,8 +31,8 @@ template<typename T>
 bool fromstring_float(cstring s, T& out)
 {
 	out = 0;
-	const char * start = (char*)s.bytes().ptr();
-	const char * end = start + s.length();
+	const char * start = s.ptr_raw();
+	const char * end = s.ptr_raw_end();
 	auto ret = std::from_chars(start, end, out);
 	if (ret.ptr != end) out = 0;
 	return (ret.ptr == end && ret.ec == std::errc());
@@ -47,12 +51,12 @@ struct floatinf {
 static const floatinf fi_double = { 1ull<<53, 22, 52, 963 };
 static const floatinf fi_float = { 1<<24, 10, 23, 67 };
 
-static bool fromstring_float(const char * start, const char * end, double& out, const floatinf * fi)
+static const char * fromstring_float(const char * start, const char * end, double& out, const floatinf * fi)
 {
-	out = 0;
+	out = 0.0;
 	
-	const char * digits_end = end;
-	if (end-start > 10000) return false; // 0.(9999 zeroes)1e+10000 is technically equal to 1, but it's also stupid.
+	const char * digits_end = nullptr;
+	if (end-start > 10000) return nullptr; // 0.(9999 zeroes)1e+10000 is technically equal to 1, but it's also stupid.
 	// TODO: should allow it anyways
 	
 	bool neg = false;
@@ -62,13 +66,13 @@ static bool fromstring_float(const char * start, const char * end, double& out, 
 		start++;
 	}
 	
-	if (UNLIKELY(start == end)) return false;
+	if (UNLIKELY(start == end)) return nullptr;
 	if (UNLIKELY(!isdigit(*start)))
 	{
-		if (end-start == 3 && memeq(start, "inf", 3)) { out = neg ? -HUGE_VAL : HUGE_VAL; return true; }
-		if (end-start == 3 && memeq(start, "nan", 3)) { out = NAN; return true; }
+		if (end-start >= 3 && memeq(start, "inf", 3)) { out = neg ? -HUGE_VAL : HUGE_VAL; return start+3; }
+		if (end-start >= 3 && memeq(start, "nan", 3)) { out = NAN; return start+3; }
 		if (start[0] == '.' && start+1 != end && isdigit(start[1])) {}
-		else return false;
+		else return nullptr;
 	}
 	
 	const char * iter = start;
@@ -90,14 +94,14 @@ static bool fromstring_float(const char * start, const char * end, double& out, 
 		}
 		else if (*iter == '.')
 		{
-			if (exponent <= 0) return false;
+			if (exponent <= 0) break;
 			exponent = 0;
 		}
 		else if ((0x20|*iter) == 'e')
 		{
 			digits_end = iter;
-			if (exponent > 0) exponent = 0;
 			iter++;
+			if (exponent > 0) exponent = 0;
 			
 			bool exp_neg = false;
 			if (*iter == '-') { exp_neg = true; iter++; }
@@ -105,10 +109,16 @@ static bool fromstring_float(const char * start, const char * end, double& out, 
 			
 			uint32_t newexp = 0;
 			uint32_t newexp_sum = 0;
-			if (iter == end) return false;
+			if (iter == end || !isdigit(*iter))
+			{
+				iter = digits_end;
+				digits_end = nullptr;
+				break;
+			}
 			while (iter < end)
 			{
-				if (UNLIKELY((uint8_t)(*iter-'0') > 9)) return false;
+				if (UNLIKELY((uint8_t)(*iter-'0') > 9))
+					break;
 				newexp = newexp*10 + *iter-'0';
 				newexp_sum |= newexp; // another sticky
 				iter++;
@@ -118,21 +128,21 @@ static bool fromstring_float(const char * start, const char * end, double& out, 
 				// if the exponent is crazy, ignore the digits; it's either zero or infinite
 				if (!exp_neg && significand_sum != 0) out = HUGE_VAL;
 				if (neg) out = -out;
-				if (out == 0) return true;
-				return false;
+				return iter;
 			}
 			if (exp_neg) exponent -= newexp;
 			else exponent += newexp;
-			break;
+			goto exp_is_set;
 		}
-		else return false;
+		else
+			break;
 		iter++;
 		if (iter == end)
-		{
-			if (exponent > 0) exponent = 0;
 			break;
-		}
 	}
+	if (exponent > 0) exponent = 0;
+	digits_end = iter;
+exp_is_set:
 	
 	// for small numbers, the correct answer can be calculated with a multiplication or division of two float-representable integers
 	// there are some numbers where the mul or div rounds to exactly halfway between two floats, but to my knowledge,
@@ -157,7 +167,7 @@ static bool fromstring_float(const char * start, const char * end, double& out, 
 			ret = (double)significand / exp_adjust;
 		if (neg) out = -ret;
 		else out = ret;
-		return true;
+		return iter;
 	}
 	
 	// for large numbers, use a slower algorithm
@@ -166,7 +176,7 @@ static bool fromstring_float(const char * start, const char * end, double& out, 
 	if (significand_sum == 0) // 0e+999 will go here, as will 0.000000000000000000000000 (it exceeds n_digits)
 	{
 		if (neg) out = -out;
-		return true;
+		return iter;
 	}
 	// inputs:
 	// - start .. digits_end - digits of the input. The dot, if any, should be ignored.
@@ -180,6 +190,7 @@ static bool fromstring_float(const char * start, const char * end, double& out, 
 	// the digits need to be multiplied or divided such that the exponent is zero, then take the leftmost bits
 	// for subnormals, the number of digits to round to is variable
 	
+	const char * ret = iter;
 	iter = start;
 	while (*iter <= '0') iter++; // the only possible non-digit, ., is 0x2E <= '0' (0x30), and there's known to be a nonzero digit
 	
@@ -213,8 +224,8 @@ static bool fromstring_float(const char * start, const char * end, double& out, 
 	while (iter < digits_end)
 	{
 		if (*iter > '0') limbs[99] |= 1; // some algorithms maintain an 'is truncated' bit, but it's easier to round up
-		iter++;
 		if (*iter != '.') exponent++;
+		iter++;
 	}
 	
 	// at the end of this process, I need
@@ -312,8 +323,6 @@ static bool fromstring_float(const char * start, const char * end, double& out, 
 		else break;
 	}
 	
-	bool ret = true;
-	
 	uint64_t mantissa = (uint64_t)limbs[0]*10000000000 + (uint64_t)limbs[1]*100 + limbs[2]/1000000;
 	if (mantissa == 0)
 		goto done;
@@ -386,7 +395,6 @@ static bool fromstring_float(const char * start, const char * end, double& out, 
 	else if (bin_exponent >= fi->max_bin_exp) // infinite
 	{
 		out = HUGE_VAL;
-		ret = false;
 	}
 	else // normal (or subnormal float - the double/float cast will handle that)
 	{
@@ -399,28 +407,31 @@ done:
 }
 bool fromstring(cstring s, double& out)
 {
-	const char * start = (const char*)s.bytes().ptr();
-	const char * end = start + s.length();
-	return fromstring_float(start, end, out, &fi_double);
+	const char * start = s.ptr_raw();
+	const char * end = s.ptr_raw_end();
+	bool ret = (fromstring_float(start, end, out, &fi_double) == end);
+	if (!ret) out = 0.0;
+	return ret;
 }
 bool fromstring(cstring s, float& out)
 {
-	const char * start = (const char*)s.bytes().ptr();
-	const char * end = start + s.length();
+	const char * start = s.ptr_raw();
+	const char * end = s.ptr_raw_end();
 	double tmp;
-	bool ret = fromstring_float(start, end, tmp, &fi_float);
-	out = tmp;
+	bool ret = (fromstring_float(start, end, tmp, &fi_float) == end);
+	if (ret) out = tmp;
+	else out = 0.0;
 	return ret;
 }
 
-bool fromstring_ptr(const char * s, size_t len, double& out)
+const char * fromstring_ptr_tail(const char * s, const char * end, double& out)
 {
-	return fromstring_float(s, s+len, out, &fi_double);
+	return fromstring_float(s, end, out, &fi_double);
 }
-bool fromstring_ptr(const char * s, size_t len, float& out)
+const char * fromstring_ptr_tail(const char * s, const char * end, float& out)
 {
 	double tmp;
-	bool ret = fromstring_float(s, s+len, tmp, &fi_float);
+	const char * ret = fromstring_float(s, end, tmp, &fi_float);
 	out = tmp;
 	return ret;
 }
@@ -608,6 +619,41 @@ template<typename T> void testfromfloat(cstring S, T V, bool ret = true)
 				assert_eq(as, Vs);
 			}
 		}
+		
+		auto get_len = [](cstring s, T& ret){
+			const char * exp_end = fromstring_ptr_tail(s.ptr_raw(), s.ptr_raw_end(), ret);
+			size_t exp_len = exp_end ? exp_end - s.ptr_raw() : -1;
+			return exp_len;
+		};
+		
+		size_t exp_len = get_len(S, a);
+		T a2;
+		
+		assert_eq(exp_len, get_len(S+"#", a2));
+		test_nothrow
+		{
+			string as = tostring(a2)+" "+tostringhex<sizeof(T)*2>(transmute<Ti>(a2));
+			string Vs = tostring(a)+" "+tostringhex<sizeof(T)*2>(transmute<Ti>(a));
+			assert_eq(as, Vs);
+		}
+		
+		assert_eq(exp_len, get_len(S+"e", a2));
+		test_nothrow
+		{
+			string as = tostring(a2)+" "+tostringhex<sizeof(T)*2>(transmute<Ti>(a2));
+			string Vs = tostring(a)+" "+tostringhex<sizeof(T)*2>(transmute<Ti>(a));
+			assert_eq(as, Vs);
+		}
+		
+		size_t act_len = get_len(S+".", a2);
+		if (exp_len != act_len-1)
+			assert_eq(exp_len, act_len);
+		test_nothrow
+		{
+			string as = tostring(a2)+" "+tostringhex<sizeof(T)*2>(transmute<Ti>(a2));
+			string Vs = tostring(a)+" "+tostringhex<sizeof(T)*2>(transmute<Ti>(a));
+			assert_eq(as, Vs);
+		}
 	}
 }
 #define testfromfloat(...) testcall(testfromfloat<float>(__VA_ARGS__))
@@ -656,6 +702,8 @@ test("string conversion - string to float", "", "string")
 	testfromdouble("1.2e+0", 1.2);
 	testfromdouble("0", 0.0);
 	testfromdouble("0.0", 0.0);
+	testfromdouble("0.00", 0.0);
+	testfromdouble("0.00000000", 0.0);
 	testfromdouble("-0", -0.0);
 	testfromdouble("-0.0", -0.0);
 	testfromfloat("2.5", 2.5);
@@ -731,16 +779,16 @@ test("string conversion - string to float", "", "string")
 	//  but correct float can't
 	
 	testfromfloat("340282346638528859811704183484516925440", 340282346638528859811704183484516925440.0f); // max possible float; a few higher values round down to that,
-	testfromfloat("340282356779733661637539395458142568448", HUGE_VALF, false); // but anything too big should be rejected
-	testfromfloat("355555555555555555555555555555555555555", HUGE_VALF, false); // ensure it's inf and not nan
-	testfromfloat("955555555555555555555555555555555555555", HUGE_VALF, false);
-	testfromfloat("1e+10000", HUGE_VALF, false);
+	testfromfloat("340282356779733661637539395458142568448", HUGE_VALF); // but anything too big should be infinite
+	testfromfloat("355555555555555555555555555555555555555", HUGE_VALF); // ensure it's inf and not nan
+	testfromfloat("955555555555555555555555555555555555555", HUGE_VALF);
+	testfromfloat("1e+10000", HUGE_VALF);
 	testfromfloat("1e-10000", 0);
 	testfromfloat("0e+10000", 0);
-	testfromfloat("1e9999999999", HUGE_VALF, false);
-	testfromfloat("18446744073709551616e+1000000", HUGE_VALF, false);
-	testfromfloat("1e+18446744073709551616", HUGE_VALF, false);
-	testfromfloat("340282366920938463463374607431768211456", HUGE_VALF, false); // 2**128 - infinity
+	testfromfloat("1e9999999999", HUGE_VALF);
+	testfromfloat("18446744073709551616e+1000000", HUGE_VALF);
+	testfromfloat("1e+18446744073709551616", HUGE_VALF);
+	testfromfloat("340282366920938463463374607431768211456", HUGE_VALF); // 2**128 - infinity
 	
 	// highest double
 	testfromdouble("1797693134862315708145274237317043567980705675258449965989174768031572607800285387605895586327668781715"
@@ -756,16 +804,16 @@ test("string conversion - string to float", "", "string")
 	testfromdouble("1797693134862315907729305190789024733617976978942306572734300811577326758055009631327084773224075360211"
 	               "2011387987139335765878976881441662249284743063947412437776789342486548527630221960124609411945308295208"
 	               "5005768838150682342462881473913110540827237163350510684586298239947245938479716304835356329624224137216",
-	               HUGE_VAL, false);
+	               HUGE_VAL);
 	// more than the above, ensure it's inf and not nan
 	testfromdouble("1999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999"
 	               "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
 	               "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
-	               HUGE_VAL, false);
+	               HUGE_VAL);
 	testfromdouble("9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999"
 	               "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
 	               "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
-	               HUGE_VAL, false);
+	               HUGE_VAL);
 	// halfway between the highest two doubles - round to even
 	testfromdouble("1797693134862315608353258760581052985162070023416521662616611746258695532672923265745300992879465492467"
 	               "5063149033587701752208710592698796290627760473556921329019091915239418047621712533496094635638726128664"
@@ -775,7 +823,7 @@ test("string conversion - string to float", "", "string")
 	testfromdouble("1797693134862315807937289714053034150799341327100378269361737789804449682927647509466490179775872070963"
 	               "3028641669288791094655554785194040263065748867150582068190890200070838367627385484581771153176447573027"
 	               "0069855571366959622842914819860834936475292719074168444365510704342711559699508093042880177904174497792",
-	               HUGE_VAL, false);
+	               HUGE_VAL);
 	// slightly above halfway between the highest two doubles - round to closest (odd)
 	testfromdouble("1797693134862315608353258760581052985162070023416521662616611746258695532672923265745300992879465492467"
 	               "5063149033587701752208710592698796290627760473556921329019091915239418047621712533496094635638726128664"

@@ -108,7 +108,7 @@ static bool parse_ipv6_raw(const char * addr, uint8_t* out)
 				return -1;
 			
 			uint16_t num;
-			fromstringhex_ptr(start, num_len, num); // known to succeed
+			fromstringhex_ptr(start, start+num_len, num); // known to succeed
 			out[0] = num>>8;
 			out[1] = num&255;
 			out += 2;
@@ -264,7 +264,7 @@ bool socket2::address::parse(cstring str, uint16_t port)
 	char str_nul[INET6_ADDRSTRLEN];
 	if (str.length() >= INET6_ADDRSTRLEN)
 		return false;
-	memcpy(str_nul, str.bytes().ptr(), str.length());
+	memcpy(str_nul, str.ptr_raw(), str.length());
 	str_nul[str.length()] = '\0';
 	
 	sockaddr_in* sin = (sockaddr_in*)as_native();

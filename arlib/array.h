@@ -529,6 +529,29 @@ public:
 		return this->items[index];
 	}
 	
+	void insert_range(size_t index, arrayview<T> new_items)
+	{
+		if (new_items.ptr() >= this->items && new_items.ptr() < this->items+this->count)
+		{
+			size_t start = new_items.ptr() - this->items;
+			resize_grow_noinit(this->count + new_items.size());
+			memmove((void*)(this->items + index + new_items.size()),
+			        (void*)(this->items + index),
+			        sizeof(T)*(this->count - new_items.size() - index));
+			for (size_t i=0;i<new_items.size();i++)
+				new(&this->items[index+i]) T(this->items[start+i+(start+i >= index ? new_items.size() : 0)]);
+		}
+		else
+		{
+			resize_grow_noinit(this->count + new_items.size());
+			memmove((void*)(this->items + index + new_items.size()),
+			        (void*)(this->items + index),
+			        sizeof(T)*(this->count - new_items.size() - index));
+			for (size_t i=0;i<new_items.size();i++)
+				new(&this->items[index+i]) T(new_items[i]);
+		}
+	}
+	
 	void append(const arrayview<T>& item) = delete; // use += instead
 	T& append(T&& item) { return insert(this->count, std::move(item)); }
 	T& append(const T& item) { return insert(this->count, item); }
@@ -602,6 +625,18 @@ public:
 	template<size_t N> array(T (&ptr)[N])
 	{
 		clone(arrayview<T>(ptr, N));
+	}
+	
+	template<typename Titer>
+	array(Titer&& iter) requires requires { { *iter.begin() } -> std::convertible_to<T>; }
+	{
+		auto a = iter.begin();
+		auto b = iter.end();
+		while (a != b)
+		{
+			append(*a);
+			++a;
+		}
 	}
 	
 	array<T>& operator=(array<T> other)
@@ -884,6 +919,8 @@ public:
 };
 
 
+size_t hash(const uint8_t * val, size_t n);
+
 // bitarray - somewhat like array<bool>, but stores eight bits per byte, not one.
 // Also contains small string optimization, won't allocate until sizeof(uint8_t*)*8.
 class bitarray {
@@ -891,6 +928,92 @@ protected:
 	using chunk_t = uint32_t;
 	static const size_t chunk_size = sizeof(chunk_t)*8;
 	static const size_t n_inline = chunk_size*sizeof(chunk_t*)/sizeof(chunk_t); // rearranging this may provoke -Wsizeof-pointer-div
+	
+	
+	static constexpr size_t n_chunks_for(size_t bits)
+	{
+		return (bits + chunk_size - 1) / chunk_size;
+	}
+	
+#if (defined(__i386__) || defined(__x86_64__)) && !defined(__clang__)
+	// disabled on clang, https://bugs.llvm.org/show_bug.cgi?id=47866
+	// the performance differences are small, but nonzero
+#define BITARRAY_ASM
+#endif
+	static constexpr bool get(const chunk_t * chunks, size_t n)
+	{
+		// todo: change to if not consteval when switching to c++23
+		if (!std::is_constant_evaluated())
+		{
+#ifdef BITARRAY_ASM
+			// neither GCC nor Clang can emit bt with a memory operand from C code
+			// (and, oddly enough, GCC only emits bt reg,reg on -O2, not -Os)
+			// bt can accept integer arguments, but the assembler errors out if the argument is >= 256,
+			//  and silently emits wrong machine code for arguments >= operand size
+			// bt docs say operation is same as the C version, except it's implementation defined whether it uses u8, u16 or u32 units
+			// this object uses only u32 units, so that's fine
+			bool ret;
+			__asm__("bt {%2,%1|%1,%2}" : "=@ccc"(ret) : "m"(*(const uint8_t(*)[])chunks), "r"(n) : "cc");
+			return ret;
+#endif
+		}
+		
+		return chunks[n/chunk_size] & (1<<(n&(chunk_size-1)));
+	}
+	
+	static constexpr void set(chunk_t * chunks, size_t n, bool val)
+	{
+		if (!std::is_constant_evaluated())
+		{
+#ifdef BITARRAY_ASM
+			// weird how there are instructions to set, clear, toggle, and read a bit, but not for setting to current carry or whatever
+			if (val)
+				__asm__ volatile("bts {%1,%0|%0,%1}" : "+m"(*(uint8_t(*)[])chunks) : "r"(n) : "cc");
+			else
+				__asm__ volatile("btr {%1,%0|%0,%1}" : "+m"(*(uint8_t(*)[])chunks) : "r"(n) : "cc");
+			return;
+#endif
+		}
+		
+		chunk_t chunk = chunks[n/chunk_size];
+		chunk &=~ (1<<(n&(chunk_size-1)));
+		chunk |= (val<<(n&(chunk_size-1)));
+		chunks[n/chunk_size] = chunk;
+	}
+	
+	static constexpr bool next_true(const chunk_t * chunks, size_t nbits, size_t start, size_t& ret)
+	{
+		if (start >= nbits)
+			return false;
+		
+		if (start & (chunk_size-1))
+		{
+			chunk_t first_chunk = chunks[start / chunk_size] >> (start & (chunk_size-1));
+			if (first_chunk)
+			{
+				ret = start + ilog2(first_chunk & -first_chunk);
+				return true;
+			}
+			
+			start += chunk_size-1;
+		}
+		size_t first_chunk = start / chunk_size;
+		size_t last_chunk = n_chunks_for(nbits);
+		
+		for (size_t i=first_chunk;i<last_chunk;i++)
+		{
+			if (chunks[i])
+			{
+				ret = i*chunk_size + ilog2(chunks[i] & -chunks[i]);
+				return true;
+			}
+		}
+		return false;
+	}
+	
+	template<size_t size>
+	friend class bitset;
+	
 	
 	// unused but allocated bits must, at all points, be clear
 	union {
@@ -910,56 +1033,16 @@ protected:
 		else return bits_outline;
 	}
 	
-	class entry {
-		bitarray& parent;
+	class reference {
+		bitarray* parent;
 		size_t index;
-		
+		reference(bitarray* parent, size_t index) : parent(parent), index(index) {}
 	public:
-		operator bool() const { return parent.get(index); }
-		entry& operator=(bool val) { parent.set(index, val); return *this; }
+		friend class bitarray;
 		
-		entry(bitarray& parent, size_t index) : parent(parent), index(index) {}
+		operator bool() const { return parent->get(index); }
+		reference& operator=(bool val) { parent->set(index, val); return *this; }
 	};
-	friend class entry;
-	
-#if (defined(__i386__) || defined(__x86_64__)) && !defined(__clang__) && false
-	// disabled on clang, https://bugs.llvm.org/show_bug.cgi?id=47866
-	// and also disabled in general, these instructions are slow
-	bool get(size_t n) const
-	{
-		// neither GCC nor Clang can emit bt with a memory operand from C code (and, oddly enough, GCC only emits bt reg,reg on -O2, not -Os)
-		// bt can accept integer arguments, but the assembler errors out if the argument is >= 256,
-		//  and silently emits wrong machine code for arguments >= operand size
-		// bt docs say operation is same as the C version, except it's implementation defined whether it uses u8, u16 or u32 units
-		// but our buffer size is always a multiple of 4, so that's fine
-		bool ret;
-		__asm__("bt {%2,%1|%1,%2}" : "=@ccc"(ret) : "m"(*(const uint8_t(*)[])bits()), "r"(n) : "cc");
-		return ret;
-	}
-	
-	void set(size_t n, bool val)
-	{
-		// weird how there are instructions to set, clear, toggle, and read a bit, but not for setting to current carry or whatever
-		if (val)
-			__asm__ volatile("bts {%1,%0|%0,%1}" : "+m"(*(uint8_t(*)[])bits()) : "r"(n) : "cc");
-		else
-			__asm__ volatile("btr {%1,%0|%0,%1}" : "+m"(*(uint8_t(*)[])bits()) : "r"(n) : "cc");
-	}
-#else
-	bool get(size_t n) const
-	{
-		return bits()[n/chunk_size] & (1<<(n&(chunk_size-1)));
-	}
-	
-	void set(size_t n, bool val)
-	{
-		chunk_t* chunks = bits();
-		chunk_t chunk = chunks[n/chunk_size];
-		chunk &=~ (1<<(n&(chunk_size-1)));
-		chunk |= (val<<(n&(chunk_size-1)));
-		chunks[n/chunk_size] = chunk;
-	}
-#endif
 	
 	//does not resize
 	void set_slice(size_t start, size_t num, const bitarray& other, size_t other_start);
@@ -971,8 +1054,20 @@ protected:
 	}
 	
 public:
+	// it's usually easier to call operator[] than these two,
+	// but in an unoptimized build, tossing around those reference objects can take noticable time
+	bool get(size_t n) const
+	{
+		return get(bits(), n);
+	}
+	
+	void set(size_t n, bool val)
+	{
+		set(bits(), n, val);
+	}
+	
 	bool operator[](size_t n) const { return get(n); }
-	entry operator[](size_t n) { return entry(*this, n); }
+	reference operator[](size_t n) { return { this, n }; }
 	
 	bool get_or(size_t n, bool def) const
 	{
@@ -1052,7 +1147,167 @@ public:
 		return *this;
 	}
 	
-	explicit operator bool() { return size(); }
+	bitarray& operator|=(const bitarray& other)
+	{
+		if (other.nbits >= nbits) resize(other.nbits);
+		for (size_t n=0;n*chunk_size < nbits;n++)
+			bits()[n] |= other.bits()[n];
+		return *this;
+	}
+	
+	explicit operator bool() const { return size(); }
+	
+	bool any() const
+	{
+		for (size_t n=0;n*chunk_size < nbits;n++)
+		{
+			if (bits()[n])
+				return true;
+		}
+		return false;
+	}
+	
+	size_t hash() const
+	{
+		return ::hash((uint8_t*)bits(), n_chunks_for(nbits)*sizeof(chunk_t));
+	}
+	bool operator==(const bitarray& other) const
+	{
+		return nbits == other.nbits && !memcmp((uint8_t*)bits(), other.bits(), n_chunks_for(nbits)*sizeof(chunk_t));
+	}
+	
+private:
+	class truth_iterator {
+		const bitarray* parent;
+		bool has;
+		size_t pos;
+	public:
+		friend class bitarray;
+		
+		size_t operator*() { return pos; }
+		forceinline void operator++() { has = next_true(parent->bits(), parent->nbits, pos+1, pos); }
+		bool operator!=(const end_iterator&) { return has; }
+		
+		truth_iterator begin() { return *this; }
+		end_iterator end() { return {}; }
+	};
+public:
+	forceinline truth_iterator true_idxs() const
+	{
+		truth_iterator ret;
+		ret.parent = this;
+		ret.has = next_true(bits(), nbits, 0, ret.pos);
+		return ret;
+	}
+};
+
+// It is legal to memcpy this object, or load it as a SIMD vector. The bits are stored least significant bit first.
+// [0] is first byte, 0x01 bit; [1] is first byte, 0x02 bit; [8] is second byte, 0x01 bit.
+// The padding amount, if any, is implementation defined.
+// (TODO: figure out what to do on big endian)
+// (ideally, [0] would be first byte, 0x80 bit)
+template<size_t nbits>
+class bitset {
+protected:
+	using chunk_t = uint32_t;
+	static const size_t chunk_size = sizeof(chunk_t)*8;
+	
+	chunk_t bits[bitarray::n_chunks_for(nbits)] = {};
+	
+	class reference {
+		bitset& parent;
+		size_t index;
+		
+		constexpr reference(bitset& parent, size_t index) : parent(parent), index(index) {}
+		friend class bitset;
+	public:
+		constexpr operator bool() const { return parent.get(index); }
+		constexpr reference& operator=(bool val) { parent.set(index, val); return *this; }
+		
+	};
+	friend class reference;
+	
+public:
+	// it's usually easier to call operator[] than these two,
+	// but in an unoptimized build, tossing around those reference objects can take noticable time
+	constexpr bool get(size_t n) const
+	{
+		return bitarray::get(bits, n);
+	}
+	constexpr void set(size_t n, bool val)
+	{
+		bitarray::set(bits, n, val);
+	}
+	
+	constexpr size_t size() const { return nbits; }
+	
+	constexpr bool operator[](size_t n) const { return get(n); }
+	constexpr reference operator[](size_t n) { return { *this, n }; }
+	
+	constexpr bitset& operator|=(const bitset& other)
+	{
+		for (size_t i=0;i<ARRAY_SIZE(bits);i++)
+			bits[i] |= other.bits[i];
+		return *this;
+	}
+	constexpr bitset operator&(const bitset& other) const
+	{
+		bitset ret;
+		for (size_t i=0;i<ARRAY_SIZE(bits);i++)
+			ret.bits[i] = bits[i] & other.bits[i];
+		return ret;
+	}
+	constexpr bool operator==(const bitset& other) const
+	{
+		for (size_t i=0;i<ARRAY_SIZE(bits);i++)
+		{
+			if (bits[i] != other.bits[i])
+				return false;
+		}
+		return true;
+	}
+	constexpr bitset operator~() const
+	{
+		bitset ret;
+		for (size_t i=0;i<ARRAY_SIZE(bits);i++)
+			ret.bits[i] = ~bits[i];
+		if (nbits & (chunk_size-1))
+			ret.bits[ARRAY_SIZE(bits)-1] &= ~(0xFFFFFFFF << (nbits & (chunk_size-1)));
+		return ret;
+	}
+	constexpr bool any() const
+	{
+		for (size_t i=0;i<ARRAY_SIZE(bits);i++)
+		{
+			if (bits[i] != 0)
+				return true;
+		}
+		return false;
+	}
+	
+private:
+	class truth_iterator {
+		const bitset* parent;
+		bool has;
+		size_t pos;
+	public:
+		friend class bitset;
+		
+		size_t operator*() { return pos; }
+		forceinline void operator++() { has = bitarray::next_true(parent->bits, nbits, pos+1, pos); }
+		bool operator!=(const end_iterator&) { return has; }
+		
+		truth_iterator begin() { return *this; }
+		end_iterator end() { return {}; }
+	};
+public:
+	forceinline truth_iterator true_idxs() const
+	{
+		truth_iterator ret;
+		ret.parent = this;
+		ret.has = bitarray::next_true(bits, nbits, 0, ret.pos);
+		return ret;
+	}
 };
 
 

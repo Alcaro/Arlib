@@ -65,6 +65,8 @@ class cstring;
 class cstrnul;
 class string;
 
+class regex;
+
 #define OBJ_SIZE 16 // maximum 120, or the inline length overflows
                     // (127 would fit, but that requires an extra alignment byte, which throws the sizeof assert)
                     // minimum 16 on 64bit, 12 on 32bit
@@ -85,29 +87,30 @@ class cstring {
 			// last byte is how many bytes are unused by the raw string data
 			// if all bytes are used, there are zero unused bytes - which also serves as the NUL
 			// if not inlined, it's -1
+			// unused bytes in m_inline (beyond NUL terminator) are always 00
 		};
 		struct {
 			uint8_t* m_data;
-			uint32_t m_len; // always > MAX_INLINE, if not inlined; some of the operator== demand that
+			uint32_t m_len; // always > MAX_INLINE, if not inlined; some of the operator==s demand that
 			bool m_nul; // whether the string is properly terminated (always true for string, possibly false for cstring)
 			// 2 unused bytes here
 			uint8_t m_reserved; // reserve space for the last byte of the inline data; never ever access this
 		};
 	};
 	
-	uint8_t& m_inline_len_w() { return m_inline[MAX_INLINE]; }
-	int8_t m_inline_len() const { return m_inline[MAX_INLINE]; }
+	uint8_t& inline_len_encoded_w() { return m_inline[MAX_INLINE]; }
+	int8_t inline_len_encoded() const { return m_inline[MAX_INLINE]; }
 	
 	forceinline bool inlined() const
 	{
 		static_assert(sizeof(cstring)==OBJ_SIZE);
-		return m_inline_len() >= 0;
+		return inline_len_encoded() >= 0;
 	}
 	
 	forceinline uint8_t len_if_inline() const
 	{
 		static_assert((MAX_INLINE & (MAX_INLINE+1)) == 0); // this xor trick only works for power of two minus 1
-		return MAX_INLINE^m_inline_len();
+		return MAX_INLINE^inline_len_encoded();
 	}
 	
 	forceinline const uint8_t * ptr() const
@@ -125,6 +128,14 @@ class cstring {
 	}
 	
 public:
+	forceinline const char * ptr_raw() const
+	{
+		return (char*)ptr();
+	}
+	forceinline const char * ptr_raw_end() const
+	{
+		return (char*)ptr() + length();
+	}
 	forceinline uint32_t length() const
 	{
 		if (inlined()) return len_if_inline();
@@ -142,8 +153,8 @@ public:
 private:
 	forceinline void init_empty()
 	{
-		m_inline_len_w() = MAX_INLINE;
-		m_inline[0] = '\0';
+		memset(m_inline, 0, sizeof(m_inline));
+		inline_len_encoded_w() = MAX_INLINE;
 	}
 	void init_from_nocopy(const char * str)
 	{
@@ -153,14 +164,14 @@ private:
 	{
 		if (len <= MAX_INLINE)
 		{
+			memset(m_inline, 0, sizeof(m_inline));
 			for (uint32_t i=0;i<len;i++) m_inline[i] = str[i]; // memcpy's constant overhead is huge if len is unknown
-			m_inline[len] = '\0';
-			m_inline_len_w() = MAX_INLINE-len;
+			inline_len_encoded_w() = MAX_INLINE-len;
 		}
 		else
 		{
 			if (len > 0xFFFFFFFF) abort();
-			m_inline_len_w() = -1;
+			inline_len_encoded_w() = -1;
 			
 			m_data = (uint8_t*)str;
 			m_len = len;
@@ -175,6 +186,8 @@ private:
 	// may need removing the union and memcpying things to/from a struct
 	class noinit {};
 	cstring(noinit) {}
+	
+	static bool equal_large(const cstring& left, const cstring& right);
 	
 public:
 	cstring() { init_empty(); }
@@ -303,37 +316,16 @@ public:
 	template<size_t limit>
 	sarray<string,limit+1> frspliti(cstring sep) const { return fcrspliti<limit>(sep).template transform<string>(); }
 	
-private:
-	// Input: Three pointers, start <= at <= end. The found match must be within the incoming at..end.
-	// Output: Set at/end.
-	array<cstring> csplit(bool(*find)(const uint8_t * start, const uint8_t * & at, const uint8_t * & end), size_t limit) const;
+	array<cstring> csplit(const regex& rx, size_t limit) const;
+	template<size_t limit = SIZE_MAX>
+	array<cstring> csplit(const regex& rx) const { return csplit(rx, limit); }
 	
-public:
-	template<typename T>
-	std::enable_if_t<sizeof(T::match(nullptr,nullptr,nullptr))!=0, array<cstring>>
-	csplit(T regex, size_t limit) const
+	array<string> split(const regex& rx, size_t limit) const
 	{
-		return csplit([](const uint8_t * start, const uint8_t * & at, const uint8_t * & end)->bool {
-			auto cap = T::match((char*)start, (char*)at, (char*)end);
-			if (!cap) return false;
-			at = (uint8_t*)cap[0].start;
-			end = (uint8_t*)cap[0].end;
-			return true;
-		}, limit);
+		return csplit(rx, limit).template transform<string>();
 	}
 	template<size_t limit = SIZE_MAX, typename T>
-	std::enable_if_t<sizeof(T::match(nullptr,nullptr,nullptr))!=0, array<cstring>>
-	csplit(T regex) const { return csplit(regex, limit); }
-	
-	template<typename T>
-	std::enable_if_t<sizeof(T::match(nullptr,nullptr,nullptr))!=0, array<string>>
-	split(T regex, size_t limit) const
-	{
-		return csplit(regex, limit).template transform<string>();
-	}
-	template<size_t limit = SIZE_MAX, typename T>
-	std::enable_if_t<sizeof(T::match(nullptr,nullptr,nullptr))!=0, array<string>>
-	split(T regex) const { return split(regex, limit); }
+	array<string> split(const regex& rx) const { return split(rx, limit); }
 	
 	inline string upper() const; // Only considers ASCII, will not change ø. Will capitalize a decomposed ñ, but not a precomposed one.
 	inline string lower() const;
@@ -353,6 +345,7 @@ public:
 private:
 	bool matches_glob(cstring pat, bool case_insensitive) const __attribute__((pure));
 public:
+	cstring strip() const;
 	
 	string leftPad (size_t len, uint8_t ch = ' ') const;
 	
@@ -387,6 +380,38 @@ private:
 public:
 	//no operator const char *, a cstring doesn't necessarily have a NUL terminator
 	c_string c_str() const { return c_string(bytes(), bytes_hasterm()); }
+	
+	friend forceinline bool operator==(const cstring& left, const char * right)
+	{
+		size_t len = strlen(right);
+		if (__builtin_constant_p(len))
+		{
+			if (len <= cstring::max_inline())
+			{
+				cstring tmp = right; // optimizes poorly, but...
+				return left == tmp;
+			}
+			else
+				return (!left.inlined() && left.m_len == len && memeq(left.m_data, right, len));
+		}
+		else return left.bytes() == bytesr((uint8_t*)right, len);
+	}
+	
+	friend inline bool operator==(const char * left, const cstring& right) { return operator==(right, left); }
+	friend inline bool operator==(const cstring& left, const cstring& right)
+	{
+		if (left.inlined())
+			return (memeq(&left, &right, sizeof(cstring)));
+		else
+			return cstring::equal_large(left, right);
+	}
+	friend inline bool operator!=(const cstring& left, const char * right  ) { return !operator==(left, right); }
+	friend inline bool operator!=(const cstring& left, const cstring& right) { return !operator==(left, right); }
+	friend inline bool operator!=(const char * left,   const cstring& right) { return !operator==(left, right); }
+	
+	friend bool operator<(cstring left,      const char * right) = delete;
+	friend bool operator<(cstring left,      cstring right     ) = delete;
+	friend bool operator<(const char * left, cstring right     ) = delete;
 };
 
 
@@ -442,9 +467,9 @@ class string : public cstrnul {
 		{
 			if (len <= MAX_INLINE)
 			{
+				memset(m_inline, 0, sizeof(m_inline));
 				memcpy(m_inline, str, len);
-				m_inline[len] = '\0';
-				m_inline_len_w() = max_inline()-len;
+				inline_len_encoded_w() = max_inline()-len;
 			}
 			else init_from_large(str, len);
 		}
@@ -539,7 +564,7 @@ public:
 	forceinline string(const char * str) : cstrnul(noinit()) { init_from(str); }
 	forceinline string(const char8_t * str) : cstrnul(noinit()) { init_from((char*)str); }
 	string(array<uint8_t>&& bytes);
-	forceinline string(nullptr_t) = delete;
+	string(nullptr_t) = delete;
 	forceinline string& operator=(const string& other) { reinit_from(other); return *this; }
 	forceinline string& operator=(const cstring& other) { reinit_from(other); return *this; }
 	forceinline string& operator=(string&& other) { reinit_from(std::move(other)); return *this; }
@@ -622,57 +647,6 @@ inline string cstring::lower() const { return string(*this).lower(); }
 #undef MAX_INLINE
 
 
-// using cstring rather than const cstring& is cleaner, but makes GCC 7 emit slightly worse code
-// TODO: check if that's still true for GCC > 7
-#if __GNUC__ == 7
-// TODO: delete friend declaration when deleting this
-template<size_t N> inline bool operator==(const cstring& left, char (&right)[N]) { return operator==(left, (const char*)right); }
-template<size_t N> inline bool operator==(const cstring& left, const char (&right)[N])
-{
-#if defined(__GNUC__) && !defined(__clang__) && __GNUC__ >= 8 && __GNUC__ <= 10 && __cplusplus >= 201103
-	// https://gcc.gnu.org/bugzilla/show_bug.cgi?id=91212
-	return operator==(left, (const char*)right);
-#else
-	if (N-1 <= cstring::max_inline())
-		return ((uint8_t)left.m_inline_len() == cstring::max_inline()-(N-1) && memeq(left.m_inline, right, N-1));
-	else
-		return (!left.inlined() && left.m_len == N-1 && memeq(left.m_data, right, N-1));
-#endif
-}
-template<typename T, typename Ttest = std::enable_if_t<std::is_same_v<T,const char*> || std::is_same_v<T,char*>>>
-inline bool operator==(const cstring& left, T right) { return left.bytes() == bytesr((uint8_t*)right, strlen(right)); }
-#else
-forceinline bool operator==(const cstring& left, const char * right)
-{
-	size_t len = strlen(right);
-	if (__builtin_constant_p(len))
-	{
-		if (len <= cstring::max_inline())
-			return ((uint8_t)left.m_inline_len() == (cstring::max_inline()^len) && memeq(left.m_inline, right, len));
-		else
-			return (!left.inlined() && left.m_len == len && memeq(left.m_data, right, len));
-	}
-	else return left.bytes() == bytesr((uint8_t*)right, len);
-}
-#endif
-
-inline bool operator==(const char * left, const cstring& right) { return operator==(right, left); }
-#ifdef __SSE2__
-bool operator==(const cstring& left, const cstring& right);
-#else
-inline bool operator==(const cstring& left, const cstring& right)
-{
-	return left.bytes() == right.bytes();
-}
-#endif
-inline bool operator!=(const cstring& left, const char * right  ) { return !operator==(left, right); }
-inline bool operator!=(const cstring& left, const cstring& right) { return !operator==(left, right); }
-inline bool operator!=(const char * left,   const cstring& right) { return !operator==(left, right); }
-
-bool operator<(cstring left,      const char * right) = delete;
-bool operator<(cstring left,      cstring right     ) = delete;
-bool operator<(const char * left, cstring right     ) = delete;
-
 inline string operator+(cstring left,      cstring right     ) { string ret = left; ret += right; return ret; }
 inline string operator+(cstring left,      const char * right) { string ret = left; ret += right; return ret; }
 inline string operator+(string&& left,     cstring right     ) { left += right; return left; }
@@ -724,10 +698,36 @@ public:
 #endif
 };
 
+template<bool invert, typename T, size_t n>
+class char_set {
+	static constexpr bitset<256> compile_charset()
+	{
+		bitset<256> ret;
+		const char * str = T()();
+		for (size_t i=0;i<n;i++)
+			ret[(uint8_t)str[i]] = true;
+		if (invert)
+			ret = ~ret;
+		return ret;
+	}
+	static constexpr bitset<256> bits = compile_charset();
+public:
+	bool contains(uint8_t chr) const { return bits[chr]; }
+	operator const bitset<256>&() const { return bits; }
+	auto operator~() const { return char_set<!invert, T, n>(); }
+};
+template<size_t n, typename T>
+static auto compile_charset(T get_str)
+{
+	return char_set<false, T, n>();
+}
+// needs a bit of extra trickery, can't just decltype(lambda), it confuses gcc (compiler bug I think)
+#define CHAR_SET(str) (compile_charset<sizeof(str)-1>([]{ return "" str ""; }))
+
 #ifndef puts
 #ifdef _WIN32
 void puts(cstring str);
 #else
-inline void puts(cstring str) { fwrite(str.bytes().ptr(), 1, str.length(), stdout); fputc('\n', stdout); }
+inline void puts(cstring str) { fwrite(str.ptr_raw(), 1, str.length(), stdout); fputc('\n', stdout); }
 #endif
 #endif

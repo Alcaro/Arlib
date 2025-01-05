@@ -64,9 +64,8 @@ public:
 		// These headers are added automatically, if not already present (case sensitive):
 		//  Connection: keep-alive
 		//  Host: per url
-		// Additionally, if method is POST:
-		//  Content-Length: body.size(), if method is POST
-		//  Content-Type: application/json if body starts with [ or {, else application/x-www-form-urlencoded
+		//  Content-Length: body.size(), if method is not GET
+		//  Content-Type: application/json if body starts with [ or {, else application/x-www-form-urlencoded, if body is nonempty
 		array<string> headers;
 		bytearray body;
 		
@@ -141,6 +140,9 @@ public:
 private:
 	mksocket_t cb_mksock = socket2::create_sslmaybe;
 	
+	co_mutex mut1; // Taken immediately, released when the socket is created.
+	co_mutex mut2; // Taken after sending the request, or before creating the socket. Released when reading is done.
+	
 	socketbuf sock;
 	uint32_t sock_generation = 0; // Used to check if the socket was broken while waiting for mut2.
 	uint16_t sock_sent = 0; // Used to check if anything was pipelined then cancelled, while waiting for mut2.
@@ -149,9 +151,6 @@ private:
 	// Set to now upon creating the socket, or completing a request.
 	// If a request comes in while it's more than two seconds ago, keepalive is not available.
 	timestamp sock_keepalive_until;
-	
-	co_mutex mut1; // Taken immediately, released when the socket is created.
-	co_mutex mut2; // Taken after sending the request, or before creating the socket. Released when reading is done.
 	
 	bool can_keepalive(const req& q);
 	bool can_pipeline(const req& q);

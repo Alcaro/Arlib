@@ -90,7 +90,7 @@ array<uint16_t> smelly_string::utf8_to_utf16(cstring utf8)
 {
 	array<uint16_t> ret;
 	ret.resize(utf8.length()+1);
-	int len = MultiByteToWideChar(CP_UTF8, 0, (char*)utf8.bytes().ptr(), utf8.length(), (wchar_t*)ret.ptr(), ret.size());
+	int len = MultiByteToWideChar(CP_UTF8, 0, utf8.ptr_raw(), utf8.length(), (wchar_t*)ret.ptr(), ret.size());
 	ret.resize(len);
 	return ret;
 }
@@ -114,7 +114,7 @@ static void fputs_utf8(cstring str, FILE* f)
 			}
 		}
 	}
-	fwrite(str.bytes().ptr(), 1, str.length(), f);
+	fwrite(str.ptr_raw(), 1, str.length(), f);
 }
 
 void puts(cstring str)
@@ -149,9 +149,9 @@ test("smelly_string", "", "")
 //	string str = "smörgåsräka☃🤔\n";
 //	puts((cstring)str);
 //	puts((const char*)str);
-//	WriteConsoleA(GetStdHandle(STD_OUTPUT_HANDLE), str.bytes().ptr(), str.length(), nullptr, nullptr);
+//	WriteConsoleA(GetStdHandle(STD_OUTPUT_HANDLE), str.ptr_raw(), str.length(), nullptr, nullptr);
 //	puts(SetConsoleOutputCP(CP_UTF8) ? "true" : "false");
 //	puts((cstring)str);
 //	puts((const char*)str);
-//	WriteConsoleA(GetStdHandle(STD_OUTPUT_HANDLE), str.bytes().ptr(), str.length(), nullptr, nullptr);
+//	WriteConsoleA(GetStdHandle(STD_OUTPUT_HANDLE), str.ptr_raw(), str.length(), nullptr, nullptr);
 //}

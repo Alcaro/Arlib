@@ -6,7 +6,6 @@ include arlib/Makefile-head
 
 PROGRAM = gvc
 ARTERMINAL = 1
-DEFINES += ARLIB_OVERRIDEABLE_PROCESS
 
 include sandbox/Makefile
 include arlib/Makefile

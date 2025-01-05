@@ -133,7 +133,7 @@ size_t js_identifier_name(const uint8_t * start)
 				if (at[1] != 'u')
 					break;
 				uint16_t codepoint;
-				if (!fromstringhex_ptr((char*)at+2, 4, codepoint))
+				if (!fromstringhex_ptr((char*)at+2, (char*)at+6, codepoint))
 					break;
 				
 				// ignore utf16 surrogates, no defined astral planes letters in Unicode 3.0
@@ -284,10 +284,8 @@ test("js_identifier_name", "string,array", "js_identifier_name")
 		bool ok_second = (js_identifier_name(buf) != 1);
 		char exp = (ok_first*2 + ok_second) + '0';
 		if (exp != expected[i])
-			printf("%d %d %d\n", i, exp, expected[i]);
-		//if (exp != expected[i])
-			//testctx(tostring(i))
-				//assert_eq(exp, expected[i]);
+			testctx(tostring(i))
+				assert_eq(exp, expected[i]);
 	}
 	for (int i=0;i<65536;i++)
 	{

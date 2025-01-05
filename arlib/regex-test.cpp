@@ -1,16 +1,12 @@
 #include "regex.h"
-
-#if __cplusplus > 201703
-//#error "switch to string literal as template parameter, it's legal now"
-//#error "add some concepts, for type checking; if it hurts performance, undo it"
-#endif
-
-#ifdef ARLIB_TEST // discard this if not testing, for compile time reasons
 #include "test.h"
 
-template<typename Tres, typename... Args>
-static void testfn(const char * re, const char * input, Tres result, Args... args)
+template<typename... Args>
+static void testfn(const char * re, const char * input, Args... args)
 {
+	regex rx;
+	assert(rx.parse(re));
+	regex::match_t<5> result = rx.match(input);
 	const char * exp_capture_raw[] = { args... };
 	string exp_capture;
 	string capture;
@@ -20,7 +16,7 @@ static void testfn(const char * re, const char * input, Tres result, Args... arg
 		exp_capture += (exp_capture_raw[n] ? exp_capture_raw[n] : "(null)");
 	}
 	
-	for (size_t n=0;n<result.size;n++)
+	for (size_t n=0;n<result.size();n++)
 	{
 		if (n) capture += "/";
 		auto actual = result[n];
@@ -32,24 +28,11 @@ static void testfn(const char * re, const char * input, Tres result, Args... arg
 	testctx(re)
 		assert_eq(capture, exp_capture);
 }
-#define test1(exp, input, ...) testcall(testfn(exp, input, REGEX(exp).match(input), __VA_ARGS__))
+#define test1(exp, input, ...) testcall(testfn(exp, input, __VA_ARGS__))
+#define test1fail(exp) do { regex rg; assert(!rg.parse(exp)); } while(0)
 
 test("regex", "string", "regex")
 {
-	//REGEX_DEBUG_STR("abc");
-	//REGEX_DEBUG_TREE("abc");
-	//REGEX_DEBUG_FLATIN("abc");
-	//REGEX_DEBUG_FLAT("abc");
-	//REGEX_DEBUG_FLAT("[a-\\s]");
-	//REGEX_DEBUG_FLAT("(abc)?\\1");
-	//REGEX_DEBUG_FLAT("([ab])*");
-	//REGEX_DEBUG_FLAT("((a)|(b))+");
-	
-	//REGEX_DEBUG_FLAT("(?:a){5}");
-	//REGEX_DEBUG_FLAT("(?:a){0,5}");
-	
-	//REGEX_DEBUG_FLAT("(a)|(b)|(c)");
-	
 	test1("abc", "abc", "abc");
 	test1("abc", "abcd", "abc");
 	test1("(ab)c", "abc", "abc", "ab");
@@ -57,6 +40,9 @@ test("regex", "string", "regex")
 	test1("[Aa]", "A", "A");
 	test1("[Aa][Bb][Cc]", "Abc", "Abc");
 	test1("[Aa][Bb][Cc]", "bcd", nullptr);
+	test1("[abc-]", "b", "b");
+	test1("[a-b-c-d]", "c", "c");
+	test1("[a-b-c-d]", "-", "-");
 	test1("\xC3[\xB8\x98]", "ø", "ø");
 	test1("(a){5}", "aaaaaa", "aaaaa", "a");
 	test1("(abc|def)", "abcx", "abc", "abc");
@@ -92,6 +78,8 @@ test("regex", "string", "regex")
 	test1("((?!(.b)))a", "ac", "a", "", nullptr);
 	test1("(?!(.)\\1)a", "ab", "a", nullptr);
 	test1("(?!(.)\\1)a", "aa", nullptr, nullptr);
+	test1("(?!(?!(a)))", "a", "", nullptr);
+	test1("(?!(?!(a)))", "b", nullptr, nullptr);
 	test1("\\b.\\b.\\B", "a+", "a+");
 	test1("\\B.\\b.\\b", "+a", "+a");
 	test1(".\\b.", "++", nullptr);
@@ -100,21 +88,136 @@ test("regex", "string", "regex")
 	test1("\\B.", "a", nullptr);
 	test1(".\\b", "+", nullptr);
 	test1(".\\B", "a", nullptr);
+	test1("\\b", "a", "");
+	test1("\\B", "a", nullptr);
+	test1("\\b", "%", nullptr);
+	test1("\\B", "%", "");
+	test1("\\b", "", nullptr);
+	test1("\\B", "", "");
 	test1("((a)|(b))+", "ab", "ab", "b", nullptr, "b");
 	test1("((a)|(b))+", "ba", "ba", "a", "a", nullptr);
 	test1("((a)|(b)){2}", "ab", "ab", "b", nullptr, "b");
 	test1("((a)|(b)){2}", "ba", "ba", "a", "a", nullptr);
 	test1("((a)\\2|(b)\\3){2}", "aabb", "aabb", "bb", nullptr, "b");
 	test1("((a)\\2|(b)\\3){2}", "bbaa", "bbaa", "aa", "a", nullptr);
-	test1("^(a|ab)*$", "aabababaaaabab", "aabababaaaabab", "ab"); // matches only "aa" without $; unexpected, but every regex engine does that
+	test1("^(?:a|ab)*", "aabababaaaabab", "aa"); // matches a twice, and never tries ab without backtracking; regex ends there, so no backtracking needed
+	test1("^(?:a|ab)*$", "aabababaaaabab", "aabababaaaabab"); // this, however, needs to backtrack
+	test1("^(?:ab|a)*", "aabababaaaabab", "aabababaaaabab"); // this tries ab first and captures everything
+	test1("(?:aa)+(?:aaa)+", "aaaaaaaaaa", "aaaaaaaaa"); // similar to the above, the longest legal match isn't necessarily the right one
+	test1("a?a?(?:aa)?", "aaa", "aa"); // like the above, but with no + or *
 	
-	assert_eq((cstring)(REGEX("bc").search("abc")[0].start), "bc");
-	assert_eq(REGEX("f(oo)").replace("foofoobarfoo", "\\1"), "oooobaroo");
+	test1("a?a?a?a?a?bc", "aaabcd", "aaabc");
+	test1("a?a?a?a?a?bc", "aaaaaabcd", nullptr);
+	test1("a?a?a?a?a?", "aaaaaabcd", "aaaaa");
+	test1("a??a??a??a??a??", "aaaaaabcd", "");
+	test1("a*b*c*", "aaabcccd", "aaabccc");
+	test1("a*b*c*?", "aaabcccd", "aaab");
+	test1("a+b+c+", "aaabcccd", "aaabccc");
+	test1("a+b+c+?", "aaabcccd", "aaabc");
+	test1("a{2,5}bc", "aaaabcd", "aaaabc");
+	test1("a{2,5}", "aaaabcd", "aaaa");
+	test1("a{2,5}?", "aaaabcd", "aa");
+	test1("a{2,5}?b", "aaaabcd", "aaaab");
+	test1("a{2,5}?b", "aaaaaabcd", nullptr);
+	test1("a{5}", "aaaaaabcd", "aaaaa");
+	test1("a{5}?", "aaaaaabcd", "aaaaa"); // lazy quantifier has no effect on fixed-width repeats
+	test1("a{1}?", "aaaaaabcd", "a");
+	test1("a{,5}", "aaa", "aaa");
+	test1("a{,5}", "aaabc", "aaa");
+	test1("a{,5}?", "aaa", "");
+	test1("a{,5}?", "aaabc", "");
+	test1("a{,5}bc", "aaa", nullptr);
+	test1("a{,5}bc", "aaabc", "aaabc");
+	test1("a{,5}?bc", "aaa", nullptr);
+	test1("a{,5}?bc", "aaabc", "aaabc");
+	test1("a{3,}?", "aaaaa", "aaa");
+	test1("a{3,}", "aaaaa", "aaaaa");
+	test1("ax{0}bc", "abc", "abc");
+	test1("(ab)*", "ababababa", "abababab", "ab");
+	test1("(ab){3}", "ababababa", "ababab", "ab");
+	test1("(ab){3}\\1", "ababababa", "abababab", "ab");
+	test1("a\\nb", "a\nb", "a\nb");
+	test1("a\nb", "a\nb", "a\nb");
+	test1("a[\n]b", "a\nb", "a\nb");
+	test1("a\\sb", "a\nb", "a\nb");
+	test1("a\\Db", "a\nb", "a\nb");
+	test1("a\\x62c", "abc", "abc");
+	test1("\\cB", "\1", "\1");
+	test1("a[abc]c", "abc", "abc");
+	test1("a[a-z]c", "abc", "abc");
+	test1("a[a-zA-Z]c", "aBc", "aBc");
+	test1fail("a[A-]]c");
+	test1fail("(?!(a))\\1");
+	test1("a[\\w]c", "abc", "abc");
+	test1("a\\wc", "abc", "abc");
+	test1("a|b|cd", "b", "b");
+	test1("a|b|cd", "cd", "cd");
+	test1("(?:a)b", "ab", "ab");
+	test1("(a)b\\1", "aba", "aba", "a");
+	test1fail("(a)|\\4");
+	test1fail("(a)|\\1");
+	test1("(?:(a)|b)\\1", "cd", nullptr, nullptr);
+	test1("(?:(a)|b)\\1", "b", "b", nullptr);
+	test1("(?:(a)b|aa)\\1", "aaa", "aa", nullptr);
+	test1(".\\b.", "a%", "a%");
+	test1(".\\B.", "ab", "ab");
+	test1(".\\b.", "ab", nullptr);
+	test1(".\\B.", "a%", nullptr);
+	test1("(?:)+e", "e", "e"); // should not be an infinite loop
 	
-	assert_eq(cstring("foo bar baz").csplit(REGEX("\\b|a")).join(","), "foo, ,b,r, ,b,z");
-	assert_eq(cstring("foo bar baz").csplit<1>(REGEX(" |(?=\\n)")).join(","), "foo,bar baz");
-	assert_eq(cstring("foo\nbar baz").csplit<1>(REGEX(" |(?=\\n)")).join(","), "foo,\nbar baz");
-	assert_eq(cstring("").csplit<1>(REGEX("a")).size(), 1);
-	assert_eq(cstring("aabcaada").csplit(REGEX("a")).join(","), ",,bc,,d,");
+	test1("a|b||c", "b", "b");
+	test1("(?:a|b||c)d", "bd", "bd");
+	test1("(?:a*)a", "aa", "aa");
+	test1("(?:a*)b", "ab", "ab");
+	test1("(?:ab)*ab", "abab", "abab");
+	test1("(?:ab)*aab", "abaab", "abaab");
+	test1("a?", "aaa", "a");
+	test1("a??", "aaa", "");
+	test1("a+", "aaa", "aaa");
+	test1("a+?", "aaa", "a");
+	test1("a*", "aaa", "aaa");
+	test1("a*?", "aaa", "");
+	test1("a|", "abc", "a");
+	test1("|a", "abc", "");
+	test1("aa|a|aaa", "aaa", "aa"); // can't be nfa
+	test1("a*b+c?d", "abcd", "abcd");
+	test1("ab*c", "abbc", "abbc");
+	test1("a(?:aa)*|(?:aa)*", "aaaa", "aaa"); // can't be nfa
+	test1("aaabc", "aaabcd", "aaabc");
+	test1("cd?e?f+g*hi", "cdfffghi", "cdfffghi");
+	test1("a|b|cd", "b", "b");
+	test1("a||cd", "cd", ""); // no input string can return matches in non-ascending non-descending order, but still no nfa
+	test1("a(?:a||cd)b", "acdb", "acdb");
+	test1("q(?:a|b|cd?e?f+g)h", "qcdfffgh", "qcdfffgh");
+	test1("(?:q^|a|b|cd|e|$)", "cd", "cd");
+	test1("(?:a^|b|(?:c|d?e|(?:f|g|hi)j+k)l|mn|o|$)", "gjkl", "gjkl");
+	test1("a*(?:auth|axolotl|axe)", "aaaxolotl", "aaaxolotl");
+	test1("(?:ab?c?)*(?:auth|author|axolotl|axe)", "abaabcaxolotl", "abaabcaxolotl");
+	test1("[abc]@[def]", "b@d", "b@d"); // try to tickle the unique_bytes cross-chunk case
+	test1("[abc]\\?[def]", "b?d", "b?d");
+	
+	assert_eq((cstring)(regex("bc").search("abc")[0].start), "bc");
+	assert_eq(regex("f(oo)").replace("foofoobarfoo", "\\1"), "oooobaroo");
+	
+	assert_eq(cstring("foo bar baz").csplit(regex("\\b|a")).join(","), "foo, ,b,r, ,b,z");
+	assert_eq(cstring("foo bar baz").csplit<1>(regex(" |(?=\\n)")).join(","), "foo,bar baz");
+	assert_eq(cstring("foo\nbar baz").csplit<1>(regex(" |(?=\\n)")).join(","), "foo,\nbar baz");
+	assert_eq(cstring("").csplit<1>(regex("a")).size(), 1);
+	assert_eq(cstring("aabcaada").csplit(regex("a")).join(","), ",,bc,,d,");
+	
+	cstrnul text = "abc 123";
+	auto m = regex("(abc) (123)").match(text); // ensure it doesn't copy 'text' then return a match array full of UAF
+	assert_eq(m[1].str(), "abc");
+	
+	test_nomalloc {
+		assert(REGEX("abc").match("abc"));
+	};
+	
+	regex r;
+	assert(r.parse("(?:)"));
+	assert(r);
+	assert(!r.parse("(?:"));
+	assert(!r);
+	assert(r.parse(""));
+	assert(r);
 }
-#endif

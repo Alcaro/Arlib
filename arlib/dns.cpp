@@ -513,7 +513,7 @@ static void test1(cstring domain, bool expect)
 	// some goofy tricks to test that the function does not read out of bounds
 	size_t len = domain.length();
 	autofree<uint8_t> domain_copy = xmalloc(len);
-	memcpy(domain_copy, domain.bytes().ptr(), len);
+	memcpy(domain_copy, domain.ptr_raw(), len);
 	cstring domain_noterm = bytesr(domain_copy, len);
 	
 	uint8_t buf[256];

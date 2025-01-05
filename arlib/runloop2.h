@@ -144,10 +144,6 @@ namespace runloop2 {
 	async<void> await_timeout(timestamp timeout);
 	async<void> in_ms(int ms);
 	
-	// Schedules this coroutine for execution when the caller returns to the runloop.
-	// They will execute in order of being added. There are no guarantees on how they're ordered relative to fds and timers.
-	void schedule(std::coroutine_handle<> coro);
-	
 	// Runs the runloop. Returns after at least one event is dispatched, or if wait=false, returns immediately.
 	// Returns whether anything happened.
 	// Can't be called recursively.
@@ -179,10 +175,10 @@ public:
 // This object is designed for coroutines only; normal functions cannot call it.
 // Unlike a normal mutex, waiters are ordered.
 // The object is not thread safe. Arlib does not, at this point, support any kind of interaction between coroutines and threads.
-// Releasing the mutex will send the successor to runloop2::schedule(), not run it immediately; code like
+// Releasing the mutex will execute the successor when the current coro finishes, not run it immediately; code like
 // async<void> my_coro() { { auto lock = co_await mut1; co_await something(); } { auto lock = co_await mut2; co_await something2(); } }
 // will not allow any coroutine to overtake another, even if some of the something()s are synchronous.
-// The object does not allocate any memory, other than what runloop2::schedule() does.
+// The object does not allocate any memory, other than registering a waiter with the runloop.
 class co_mutex {
 public:
 	// The mutex is unlocked in this object's destructor.
@@ -197,6 +193,7 @@ public:
 };
 
 // A co_holder tracks multiple coroutines. If deleted, it cancels them all.
+// If you want something more sophisticated, like checking if they're all finished, use another object.
 class co_holder {
 public:
 	void add(async<void> item);
@@ -746,8 +743,6 @@ namespace runloop2 {
 	async<void> await_timeout(timestamp timeout);
 	async<void> in_ms(int ms);
 	
-	void schedule(std::coroutine_handle<> coro);
-	
 	void run(async<void> event);
 	bool step(bool wait=true);
 	
@@ -855,6 +850,8 @@ private:
 			*iter = this->next;
 			if (parent->last == &next)
 				parent->last = iter;
+			if (parent->first == nullptr)
+				parent->next_unlocker.cancel();
 		}
 		
 		bool await_ready()
@@ -873,13 +870,20 @@ private:
 	waiter* first = nullptr;
 	waiter* * last = &first;
 	lock* the_lock = nullptr;
+	::waiter<void> next_unlocker = make_waiter<&co_mutex::next_unlocker, &co_mutex::unlocker_run>();
+	void unlocker_run()
+	{
+		first->coro();
+	}
 	
 	void unlock()
 	{
 		if (first)
-			runloop2::schedule(first->coro);
-		else
-			the_lock = nullptr;
+		{
+			// don't pass first->coro directly, it could be cancelled
+			runloop2::in_ms(0).then(&next_unlocker);
+		}
+		the_lock = nullptr;
 	}
 	
 public:

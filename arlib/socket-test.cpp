@@ -82,7 +82,8 @@ static async<void> ssltest(function<async<autoptr<socket2>>(autoptr<socket2> inn
 		http_t http;
 		http.wrap_socks([&wrap](bool ssl, cstring domain, uint16_t port) -> async<autoptr<socket2>> {
 			assert(ssl);
-			co_return co_await wrap(co_await socket2::create(domain, port), domain);
+			auto& wrap_copy = wrap; // captures in coroutine lambdas act screwy
+			co_return co_await wrap_copy(co_await socket2::create(domain, port), domain);
 		});
 		http_t::req q = { "https://www.howsmyssl.com/a/check" };
 		http_t::rsp r = co_await http.request(q);

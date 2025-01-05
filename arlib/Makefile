@@ -58,7 +58,7 @@ ifeq ($(OS)-$(WINBITS)-$(ARXPSUPPORT),windows-64-32)
 endif
 
 CCXXFLAGS = -Wall -Wmissing-declarations -Wimplicit-fallthrough -Wvla -pipe
-CXXFLAGS = -Wsuggest-override
+CXXFLAGS += -Wsuggest-override
 # this one is an imminent segfault 99% of the time
 CCXXFLAGS += -Werror=return-type
 #to silence for (size_t unused : range(42)) - delete this once gcc stops complaining

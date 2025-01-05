@@ -77,15 +77,15 @@ obj/sand-preload-$(OBJNAME).elf: $(PRELOADER_OBJS) | obj
 $(call OBJMANGLE,DEFAULT,sandbox/preload.cpp): obj/sand-preload-$(OBJNAME).elf
 
 
-SETUID_SOURCES := sandbox/lockdown.cpp
-SETUID_OBJS := $(call OBJMANGLE,ARSANDSU,$(SETUID_SOURCES))
-obj/ARSANDSU___%.cpp.o: $$(call SOURCENAME,$$@) | obj
-	$(ECHOQ) CXX $<
-	$(Q)$(CXX) -D SANDBOX_SETUID $(SETUID_CFLAGS) -c $< -o $@
-
-gvc-setuid: $(SETUID_OBJS) | obj
-	$(ECHOQ) LD $@
-	$(Q)$(CXX) $(SETUID_LFLAGS) $(SETUID_OBJS) -o $@
-	chown root:root $@ && chmod +s $@ || true
-
-arlib-default: gvc-setuid
+#SETUID_SOURCES := sandbox/lockdown.cpp
+#SETUID_OBJS := $(call OBJMANGLE,ARSANDSU,$(SETUID_SOURCES))
+#obj/ARSANDSU___%.cpp.o: $$(call SOURCENAME,$$@) | obj
+#	$(ECHOQ) CXX $<
+#	$(Q)$(CXX) -D SANDBOX_SETUID $(SETUID_CFLAGS) -c $< -o $@
+#
+#gvc-setuid: $(SETUID_OBJS) | obj
+#	$(ECHOQ) LD $@
+#	$(Q)$(CXX) $(SETUID_LFLAGS) $(SETUID_OBJS) -o $@
+#	chown root:root $@ && chmod +s $@ || true
+#
+#arlib-default: gvc-setuid

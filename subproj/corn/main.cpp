@@ -348,78 +348,90 @@ void init_search()
 	symlink_filenames.reset();
 	init_search_recurse("");
 }
-int penalty_for(arrayview<cstring> words, cstring fn)
-{
-	//rules:
-	// each potential match must contain every word in the filename (including directory, but not MUSIC_DIR), in order, case insensitive
-	// a word is defined as space-separated (potentially empty) sequence of nonspaces in search string
-	// a match's penalty is defined as how many skip slots contain ascii non-space bytes
-	// a skip slot is defined as each space, plus start of the string; start gives 1.5 penalty points
-	// if the filename contains a slash, add 1 penalty point
-	// if the filename contains /x/ or /x-, add 2.5 penalty points
-	// if the last word in the search string is not in the file's basename, add 50 penalty points
-	//output:
-	// all matches, sorted by ascending penalty, then alphabetically by name including dir
-	// if there are matches than what fit, delete every match sharing the max penalty; repeat if needed
-	// if the above did anything, or if there were no matches, insert an entry saying so
-	//exception: if input is blank, output is blank, not even the entry saying so
-	//(implementation doubles the penalty, so it's all integers)
-	
-	int penalty = 0;
-	
-	if (fn.contains("/x/") || fn.contains("/x-"))
-		penalty += 1000;
-	if (fn.iendswith(".png") || fn.iendswith(".jpg"))
-		penalty += 1000;
-	if (fn.iendswith(".txt") || fn.iendswith(".pdf"))
-		penalty += 1000;
-	if (fn.iendswith(".db") || fn.iendswith(".ini"))
-		penalty += 1000;
-	if (fn.iendswith(".zip") || fn.iendswith(".rar") || fn.iendswith(".7z"))
-		penalty += 1000;
-	if (fn.iendswith(".m3u") || fn.iendswith(".pls"))
-		penalty += 1000;
-	if (fn.iendswith(".htm") || fn.iendswith(".html") || fn.iendswith(".url") || fn.iendswith(".nfo"))
-		penalty += 1000;
-	if (fn.iendswith(".mid"))
-		penalty += 1000;
-	
-	size_t last_slash = fn.lastindexof("/");
-	if (last_slash != (size_t)-1)
-		penalty += 2;
-	
-	size_t search_at = 0;
-	for (size_t word_at : range(words.size()))
+
+class file_matcher {
+	array<string> words;
+	regex re;
+public:
+	void init(cstring search)
 	{
-		size_t min_idx = search_at;
-		if (word_at == words.size()-1 && last_slash != (size_t)-1)
-		{
-			if (fn.iindexof(words[word_at], last_slash) == (size_t)-1) penalty += 100;
-		}
-		size_t next_start = fn.iindexof(words[word_at], min_idx);
-		if (next_start == (size_t)-1)
-			return -1;
-		
-		size_t skipped = search_at;
-		if (next_start>0 && fn[next_start-1]!='/')
-		{
-			while (skipped < next_start)
-			{
-				if (isalnum(fn[skipped]))
-				{
-					if (word_at == 0) penalty += 3;
-					else penalty += 2;
-					break;
-				}
-				skipped++;
-			}
-		}
-		
-		search_at = next_start + words[word_at].length();
+		words = search.split(" ");
+		re.parse(search);
 	}
-	
-	return penalty;
-}
+	int penalty_for(cstring fn)
+	{
+		//rules:
+		// each potential match must contain every word in the filename (including directory, but not MUSIC_DIR), in order, case insensitive
+		// a word is defined as space-separated (potentially empty) sequence of nonspaces in search string
+		// a match's penalty is defined as how many skip slots contain ascii non-space bytes
+		// a skip slot is defined as each space, plus start of the string; start gives 1.5 penalty points
+		// if the filename contains a slash, add 1 penalty point
+		// if the filename contains /x/ or /x-, add 2.5 penalty points
+		// if the last word in the search string is not in the file's basename, add 50 penalty points
+		//output:
+		// all matches, sorted by ascending penalty, then alphabetically by name including dir
+		// if there are matches than what fit, delete every match sharing the max penalty; repeat if needed
+		// if the above did anything, or if there were no matches, insert an entry saying so
+		//exception: if input is blank, output is blank, not even the entry saying so
+		//(implementation doubles the penalty, so it's all integers)
+		
+		int penalty = 0;
+		
+		if (fn.contains("/x/") || fn.contains("/x-"))
+			penalty += 1000;
+		if (fn.iendswith(".png") || fn.iendswith(".jpg"))
+			penalty += 1000;
+		if (fn.iendswith(".txt") || fn.iendswith(".pdf"))
+			penalty += 1000;
+		if (fn.iendswith(".db") || fn.iendswith(".ini"))
+			penalty += 1000;
+		if (fn.iendswith(".zip") || fn.iendswith(".rar") || fn.iendswith(".7z"))
+			penalty += 1000;
+		if (fn.iendswith(".m3u") || fn.iendswith(".pls"))
+			penalty += 1000;
+		if (fn.iendswith(".htm") || fn.iendswith(".html") || fn.iendswith(".url") || fn.iendswith(".nfo"))
+			penalty += 1000;
+		if (fn.iendswith(".mid"))
+			penalty += 1000;
+		
+		size_t last_slash = fn.lastindexof("/");
+		if (last_slash != (size_t)-1)
+			penalty += 2;
+		
+		size_t search_at = 0;
+		for (size_t word_at : range(words.size()))
+		{
+			size_t min_idx = search_at;
+			if (word_at == words.size()-1 && last_slash != (size_t)-1)
+			{
+				if (fn.iindexof(words[word_at], last_slash) == (size_t)-1) penalty += 100;
+			}
+			size_t next_start = fn.iindexof(words[word_at], min_idx);
+			if (next_start == (size_t)-1)
+				return -1;
+			
+			size_t skipped = search_at;
+			if (next_start>0 && fn[next_start-1]!='/')
+			{
+				while (skipped < next_start)
+				{
+					if (isalnum(fn[skipped]))
+					{
+						if (word_at == 0) penalty += 3;
+						else penalty += 2;
+						break;
+					}
+					skipped++;
+				}
+			}
+			
+			search_at = next_start + words[word_at].length();
+		}
+		
+		return penalty;
+	}
+};
+
 void update_search()
 {
 	string prev_focus;
@@ -446,11 +458,12 @@ void update_search()
 		};
 	};
 	array<match_t> matches;
-	array<cstring> words = key.csplit(" ");
+	file_matcher matcher;
+	matcher.init(key);
 	
 	for (cstring fn : search_filenames)
 	{
-		int penalty = penalty_for(words, fn);
+		int penalty = matcher.penalty_for(fn);
 		if (penalty >= 0)
 			matches.append({ fn, penalty });
 	}
@@ -541,10 +554,12 @@ static gboolean search_kb(GtkEventControllerKey* self, guint keyval, guint keyco
 			array<cstring> results;
 			
 			bool any_good = false;
-			array<cstring> words = search_text.crsplit<1>("*")[0].csplit(" ");
+			file_matcher matcher;
+			matcher.init(search_text.crsplit<1>("*")[0]);
+			
 			for (column::node& item : c_search.items)
 			{
-				int penalty = penalty_for(words, item.filename);
+				int penalty = matcher.penalty_for(item.filename);
 				if (penalty < 1000)
 					any_good = true;
 				if (penalty < 1000 || !any_good)

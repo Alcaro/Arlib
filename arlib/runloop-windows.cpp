@@ -77,12 +77,6 @@ public:
 	}
 	
 	
-	fifo<std::coroutine_handle<>> scheduled;
-	void schedule(std::coroutine_handle<> coro)
-	{
-		scheduled.push(coro);
-	}
-	
 	bool step(bool wait)
 	{
 		timestamp timeout = timestamp::at_never();
@@ -108,7 +102,7 @@ public:
 		timestamp now = timestamp::now();
 		duration dur = timeout - now;
 		
-		if (dur.sec < 0 || !scheduled.empty() || !wait)
+		if (dur.sec < 0 || !wait)
 			dur = { 0, 0 };
 		
 		test_rethrow();
@@ -146,11 +140,6 @@ public:
 		{
 			if (node.prod.has_waiter() && node.timeout <= now)
 				timer_activate(&node);
-		}
-		
-		while (!scheduled.empty())
-		{
-			scheduled.pop().resume();
 		}
 		
 		return false;
@@ -209,7 +198,6 @@ public:
 			assert(!node.prod.has_waiter());
 		for (auto& node : timers)
 			assert(!node.prod.has_waiter());
-		assert(scheduled.empty());
 	}
 #endif
 };
@@ -245,7 +233,6 @@ runloop2_windows& get_loop() { return loop; }
 }
 
 namespace runloop2 {
-	void schedule(std::coroutine_handle<> coro) { get_loop().schedule(coro); }
 	bool step(bool wait) { return get_loop().step(wait); }
 	void run(async<void> event)
 	{

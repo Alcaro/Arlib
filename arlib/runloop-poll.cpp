@@ -172,15 +172,6 @@ public:
 	timeout_t timeouts;
 	
 	
-	// TODO: find a way to move this to a global array of 0ms timeouts
-	// without getting into trouble regarding threading
-	fifo<std::coroutine_handle<>> scheduled;
-	
-	
-	void schedule(std::coroutine_handle<> coro)
-	{
-		scheduled.push(coro);
-	}
 	bool step(bool wait)
 	{
 	again:
@@ -224,7 +215,7 @@ public:
 				dur = min(dur, duration::ms(timeout_ms));
 		}
 #endif
-		if (dur.sec < 0 || !scheduled.empty() || !wait)
+		if (dur.sec < 0 || !wait)
 			dur = { 0, 0 };
 		
 		test_rethrow();
@@ -269,11 +260,6 @@ public:
 				timeouts.activate(&node);
 				ret = true;
 			}
-		}
-		while (!scheduled.empty())
-		{
-			scheduled.pop().resume();
-			ret = true;
 		}
 		test_rethrow();
 		
@@ -367,7 +353,6 @@ public:
 		assert_eq(n_global_waits, n_wait_fds);
 		for (auto& node : timeouts.waiting)
 			assert(!node.prod.has_waiter());
-		assert(scheduled.empty());
 	}
 #endif
 };
@@ -398,7 +383,6 @@ runloop2_poll& get_loop() { return g_loop; }
 }
 
 namespace runloop2 {
-	void schedule(std::coroutine_handle<> coro) { get_loop().schedule(coro); }
 	bool step(bool wait) { return get_loop().step(wait); }
 	void run(async<void> event)
 	{

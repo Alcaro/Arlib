@@ -414,13 +414,142 @@ test("runloop co_mutex", "", "")
 	testcall(test1({ 1,2,-1, 3,4,-1,  5,6,-1,  7,8,-1,  9,10,-1, 11,12,-1, 13,14,-1, 15,16,-1, 17,18,-1, 19,20,-1, 21,22,-1 }));
 	testcall(test1({ 1,2,13, 3,-1,-1, 4,-1,-1, 5,-1,-1, 6,14,15, 7,-1,-1,  8,-1,-1,  9,-1,-1,  10,-1,-1, 11,-1,-1, 12,-1,-1 }));
 	testcall(test1({ 1,2,13, 3,14,15, 4,16,17, 5,18,19, 6,20,21, 7,22,23,  8,24,25,  9,26,27,  10,28,29, 11,-1,-1, 12,-1,-1 }));
+	
+	// ensure co_mutex doesn't UAF if the coroutines are cancelled
+	{
+		co_mutex mut;
+		co_holder coros;
+		int state = 0;
+		
+		coros.add([&]()->async<void>{
+			assert(state++ == 0);
+			auto lk = co_await mut;
+			assert(state++ == 1);
+			co_await runloop2::in_ms(1000);
+			assert_unreachable();
+		}());
+		coros.add([&]()->async<void>{
+			assert(state++ == 2);
+			auto lk = co_await mut;
+			assert_unreachable();
+		}());
+		coros.add([&]()->async<void>{
+			assert(state++ == 3);
+			auto lk = co_await mut;
+			assert_unreachable();
+		}());
+		assert(state++ == 4);
+	}
+	
+	// ensure co_mutex doesn't UAF if told to wake something up, but all waiters are cancelled
+	{
+		co_mutex mut;
+		waiter<void> coro1; // not co_holder, because coro1 must be cancelled before coro2
+		waiter<void> coro2;
+		waiter<void> coro3;
+		int state = 0;
+		
+		([&]()->async<void>{
+			assert(state++ == 0);
+			auto lk = co_await mut;
+			assert(state++ == 1);
+			co_await runloop2::in_ms(1000);
+			assert_unreachable();
+		}()).then(&coro1);
+		([&]()->async<void>{
+			assert(state++ == 2);
+			auto lk = co_await mut;
+			assert_unreachable();
+		}()).then(&coro2);
+		assert(state++ == 3);
+		
+		coro1.cancel();
+		coro2.cancel();
+		runloop2::step(false);
+	}
+	
+	// ensure co_mutex lets in something if a waiter is cancelled
+	{
+		co_mutex mut;
+		waiter<void> coro1;
+		waiter<void> coro2;
+		waiter<void> coro3;
+		int state = 0;
+		
+		([&]()->async<void>{
+			assert(state++ == 0);
+			auto lk = co_await mut;
+			assert(state++ == 1);
+			co_await runloop2::in_ms(1000);
+			assert_unreachable();
+		}()).then(&coro1);
+		([&]()->async<void>{
+			assert(state++ == 2);
+			auto lk = co_await mut;
+			assert(state++ == 5);
+			co_await runloop2::in_ms(1000);
+			assert_unreachable();
+		}()).then(&coro2);
+		([&]()->async<void>{
+			assert(state++ == 3);
+			auto lk = co_await mut;
+			assert_unreachable();
+		}()).then(&coro3);
+		assert(state++ == 4);
+		
+		coro1.cancel();
+		runloop2::step(false);
+		assert(state++ == 6);
+	}
+	
+	// ensure co_mutex doesn't let in two coros at once if a wait was cancelled
+	{
+		co_mutex mut;
+		waiter<void> coro1;
+		waiter<void> coro2;
+		waiter<void> coro3;
+		int state = 0;
+		
+		([&]()->async<void>{
+			assert(state++ == 0);
+			auto lk = co_await mut;
+			assert(state++ == 1);
+			co_await runloop2::in_ms(1000);
+			assert_unreachable();
+		}()).then(&coro1);
+		([&]()->async<void>{
+			assert(state++ == 2);
+			auto lk = co_await mut;
+			assert_unreachable();
+		}()).then(&coro2);
+		assert(state++ == 3);
+		
+		coro2.cancel();
+		coro1.cancel();
+		
+		([&]()->async<void>{
+			assert(state++ == 4);
+			auto lk = co_await mut;
+			assert(state++ == 5);
+			co_await runloop2::in_ms(1000);
+			assert_unreachable();
+		}()).then(&coro1);
+		([&]()->async<void>{
+			assert(state++ == 6);
+			auto lk = co_await mut;
+			assert_unreachable();
+		}()).then(&coro2);
+		assert(state++ == 7);
+		
+		runloop2::step(false);
+	}
 }
 
 #ifdef __unix__
 #include <fcntl.h>
 #include <unistd.h>
 #define HANDLE int
-static int mkevent() { return open("/bin/sh", O_RDONLY); } // Returns an fd that will immediately signal readability.
+static int mkevent() { return open("/bin/sh", O_RDONLY); } // Returns any fd that will immediately signal readability.
 static void rmevent(int fd) { close(fd); }
 static async<void> my_await(int fd) { return runloop2::await_read(fd); }
 #endif

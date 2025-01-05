@@ -40,7 +40,7 @@ public:
 	funcptr sym_func(const char * name)
 	{
 		static_assert(sizeof(void*) == sizeof(funcptr));
-		return (funcptr)this->sym_ptr(name);
+		return (funcptr)sym_ptr(name);
 	}
 	template<typename T>
 	auto sym(const char * name)

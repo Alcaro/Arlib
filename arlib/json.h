@@ -142,8 +142,8 @@ private:
 
 
 
-//This is also streaming.
-//It is caller's responsibility to match every enter() to the right exit() before calling finish(), and to call map_key() as appropriate.
+// This is also streaming.
+// It is caller's responsibility to match every enter() to the right exit() before calling finish(), and to call map_key() as appropriate.
 class jsonwriter {
 	string m_data;
 	bool m_comma = false;
@@ -312,17 +312,17 @@ public:
 	JSONw& operator[](size_t idx)
 	{
 		array<JSONw>& children = list();
-		if (idx == children.size()) return *(JSONw*)&children.append();
-		if (idx < children.size()) return *(JSONw*)&(children[idx]);
+		if (idx == children.size()) return children.append();
+		if (idx < children.size()) return children[idx];
 		abort();
 	}
-	JSONw& operator[](const char * s) { return *(JSONw*)&(assoc().get_create(s)); }
-	JSONw& operator[](cstring s) { return *(JSONw*)&(assoc().get_create(s)); }
+	JSONw& operator[](const char * s) { return assoc().get_create(s); }
+	JSONw& operator[](cstring s) { return assoc().get_create(s); }
 	
 	JSONw& operator[](const JSONw& right)
 	{
-		if (right.type() == jsonparser::str) return *(JSONw*)&(assoc().get_create(right.str()));
-		else return *(JSONw*)&(list()[right.num()]);
+		if (right.type() == jsonparser::str) return assoc().get_create(right.str());
+		else return list()[right.num()];
 	}
 };
 

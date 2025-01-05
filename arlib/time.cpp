@@ -176,8 +176,8 @@ string tostring(timestamp val)
 bool fromstring(cstring s, timestamp& out)
 {
 	out = {};
-	const char * start = (char*)s.bytes().ptr();
-	const char * end = start + s.length();
+	const char * start = s.ptr_raw();
+	const char * end = s.ptr_raw_end();
 	const char * int_end = start;
 	while (int_end < end && isdigit(*int_end))
 		int_end++;

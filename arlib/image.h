@@ -1,6 +1,7 @@
 #pragma once
 #include "global.h"
 #include "array.h"
+#include "endian.h"
 
 struct oimage;
 // image does not own its storage. If you need memory management, use oimage.
@@ -46,6 +47,15 @@ struct image {
 	// Mostly used internally. No real point calling it directly.
 	static void convert_rgb24_to_argb32(uint32_t* out, const uint8_t* in, size_t npx);
 	
+	static bool is_png(bytesr data)
+	{
+		return data.size() >= 8 && readu_be64(data.ptr()) == 0x89504E470D0A1A0A;
+	}
+	static bool is_jpg(bytesr data)
+	{
+		return data.size() >= 2 && readu_be16(data.ptr()) == 0xFFD8;
+	}
+	
 	// Calls every init_decode_<format> until one succeeds. If none does, returns false; if so, every member should be considered invalid.
 	static oimage decode(bytesr data);
 	
@@ -60,11 +70,11 @@ struct image {
 	static oimage decode_permissive(bytesr data);
 	
 	// TODO: unimplemented
-	// Always emits 0rgb8888.
 	static oimage decode_jpg(bytesr jpgdata); // TODO: delete one of these
 	static oimage decode_jpg2(bytesr jpgdata);
 	
 	bytearray encode_png(); // Will fail if the image is 0x? or ?x0.
+	bytearray encode_png_fast(); // Skips compressing the image.
 };
 
 struct oimage : public image {

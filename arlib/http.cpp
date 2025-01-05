@@ -463,7 +463,7 @@ test("http 5", "tcp", "http")
 	}());
 	
 	coros.add([&]()->async<void> {
-		http_t::req q2 = { "https://stacked.muncher.se/404.html" };
+		http_t::req q2 = { "https://www.muncher.se/404.html" };
 		http_t::rsp r2 = co_await http.request(q2);
 		assert_eq(++n_done, 2);
 		assert_eq(r2.status, 404);
@@ -483,6 +483,9 @@ test("http 5", "tcp", "http")
 		assert_eq(r4.status, 404);
 	}());
 	
+	while (n_done < 4)
+		runloop2::step();
+	
 	assert_eq(n_socks, 3);
 }
 
@@ -492,6 +495,7 @@ test("http 6", "tcp", "http")
 	
 	http_t http;
 	wrap_socks(http);
+	int n_done = 0;
 	http_t::req q1 = { "https://floating.muncher.se:443/arlib/echo.php" }; // ensure it doesn't look at the port during ssl handshake
 	// <?php
 	// header("Content-Type: application/json");
@@ -504,13 +508,18 @@ test("http 6", "tcp", "http")
 		http_t::rsp r = co_await http.request(q1);
 		assert_eq(r.status, 200);
 		assert_eq(r.text(), "{\"post\":\"x\"}");
+		assert_eq(++n_done, 1);
 	}());
 	q2.body.append('y');
 	coros.add([&]()->async<void> {
 		http_t::rsp r = co_await http.request(q2);
 		assert_eq(r.status, 200);
 		assert_eq(r.text(), "{\"post\":\"xy\"}");
+		assert_eq(++n_done, 2);
 	}());
+	
+	while (n_done < 2)
+		runloop2::step();
 	
 	assert_eq(n_socks, 1);
 }

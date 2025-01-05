@@ -293,6 +293,78 @@ bytearray image::encode_png()
 	return ret.finish();
 }
 
+bytearray image::encode_png_fast()
+{
+	if (width == 0 || height == 0 || width >= 0x80000000 || height >= 0x80000000)
+		return {};
+	
+	bytestreamw_dyn ret;
+	
+	map<uint32_t, uint8_t> palette;
+	uint32_t palette_idx[256];
+	uint32_t transparent = -2u; // -1 - zero transparent colors; -2 - at least one semi-opaque, or multiple transparencies
+	bool use_palette = false;
+	
+	ret.u8s(0x89,'P','N','G','\r','\n',0x1A,'\n');
+	
+	size_t chunk_startpos;
+	auto chunk_begin = [&ret, &chunk_startpos](const char * type)
+	{
+		chunk_startpos = ret.size();
+		ret.u32b(0);
+		ret.u8s(type[0],type[1],type[2],type[3]);
+	};
+	auto chunk_end = [&ret, &chunk_startpos]()
+	{
+		ret.u32b_at(chunk_startpos, ret.size() - chunk_startpos - 8);
+		ret.u32b(crc32(ret.peek().skip(chunk_startpos + 4)));
+	};
+	
+	uint8_t color_type = 6; // rgba
+	uint8_t bits_per_channel = 8;
+	
+	chunk_begin("IHDR");
+	ret.u32b(width);
+	ret.u32b(height);
+	ret.u8s(8, 6, 0, 0, 0); // bits per channel, color type, compression, filter, interlace
+	chunk_end();
+	
+	bytearray line;
+	bytearray to_deflate;
+	line.resize(width*4);
+	
+	for (uint32_t y=0;y<height;y++)
+	{
+		uint32_t * line_pixels = pixels + y*stride;
+		for (uint32_t x=0;x<width;x++)
+		{
+			uint32_t col = line_pixels[x];
+			line[x*4+0] = col>>16;
+			line[x*4+1] = col>>8;
+			line[x*4+2] = col>>0;
+			line[x*4+3] = col>>24;
+		}
+		
+		to_deflate.append(0);
+		to_deflate += line;
+	}
+	
+	chunk_begin("IDAT");
+	size_t buf_len;
+	// todo: disable compression
+	void* buf = tdefl_compress_mem_to_heap(to_deflate.ptr(), to_deflate.size(), &buf_len,
+	                                       (int)TDEFL_DEFAULT_MAX_PROBES|TDEFL_WRITE_ZLIB_HEADER);
+	if (!buf) return {}; // out of mem probably
+	ret.bytes(bytesr((uint8_t*)buf, buf_len));
+	free(buf);
+	chunk_end();
+	
+	chunk_begin("IEND");
+	chunk_end();
+	
+	return ret.finish();
+}
+
 #include "test.h"
 #include "file.h"
 
@@ -315,19 +387,22 @@ test("png encoder", "array,imagebase,file", "png")
 			oimage ref = image::decode_png(file::readall(testname));
 			if (!ref.pixels)
 				continue;
-			bytearray encoded = ref.encode_png();
-			oimage decoded = image::decode_png(encoded);
-			assert(decoded.pixels);
-			assert_eq(decoded.width, ref.width);
-			assert_eq(decoded.height, ref.height);
-			
-			uint32_t* imp = decoded.pixels;
-			uint32_t* refp = ref.pixels;
-			
-			for (size_t i=0;i<ref.height*ref.width;i++)
+			bytearray encoded[2] = { ref.encode_png(), ref.encode_png_fast() };
+			for (bytesr by : encoded)
 			{
-				if (refp[i]&0xFF000000) assert_eq(imp[i], refp[i]);
-				else assert_eq(imp[i]&0xFF000000, 0);
+				oimage decoded = image::decode_png(by);
+				assert(decoded.pixels);
+				assert_eq(decoded.width, ref.width);
+				assert_eq(decoded.height, ref.height);
+				
+				uint32_t* imp = decoded.pixels;
+				uint32_t* refp = ref.pixels;
+				
+				for (size_t i=0;i<ref.height*ref.width;i++)
+				{
+					if (refp[i]&0xFF000000) assert_eq(imp[i], refp[i]);
+					else assert_eq(imp[i]&0xFF000000, 0);
+				}
 			}
 		}
 	}

@@ -2,6 +2,7 @@
 #include "test.h"
 #include "simd.h"
 #include "endian.h"
+#include "regex.h"
 #ifdef _WIN32
 #include <windows.h>
 #endif
@@ -28,8 +29,10 @@ void string::resize(size_t newlen)
 	{
 	case 0: // small->small
 		{
-			m_inline[newlen] = '\0';
-			m_inline_len_w() = max_inline()-newlen;
+			size_t oldlen = len_if_inline();
+			for (size_t i=newlen;i<oldlen;i++)
+				m_inline[i] = '\0';
+			inline_len_encoded_w() = max_inline()-newlen;
 		}
 		break;
 	case 1: // small->big
@@ -41,16 +44,16 @@ void string::resize(size_t newlen)
 			m_len = newlen; // can't overflow, xmalloc rejects anything above 2G
 			m_nul = true;
 			
-			m_inline_len_w() = -1;
+			inline_len_encoded_w() = -1;
 		}
 		break;
 	case 2: // big->small
 		{
 			uint8_t* oldptr = m_data;
+			memset(m_inline, 0, sizeof(m_inline));
 			memcpy(m_inline, oldptr, newlen);
 			free(oldptr);
-			m_inline[newlen] = '\0';
-			m_inline_len_w() = max_inline()-newlen;
+			inline_len_encoded_w() = max_inline()-newlen;
 		}
 		break;
 	case 3: // big->big
@@ -68,9 +71,9 @@ void string::init_from_outline(const uint8_t * str, size_t len)
 {
 	if (len <= max_inline())
 	{
+		memset(m_inline, 0, sizeof(m_inline));
 		memcpy(m_inline, str, len);
-		m_inline[len] = '\0';
-		m_inline_len_w() = max_inline()-len;
+		inline_len_encoded_w() = max_inline()-len;
 	}
 	else
 	{
@@ -80,7 +83,7 @@ void string::init_from_outline(const uint8_t * str, size_t len)
 
 void string::init_from_large(const uint8_t * str, size_t len)
 {
-	m_inline_len_w() = -1;
+	inline_len_encoded_w() = -1;
 	
 	m_data = xmalloc(bytes_for(len));
 	memcpy(m_data, str, len);
@@ -159,7 +162,7 @@ string::string(array<uint8_t>&& bytes) : cstrnul(noinit())
 	}
 	else
 	{
-		m_inline_len_w() = -1;
+		inline_len_encoded_w() = -1;
 		m_len = bytes.size();
 		m_data = xrealloc(bytes.release().ptr(), bytes_for(m_len));
 		m_data[m_len] = '\0';
@@ -470,77 +473,53 @@ void cstring::csplit_to(cstring sep, arrayvieww<cstring> target) const
 //	return ret;
 //}
 
-array<cstring> cstring::csplit(bool(*find)(const uint8_t * start, const uint8_t * & at, const uint8_t * & end), size_t limit) const
+array<cstring> cstring::csplit(const regex& rx, size_t limit) const
 {
 	array<cstring> ret;
 	
-	const uint8_t * data = ptr();
-	const uint8_t * dataend = ptr()+length();
+	const char * start = ptr_raw();
+	const char * at = ptr_raw();
+	const char * end = ptr_raw_end();
 	
-	const uint8_t * gstart = data;
-	const uint8_t * at = gstart;
-	
-	while (ret.size() < limit && at < dataend)
+	bool force_next = false;
+	while (ret.size() < limit && at < end)
 	{
-		const uint8_t * mat = at;
-		const uint8_t * mend = dataend;
-		if (!find(data, mat, mend) || (gstart == mat && mat == mend))
+		auto m = rx.search(start, at + force_next, end);
+		if (m)
 		{
-			at++;
-			continue;
+			if (ret || m[0].end > at)
+				ret.append(arrayview<char>(at, m[0].start-at));
+			force_next = (m[0].start == m[0].end);
+			at = m[0].end;
 		}
-		
-		ret.append(bytesr(gstart, mat-gstart));
-		gstart = mend;
-		at = gstart;
+		else break;
 	}
-	ret.append(bytesr(gstart, dataend-gstart));
+	ret.append(arrayview<char>(at, end-at));
 	return ret;
 }
 
-#ifdef __SSE2__
-bool operator==(const cstring& left, const cstring& right)
+bool cstring::equal_large(const cstring& left, const cstring& right)
 {
-	static_assert(sizeof(cstring) == 16);
-	if (left.inlined())
-	{
-		if (left.m_inline_len() != right.m_inline_len()) return false; // if right isn't inlined, m_inline_len is -1 aka not equal
-		__m128i a = _mm_loadu_si128((__m128i*)&left);
-		__m128i b = _mm_loadu_si128((__m128i*)&right);
-		int eq = _mm_movemask_epi8(_mm_cmpeq_epi8(a, b));
-		return ((((~eq) << left.m_inline_len()) & 0xFFFF) == 0);
-	}
-	else
-	{
-		// this is basically a memcmp, but I know size >= 16, so I can jump straight to the SIMD loop
-		
-		auto memeq16 = [](const uint8_t * ap, const uint8_t * bp)
-		{
-			__m128i a = _mm_loadu_si128((__m128i*)ap);
-			__m128i b = _mm_loadu_si128((__m128i*)bp);
-			return (_mm_movemask_epi8(_mm_cmpeq_epi8(a, b)) == 0xFFFF);
-		};
-		if (right.inlined() || left.m_len != right.m_len) return false;
-		
-		const uint8_t * leftp = left.m_data;
-		const uint8_t * rightp = right.m_data;
-		size_t stop = left.m_len - 16;
-		
-		size_t iter = 0;
-		do { // entering this loop at all is pointless if len == 16, but do-while is a few bytes smaller than while
-			if (!memeq16(leftp+iter, rightp+iter)) return false;
-			iter += 16;
-		} while (iter < stop);
-		
-		return (memeq16(leftp+stop, rightp+stop));
-	}
+	// this is basically a memcmp, but I know size >= 16, so I can jump straight to the SIMD loop
+	if (right.inlined() || left.m_len != right.m_len) return false;
+	
+	const uint8_t * leftp = left.m_data;
+	const uint8_t * rightp = right.m_data;
+	size_t stop = left.m_len - 16;
+	
+	size_t iter = 0;
+	do { // entering this loop at all is pointless if len == 16, but do-while is a few bytes smaller than while
+		if (!memeq(leftp+iter, rightp+iter, 16)) return false;
+		iter += 16;
+	} while (iter < stop);
+	
+	return (memeq(leftp+stop, rightp+stop, 16));
 }
-#endif
 
 int string::compare3(cstring a, cstring b)
 {
 	size_t cmplen = min(a.length(), b.length());
-	int ret = memcmp(a.bytes().ptr(), b.bytes().ptr(), cmplen);
+	int ret = memcmp(a.ptr_raw(), b.ptr_raw(), cmplen);
 	
 	if (ret) return ret;
 	else return a.length() - b.length();
@@ -551,16 +530,16 @@ int string::icompare3(cstring a, cstring b)
 	int ret_i = a.length() - b.length();
 	
 	size_t cmplen = min(a.length(), b.length());
-	const uint8_t* ab = a.bytes().ptr();
-	const uint8_t* bb = b.bytes().ptr();
+	const char* ab = a.ptr_raw();
+	const char* bb = b.ptr_raw();
 	for (size_t n=0; n<cmplen; n++)
 	{
 		if (ab[n] != bb[n])
 		{
 			if (ret_i == 0) ret_i = ab[n] - bb[n];
 			
-			uint8_t ac = toupper(ab[n]);
-			uint8_t bc = toupper(bb[n]);
+			char ac = toupper(ab[n]);
+			char bc = toupper(bb[n]);
 			if (ac != bc) return ac - bc;
 		}
 	}
@@ -570,10 +549,10 @@ int string::icompare3(cstring a, cstring b)
 
 int string::natcompare3(cstring a, cstring b, bool case_insensitive)
 {
-	const uint8_t* ab = a.bytes().ptr();
-	const uint8_t* bb = b.bytes().ptr();
-	const uint8_t* abe = ab + a.length();
-	const uint8_t* bbe = bb + b.length();
+	const char * ab = a.ptr_raw();
+	const char * bb = b.ptr_raw();
+	const char * abe = a.ptr_raw_end();
+	const char * bbe = b.ptr_raw_end();
 	
 	int ret_zero = 0; // negative = 'a' is first
 	int ret_case = 0;
@@ -599,8 +578,8 @@ int string::natcompare3(cstring a, cstring b, bool case_insensitive)
 				bb++;
 			}
 			
-			const uint8_t* abs = ab;
-			const uint8_t* bbs = bb;
+			const char * abs = ab;
+			const char * bbs = bb;
 			
 			while (ab < abe && isdigit(*ab)) ab++;
 			while (bb < bbe && isdigit(*bb)) bb++;
@@ -617,8 +596,8 @@ int string::natcompare3(cstring a, cstring b, bool case_insensitive)
 		}
 		else
 		{
-			uint8_t ac = *ab;
-			uint8_t bc = *bb;
+			char ac = *ab;
+			char bc = *bb;
 			if (ac != bc)
 			{
 				if (ret_case == 0) ret_case = ac - bc;
@@ -657,9 +636,9 @@ bool cstring::contains_nul() const
 	{
 		int iszero = _mm_movemask_epi8(_mm_cmpeq_epi8(_mm_loadu_si128((__m128i*)this), _mm_setzero_si128()));
 		// m_inline[0] becomes the 0001 bit, [1] -> 0002, etc
-		// m_inline_len is number of bytes at the end of the object we don't care about, not counting the NUL terminator
-		// iszero << m_inline_len puts the NUL at the 0x8000 bit; if anything lower is also true, that's a NUL in the input
-		return ((iszero << m_inline_len()) & 0x7FFF);
+		// inline_len_encoded is number of bytes at the end of the object we don't care about, not counting the NUL terminator
+		// iszero << inline_len_encoded puts the NUL at the 0x8000 bit; if anything lower is also true, that's a NUL in the input
+		return ((iszero << inline_len_encoded()) & 0x7FFF);
 	}
 	else
 	{
@@ -821,6 +800,15 @@ bool cstring::matches_glob(cstring pat, bool case_insensitive) const
 	}
 	while (p < pe && *p == '*') p++;
 	return (p == pe);
+}
+
+cstring cstring::strip() const
+{
+	const char * st = ptr_raw();
+	const char * en = ptr_raw_end();
+	while (st < en && isspace(st[0])) st++;
+	while (st < en && isspace(en[-1])) en--;
+	return cstring(arrayview<char>(st, en-st));
 }
 
 

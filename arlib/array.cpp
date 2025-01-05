@@ -261,15 +261,42 @@ test("array", "", "array")
 		a.append({ 1, 2, 3 });
 		a.append({ 1, 2 });
 	}
+	
+	{
+		array<string> a;
+		a.append("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+		a.append("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+		a.append("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+		sarray<arrayview<string>,2> b = { a, a };
+		assert_eq(b[0].size(), 3);
+		assert_eq(b[1].size(), 3);
+		assert_eq(b[0][0], "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+		assert_eq(b[0][1], "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+		assert_eq(b[0][2], "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+		assert_eq(b[1][0], "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+		assert_eq(b[1][1], "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+		assert_eq(b[1][2], "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+	}
+	
+	{
+		array<int> a = { 1, 2, 3, 4, 5, 6, 7, 8 };
+		array<int> b = { 10, 11, 12, 13 };
+		a.insert_range(2, b);
+		array<int> c = { 1, 2, 10, 11, 12, 13, 3, 4, 5, 6, 7, 8 };
+		assert_eq(a, c);
+		a.insert_range(6, a.slice(1, 2));
+		array<int> d = { 1, 2, 10, 11, 12, 13, 2, 10, 3, 4, 5, 6, 7, 8 };
+		assert_eq(a, d);
+		a.insert_range(2, a.slice(4, 2));
+		array<int> e = { 1, 2, 12, 13, 10, 11, 12, 13, 2, 10, 3, 4, 5, 6, 7, 8 };
+		assert_eq(a, e);
+		a.insert_range(4, a.slice(2, 4));
+		array<int> f = { 1, 2, 12, 13, 12, 13, 10, 11, 10, 11, 12, 13, 2, 10, 3, 4, 5, 6, 7, 8 };
+		assert_eq(a, f);
+	}
 }
 
 
-static string tostring(bitarray b)
-{
-	string ret;
-	for (size_t i=0;i<b.size();i++) ret += b[i]?"1":"0";
-	return ret;
-}
 static string ones_zeroes(int ones, int zeroes)
 {
 	string ret;
@@ -291,7 +318,7 @@ test("bitarray", "", "array")
 		assert_eq(b.size(), up);
 		
 		b.resize(down);
-		assert_eq(tostring(b), ones_zeroes(down, 0));
+		assert_eq(tostring_dbg(b), ones_zeroes(down, 0));
 		assert_eq(b.size(), down);
 		for (size_t i=0;i<b.size();i++)
 		{
@@ -301,7 +328,7 @@ test("bitarray", "", "array")
 		assert_eq(b.size(), down);
 		
 		b.resize(up);
-		assert_eq(tostring(b), ones_zeroes(down, up-down));
+		assert_eq(tostring_dbg(b), ones_zeroes(down, up-down));
 		assert_eq(b.size(), up);
 		for (size_t i=0;i<b.size();i++)
 		{
@@ -313,6 +340,7 @@ test("bitarray", "", "array")
 	{
 		bitarray b;
 		b.resize(8);
+		assert_eq(tostring_dbg(array<size_t>(b.true_idxs())), "[]");
 		b[0] = true;
 		b[1] = false;
 		b[2] = true;
@@ -321,35 +349,40 @@ test("bitarray", "", "array")
 		b[5] = true;
 		b[6] = true;
 		b[7] = true;
-		assert_eq(tostring(b), "10110111");
+		assert_eq(tostring_dbg(b), "10110111");
+		
+		array<size_t> trues = array<size_t>(b.true_idxs());
+		assert_eq(tostring_dbg(trues), "[0,2,3,5,6,7]");
 		
 		b.reset();
 		b.resize(16);
-		assert_eq(tostring(b), "0000000000000000");
+		assert_eq(tostring_dbg(b), "0000000000000000");
 	}
 	
 	{
 		bitarray b;
 		b.resize(65);
 		b.resize(64);
-		assert_eq(tostring(b), "0000000000000000000000000000000000000000000000000000000000000000");
+		assert_eq(tostring_dbg(b), "0000000000000000000000000000000000000000000000000000000000000000");
+		
+		assert_eq(tostring_dbg(array<size_t>(b.true_idxs())), "[]");
+		b[41] = true;
+		assert_eq(tostring_dbg(array<size_t>(b.true_idxs())), "[41]");
 	}
 	
 	{
-		array<string> a;
-		a.append("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
-		a.append("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
-		a.append("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
-		sarray<arrayview<string>,2> b = { a, a };
-		assert_eq(b[0].size(), 3);
-		assert_eq(b[1].size(), 3);
-		assert_eq(b[0][0], "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
-		assert_eq(b[0][1], "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
-		assert_eq(b[0][2], "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
-		assert_eq(b[1][0], "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
-		assert_eq(b[1][1], "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
-		assert_eq(b[1][2], "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+		bitset<11> b;
+		uint32_t bits_raw;
+		for (int i=0;i<11;i++)
+			b[i] = true;
+		assert_eq(tostring_dbg(b), "11111111111");
+		b = ~b;
+		assert_eq(tostring_dbg(b), "00000000000");
+		memcpy(&bits_raw, &b, sizeof(bits_raw));
+		assert_eq(bits_raw, 0);
 	}
+	
+	static_assert(sizeof(bitset<256>) == 256/8);
 }
 
 // these tests pass if they compile

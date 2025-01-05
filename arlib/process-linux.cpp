@@ -7,16 +7,8 @@
 #include <sys/wait.h>
 #include <linux/sched.h>
 #include <linux/wait.h>
-//#include <signal.h>
-//#include <errno.h>
-//#include <unistd.h>
 
-//Sets the file descriptor table to 'fds', closing all other fds.
-//If an entry is -1, the corresponding fd is closed. Duplicates in the input are allowed.
-//Returns false on failure, but keeps doing its best anyways.
-//Will mangle the input array. While suboptimal, it's the only way to avoid a post-fork malloc.
-//The CLOEXEC flag is set to 'cloexec' on all remaining fds.
-static bool set_fds(arrayvieww<int> fds, bool cloexec = false)
+bool process::set_fds(arrayvieww<int> fds, bool cloexec)
 {
 	if (fds.size() > INT_MAX) return false;
 	
@@ -27,7 +19,7 @@ static bool set_fds(arrayvieww<int> fds, bool cloexec = false)
 	{
 		while ((unsigned)fds[i] < i && fds[i] >= 0)
 		{
-			fds[i] = fcntl(fds[i], F_DUPFD_CLOEXEC);
+			fds[i] = fcntl(fds[i], F_DUPFD_CLOEXEC, 0); // apparently this 0 is mandatory, despite docs implying it's unused and optional
 			if (fds[i] < 0) ok = false;
 		}
 	}
@@ -49,12 +41,10 @@ static bool set_fds(arrayvieww<int> fds, bool cloexec = false)
 		if (fds[i] < 0) close(i);
 	}
 	
-	return (close_range(fds.size(), UINT_MAX, 0) == 0);
+	return (close_range(fds.size(), UINT_MAX, 0) == 0 && ok);
 }
 
-static int process_wait_sync(fd_t& fd);
-
-int process::create(raw_params& param)
+process::strict_bool process::create(raw_params& param)
 {
 	// exec resets the child termination signal to SIGCHLD,
 	// and kernel pretends to not know what the pidfd points to if the signal was zero
@@ -65,7 +55,7 @@ int process::create(raw_params& param)
 #endif
 	// on FreeBSD, the equivalent is pdfork
 	if (pid < 0)
-		return 0;
+		return false;
 	if (pid == 0)
 	{
 		// in child process
@@ -84,29 +74,38 @@ int process::create(raw_params& param)
 		//  async-signal-safe operations until such time as one of the exec functions is called.
 		//In particular, malloc must be avoided.
 		
+		fd_t devnull;
+		for (size_t i=0;i<param.fds.size();i++)
+		{
+			if (param.fds[i] == -1)
+			{
+				if (!devnull.valid())
+					devnull = fd_t::create_devnull();
+				param.fds[i] = devnull;
+			}
+		}
 		if (!set_fds(param.fds))
 			_exit(EXIT_FAILURE);
-		const char * const * envp = param.envp ? param.envp : __environ;
-		for (const char * prog : param.progs)
-			execve(prog, (char**)param.argv, (char**)envp); // why are these not properly const declared
+		execve(param.prog, (char**)param.argv, (char**)param.envp); // why are these not properly const declared
 		while (true)
 			_exit(EXIT_FAILURE);
 	}
 	if (param.detach)
 	{
 		process_wait_sync(this->fd);
-		return 0;
+		return true;
 	}
-	return pid;
+	m_pid = pid;
+	return true;
 }
 
-static bool process_try_wait(fd_t& fd, int& ret, bool async)
+bool process::process_try_wait(fd_t& fd, int& ret, bool async)
 {
 	siginfo_t si;
-	// si.si_pid = 0; // unnecessary on Linux (needed on other Unix)
+	si.si_pid = 0; // unnecessary on Linux, needed on other Unix
 	// todo: delete cast, and include of <linux/wait.h>, when dropping ubuntu 22.04
 	waitid((idtype_t)P_PIDFD, (int)fd, &si, WEXITED|WSTOPPED|WCONTINUED|(async?WNOHANG:0));
-	if (si.si_pid != 0 && (si.si_code == CLD_EXITED || si.si_code == CLD_DUMPED))
+	if (si.si_pid != 0 && (si.si_code == CLD_EXITED || si.si_code == CLD_DUMPED || si.si_code == CLD_KILLED))
 	{
 		fd.close();
 		ret = si.si_status;
@@ -115,7 +114,7 @@ static bool process_try_wait(fd_t& fd, int& ret, bool async)
 	return false;
 }
 
-static int process_wait_sync(fd_t& fd)
+int process::process_wait_sync(fd_t& fd)
 {
 	while (true)
 	{
@@ -134,16 +133,20 @@ async<int> process::wait()
 		co_await runloop2::await_read(fd);
 		int ret;
 		if (process_try_wait(fd, ret, true))
+		{
+			m_pid = 0;
 			co_return ret;
+		}
 	}
 }
 
-void process::kill()
+void process::terminate()
 {
 	if (!fd.valid())
 		return;
 	syscall(SYS_pidfd_send_signal, (int)fd, SIGKILL, nullptr, 0);
 	process_wait_sync(fd);
+	m_pid = 0;
 }
 
 process::pipe process::pipe::create()
@@ -154,16 +157,7 @@ process::pipe process::pipe::create()
 	return { fds[0], fds[1] };
 }
 
-#ifndef __GLIBC__
-static char* strchrnul(const char * s, int c)
-{
-	const char * ret = strchr(s, c);
-	if (!ret) ret = s + strlen(s);
-	return (char*)s;
-}
-#endif
-
-int process::create(params& param)
+process::strict_bool process::create(params& param)
 {
 	array<const char *> argv;
 	for (const string& s : param.argv)
@@ -177,25 +171,6 @@ int process::create(params& param)
 		envp.append(s);
 	envp.append(NULL);
 	
-	array<string> progs;
-	
-	if (param.prog.contains("/"))
-		progs.append(param.prog);
-	else
-	{
-		const char * path = getenv("PATH");
-		if (!path) path = "/bin"; // just hardcode something, PATH being absent is crazy anyways
-		while (true)
-		{
-			const char * end = strchrnul(path, ':');
-			progs.append(cstring(bytesr((uint8_t*)path, end-path))+"/"+param.prog);
-			if (*end)
-				path = end+1;
-			else
-				break;
-		}
-	}
-	
 	if (param.fds.size() < 3)
 	{
 		if (param.fds.size() == 0)
@@ -205,19 +180,30 @@ int process::create(params& param)
 		param.fds.append(2);
 	}
 	
-	array<const char *> progs_ptrs;
-	for (const char * prog : progs)
-		progs_ptrs.append(prog);
-	
-	struct raw_params rparam;
-	rparam.progs = progs_ptrs;
+	raw_params rparam;
+	string prog = find_prog(param.prog ? param.prog : param.argv[0]);
+	rparam.prog = prog;
 	rparam.argv = argv.ptr();
 	if (param.envp)
 		rparam.envp = envp.ptr();
+	else
+		rparam.envp = __environ;
 	rparam.fds = param.fds;
 	rparam.detach = param.detach;
 	
 	return create(rparam);
+}
+
+string process::find_prog(cstring prog)
+{
+	if (prog.contains("/")) return prog;
+	array<string> paths = string(getenv("PATH")).split(":");
+	for (string& path : paths)
+	{
+		string pathprog = path+"/"+prog;
+		if (access(pathprog, X_OK) == 0) return pathprog;
+	}
+	return "";
 }
 
 co_test("process", "array,string", "process")

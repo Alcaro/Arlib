@@ -119,7 +119,7 @@ gameview_x11(Window window, uint32_t width, uint32_t height, cstring title) : wi
 	long pid = getpid(); // gotta love how X11 insists that long is 32 bits. the C builtin types are ridiculous
 	XChangeProperty(display, window, atoms._NET_WM_PID, XA_CARDINAL, 32, PropModeReplace, (uint8_t*)&pid, 1);
 	
-	XChangeProperty(display, window, atoms._NET_WM_NAME, atoms.UTF8_STRING, 8, PropModeReplace, title.bytes().ptr(), title.length());
+	XChangeProperty(display, window, atoms._NET_WM_NAME, atoms.UTF8_STRING, 8, PropModeReplace, title.ptr_raw(), title.length());
 	
 	XMapWindow(window_x11.display, window);
 	

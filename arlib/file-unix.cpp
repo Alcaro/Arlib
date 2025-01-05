@@ -19,6 +19,11 @@ static const long pagesize = 4096;
 static const long pagesize = sysconf(_SC_PAGESIZE);
 #endif
 
+fd_t fd_t::create_devnull()
+{
+	return ::open("/dev/null", O_RDWR|O_CLOEXEC);
+}
+
 namespace {
 	class file_unix : public file::impl {
 	public:

@@ -69,6 +69,8 @@ clang: error: unknown argument: '-fcoroutines'
 #    undef __USE_MINGW_ANSI_STDIO    // which ignores my #define above and sets this flag; re-clear it before including <stdio.h>
 #    define __USE_MINGW_ANSI_STDIO 0 // (subsequent includes of c++config.h are harmless, there's an include guard)
 #  endif
+#  include <windows.h>
+#  undef small // ew
 #endif
 
 #include <stdint.h>
@@ -1141,7 +1143,7 @@ Tc* container_of(Ti* ptr, Ti Tc:: * memb)
 	Tc* fake_object = (Tc*)0x12345678;  // doing math on a fake pointer is UB, but good luck proving it's bogus
 	fake_object = launder(fake_object); // especially across an asm (both gcc and clang will optimize out the fake pointer)
 	size_t offset = (uintptr_t)&(fake_object->*memb) - (uintptr_t)fake_object;
-	return (Tc*)((uint8_t*)ptr - offset);
+	return (Tc*)((uintptr_t)ptr - offset);
 }
 template<typename Tc, typename Ti>
 const Tc* container_of(const Ti* ptr, Ti Tc:: * memb)
@@ -1286,3 +1288,16 @@ static inline void arlib_hybrid_dll_init() {}
 // documentation includes the function and parameter names, not just comments; there is only one
 // plausible behavior for cstring::length(), so additional comments would just be noise.
 // https://i.redd.it/3adwp98dswi21.jpg
+
+// The following are instant game over security-wise, even in memory-safe languages like Rust or Python, and I will never do it:
+// - Parsing untrusted YAML (trusted YAML config is fine)
+//     even if the parser doesn't happily construct an os.system "object", there's too much
+//       potential for recursive objects, billion laughs attacks, type confusion, parser
+//       differences, and other mischief
+// - Parsing untrusted XML DTDs, or parsing untrusted XML with a parser with DTD support enabled
+//     Arlib currently doesn't have an XML parser, but if it gains one, it will not have DTD support
+//     (and if I link to an existing XML parser, I will disable DTD support; if that option doesn't
+//       exist, I will pick another XML parser)
+// - Filter- or blacklist-based HTML sanitizers
+//     the only safe ones are fully parsing to a tree then serializing, converting to XHTML, or
+//       escaping every <>& with no exceptions

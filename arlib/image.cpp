@@ -279,7 +279,7 @@ abort(); // TODO: do something with src[3], and set ifmt properly
 oimage image::decode(arrayview<uint8_t> data)
 {
 	oimage ret;
-	if (!ret.pixels) ret = decode_png(data);
+	if (is_png(data)) ret = decode_png(data);
 	return ret;
 }
 

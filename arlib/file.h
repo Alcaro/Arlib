@@ -109,6 +109,8 @@ public:
 	}
 	void close() { close(val); val = NULL_FD; }
 	~fd_t() { close(); }
+	
+	static fd_t create_devnull();
 };
 #undef NULL_FD
 

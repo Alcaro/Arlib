@@ -35,7 +35,10 @@
 
 class sandcomm;
 struct broker_rsp;
-class sandproc : public process {
+class sandproc {
+	fd_t pidfd;
+	co_holder brokers;
+	
 	class filesystem : nocopy {
 		enum type_t { ty_error, ty_native, ty_tmp };
 		struct mount : nocopy {
@@ -72,20 +75,34 @@ class sandproc : public process {
 	filesystem fs;
 	function<void(int sysno, cstring path)> bad_syscall;
 	
-	void watch_add(int sock);
-	void watch_del(int sock);
+	async<void> broker_fn(fd_raw_t sock);
 	void send_rsp(int sock, broker_rsp* rsp, int fd);
-	void on_readable(uintptr_t sock);
-	int mainsock;
-	set<int> socks;
 	
 	sandcomm* conn = NULL;
 	
 	static int preloader_fd();
-	void launch_impl(const char * program, array<const char*> argv, array<int> stdio_fd) override;
 	
 public:
-	sandproc(runloop* loop) : process(loop) {}
+	~sandproc() { terminate(); }
+	
+	// These functions act like in the process object, except that
+	// - if params::fds is smaller than 3, it will be extended with /dev/null, not stdin/stdout/stderr
+	// - if fds is more than 3 elements, the extras will be ignored
+	// - params::envp is ignored
+	// - if no raw_params version
+	
+	struct params {
+		string prog; // If this doesn't contain a slash, find_prog will be called. If it's empty, argv[0] will be used.
+		array<string> argv; // If this is empty, prog will be used.
+		array<fd_raw_t> fds; // Will be mutated. If shorter than three elements, will be extended with /dev/null.
+	};
+	
+	int create(process::params&& param);
+	
+	async<int> wait();
+	void terminate();
+	
+	// The following are only available before starting the child.
 	
 	//If the child process uses Arlib, this allows convenient communication with it.
 	//Must be called before starting the child, and exactly once (or never).
@@ -95,15 +112,12 @@ public:
 	//To avoid that, use a separate binary for the child. If you don't want an on-disk file, use fs_grant_callback and a memfd.
 	sandcomm* connect();
 	
-	//Only available before starting the child.
 	void max_cpu(unsigned lim); // in wall clock seconds, default 60
 	void max_cpu_frac(float lim); // in core-seconds per wall clock second, default 1
 	void max_mem(unsigned lim); // in megabytes, default 1024
 	
-	//To start the sandbox, use process::launch(). Other process:: functions are also available.
-	
 	//Allows access to a file, or a directory and all of its contents. Usable both before and after launch().
-	//Can not be undone, the process may already have opened the file; to be sure, destroy the process.
+	//Can not be undone, the process may already have opened the file; instead, destroy the process.
 	//If 'path' ends with a /, it's assumed to be a directory; it, and every child, are made available.
 	//If 'path' does not end with a /, any child returns ENOTDIR.
 	//max_write is how many times files may be opened for writing. Zero is allowed. Reads are unlimited.
@@ -150,8 +164,6 @@ public:
 	{
 		bad_syscall = cb;
 	}
-	
-	~sandproc();
 };
 
 class sandcomm : nomove {

@@ -79,7 +79,7 @@ size_t tostringhex_ptr(char* buf, unsigned long long val, size_t len); // no int
 size_t tostringhex_ptr(char* buf, const uint8_t * val, size_t len);
 
 inline size_t tostring_ptr(char* buf, const char * val, size_t len) { memcpy(buf, val, len); return len; }
-inline size_t tostring_ptr(char* buf, cstring val, size_t len) { memcpy(buf, val.bytes().ptr(), len); return len; }
+inline size_t tostring_ptr(char* buf, cstring val, size_t len) { memcpy(buf, val.ptr_raw(), len); return len; }
 
 size_t tostring_ptr(char* buf, float val);
 size_t tostring_ptr(char* buf, double val);
@@ -140,23 +140,44 @@ bool fromstringhex(cstring s, unsigned int & out);
 bool fromstringhex(cstring s, unsigned long & out);
 bool fromstringhex(cstring s, unsigned long long & out);
 
-bool fromstring_ptr(const char * s, size_t len,   signed char & out);
-bool fromstring_ptr(const char * s, size_t len, unsigned char & out);
-bool fromstring_ptr(const char * s, size_t len,   signed short & out);
-bool fromstring_ptr(const char * s, size_t len, unsigned short & out);
-bool fromstring_ptr(const char * s, size_t len,   signed int & out);
-bool fromstring_ptr(const char * s, size_t len, unsigned int & out);
-bool fromstring_ptr(const char * s, size_t len,   signed long & out);
-bool fromstring_ptr(const char * s, size_t len, unsigned long & out);
-bool fromstring_ptr(const char * s, size_t len,   signed long long & out);
-bool fromstring_ptr(const char * s, size_t len, unsigned long long & out);
-bool fromstring_ptr(const char * s, size_t len, float & out);
-bool fromstring_ptr(const char * s, size_t len, double & out);
-bool fromstringhex_ptr(const char * s, size_t len, unsigned char & out);
-bool fromstringhex_ptr(const char * s, size_t len, unsigned short & out);
-bool fromstringhex_ptr(const char * s, size_t len, unsigned int & out);
-bool fromstringhex_ptr(const char * s, size_t len, unsigned long & out);
-bool fromstringhex_ptr(const char * s, size_t len, unsigned long long & out);
+// These ones accept an arbitrary suffix after the input number, and return the pointer to the first non-numeric character.
+// On failure, they return NULL.
+const char * fromstring_ptr_tail(const char * s, const char * end,   signed char & out);
+const char * fromstring_ptr_tail(const char * s, const char * end, unsigned char & out);
+const char * fromstring_ptr_tail(const char * s, const char * end,   signed short & out);
+const char * fromstring_ptr_tail(const char * s, const char * end, unsigned short & out);
+const char * fromstring_ptr_tail(const char * s, const char * end,   signed int & out);
+const char * fromstring_ptr_tail(const char * s, const char * end, unsigned int & out);
+const char * fromstring_ptr_tail(const char * s, const char * end,   signed long & out);
+const char * fromstring_ptr_tail(const char * s, const char * end, unsigned long & out);
+const char * fromstring_ptr_tail(const char * s, const char * end,   signed long long & out);
+const char * fromstring_ptr_tail(const char * s, const char * end, unsigned long long & out);
+const char * fromstring_ptr_tail(const char * s, const char * end, float & out);
+const char * fromstring_ptr_tail(const char * s, const char * end, double & out);
+const char * fromstringhex_ptr_tail(const char * s, const char * end, unsigned char & out);
+const char * fromstringhex_ptr_tail(const char * s, const char * end, unsigned short & out);
+const char * fromstringhex_ptr_tail(const char * s, const char * end, unsigned int & out);
+const char * fromstringhex_ptr_tail(const char * s, const char * end, unsigned long & out);
+const char * fromstringhex_ptr_tail(const char * s, const char * end, unsigned long long & out);
+
+// These ones accept only if the complete input is a number.
+static inline bool fromstring_ptr(const char * s, const char * end,   signed char & out)      { return fromstring_ptr_tail(s, end, out) == end; }
+static inline bool fromstring_ptr(const char * s, const char * end, unsigned char & out)      { return fromstring_ptr_tail(s, end, out) == end; }
+static inline bool fromstring_ptr(const char * s, const char * end,   signed short & out)     { return fromstring_ptr_tail(s, end, out) == end; }
+static inline bool fromstring_ptr(const char * s, const char * end, unsigned short & out)     { return fromstring_ptr_tail(s, end, out) == end; }
+static inline bool fromstring_ptr(const char * s, const char * end,   signed int & out)       { return fromstring_ptr_tail(s, end, out) == end; }
+static inline bool fromstring_ptr(const char * s, const char * end, unsigned int & out)       { return fromstring_ptr_tail(s, end, out) == end; }
+static inline bool fromstring_ptr(const char * s, const char * end,   signed long & out)      { return fromstring_ptr_tail(s, end, out) == end; }
+static inline bool fromstring_ptr(const char * s, const char * end, unsigned long & out)      { return fromstring_ptr_tail(s, end, out) == end; }
+static inline bool fromstring_ptr(const char * s, const char * end,   signed long long & out) { return fromstring_ptr_tail(s, end, out) == end; }
+static inline bool fromstring_ptr(const char * s, const char * end, unsigned long long & out) { return fromstring_ptr_tail(s, end, out) == end; }
+static inline bool fromstring_ptr(const char * s, const char * end, float & out)              { return fromstring_ptr_tail(s, end, out) == end; }
+static inline bool fromstring_ptr(const char * s, const char * end, double & out)             { return fromstring_ptr_tail(s, end, out) == end; }
+static inline bool fromstringhex_ptr(const char * s, const char * end, unsigned char & out)      { return fromstringhex_ptr_tail(s, end, out) == end; }
+static inline bool fromstringhex_ptr(const char * s, const char * end, unsigned short & out)     { return fromstringhex_ptr_tail(s, end, out) == end; }
+static inline bool fromstringhex_ptr(const char * s, const char * end, unsigned int & out)       { return fromstringhex_ptr_tail(s, end, out) == end; }
+static inline bool fromstringhex_ptr(const char * s, const char * end, unsigned long & out)      { return fromstringhex_ptr_tail(s, end, out) == end; }
+static inline bool fromstringhex_ptr(const char * s, const char * end, unsigned long long & out) { return fromstringhex_ptr_tail(s, end, out) == end; }
 
 string tostringhex(arrayview<uint8_t> val);
 bool fromstringhex(cstring s, arrayvieww<uint8_t> val);

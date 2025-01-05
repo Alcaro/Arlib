@@ -9,17 +9,22 @@ program=$1
 mkdir obj
 echo Signature: 8a477f597d28d172789f06886806bc55 > obj/CACHEDIR.TAG
 
+#cat > arlib.h <<EOF
+##pragma once
+##if defined(ARLIB_OPENGL) && defined(ARLIB_OPT)
+##define AROPENGL_SLIM
+##endif
+#
+##include "arlib/arlib.h"
+#
+##ifdef AROPENGL_SLIM
+##include "obj/glsym-slim.h"
+##endif
+#EOF
+
 cat > arlib.h <<EOF
 #pragma once
-#if defined(ARLIB_OPENGL) && defined(ARLIB_OPT)
-#define AROPENGL_SLIM
-#endif
-
 #include "arlib/arlib.h"
-
-#ifdef AROPENGL_SLIM
-#include "obj/glsym-slim.h"
-#endif
 EOF
 
 cat > main.cpp <<EOF

@@ -115,12 +115,12 @@ static inline int munmap(void* addr, size_t length)
 
 static inline Elf64_Ehdr* map_binary(int fd, uint8_t*& base, uint8_t* hbuf, size_t buflen)
 {
-	//uselib() would be the easy way out, but it doesn't tell where it's mapped, and it may be compiled out of the kernel
-	//no clue how (or if) it ever worked
+	// uselib() would be the easy way out, but it doesn't tell where it's mapped, and it may be compiled out of the kernel
+	// no clue how (or if) it ever worked
 	read(fd, hbuf, buflen);
 	
 	Elf64_Ehdr* ehdr = (Elf64_Ehdr*)hbuf;
-	static const unsigned char exp_hdr[7] = { '\x7F', 'E', 'L', 'F', ELFCLASS64, ELFDATA2LSB, EV_CURRENT };
+	static const uint8_t exp_hdr[7] = { '\x7F', 'E', 'L', 'F', ELFCLASS64, ELFDATA2LSB, EV_CURRENT };
 	// next byte is either ELFOSABI_NONE or ELFOSABI_GNU, accept both
 	// then comes a bunch of unused bytes
 	if (memcmp(ehdr->e_ident, exp_hdr, 7) != 0) return NULL;
@@ -138,7 +138,7 @@ static inline Elf64_Ehdr* map_binary(int fd, uint8_t*& base, uint8_t* hbuf, size
 		if (thisend > memsize) memsize = thisend;
 	}
 	
-	//find somewhere it fits (this unfortunately under-aligns it - could fix it if needed, but it seems to work in practice)
+	// find somewhere it fits (this unfortunately under-aligns it - could fix it if needed, but it seems to work in practice)
 	base = (uint8_t*)mmap(NULL, memsize, PROT_NONE, MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE, -1, 0);
 	if (base == MAP_FAILED) return NULL;
 	munmap(base, memsize); // in a multithreaded process, this would be a race condition, but nothing else has spawned threads yet
@@ -164,7 +164,7 @@ static inline Elf64_Ehdr* map_binary(int fd, uint8_t*& base, uint8_t* hbuf, size
 		}
 		if (phdr[i].p_memsz != phdr[i].p_filesz)
 		{
-			//no clue why this ALIGN_UP is needed, but it segfaults without it. is p_memsz wrong and nobody noticed?
+			// no clue why this ALIGN_UP is needed, but it segfaults without it. is p_memsz wrong and nobody noticed?
 			uint8_t* clear_start = base + phdr[i].p_vaddr + phdr[i].p_filesz;
 			uint8_t* clear_end = ALIGN_UP(base + phdr[i].p_vaddr + phdr[i].p_memsz);
 			memset(clear_start, 0, clear_end-clear_start);
@@ -224,8 +224,8 @@ extern "C" funcptr bootstrap_start(void** stack)
 	
 	preload_action(argv, envp);
 	
-	// this could call the syscall emulator directly, but if I don't, the preloader can run unsandboxed as well
-	// it means a SIGSYS penalty, but there's dozens of those already, another one makes no difference
+	// this could call the syscall emulator directly, but if I don't, the preloader can run unsandboxed as well (easier to debug)
+	// it means wasting time on another SIGSYS, but there's dozens of those already, another one makes no difference
 	int fd = open("/lib64/ld-linux-x86-64.so.2", O_RDONLY);
 	if (fd < 0) preload_error("couldn't open dynamic linker");
 	uint8_t hbuf[832]; // FILEBUF_SIZE from glibc elf/dl-load.c

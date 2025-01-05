@@ -18,8 +18,8 @@ static const uint8_t decode[128] = {
 size_t base64_dec_raw(arrayvieww<uint8_t> out, cstring text)
 {
 	uint8_t * outptr = out.ptr();
-	const char * in = (char*)text.bytes().ptr();
-	const char * inend = in + text.length();
+	const char * in = text.ptr_raw();
+	const char * inend = text.ptr_raw_end();
 	
 	int final_chunk = 3;
 	const char * in_real;

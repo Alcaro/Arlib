@@ -22,6 +22,7 @@ void sandbox_exec_lockdown(const char * const * argv);
 #include <linux/filter.h>
 #include <linux/sched.h>
 #include <linux/seccomp.h>
+#include <linux/landlock.h>
 #include "internal.h"
 
 //#include <linux/ioprio.h> // ioprio_set - header doesn't exist for me, copying the content
@@ -154,9 +155,49 @@ void sandbox_exec_lockdown(const char * const * argv)
 	require_b(setuid(65534)==0 || errno==EINVAL); // EINVAL means uid_map wasn't set, meaning sandbox isn't root and doesn't need a setuid()
 	require_b(setgid(65534)==0 || errno==EINVAL); // pointless but harmless
 	
-	//revoke filesystem
-	//ideally there'd be a completely empty directory somewhere, but I can't find one
-	// (only affects execveat .interp, every other filesystem syscall is blocked by seccomp)
+	// revoke filesystem
+	// only affects execveat .interp, every other filesystem syscall is blocked by seccomp
+	int landlock_version = syscall(__NR_landlock_create_ruleset, NULL, 0, LANDLOCK_CREATE_RULESET_VERSION);
+	if (landlock_version >= 1)
+	{
+		// Landlock is available since kernel 5.13, but I think it's possible to configure out
+		// Landlock bans (with EACCESS) every attempt to execve, of course, and every execveat of a fd with a .interp section
+		// oddly enough, it also bans execveat of a fd from the filesystem (memfd is fine, and read() of a fd from elsewhere is fine)
+		landlock_ruleset_attr rules = {
+			.handled_access_fs =
+				// I think FS_EXECUTE is the only one that actually affects anything (others are inaccessible via seccomp),
+				// but no point not specifying the others as well, defense in depth
+				LANDLOCK_ACCESS_FS_EXECUTE |
+				LANDLOCK_ACCESS_FS_WRITE_FILE |
+				LANDLOCK_ACCESS_FS_READ_FILE |
+				LANDLOCK_ACCESS_FS_READ_DIR |
+				LANDLOCK_ACCESS_FS_REMOVE_DIR |
+				LANDLOCK_ACCESS_FS_REMOVE_FILE |
+				LANDLOCK_ACCESS_FS_MAKE_CHAR |
+				LANDLOCK_ACCESS_FS_MAKE_DIR |
+				LANDLOCK_ACCESS_FS_MAKE_REG |
+				LANDLOCK_ACCESS_FS_MAKE_SOCK |
+				LANDLOCK_ACCESS_FS_MAKE_FIFO |
+				LANDLOCK_ACCESS_FS_MAKE_BLOCK |
+				LANDLOCK_ACCESS_FS_MAKE_SYM,
+		};
+#ifdef LANDLOCK_ACCESS_FS_REFER
+		if (landlock_version >= 2)
+			rules.handled_access_fs |= LANDLOCK_ACCESS_FS_REFER;
+#endif
+#ifdef LANDLOCK_ACCESS_FS_TRUNCATE
+		if (landlock_version >= 3)
+			rules.handled_access_fs |= LANDLOCK_ACCESS_FS_TRUNCATE;
+#endif
+		// I think Landlock version goes up to 6 on newer kernels, but I can't find any docs
+		int landlock_fd = require(syscall(__NR_landlock_create_ruleset, &rules, sizeof(rules), 0));
+		require(syscall(__NR_landlock_restrict_self, landlock_fd, 0));
+		close(landlock_fd);
+	}
+	
+	// revoke filesystem again
+	// makes little or no difference unless Landlock is absent, but no reason not to
+	// ideally there'd be a completely empty directory somewhere, but I can't find one
 	require(chroot("/proc/sys/debug/"));
 	require(chdir("/"));
 	
@@ -170,15 +211,19 @@ void sandbox_exec_lockdown(const char * const * argv)
 		NULL
 	};
 	
-	//page 0x00007FFF'FFFFFnnn isn't mappable, apparently sticking SYSCALL (0F 05) at 0x00007FFF'FFFFFFFE
-	// will return to an invalid address and blow up
-	//http://elixir.free-electrons.com/linux/v4.11/source/arch/x86/include/asm/processor.h#L832
-	//doesn't matter what the last page is, as long as there is one
-	//make sure to edit the BPF rules if changing this
-	//(fair chance it's gonna break once five-level paging shows up)
+	// page 0x00007FFF'FFFFFnnn isn't mappable, apparently sticking SYSCALL (0F 05) at 0x00007FFF'FFFFFFFE
+	//  will return to an invalid address and blow up
+	// http://elixir.free-electrons.com/linux/v4.11/source/arch/x86/include/asm/processor.h#L832
+	// doesn't matter what the last page is, as long as there is one
+	// make sure to edit the BPF rules if changing this
 	char* final_page = (char*)0x00007FFFFFFFE000;
-	require_eq(mmap(final_page+0x1000, 0x1000, PROT_READ, MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED, -1, 0), MAP_FAILED);
-	require_eq(mmap(final_page,        0x1000, PROT_READ, MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED, -1, 0), (void*)final_page);
+	if (landlock_version < 1)
+	{
+		// Landlock bans execveat(pathname!="") in a different way, so the 'last possible byte' hack is unnecessary,
+		// and it's fine if a five level paging system permits mapping things after said byte
+		require_eq(mmap(final_page+0x1000, 0x1000, PROT_READ, MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED, -1, 0), MAP_FAILED);
+	}
+	require_eq(mmap(final_page, 0x1000, PROT_READ, MAP_PRIVATE|MAP_ANONYMOUS|MAP_FIXED, -1, 0), (void*)final_page);
 	
 	require(execveat(FD_EMUL, final_page+0xFFF, argv, new_envp, AT_EMPTY_PATH));
 	

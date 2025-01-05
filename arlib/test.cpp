@@ -466,6 +466,9 @@ int main(int argc, char* argv[])
 	}
 	printf(ESC_ERASE_LINE);
 	
+	unsigned slowest_time = 0;
+	testlist* slowest = nullptr;
+	
 	show_verbose = (all_tests || numtests < 8);
 	for (int pass = 0; pass < (run_twice ? 2 : 1); pass++)
 	{
@@ -503,6 +506,11 @@ int main(int argc, char* argv[])
 				uint64_t time_us = t.us();
 				uint64_t time_lim = (all_tests ? 5000*1000 : 500*1000);
 				assert_eq(n_malloc_block, 0);
+				if (time_us > slowest_time)
+				{
+					slowest = cur_test;
+					slowest_time = time_us;
+				}
 				if (time_us > time_lim)
 				{
 					printf("too slow: max %uus, got %uus\n", (unsigned)time_lim, (unsigned)time_us);
@@ -530,6 +538,10 @@ int main(int argc, char* argv[])
 				       max_latencies_us[i].filename,
 				       max_latencies_us[i].line);
 			}
+		}
+		if (slowest)
+		{
+			printf("Slowest was %s, at %uus\n", slowest->name, slowest_time);
 		}
 		
 		printf("Passed %d, failed %d", count[err_ok], count[err_fail]);

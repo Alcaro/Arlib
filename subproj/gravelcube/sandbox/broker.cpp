@@ -257,18 +257,6 @@ int sandproc::filesystem::child_file(cstring pathname, int op_, int flags, mode_
 
 
 
-void sandproc::watch_add(int sock)
-{
-	loop->set_fd(sock, bind_this(&sandproc::on_readable), NULL);
-	socks.add(sock);
-}
-
-void sandproc::watch_del(int sock)
-{
-	loop->set_fd(sock, NULL, NULL);
-	socks.remove(sock);
-}
-
 void sandproc::send_rsp(int sock, broker_rsp* rsp, int fd)
 {
 	if (send_fd(sock, rsp, sizeof(*rsp), MSG_DONTWAIT|MSG_NOSIGNAL|MSG_EOR, fd) <= 0)
@@ -281,88 +269,76 @@ void sandproc::send_rsp(int sock, broker_rsp* rsp, int fd)
 	}
 }
 
-void sandproc::on_readable(uintptr_t sock)
+async<void> sandproc::broker_fn(fd_raw_t sock)
 {
-	struct broker_req req;
-	ssize_t req_sz = recv(sock, &req, sizeof(req), MSG_DONTWAIT);
-	if (req_sz==-1 && errno==EAGAIN) return;
-	else if (req_sz == 0)
+	while (true)
 	{
-		//closed socket? child probably exited
-		watch_del(sock);
-		close(sock);
-		if (!socks.size())
+		co_await runloop2::await_read(sock);
+		struct broker_req req;
+		ssize_t req_sz = recv(sock, &req, sizeof(req), MSG_DONTWAIT);
+		if (req_sz==-1 && errno==EAGAIN) continue;
+		else if (req_sz == 0)
 		{
-			//if that was the last one, either the entire child tree is terminated, or it's misbehaving
-			//in both cases, it won't do anything desirable anymore, so kill it
-			terminate();
+			// closed socket? child probably exited
+			// ideally, we'd check if that was the last one and terminate child, but no real point
+			co_return;
 		}
-		return;
-	}
-	else if (req_sz != sizeof(req))
-	{
-		terminate(); // no mis-sized messages allowed
-		return;
-	}
-	req.path[sizeof(req.path)-1] = '\0'; // ensure the string is nul terminated
-	
-	broker_rsp rsp = { req.type };
-	int fd = -1;
-	bool close_fd = true;
-	
-	switch (req.type)
-	{
-	case br_nop:
-	{
-		return; // return so send_rsp doesn't run
-	}
-	case br_ping:
-	{
-		break; // pings return only { br_ping }, which we already have
-	}
-	case br_open:
-	case br_unlink:
-	case br_access:
-	{
-		fd = fs.child_file(req.path, req.type, req.flags[0], req.flags[1]);
-		close_fd = true;
-//puts((string)req.path+" "+tostring(req.type)+": "+tostring(fd)+" "+tostring(errno));
-		if (fd < 0) rsp.err = errno;
-		break;
-	}
-	case br_fork:
-	{
-		int socks[2];
-		if (socketpair(AF_UNIX, SOCK_SEQPACKET|SOCK_CLOEXEC, 0, socks) < 0)
+		else if (req_sz != sizeof(req))
 		{
-			socks[0] = -1;
-			socks[1] = -1;
+			terminate(); // no mis-sized messages allowed
+			co_return;
 		}
+		req.path[sizeof(req.path)-1] = '\0'; // ensure the string is nul terminated
 		
-		fd = socks[1];
-		close_fd = true;
-		watch_add(socks[0]);
-		break;
-	}
-	case br_bad_sys:
-	{
-		bad_syscall(req.flags[0], req.path);
-		return;
-	}
-	default:
-		terminate(); // invalid request means child is doing something stupid
-		return;
-	}
-	send_rsp(sock, &rsp, fd);
-	if (fd > 0 && close_fd) close(fd);
-}
-
-sandproc::~sandproc()
-{
-	for (int sock : socks)
-	{
-		loop->set_fd(sock, NULL, NULL);
-		close(sock);
+		broker_rsp rsp = { req.type };
+		int fd = -1;
+		bool close_fd = true;
+		
+		switch (req.type)
+		{
+		case br_nop:
+		{
+			continue; // continue so send_rsp doesn't run
+		}
+		case br_ping:
+		{
+			break; // pings return only { br_ping }, which we already have
+		}
+		case br_open:
+		case br_unlink:
+		case br_access:
+		{
+			fd = fs.child_file(req.path, req.type, req.flags[0], req.flags[1]);
+			close_fd = true;
+	//puts((string)req.path+" "+tostring(req.type)+": "+tostring(fd)+" "+tostring(errno));
+			if (fd < 0) rsp.err = errno;
+			break;
+		}
+		case br_fork:
+		{
+			int socks[2];
+			if (socketpair(AF_UNIX, SOCK_SEQPACKET|SOCK_CLOEXEC, 0, socks) < 0)
+			{
+				socks[0] = -1;
+				socks[1] = -1;
+			}
+			
+			fd = socks[1];
+			close_fd = true;
+			brokers.add(broker_fn(socks[0]));
+			break;
+		}
+		case br_bad_sys:
+		{
+			bad_syscall(req.flags[0], req.path);
+			continue;
+		}
+		default:
+			terminate(); // invalid request means child is doing something stupid
+			co_return;
+		}
+		send_rsp(sock, &rsp, fd);
+		if (fd > 0 && close_fd) close(fd);
 	}
 }
 

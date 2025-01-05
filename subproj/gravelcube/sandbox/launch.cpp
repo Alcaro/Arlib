@@ -116,6 +116,7 @@ template<typename T> inline T require_eq(T actual, T expected)
 	return actual;
 }
 
+/*
 static ssize_t send_repeat(int sockfd, const void * buf, size_t len, int flags)
 {
 again:
@@ -123,43 +124,70 @@ again:
 	if (ret == -1 && errno == EINTR) goto again;
 	return ret;
 }
+*/
 
 __attribute__((noreturn))
 void sandbox_exec_lockdown(const char * const * argv);
 
-void sandproc::launch_impl(const char * program, array<const char*> argv, array<int> stdio_fd)
+int sandproc::create(process::params&& param)
 {
+	array<const char *> argv;
+	argv.append("[gravelcube]"); // ld-linux thinks it's argv[0] and discards the real one
+	for (const string& s : param.argv)
+		argv.append(s);
+	if (!param.argv)
+		argv.append(param.prog);
+	argv.append(NULL);
 	// can't override argv[0] in sandbox, ld-linux won't understand that
 	// if you need a fake argv[0], redirect the chosen executable via sandbox policy
-	argv[0] = program;
+	if (param.prog)
+		argv[1] = param.prog;
 	
-	argv.insert(0, "[gravelcube]"); // ld-linux thinks it's argv[0] and discards the real one
+	array<const char *> envp;
+	for (const string& s : param.envp)
+		envp.append(s);
+	envp.append(NULL);
 	
 	//fcntl is banned by seccomp, so this goes early
 	//putting it before clone() allows sharing it between sandbox children
 	int preld_fd = preloader_fd();
 	if (preld_fd < 0)
-		return;
+		return 0;
 	
 	int socks[2];
 	if (socketpair(AF_UNIX, SOCK_SEQPACKET|SOCK_CLOEXEC, 0, socks) < 0)
-		return;
+		return 0;
 	
-	stdio_fd.append(socks[1]);
-	stdio_fd.append(preld_fd); // we could request preld from parent, but this is easier
+	if (param.fds.size() < 3)
+	{
+		fd_raw_t devnull = fd_t::create_devnull().release();
+		if (param.fds.size() == 0)
+			param.fds.append(devnull);
+		if (param.fds.size() == 1)
+			param.fds.append(devnull);
+		param.fds.append(devnull);
+	}
+	param.fds.resize(5);
+	param.fds[3] = socks[1];
+	param.fds[4] = preld_fd;
 	
 	int clone_flags = CLONE_NEWUSER | CLONE_NEWPID | CLONE_NEWNET | CLONE_NEWCGROUP | CLONE_NEWIPC | CLONE_NEWNS | CLONE_NEWUTS;
 	clone_flags |= CLONE_PIDFD;
+	clone_flags |= SIGCHLD; // see process-linux.cpp for why this exists
 #ifdef __x86_64__
-	pid_t pid = syscall(__NR_clone, clone_flags, NULL, &this->pidfd, NULL, NULL);
+	fd_raw_t pidfd;
+	pid_t pid = syscall(__NR_clone, clone_flags, NULL, &pidfd, NULL, NULL);
+	this->pidfd = pidfd;
 #endif
 	if (pid < 0)
 	{
+		// can't test this anymore, Debian now enables unprivileged user namespaces by default
+		/*
 		if (errno == EPERM)
 		{
 			int socks2[2];
 			if (socketpair(AF_UNIX, SOCK_SEQPACKET|SOCK_CLOEXEC, 0, socks2) < 0)
-				return;
+				return 0;
 			
 			string setuid_path = file::exedir()+"gvc-setuid"; // do this before clone(), malloc isn't signal handler safe
 			pid_t pid_setuid = syscall(__NR_clone, 0, NULL, NULL, NULL, NULL); // clone instead of fork to discard the SIGCHLD
@@ -167,40 +195,100 @@ void sandproc::launch_impl(const char * program, array<const char*> argv, array<
 			if (pid_setuid > 0)
 			{
 				// parent path
-				mainsock = socks[0];
-				watch_add(socks[0]);
+				brokers.add(broker_fn(socks[0]));
 				close(socks[1]);
 				
 				char dummy[1];
-				if (recv_fd(socks[0], dummy, 1, 0, &this->pidfd) != 1) return;
-				if (this->pidfd < 0) return;
-				if (send_repeat(socks[0], "", 1, 0) != (ssize_t)1) { terminate(); return; }
+				fd_raw_t pidfd;
+				if (recv_fd(socks[0], dummy, 1, 0, &pidfd) != 1) return 0;
+				this->pidfd = pidfd;
+				if (this->pidfd < 0) return 0;
+				if (send_repeat(socks[0], "", 1, 0) != (ssize_t)1) { terminate(); return 0; }
 				
-				return;
+				return pid_setuid;
 			}
 			if (pid_setuid == 0)
 			{
 				// child path
-				require_b(set_fds(stdio_fd)); // easier before exec than after, and more code here and less in setuid is more secure
+				require_b(process::set_fds(param.fds)); // easier before exec than after, and more code here and less in setuid is more secure
 				require(execve(setuid_path, (char**)argv.ptr(), NULL));
 				__builtin_trap(); // unreachable
 			}
 		}
+		*/
 		close(socks[0]);
 		close(socks[1]);
-		return;
+		return 0;
 	}
 	if (pid > 0)
 	{
 		// parent path
-		mainsock = socks[0];
-		watch_add(socks[0]);
+		brokers.add(broker_fn(socks[0]));
 		close(socks[1]);
-		return;
+		return pid;
 	}
 	
 	// child path
-	require_b(set_fds(stdio_fd));
+	require_b(process::set_fds(param.fds));
 	
 	sandbox_exec_lockdown(argv.ptr());
+	__builtin_trap(); // unreachable
+}
+
+/*
+int sandproc::create(process::params& param)
+{
+	array<const char *> argv;
+	for (const string& s : param.argv)
+		argv.append(s);
+	if (!param.argv)
+		argv.append(param.prog);
+	argv.append(NULL);
+	
+	array<const char *> envp;
+	for (const string& s : param.envp)
+		envp.append(s);
+	envp.append(NULL);
+	
+	fd_raw_t fds[3];
+	if (param.fds.size() >= 1) fds[0] = param.fds[0];
+	else fds[0] = process::create_devnull(false);
+	if (param.fds.size() >= 2) fds[1] = param.fds[1];
+	else fds[1] = process::create_devnull(true);
+	if (param.fds.size() >= 3) fds[2] = param.fds[2];
+	else fds[2] = process::create_devnull(true);
+	
+	process::raw_params rparam;
+	rparam.prog = process::find_prog(param.prog ? param.prog : param.argv[0]);
+	rparam.argv = argv.ptr();
+	if (param.envp)
+		rparam.envp = envp.ptr();
+	else
+		rparam.envp = nullptr;
+	rparam.fds = fds;
+	rparam.detach = param.detach;
+	
+	return create(rparam);
+}
+*/
+
+async<int> sandproc::wait()
+{
+	if (!pidfd.valid())
+		co_return -1;
+	while (true)
+	{
+		co_await runloop2::await_read(pidfd);
+		int ret;
+		if (process::process_try_wait(pidfd, ret, true))
+			co_return ret;
+	}
+}
+
+void sandproc::terminate()
+{
+	if (!pidfd.valid())
+		return;
+	syscall(SYS_pidfd_send_signal, (int)pidfd, SIGKILL, nullptr, 0);
+	process::process_wait_sync(pidfd);
 }

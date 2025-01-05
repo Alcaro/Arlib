@@ -1,7 +1,8 @@
 #include "arlib.h"
 #include "sandbox/sandbox.h"
 
-int main(int argc, char** argv)
+static int g_ret;
+static async<void> co_main(int argc, char** argv)
 {
 	argparse args;
 	bool verbose = false;
@@ -10,9 +11,7 @@ int main(int argc, char** argv)
 	args.add_early_stop(&child);
 	args.parse(argv);
 	
-	sandproc ch(runloop::global());
-	ch.set_stdout(process::output::create_stdout());
-	ch.set_stderr(process::output::create_stderr());
+	sandproc ch;
 	ch.fs_grant_syslibs(child[0]);
 	ch.fs_grant_cwd(100);
 	
@@ -68,17 +67,20 @@ int main(int argc, char** argv)
 		});
 	}
 	
-	int ret;
-	ch.onexit([&](int lstatus) { ret = lstatus; runloop::global()->exit(); });
-	
-	if (!ch.launch(child[0], child.skip(1)))
+	if (!ch.create({ .prog=child[0], .argv=child.skip(1), .fds={ -1, 1, 2 } }))
 	{
 		// TODO: failing launches occasionally don't print launch failed
 		// I have not been able to determine the cause; it disappears as soon as I look at it
 		puts("launch failed");
-		return 1;
+		g_ret = 1;
+		co_return;
 	}
 	
-	runloop::global()->enter();
-	return ret;
+	g_ret = co_await ch.wait();
+}
+
+int main(int argc, char** argv)
+{
+	runloop2::run(co_main(argc, argv));
+	return g_ret;
 }

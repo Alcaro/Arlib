@@ -4,6 +4,7 @@
 #include "hash.h"
 #include "string.h"
 #include "stringconv.h"
+#include "tuple.h"
 
 template<typename T, typename Thasher = void>
 class set {
@@ -69,13 +70,17 @@ class set {
 		m_used_slots = m_count;
 	}
 	
-	void grow()
+	// Returns whether it did anything.
+	bool grow()
 	{
 		// half full -> rehash
 		if (m_count >= m_valid.size()/2)
 			rehash(m_valid.size()*2);
 		else if (m_used_slots >= m_valid.size()/4*3)
 			rehash(m_valid.size());
+		else
+			return false;
+		return true;
 	}
 	
 	bool slot_empty(size_t pos) const
@@ -142,7 +147,6 @@ class set {
 		return find_pos_full<true>(item);
 	}
 	
-	//used by map
 	//if the item doesn't exist, NULL
 	template<typename T2>
 	T* get_or_null(const T2& item) const
@@ -151,9 +155,10 @@ class set {
 		if (pos != (size_t)-1) return &m_data[pos];
 		else return NULL;
 	}
-	//also used by map
+	// returns either false and a normal pointer, or true and an uninitialized pointer
+	// in the latter case, it's the caller's responsibility to call placement new.
 	template<typename T2>
-	T& get_create(const T2& item, bool known_new = false)
+	tuple<bool,T*> get_or_prepare_create(const T2& item, bool known_new = false)
 	{
 		if (!m_data)
 			rehash(m_valid.size());
@@ -162,17 +167,16 @@ class set {
 		
 		if (known_new || !m_valid[pos])
 		{
-			grow();
-			pos = find_pos_insert(item); // recalculate this, grow() may have moved it
+			if (grow())
+				pos = find_pos_insert(item); // recalculate this if grow() moved it
 			//do not move grow() earlier; it invalidates references, get_create(item_that_exists) is not allowed to do that
 			
 			if (tag(pos) == i_empty) m_used_slots++;
-			new(&m_data[pos]) T(item);
 			m_valid[pos] = true;
 			m_count++;
+			return { true, &m_data[pos] };
 		}
-		
-		return m_data[pos];
+		return { false, &m_data[pos] };
 	}
 	
 	void construct()
@@ -238,12 +242,14 @@ public:
 	
 	void add(const T& item)
 	{
-		get_create(item);
+		auto[create,ptr] = get_or_prepare_create(item);
+		if (create) new(ptr) T(item);
 	}
 	template<typename T2>
 	void add(const T2& item)
 	{
-		get_create(item);
+		auto[create,ptr] = get_or_prepare_create(item);
+		if (create) new(ptr) T(item);
 	}
 	
 	template<typename T2>
@@ -408,15 +414,10 @@ public:
 	//can't call it set(), conflict with set<>
 	Tvalue& insert(const Tkey& key, const Tvalue& value)
 	{
-		node* item = items.get_or_null(key);
-		if (item) { item->value = value; return item->value; }
-		else return items.get_create(node(key, value), true).value;
-	}
-	
-	//if the value exists, undefined behavior (probably memory leak)
-	Tvalue& insert_only(Tkey&& key, Tvalue&& value)
-	{
-		return items.get_create(node(std::move(key), std::move(value)), true).value;
+		auto[create,ptr] = items.get_or_prepare_create(key);
+		if (create) new(ptr) node(key, value);
+		else ptr->value = value;
+		return ptr->value;
 	}
 	
 	//if nonexistent, null deref (undefined behavior, segfault in practice)
@@ -483,14 +484,22 @@ public:
 	}
 	Tvalue& get_create(const Tkey& key)
 	{
-		return items.get_create(key).value;
+		auto[create,ptr] = items.get_or_prepare_create(key);
+		if (create) new(ptr) node(key);
+		return ptr->value;
 	}
 	template<typename Tvc>
 	Tvalue& get_create(const Tkey& key, Tvc&& cr) requires (std::is_invocable_r_v<Tvalue, Tvc>)
 	{
-		node* ret = items.get_or_null(key);
-		if (ret) return ret->value;
-		else return items.get_create(node(key, cr()), true).value;
+		auto[create,ptr] = items.get_or_prepare_create(key);
+		if (create) new(ptr) node(key, cr());
+		return ptr->value;
+	}
+	Tvalue& get_create(const Tkey& key, const Tvalue& def)
+	{
+		auto[create,ptr] = items.get_or_prepare_create(key);
+		if (create) new(ptr) node(key, def);
+		return ptr->value;
 	}
 	//Tvalue& operator[](const Tkey& key) // C# does this better...
 	//{

@@ -12,83 +12,93 @@
 #define CAT_STDIN "/bin/cat"
 #define CAT_STDIN_END ""
 
-test("sandbox", "", "sandbox")
+co_test("sandbox", "", "sandbox")
 {
-	if (RUNNING_ON_VALGRIND) test_skip_force("valgrind doesn't understand the sandbox");
-	
-	//use the global one instead here for no reason
-	runloop* loop = runloop::global();
-	//ugly, but the alternative is nesting lambdas forever or busywait. and I need a way to break it anyways
-	int status;
-	function<void(int lstatus)> break_runloop = [&](int lstatus) { status = lstatus; loop->exit(); };
+	if (RUNNING_ON_VALGRIND)
+		test_skip_force("valgrind doesn't understand the sandbox");
 	
 	{
-		sandproc p(loop);
-		p.onexit(break_runloop);
+		sandproc p;
 		
 		bool has_access_fail = false;
 		// this will fail because can't access /lib64/ld-linux-x86-64.so.2
-		// (or /bin/true or whatever - no point caring exactly what file makes it blow up)
+		// (or /bin/true or whatever - no point caring exactly what file it complains about)
 		p.set_access_violation_cb([&](cstring path, bool write) { has_access_fail = true; });
-		p.set_stdout(process::output::create_stdout());
-		p.set_stderr(process::output::create_stderr());
 		
-//puts("");
-//printf("%lu\n",time_us_ne());
-		assert(p.launch(TRUE));
-//printf("%lu\n",time_us_ne());
-		loop->enter();
+		assert(p.create({ .prog=TRUE, .fds={ 0, 1, 2 } }));
+		int status = co_await p.wait();
 		
 		assert(has_access_fail);
 		assert_ne(status, 0);
 	}
 	
 	{
-		sandproc p(loop);
-		p.onexit(break_runloop);
+		sandproc p;
 		
-		p.set_access_violation_cb([&](cstring path, bool write) { puts(""+path); assert_unreachable(); });
-		p.set_stdout(process::output::create_stdout());
-		p.set_stderr(process::output::create_stderr());
+		p.set_access_violation_cb([&](cstring path, bool write) { puts(path); assert_unreachable(); });
 		p.fs_grant_syslibs(TRUE);
 		
-//printf("%lu\n",time_us_ne());
-		assert(p.launch(TRUE));
-//printf("%lu\n",time_us_ne());
-		loop->enter();
+		assert(p.create({ .prog=TRUE, .fds={ 0, 1, 2 } }));
+		int status = co_await p.wait();
 		
 		assert_eq(status, 0);
 	}
 	
 	{
-		sandproc p(loop);
-		p.onexit(break_runloop);
+		sandproc p;
 		
-		p.set_access_violation_cb([&](cstring path, bool write) { puts(""+path); assert_unreachable(); });
-		p.set_stdout(process::output::create_stdout());
-		p.set_stderr(process::output::create_stderr());
+		p.set_access_violation_cb([&](cstring path, bool write) { puts(path); assert_unreachable(); });
 		p.fs_grant_syslibs(FALSE);
 		
-//printf("%lu\n",time_us_ne());
-		assert(p.launch(FALSE));
-//printf("%lu\n",time_us_ne());
-		loop->enter();
+		assert(p.create({ .prog=FALSE, .fds={ 0, 1, 2 } }));
+		int status = co_await p.wait();
 		
 		assert_eq(status, 1); // ensure it can differentiate /bin/true and /bin/false, to prove it actually runs the program
 	}
 	
+	{
+		sandproc p;
+		
+		bool has_access_fail = false;
+		p.set_access_violation_cb([&](cstring path, bool write) { assert_eq(path, "/etc/issue"); has_access_fail = true; });
+		p.fs_grant_syslibs(CAT_FILE);
+		
+		assert(p.create({ .argv={ CAT_FILE, "/etc/issue" }, .fds={ 0, 1, -1 } }));
+		int status = co_await p.wait();
+		
+		assert(has_access_fail);
+		assert_ne(status, 0);
+	}
+	
+	{
+		sandproc p;
+		
+		p.set_access_violation_cb([&](cstring path, bool write) { puts(path); assert_unreachable(); });
+		p.fs_grant_syslibs(CAT_FILE);
+		p.fs_grant("/etc/issue");
+		
+		process::pipe stdout = process::pipe::create();
+		
+		assert(p.create({ .argv={ CAT_FILE, "/etc/issue" }, .fds={ 0, stdout.wr, 2 } }));
+		int status = co_await p.wait();
+		
+		assert_eq(status, 0);
+		
+		uint8_t buf[1024];
+		int n = read(stdout.rd, buf, sizeof(buf));
+		assert_eq(cstring(bytesr(buf, n)), file::readallt("/etc/issue"));
+	}
+	
 	//ensure pid namespace does not interfere with PR_SET_PDEATHSIG (verify with 'ps -ef | grep cat', or TR='strace -f')
 	//{
-	//	sandproc p(loop);
+	//	sandproc p;
 	//	
 	//	p.set_access_violation_cb([&](cstring path, bool write) { assert_unreachable(); });
 	//	p.fs_grant_syslibs("/bin/cat");
 	//	p.fs_grant("/dev/pts/0");
 	//	
-	//	assert(p.launch("/bin/cat", "/dev/pts/0"));
+	//	assert(p.create({ .argv={ "/bin/cat" }, .fds={ 0, 1, 2 } }));
 	//	
-	//	loop->set_timer_once(1000, [&]() { assert(p.running()); });
-	//	loop->set_timer_once(10000, [&]() { abort(); });
-	//	loop->enter();
+	//	exit(0);
 	//}
 }
