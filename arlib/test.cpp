@@ -382,7 +382,11 @@ int main(int argc, char* argv[])
 	printf("Initializing Arlib...");
 	bool run_twice = false;
 	
-#if defined(__linux__) && !defined(__SANITIZE_ADDRESS__)
+	// todo: drop __SANITIZE_ADDRESS__, and this ifndef, on gcc >= 14
+#ifndef __has_feature
+#define __has_feature(x) 0
+#endif
+#if defined(__linux__) && !__has_feature(address_sanitizer) && !defined(__SANITIZE_ADDRESS__)
 	struct rlimit rlim_as = { 4096ull*1024*1024, RLIM_INFINITY };
 	struct rlimit rlim_data = { 512ull*1024*1024, RLIM_INFINITY };
 	setrlimit(RLIMIT_AS, &rlim_as);

@@ -142,6 +142,9 @@ void sandbox_exec_lockdown(const char * const * argv)
 	//('parent' is parent thread, not the entire process, but Arlib process objects have thread affinity anyways)
 	require(prctl(PR_SET_PDEATHSIG, SIGKILL));
 	
+	// todo: use pid_max sysctl on kernel >= 6.14
+	// https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=7863dcc72d0f
+	
 	//ensure parent is still alive
 	//have to check for a response, it's possible that parent died before the prctl but its socket isn't deleted yet
 	struct broker_req req = { br_ping };

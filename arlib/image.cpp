@@ -143,21 +143,24 @@ static inline void image_insert_noov_inner(image& target, int32_t x, int32_t y, 
 		{
 			uint32_t spx = sourcepx[xx];
 			uint32_t tpx = targetpx[xx];
+			uint32_t px;
 			
 			if (has_alpha)
 			{
 				uint8_t alpha = spx >> 24;
 				if (LIKELY(alpha == 255))
-					tpx = spx;
+					px = spx;
 				else if (LIKELY(alpha == 0))
-					tpx = tpx;
+					px = tpx;
 				else
-					tpx = blend_8888_on_8888(tpx, spx);
+					px = blend_8888_on_8888(tpx, spx);
 			}
 			else if (!has_empty || (spx&0x80000000)) // for empty-only alpha, check sign only, it's the cheapest
-				tpx = spx;
+				px = spx;
+			else
+				px = tpx;
 			
-			targetpx[xx] = tpx; // always writing lets compilers vectorize better
+			targetpx[xx] = px; // always writing lets compilers vectorize better
 		}
 	}
 }

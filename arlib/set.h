@@ -156,7 +156,7 @@ class set {
 		else return NULL;
 	}
 	// returns either false and a normal pointer, or true and an uninitialized pointer
-	// in the latter case, it's the caller's responsibility to call placement new.
+	// in the latter case, it's the caller's responsibility to call placement new
 	template<typename T2>
 	tuple<bool,T*> get_or_prepare_create(const T2& item, bool known_new = false)
 	{

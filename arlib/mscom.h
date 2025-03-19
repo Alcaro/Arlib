@@ -3,6 +3,7 @@
 // It can be used together with Arlib, but only if global.h (or the entire arlib.h) is included first.
 // It's GCC only - it doesn't even work under Clang, because it doesn't implement <tr2/type_traits>.
 // I'll be happy to replace tr2 once a replacement (such as reflection) exists, but as of writing, it's not in the C++ standard.
+// (when reflection shows up, I'll also make a CComPtrBase class that does a Release on every IUnknown member of the class)
 #include <tr2/type_traits>
 // if I want Clang support before a tr2 replacement shows up,
 //  I will create a specializable template using/struct stating what an interface's parent is
@@ -15,17 +16,21 @@
 // These objects are named after Microsoft's ATL. Behavior, however, is wildly different (except CComPtr).
 
 // This file makes no attempt to implement or support
+// - Aggregation - I should add it at some point, I just haven't found a usecase
 // - Tear-offs (sub-interfaces implemented as separate objects, allocated when QI'd) - useless in this year. Just allocate it upfront.
 // - Custom interfaces - needs an IDL compiler
-// - DllCanUnloadNow - unavoidable race window between the dll's refcount and ctor entry / dtor exit
+// - DllCanUnloadNow - unavoidable race condition between the dll's refcount and ctor entry / dtor exit
 // (though it doesn't particularly stop you either)
+
+// To avoid compiler warnings, and to avoid the kind of mistakes the compiler would warn about,
+//   the concrete classes should either have a virtual destructor, or be declared final.
 
 // Available AddRef/Release strategies:
 // - I want to implement these functions myself -> CComObjectRoot (the others use this as base class)
-// - I want a normal object, created with new, with atomic refcounting -> CComObject (nonatomic unless ARLIB_THREAD is enabled)
+// - I want a normal object, created with new, with atomic refcounting -> CComObject (nonatomic if ARLIB_THREAD is disabled)
 // - I want a normal object, created with new, with non-atomic refcounting -> CComObjectNoLock (same as above if ARLIB_THREAD is disabled)
 // - I want this object to be part of another, and share its parent's refcount -> CComContainedObject
-// - I want lifetime managed by something else, with AddRef/Release being noops -> CComObjectStack (because 'something' is usually stack)
+// - I want lifetime managed by something else, with AddRef/Release being noops -> CComObjectGlobal ('forever' is a valid lifetime)
 
 template<typename T>
 class CComPtr {
@@ -75,11 +80,15 @@ public:
 	}
 };
 
+// gcc optimizes better if it knows for sure that there are no other subclasses
+// sure, it breaks passing these objects across translation unit boundaries, but that's a bad idea anyways
+namespace {
+
 // Implements QueryInterface. Does not implement AddRef and Release.
 template<typename... Tifaces>
 class CComObjectRoot : public Tifaces... {
 	template<typename Ti>
-	static bool inner_qi(Ti* self, REFIID riid, void** ppvObject)
+	static forceinline bool inner_qi(Ti* self, REFIID riid, void** ppvObject)
 	{
 		static_assert(std::is_base_of_v<IUnknown, Ti>);
 		if (riid == __uuidof(Ti))
@@ -115,8 +124,7 @@ public:
 
 // Implements QueryInterface, AddRef and Release. The latter two store a refcount in this object.
 // The object must be created with new.
-namespace {
-template<typename... Tifaces>
+template<typename Tparent, typename... Tifaces>
 class CComObjectNoLock : public CComObjectRoot<Tifaces...> {
 private:
 	ULONG refcount = 1;
@@ -125,6 +133,7 @@ protected:
 public:
 	ULONG STDMETHODCALLTYPE AddRef() override final
 	{
+		static_assert(std::is_base_of_v<CComObjectNoLock, Tparent>);
 		return ++refcount;
 	}
 	ULONG STDMETHODCALLTYPE Release() override final
@@ -133,22 +142,16 @@ public:
 		if (!new_refcount)
 		{
 			refcount++; // to prevent double delete if the dtor ends up QIing this object (unlikely, but not unthinkable)
-			// gcc can devirtualize this, but only if it's in an anon namespace (clang can't, bug 94924)
-			// the drawback is the namespace makes it impossible to pass the object across translation units,
-			// but the entire COM is platform specific, you shouldn't have cross-TU platform-specific pieces
-			delete this;
+			delete (Tparent*)this;
 		}
 		return new_refcount;
 	}
-	virtual ~CComObjectNoLock() {}
 };
-}
 
 #ifdef ARLIB_THREAD
 // Implements QueryInterface, AddRef and Release. The latter two store a refcount in this object, and process it atomically.
 // Only the refcounts are atomic; the implemented interfaces need to take locks. The object must be created with new.
-namespace {
-template<typename... Tifaces>
+template<typename Tparent, typename... Tifaces>
 class CComObject : public CComObjectRoot<Tifaces...> {
 private:
 	LONG refcount = 1;
@@ -157,6 +160,7 @@ protected:
 public:
 	ULONG STDMETHODCALLTYPE AddRef() override final
 	{
+		static_assert(std::is_base_of_v<CComObject, Tparent>);
 		return __atomic_add_fetch(&refcount, 1, __ATOMIC_RELAXED);
 	}
 	ULONG STDMETHODCALLTYPE Release() override final
@@ -178,13 +182,11 @@ public:
 		if (!new_refcount)
 		{
 			__atomic_add_fetch(&refcount, 1, __ATOMIC_ACQUIRE); // so thread 2 sees 1's writes, and for same reason as in NoLock
-			delete this;
+			delete (Tparent*)this;
 		}
 		return new_refcount;
 	}
-	virtual ~CComObject() {}
 };
-}
 #else
 #define CComObject CComObjectNoLock
 #endif
@@ -209,11 +211,12 @@ public:
 };
 
 // Implements QueryInterface, AddRef and Release. The latter two simply do nothing.
-// Intended for use with objects declared on the stack, whose lifetime is strictly limited.
-// (Global variables work too. Global COM objects are rare, but make sense for IClassFactory.)
-template<typename... Tifaces>
-class CComObjectStack : public CComObjectRoot<Tifaces...> {
+// Intended for use with objects declared as global variables, like IClassFactory.
+// (Objects declared on stack, with strictly limited lifetime, work too.)
+template<typename Tparent, typename... Tifaces>
+class CComObjectGlobal : public CComObjectRoot<Tifaces...> {
 public:
+	// doesn't use parent, but the others have it, so might as well
 	ULONG STDMETHODCALLTYPE AddRef() override final { return 2; }
 	ULONG STDMETHODCALLTYPE Release() override final { return 1; }
 };
@@ -227,9 +230,8 @@ public:
 // If the requested item is out of range, must return false without writing to elem.
 // If elem is null, the function must return whether that's in range, without copying the value.
 // (The latter form is available for COM objects too, if you like the extra typing.)
-namespace {
 template<typename Tiface, auto accessor>
-class CComEnum final : public CComObject<Tiface> {
+class CComEnum final : public CComObject<CComEnum<Tiface, accessor>, Tiface> {
 public:
 	static_assert(std::is_member_pointer_v<decltype(accessor)>);
 	// feels like there should be a few type traits for this, but...
@@ -316,7 +318,6 @@ private:
 			return S_FALSE;
 	}
 };
-}
 
 // todo: put back these
 // todo: find some function or member name for the own_iunknown
@@ -419,3 +420,4 @@ public:
 	HRESULT STDMETHODCALLTYPE LockServer(BOOL lock) { return S_OK; }
 };
 */
+}

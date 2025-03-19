@@ -660,8 +660,11 @@ Each of these would either enable additional functionality, or simplify somethin
     setrlimit(RLIMIT_NPROC) would be the obvious choice, but it's affected by processes outside the namespace
       http://elixir.free-electrons.com/linux/latest/source/kernel/fork.c#L1564
     setting /proc/sys/kernel/pid_max to 10 would also work, but that too is a global parameter, not per-pid-namespace
+      this exists starting from kernel 6.14
+      https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=7863dcc72d0f
 - A way to disable the filesystem completely, rather than just chroot to an empty (except . and ..) directory, it feels wrong
     and I can't find an always-existing guaranteed-empty directory (preferably one in a non-weird filesystem, /proc creeps me out)
+    this exists these days, it's called Landlock
 - Allow execveat(pathname=NULL) and consider it equivalent to pathname="", that final-byte trick is kinda creepy
     the original execveat proposal <https://lkml.org/lkml/2012/9/11/528> used NULL rather than "", it's unclear why it changed
     alternatively, consider execveat(pathname!={NULL,""}, flags=AT_EMPTY_PATH|...) a nonsensical combination and make it fail

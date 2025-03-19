@@ -15,10 +15,6 @@
 #ifdef HAVE_FROM_CHARS
 #include <system_error>
 #endif
-
-#if __GNUC__ >= 12
-//#warning rearrange the includes
-#endif
 #endif
 
 #include "stringconv.h"

@@ -59,6 +59,11 @@ endif
 
 CCXXFLAGS = -Wall -Wmissing-declarations -Wimplicit-fallthrough -Wvla -pipe
 CXXFLAGS += -Wsuggest-override
+# don't care, every Arlib class is trivially relocatable
+# (doesn't seem implemented in Clang... weird)
+ifeq ($(CC_FAMILY),gcc)
+  CXXFLAGS += -Wno-class-memaccess
+endif
 # this one is an imminent segfault 99% of the time
 CCXXFLAGS += -Werror=return-type
 #to silence for (size_t unused : range(42)) - delete this once gcc stops complaining
@@ -388,7 +393,7 @@ SOURCES_NOWARN += arlib/deps/miniz.c
 CCXXFLAGS += $(patsubst %,-D%,$(DEFINES))
 
 CONF_CXXFLAGS := $(CONF_CXXFLAGS) $(CONF_CFLAGS)
-TRUE_CFLAGS := -std=c99 $(CCXXFLAGS) $(CONF_CFLAGS) $(CFLAGS)
+TRUE_CFLAGS := -std=c11 $(CCXXFLAGS) $(CONF_CFLAGS) $(CFLAGS)
 # C++23/etc wishlist:
 # - If a lambda is a coroutine, the captures should be in the coroutine frame, not in the likely-temporary lambda object
 #    reportedly considered for c++23, but not approved yet
@@ -419,6 +424,9 @@ TRUE_CFLAGS := -std=c99 $(CCXXFLAGS) $(CONF_CFLAGS) $(CFLAGS)
 # - static_assert(false) - valid in clang >= 17 and gcc >= 13
 # - Rename std::is_const_v to std::is_const, and rename std::is_const to std::is_const_wrap or something (or just delete it)
 #     or at least mark is_const deprecated in favor of is_const_v, that typo tends to create some seriously nasty error messages
+# - bool std::is_pointer_in_range(T* first, T* last, T* ptr) - returns whether ptr is in the range first..last, but without UB if it isn't
+#     (still UB if first..last is not a valid range, or if ptr is unaligned or something)
+#     behavior (including amount of UB) is identical to while (first != last) { if (ptr == first) return true; first++; } return false;
 
 # C++20 features I should investigate using more of:
 # - Template string literals (for the regex parser)

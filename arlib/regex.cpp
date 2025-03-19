@@ -1,4 +1,6 @@
 #include "regex.h"
+#include"test.h"
+#include"os.h"
 
 static const char * const insn_names[] = {
 	"jump",
@@ -28,8 +30,10 @@ public:
 	regex* rgx;
 	const uint8_t * end;
 	bitarray captures;
+	int recursion_count = 0;
 	
-private:
+public:
+	// public because regex_search/required_substrs need it
 	enum nodetype_t {
 		n_series,
 		n_alternative,
@@ -40,7 +44,7 @@ private:
 		nodetype_t type;
 		
 		insn_t subtype; // valid only for type=insn (can't contain jump/accept/alt/noop)
-		array<node_t> children; // valid for type=series, type=alternative, and subtype=lookahead (lookahead doesn't use its data)
+		array<node_t> children; // valid for type=series, type=alternative, and subtype=lookahead (lookahead doesn't use subtype.data)
 		
 		// these five correspond to *+?{} repeats
 		uint32_t num_total_bodies = 1;
@@ -51,6 +55,13 @@ private:
 		
 		bool can_nfa; // False if it contains any capture, assertion, or lookahead.
 	};
+	
+private:
+	static const uint8_t * parse_error()
+	{
+		//debug_log_stack("a\n");
+		return nullptr;
+	}
 	
 	// Returns *at unless that's a backslash.
 	// If the input bits are nonempty, the new one will be or'd in.
@@ -77,7 +88,7 @@ private:
 		};
 		
 		if (at == end)
-			return nullptr;
+			return parse_error();
 		if (*at != '\\')
 		{
 			single_char = *at;
@@ -86,7 +97,7 @@ private:
 		}
 		
 		if (at+1 == end)
-			return nullptr;
+			return parse_error();
 		
 		uint8_t head = at[1];
 		if (simple_backslashes[head])
@@ -98,19 +109,19 @@ private:
 		else if (head == '0')
 		{
 			if (at+2 < end && at[2] >= '0' && at[2] <= '9')
-				return nullptr;
+				return parse_error();
 			single_char = '\0';
 			bits[single_char] = true;
 			return at+2;
 		}
 		else if (head == 'x')
 		{
-			if (at+2 >= end)
-				return nullptr;
+			if (at+4 > end)
+				return parse_error();
 			
 			uint8_t tmp;
 			if (!fromstringhex_ptr((char*)at+2, (char*)at+4, tmp))
-				return nullptr;
+				return parse_error();
 			single_char = tmp;
 			bits[single_char] = true;
 			return at+4;
@@ -118,10 +129,10 @@ private:
 		else if (head == 'c')
 		{
 			if (at+2 == end)
-				return nullptr;
+				return parse_error();
 			uint8_t tail = at[2]&~0x20;
 			if (tail < 'A' || tail > 'Z')
-				return nullptr;
+				return parse_error();
 			single_char = tail-'A';
 			bits[single_char] = true;
 			return at+3;
@@ -133,7 +144,7 @@ private:
 		else if (head == 'S') bits |= ~CHAR_SET("\t\n\v\f\r ");
 		else if (head == 'w') bits |= CHAR_SET("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_");
 		else if (head == 'W') bits |= ~CHAR_SET("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_");
-		else return nullptr;
+		else return parse_error();
 		return at+2;
 	}
 	
@@ -143,7 +154,7 @@ private:
 	const uint8_t * parse_atom(node_t& target, const uint8_t * at)
 	{
 		if (at == end)
-			return nullptr;
+			return parse_error();
 		if (CHAR_SET("\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F" // I'd like to ban \1 as a probable typo,
 		             "\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1A\x1B\x1C\x1D\x1E\x1F" // but the JS spec says it's legal,
 		             " !\"#%&',-/0123456789:;<=>@ABCDEFGHIJKLMNOPQRSTUVWXYZ_`abcdefghijklmnopqrstuvwxyz~" // and \n is plausible
@@ -164,16 +175,16 @@ private:
 		else if (*at == '(')
 		{
 			if (at+2 >= end)
-				return nullptr;
+				return parse_error();
 			if (at[1] == '?')
 			{
 				if (at+3 >= end)
-					return nullptr;
+					return parse_error();
 				if (at[2] == ':')
 				{
 					at = parse_disjunction(target, at+3);
 					if (!at || at == end || *at != ')')
-						return nullptr;
+						return parse_error();
 					return at+1;
 				}
 				else if (at[2] == '=')
@@ -182,7 +193,7 @@ private:
 					target.subtype = { t_lookahead_positive };
 					at = parse_disjunction(target.children.append(), at+3);
 					if (!at || at == end || *at != ')')
-						return nullptr;
+						return parse_error();
 					return at+1;
 				}
 				else if (at[2] == '!')
@@ -191,7 +202,7 @@ private:
 					uint32_t n_prev_captures = rgx->num_captures;
 					at = parse_disjunction(target.children.append({ n_insn, { t_lookahead_negative }}).children.append(), at+3);
 					if (!at || at == end || *at != ')')
-						return nullptr;
+						return parse_error();
 					for (uint32_t i=n_prev_captures;i<rgx->num_captures;i++)
 					{
 						target.children.append({ n_insn, { t_capture_discard, i }});
@@ -199,23 +210,23 @@ private:
 					}
 					return at+1;
 				}
-				else return nullptr;
+				else return parse_error();
 			}
 			target.type = n_series;
 			uint32_t capture_idx = rgx->num_captures++;
 			target.children.append({ n_insn, { t_capture_start, capture_idx }});
 			at = parse_disjunction(target.children.append(), at+1);
 			target.children.append({ n_insn, { t_capture_end, capture_idx }});
-			captures.set_resize(capture_idx, true);
+			this->captures.set_resize(capture_idx, true);
 			if (!at || at == end || *at != ')')
-				return nullptr;
+				return parse_error();
 			return at+1;
 		}
 		else if (*at == '[')
 		{
 			at++;
 			if (at == end)
-				return nullptr;
+				return parse_error();
 			bool invert = false;
 			target.type = n_insn;
 			target.subtype = { t_byte, (uint32_t)rgx->bytes.size() };
@@ -228,24 +239,24 @@ private:
 			while (true)
 			{
 				if (!at || at == end)
-					return nullptr;
+					return parse_error();
 				if (*at == ']')
 					break;
 				
 				int range_start = -1;
 				at = literal_chars(bits, range_start, at, end);
 				if (!at)
-					return nullptr;
+					return parse_error();
 				if (at+1 < end && at[0] == '-' && at[1] != ']')
 				{
 					if (range_start < 0)
-						return nullptr;
+						return parse_error();
 					int range_end = -1;
 					at = literal_chars(bits, range_end, at+1, end);
 					if (!at)
-						return nullptr;
+						return parse_error();
 					if (range_end < 0 || range_end < range_start)
-						return nullptr;
+						return parse_error();
 					for (int i=range_start;i<=range_end;i++)
 						bits[i] = true; // first and last have already been written, but whatever
 				}
@@ -256,7 +267,7 @@ private:
 		else if (*at == '\\')
 		{
 			if (at+1 == end)
-				return nullptr;
+				return parse_error();
 			
 			if (at[1] >= '1' && at[1] <= '9')
 			{
@@ -265,7 +276,7 @@ private:
 				target.type = n_insn;
 				target.subtype = { t_capture_backref, capture_idx };
 				if (!captures.get_or(capture_idx, false))
-					return nullptr;
+					return parse_error();
 				return at;
 			}
 			else if (at[1] == 'b')
@@ -304,7 +315,7 @@ private:
 			rgx->bytes.append() = ~CHAR_SET("\r\n"); // no \u2028 \u2029 for you
 		}
 		else
-			return nullptr;
+			return parse_error();
 		return at+1;
 	}
 	
@@ -312,14 +323,16 @@ private:
 	{
 		const uint8_t * start = at;
 		at = parse_atom(target, at);
+		if (!at || at == end)
+			return at;
 		if (!at || at == end || !CHAR_SET("*+?{").contains(*at))
 			return at;
 		if (start[0] == '^' || start[0] == '$') // can't repeat these
-			return nullptr;
+			return parse_error();
 		if (start[0] == '\\' && (start[1] == 'b' || start[1] == 'B'))
-			return nullptr;
+			return parse_error();
 		if (start[0] == '(' && start[1] == '?' && (start[2] == '=' || start[2] == '!'))
-			return nullptr; // no need for bounds checks; if this was out of bounds, it'd be rejected in parse_atom
+			return parse_error(); // no need for bounds checks; if this was out of bounds, it'd be rejected in parse_atom
 		
 		uint32_t repeat_min;
 		uint32_t repeat_max;
@@ -346,31 +359,33 @@ private:
 			at++;
 			
 			if (at == end)
-				return nullptr;
+				return parse_error();
 			// first number in {} is mandatory, {,5} is illegal
 			at = (uint8_t*)fromstring_ptr_tail((char*)at, (char*)end, repeat_min);
 			if (!at || at == end)
-				return nullptr;
+				return parse_error();
 			
 			if (*at == ',')
 			{
 				at++;
 				if (at == end)
-					return nullptr;
+					return parse_error();
 				if (*at == '}')
 					repeat_max = UINT32_MAX;
 				else
 					at = (uint8_t*)fromstring_ptr_tail((char*)at, (char*)end, repeat_max);
 				if (!at || *at != '}')
-					return nullptr;
+					return parse_error();
 			}
 			else if (*at == '}')
 				repeat_max = repeat_min;
 			else
-				return nullptr;
+				return parse_error();
 			
 			at++;
 		}
+		else __builtin_unreachable(); // it's one of the above four
+		
 		if (at < end && *at == '?')
 		{
 			at++;
@@ -380,7 +395,7 @@ private:
 			target.greedy = true;
 		
 		if (repeat_min > repeat_max)
-			return nullptr;
+			return parse_error();
 		
 		target.has_repeat = true;
 		if (repeat_max == 0)
@@ -430,12 +445,19 @@ private:
 				this->captures = init_captures;
 			}
 			else
+			{
+				recursion_count++;
+				if (recursion_count == 1000)
+					return parse_error();
 				at = parse_term(target_seq->append(), at);
+				recursion_count--;
+			}
 		}
 		
 		if (init_captures != new_captures && target.type == n_alternative)
 		{
 			this->captures = new_captures;
+			this->captures.resize(rgx->num_captures);
 			//node_t new_children = std::move();
 			
 			node_t real_disjunction = std::move(target);
@@ -452,6 +474,7 @@ private:
 	}
 	
 	
+public:
 	struct nfa_t {
 	public:
 		struct transition_t {
@@ -477,7 +500,7 @@ private:
 		bool shortest_first;
 		
 		// If, for every transition in every state, the rules for this byte are same as the previous byte,
-		// the corresponding bit is set here. (State 0 is always set.)
+		// the corresponding bit is set here. (Bit 0 is always set.)
 		bitset<256> unique_bytes;
 		
 		static bool tag_can_nfa(node_t& node)
@@ -505,7 +528,7 @@ private:
 			states.append();
 			return states.size()-1;
 		}
-		void add_transition(uint32_t source, uint32_t target, bitset<256>& bytes, bool first)
+		void add_transition(uint32_t source, uint32_t target, const bitset<256>& bytes, bool first)
 		{
 			transition_t& tr = (first ? states[source].transitions.insert(0) : states[source].transitions.append());
 			tr.target = target;
@@ -613,8 +636,10 @@ private:
 							st.transitions.remove(j);
 						else
 						{
-							st.transitions.insert_range(j+1, states[tr.target].transitions);
+							size_t target = tr.target;
+							st.transitions.insert_range(j+1, states[target].transitions);
 							st.transitions.remove(j);
+							j += states[target].transitions.size() - 1; // skip the new ones, to avoid some infinite loops
 							again = true;
 						}
 					}
@@ -635,16 +660,30 @@ private:
 						again = true;
 						states[j].deleted = true;
 						for (state_t& st : states)
-						for (transition_t& tr : st.transitions)
 						{
-							if (tr.target == j)
-								tr.target = i;
+							for (size_t k=0;k<st.transitions.size();k++)
+							{
+								if (st.transitions[k].target == j)
+								{
+									st.transitions[k].target = i;
+									for (size_t l=0;l<k;l++)
+									{
+										if (st.transitions[l] == st.transitions[k])
+										{
+											// mostly shows up on silly regexes like a?a?a?a*, but why not
+											st.transitions.remove(k);
+											k--;
+											break;
+										}
+									}
+								}
+							}
 						}
 					}
 				}
 			}
 		}
-		// mostly exists to make debug output cleaner
+		// mostly exists to make debug output cleaner (reducing state count makes the NFA->DFA converter faster)
 		void delete_unreachable_states()
 		{
 			bitarray reachable;
@@ -706,7 +745,7 @@ private:
 		{
 			states.resize(2);
 			states[1].accepting = true;
-			add_immediate_transition(1, 1, false);
+			add_immediate_transition(1, 1, false); // todo: determine and document why this is necessary
 			create(rgx, nodes, is_alternative, 0, 1);
 			
 			flatten_immediates();
@@ -799,56 +838,6 @@ private:
 			return true;
 		}
 		
-	private:
-		uint32_t convert_to_dfa_recurse(dfa_t& dfa, map<bitarray, uint32_t>& seen, bitarray in_states)
-		{
-			uint32_t create_state = seen.size();
-			uint32_t dfa_state = seen.get_create(in_states, create_state);
-			if (dfa_state == create_state)
-			{
-				dfa.transitions.append();
-				
-				size_t n_set = 0;
-				uint32_t next_state KNOWN_INIT(0);
-				
-				for (size_t by : unique_bytes.true_idxs())
-				{
-					while (n_set < by)
-						dfa.transitions[dfa_state].next[n_set++] = next_state;
-					
-					bitarray new_states;
-					new_states.resize(states.size());
-					bool any = false;
-					bool accepting = false;
-					
-					for (size_t i : in_states.true_idxs())
-					{
-						for (transition_t& tr : states[i].transitions)
-						{
-							if (tr.bytes[by])
-							{
-								if (states[tr.target].accepting)
-									accepting = true;
-								if (states[tr.target].accepts_sequel)
-								{
-									new_states[tr.target] = true;
-									any = true;
-								}
-							}
-						}
-					}
-					if (any)
-						next_state = convert_to_dfa_recurse(dfa, seen, new_states);
-					else
-						next_state = 0x7FFFFFFF;
-					if (accepting)
-						next_state |= 0x80000000;
-				}
-				while (n_set < 256)
-					dfa.transitions[dfa_state].next[n_set++] = next_state;
-			}
-			return dfa_state;
-		}
 	public:
 		insntype_t convert_to_dfa(dfa_t& dfa)
 		{
@@ -879,12 +868,117 @@ private:
 			memcpy(&unique_bytes, ret, sizeof(ret));
 			
 			map<bitarray, uint32_t> seen;
+			fifo<bitarray> convert_to_dfa_todo;
+			
 			bitarray in_states;
 			in_states.resize(states.size());
 			in_states[0] = true;
-			convert_to_dfa_recurse(dfa, seen, in_states);
+			convert_to_dfa_todo.push(in_states);
+			seen.get_create(in_states, 0);
+			
+			while (!convert_to_dfa_todo.empty())
+			{
+				in_states = convert_to_dfa_todo.pop();
+				size_t n_set = 0;
+				uint32_t next_state KNOWN_INIT(0);
+				dfa_t::node_t& node = dfa.transitions.append();
+				
+				for (size_t by : unique_bytes.true_idxs())
+				{
+					while (n_set < by)
+						node.next[n_set++] = next_state;
+					
+					bitarray new_states;
+					new_states.resize(states.size());
+					bool any = false;
+					bool accepting = false;
+					
+					for (size_t i : in_states.true_idxs())
+					{
+						for (transition_t& tr : states[i].transitions)
+						{
+							if (tr.bytes[by])
+							{
+								if (states[tr.target].accepting)
+									accepting = true;
+								if (states[tr.target].accepts_sequel)
+								{
+									new_states[tr.target] = true;
+									any = true;
+								}
+							}
+						}
+					}
+					if (any)
+					{
+						uint32_t create_state = seen.size();
+						next_state = seen.get_create(new_states, create_state);
+						if (next_state == create_state)
+						{
+							convert_to_dfa_todo.push(new_states);
+						}
+					}
+					else
+						next_state = 0x7FFFFFFF;
+					if (accepting)
+						next_state |= 0x80000000;
+				}
+				while (n_set < 256)
+					node.next[n_set++] = next_state;
+			}
 			dfa.init_state = states[0].accepting ? 0x80000000 : 0;
+			deduplicate_dfa(dfa);
 			return shortest_first ? t_dfa_shortest : t_dfa_longest;
+		}
+		
+	private:
+		static void deduplicate_dfa(dfa_t& dfa)
+		{
+			// if some nfa states are functionally identical (for example in a*a*), then there may be duplicate DFA states
+			// the states are hard to identify as duplicate at NFA level (for example, state transition order can vary),
+			// but they show up as identical in the DFA
+			map<dfa_t::node_t, size_t> first_body; // rhs is index in dfa.transitions
+			map<size_t, size_t> replacements;
+			for (size_t i=0;i<dfa.transitions.size();i++)
+			{
+				size_t n = first_body.get_create(dfa.transitions[i], i);
+				if (i != n)
+					replacements.insert(i, n);
+			}
+			if (replacements.size() == 0)
+				return;
+			
+			array<uint32_t> new_ids;
+			new_ids.resize(dfa.transitions.size());
+			size_t num_valid_states = 0;
+			for (size_t i=0;i<dfa.transitions.size();i++)
+			{
+				if (replacements.contains(i))
+					new_ids[i] = new_ids[replacements.get(i)];
+				else
+					new_ids[i] = num_valid_states++;
+			}
+			size_t i = dfa.transitions.size();
+			while (true)
+			{
+				if (!i)
+					break;
+				i--;
+				if (replacements.contains((size_t)i))
+				{
+					dfa.transitions.remove(i);
+				}
+				else
+				{
+					for (uint32_t& tr : dfa.transitions[i].next)
+					{
+						uint32_t accept = (tr & 0x80000000);
+						uint32_t st = (tr & 0x7FFFFFFF);
+						if (st != 0x7FFFFFFF)
+							tr = accept | new_ids[st];
+					}
+				}
+			}
 		}
 		
 	private:
@@ -1060,22 +1154,26 @@ private:
 	}
 	
 public:
-	static bool parse(regex* rgx, cstring text)
+	bool parse(const uint8_t * start, node_t& target)
 	{
 		rgx->reset();
 		rgx->num_captures = 1;
 		
-		const uint8_t * start = text.bytes().ptr();
-		const uint8_t * end = start + text.length();
-		
-		parser p { rgx, end };
-		node_t target;
-		const uint8_t * at = p.parse_disjunction(target, start);
+		const uint8_t * at = parse_disjunction(target, start);
 		if (at != end)
 		{
 			rgx->set_fail();
 			return false;
 		}
+		return true;
+	}
+public:
+	static bool compile(regex* rgx, cstring text)
+	{
+		parser p { rgx, (uint8_t*)text.ptr_raw_end() };
+		node_t target;
+		if (!p.parse(text.bytes().ptr(), target))
+			return false;
 		
 		p.optimize_to_nfas(target);
 		
@@ -1091,8 +1189,8 @@ private:
 		if (node.has_repeat)
 		{
 			printf("repeat (%u bodies, %u mandatory, %sfinite, %s) ",
-				   node.num_total_bodies, node.num_mandatory_bodies, node.repeat_infinite ? "in" : "",
-				   node.greedy ? "greedy" : "lazy");
+			       node.num_total_bodies, node.num_mandatory_bodies, node.repeat_infinite ? "in" : "",
+			       node.greedy ? "greedy" : "lazy");
 		}
 		if (node.type == n_insn)
 			printf("insn %s", insn_names[node.subtype.type]);
@@ -1118,7 +1216,7 @@ private:
 
 bool regex::parse(cstring rgx)
 {
-	if (parser::parse(this, rgx))
+	if (parser::compile(this, rgx))
 	{
 		optimize();
 		return true;
@@ -1174,14 +1272,6 @@ void regex::optimize()
 	//     byte(none) is ultra rare, and jumps only come from | where the target is after the last branch, so no point
 	// - deduplicate bytes in NFAs/DFAs; have a 256-byte table for each FA and shrink the transition tables to max(256b-table)+1
 	//     probably helps NFAs, but not DFAs, and I never emit NFA instructions
-	// - change re_text's caller; change to .search() and process the part before that, move $ handler to caller,
-	//     and make .search() do an NFA with different start positions on the lone DFA contents
-	//     probably more effort than it's worth, NFA is only faster if DFAed or if it eliminates backtracking
-	//     ...maybe I could NFA the DFA with different start positions, then convert that to DFA
-	//     would give trouble on abcd|bc, latter half will t_accept before former
-	//     trying to solve that by running everything to finish will waste time on abcd|bc.*
-	//     finishing every earlier-starting NFA state would work (have a map of DFA state -> original NFA states),
-	//     but would be a huge wall of text and probably not accomplish much
 	// - compress small NFAs to uint8
 	//     tried it, gives a ~6% slowdown
 }
@@ -1193,7 +1283,24 @@ public:
 	const uint8_t * end;
 	
 	regex::pair* result;
-	const uint8_t * * capture_start;
+	
+	// rewinding after a match means one of
+	// - alt_first - go to this bytecode state and input pointer, then continue
+	// - alt_second - go to this bytecode state and input pointer, then continue
+	// - dfa_shortest - continue DFA matching
+	// - dfa_longest - continue reading DFA matches
+	// - capture_start/end/discard - restore start, end, or both to previous state
+	// - lookahead_positive - go to this bytecode state and input pointer, then continue
+	// - lookahead_negative - go to this bytecode state and input pointer, then continue, but only if the contents did NOT match
+	// dfa_shortest requires { bytecode state, input pointer, DFA state } to resume
+	// dfa_longest requires { bytecode state, input pointer, input pointer at DFA start }, and also a bitarray as long as the input,
+	//    but said bitarray can be shared with every other dfa_longest
+	// captures require { bytecode state, start pointer, end pointer } (index of which capture to write can be read from bytecode)
+	// alt just needs { bytecode state, input pointer }
+	// lookaheads need the same, and also special cases to do something else when matching is complete
+	//    (can be done by setting a flag on the accept instruction)
+	// I think the max stack depth is bytecode size + input string size + O(1), but I haven't proven that
+	// probably a waste of time to try, probably better do bounds check on every push
 	
 	bool match(size_t state, const uint8_t * at)
 	{
@@ -1261,7 +1368,7 @@ public:
 					
 					dfa_state = dfa.transitions[dfa_state].next[at[match_len++]];
 				}
-				for (ssize_t i=matches.size()-1;i>=0;i--)
+				for (size_t i=matches.size();i--;)
 				{
 					if (matches[i] && match(state, at+i))
 						return true;
@@ -1270,17 +1377,20 @@ public:
 			}
 			
 			case t_capture_start:
-				capture_start[data] = at;
-				break;
-			case t_capture_end:
 			{
 				const char * prev_start = result[data].start;
-				const char * prev_end = result[data].end;
-				result[data].start = (char*)capture_start[data];
-				result[data].end = (char*)at;
+				result[data].start = (char*)at;
 				if (match(state, at))
 					return true;
 				result[data].start = prev_start;
+				return false;
+			}
+			case t_capture_end:
+			{
+				const char * prev_end = result[data].end;
+				result[data].end = (char*)at;
+				if (match(state, at))
+					return true;
 				result[data].end = prev_end;
 				return false;
 			}
@@ -1301,6 +1411,10 @@ public:
 			case t_capture_backref:
 			{
 				size_t len = result[data].end - result[data].start;
+#ifdef ARLIB_TEST
+				if (len > SIZE_MAX/2)
+					abort();
+#endif
 				if (at+len > end)
 					return false;
 				if (memcmp(at, result[data].start, len) != 0)
@@ -1347,10 +1461,10 @@ public:
 	}
 };
 
-void regex::match(pair* ret, void** tmp, const char * start, const char * at, const char * end) const
+void regex::match(pair* ret, const char * start, const char * at, const char * end) const
 {
 	ret[0].start = at;
-	matcher m { this, (uint8_t*)start, (uint8_t*)end, ret, (const uint8_t**)tmp };
+	matcher m { this, (uint8_t*)start, (uint8_t*)end, ret };
 	if (!m.match(0, (uint8_t*)at))
 	{
 		// must wipe everything, not just result[0], to avoid bugs where (?!(a)) + "a" leaves trash
@@ -1358,13 +1472,11 @@ void regex::match(pair* ret, void** tmp, const char * start, const char * at, co
 	}
 }
 
-void regex::match_alloc(size_t num_captures, pair* ret, void** tmp, const char * start, const char * at, const char * end) const
+void regex::match_alloc(size_t num_captures, pair* ret, const char * start, const char * at, const char * end) const
 {
 	array<pair> ret2;
-	array<void*> tmp2;
 	ret2.resize(this->num_captures);
-	tmp2.resize(this->num_captures);
-	match(ret2.ptr(), tmp2.ptr(), start, at, end);
+	match(ret2.ptr(), start, at, end);
 	memcpy(ret, ret2.ptr(), sizeof(pair)*num_captures);
 }
 
@@ -1372,18 +1484,14 @@ string regex::replace(cstring str, const char * replacement) const
 {
 	pair store1[5] = {};
 	array<pair> store2;
-	void* store3[5];
-	array<void*> store4;
 	
 	const char * start = str.ptr_raw();
 	const char * end = str.ptr_raw_end();
-	matcher m { this, (uint8_t*)start, (uint8_t*)end, store1, (const uint8_t**)store3 };
+	matcher m { this, (uint8_t*)start, (uint8_t*)end, store1 };
 	if (num_captures > 5)
 	{
 		store2.resize(num_captures);
-		store4.resize(num_captures);
 		m.result = store2.ptr();
-		m.capture_start = (const uint8_t**)store4.ptr();
 	}
 	
 	string out;
@@ -1417,7 +1525,217 @@ string regex::replace(cstring str, const char * replacement) const
 	return out;
 }
 
+template<typename T> // T = regex::parser::node_t, it's a template because can't name regex::parser::anything in header
+void regex::required_substrs_recurse(regex* rgx, T& node, array<string>& ret)
+{
+#ifndef ARLIB_OPT
+	if (node.type != parser::n_series)
+		abort();
+#endif
+	
+	string* str = nullptr;
+	for (parser::node_t& ch : node.children)
+	{
+		if (ch.type == parser::n_insn && ch.subtype.type == t_byte && !ch.has_repeat)
+		{
+			const bitset<256>& by = rgx->bytes[ch.subtype.data];
+			auto it = by.true_idxs().begin();
+			if (it != end_iterator{})
+			{
+				uint8_t by = *it;
+				++it;
+				if (!(it != end_iterator{}))
+				{
+					if (!str)
+						str = &ret.append();
+					*str += by;
+					continue;
+				}
+			}
+		}
+		str = nullptr;
+		
+		if (ch.type == parser::n_series && !ch.has_repeat)
+			regex::required_substrs_recurse(rgx, ch, ret);
+	}
+}
+
+array<string> regex::required_substrs(cstring rgx)
+{
+	regex r;
+	regex::parser p { &r, (uint8_t*)rgx.ptr_raw_end() };
+	regex::parser::node_t target;
+	if (!p.parse(rgx.bytes().ptr(), target))
+		return {};
+	
+	array<string> ret;
+	if (target.type == regex::parser::n_series) // can be n_alternative
+		regex::required_substrs_recurse(&r, target, ret);
+	return ret;
+}
+
+
+bool regex_search::parse(cstring rgx)
+{
+	set_fail();
+	
+	regex r;
+	regex::parser p { &r, (uint8_t*)rgx.ptr_raw_end() };
+	regex::parser::node_t node;
+	if (!p.parse(rgx.bytes().ptr(), node))
+		return false;
+	
+	if (!regex::parser::nfa_t::tag_can_nfa(node))
+		return false;
+	
+#ifndef ARLIB_OPT
+	if (node.type == regex::parser::n_insn)
+		abort();
+#endif
+	
+	regex::parser::nfa_t nfa;
+	nfa.shortest_first = false; // valgrind complains if I don't set this
+	nfa.create(&r, node.children, node.type==regex::parser::n_alternative);
+	regex::dfa_t dfa;
+	nfa.convert_to_dfa(dfa);
+	
+	int num_unroll = 4; // todo: find better value, or auto tune it
+	accept_empty = (dfa.init_state & 0x80000000);
+	unroll_count = num_unroll;
+	
+	array<int32_t> states;
+	states.resize(num_unroll);
+	size_t target = 0;
+	for (int i=1;i<num_unroll;i++)
+	{
+		states[i] = dfa.transitions.size();
+		regex::dfa_t::node_t& n = dfa.transitions.append();
+		for (int j=0;j<256;j++) 
+			n.next[j] = target;
+		target = states[i];
+	}
+	
+	map<array<int32_t>, uint16_t, arrayview_hasher> seen;
+	transitions.reset();
+	state_for_recurse(nfa.unique_bytes, dfa, seen, states);
+	if (transitions.size() > 65535)
+	{
+		// too complex, ask for a lower num_unroll
+		set_fail();
+		return false;
+	}
+	
+	return true;
+}
+uint16_t regex_search::state_for_recurse(const bitset<256>& unique_bytes, const regex::dfa_t& dfa,
+                                         map<array<int32_t>, uint16_t, arrayview_hasher>& seen, arrayview<int32_t> in_states)
+{
+	uint32_t create_state = seen.size();
+	uint32_t dfa_state = seen.get_create(in_states, create_state);
+	if (dfa_state == create_state)
+	{
+		transitions.append();
+		
+		size_t n_set = 0;
+		next_t next_state KNOWN_INIT({});
+		
+		for (size_t by : unique_bytes.true_idxs())
+		{
+			while (n_set < by)
+				transitions[dfa_state].next[n_set++] = next_state;
+			
+			uint8_t lowest_possible = 0xFF;
+			uint8_t lowest_match = 0xFF;
+			
+			array<int32_t> new_states;
+			new_states.resize(in_states.size());
+			
+			for (size_t i=0;i<in_states.size();i++)
+			{
+				if (in_states[i] < 0)
+				{
+					new_states[i] = -1;
+					continue;
+				}
+				uint32_t dfa_next = dfa.transitions[in_states[i]].next[by];
+				if (dfa_next & 0x80000000)
+				{
+					if (lowest_match == 0xFF)
+						lowest_match = i;
+					new_states[i] = -1; // drop it after first match, anything beyond that can't affect anything
+				}
+				else
+				{
+					new_states[i] = dfa_next;
+					if (new_states[i] == 0x7FFFFFFF)
+						new_states[i] = -1;
+					else if (lowest_possible == 0xFF)
+						lowest_possible = i;
+				}
+			}
+			if (lowest_possible != 0xFF)
+				next_state = { lowest_possible, lowest_match, state_for_recurse(unique_bytes, dfa, seen, new_states) };
+			else
+				next_state = { 0xFF, lowest_match };
+		}
+		while (n_set < 256)
+			transitions[dfa_state].next[n_set++] = next_state;
+	}
+	return dfa_state;
+}
+
+const char * regex_search::search(const char * start, const char * end) const
+{
+	if (accept_empty)
+		return start;
+	while (true)
+	{
+		uint32_t best_match = 0xFF;
+		const char * iter = start;
+		uint32_t state = 0;
+		while (iter < end)
+		{
+			uint8_t ch = (uint8_t)*iter++;
+			const next_t& next = transitions[state].next[ch];
+			if (next.lowest_match < best_match)
+				best_match = next.lowest_match;
+			if (best_match <= next.lowest_possible)
+				break;
+			state = next.next;
+		}
+		if (best_match != 0xFF)
+			return start + best_match;
+		
+		if (end-start < unroll_count)
+			return nullptr;
+		start += unroll_count;
+	}
+}
+
 #ifndef _WIN32 // todo: enable these when my compiler shuts up about %zu
+void regex_search::dump() const
+{
+	printf("unroll count %d\n", unroll_count);
+	if (accept_empty) puts("accept empty");
+	for (size_t st=0;st<transitions.size();st++)
+	{
+		const node_t& n = transitions[st];
+		printf("  %zu: ", st);
+		for (size_t by=0;by<256;by++)
+		{
+			size_t by1 = by;
+			while (by+1 < 256 && n.next[by+1] == n.next[by])
+				by++;
+			regex::dump_range(by1, by);
+			
+			printf(" -> %d,%d,%d", n.next[by].lowest_possible, n.next[by].lowest_match, n.next[by].next);
+			if (by != 255)
+				printf(", ");
+		}
+		puts("");
+	}
+}
+
 void regex::dump(arrayview<insn_t> insns) const
 {
 	for (size_t i=0;i<insns.size();i++)
@@ -1431,31 +1749,33 @@ void regex::dump(arrayview<insn_t> insns) const
 		}
 		puts("");
 		if (type == t_dfa_shortest || type == t_dfa_longest)
+			dfas[data].dump();
+	}
+}
+void regex::dfa_t::dump() const
+{
+	if (init_state & 0x80000000)
+		puts("  accepts empty");
+	for (size_t st=0;st<transitions.size();st++)
+	{
+		const dfa_t::node_t& n = transitions[st];
+		printf("  %zu: ", st);
+		for (size_t by=0;by<256;by++)
 		{
-			if (dfas[data].init_state & 0x80000000)
-				puts("  accepts empty");
-			for (size_t st=0;st<dfas[data].transitions.size();st++)
-			{
-				const dfa_t::node_t& n = dfas[data].transitions[st];
-				printf("  %zu: ", st);
-				for (size_t by=0;by<256;by++)
-				{
-					size_t by1 = by;
-					while (by+1 < 256 && n.next[by+1] == n.next[by])
-						by++;
-					dump_range(by1, by);
-					
-					uint32_t next_st_raw = n.next[by];
-					int32_t next_st = next_st_raw & 0x7FFFFFFF;
-					if (next_st == 0x7FFFFFFF)
-						next_st = -1;
-					printf(" -> %s%d", (next_st_raw&0x80000000) ? "A " : "", next_st);
-					if (by != 255)
-						printf(", ");
-				}
-				puts("");
-			}
+			size_t by1 = by;
+			while (by+1 < 256 && n.next[by+1] == n.next[by])
+				by++;
+			dump_range(by1, by);
+			
+			uint32_t next_st_raw = n.next[by];
+			int32_t next_st = next_st_raw & 0x7FFFFFFF;
+			if (next_st == 0x7FFFFFFF)
+				next_st = -1;
+			printf(" -> %s%d", (next_st_raw&0x80000000) ? "A " : "", next_st);
+			if (by != 255)
+				printf(", ");
 		}
+		puts("");
 	}
 }
 #endif

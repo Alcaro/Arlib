@@ -67,7 +67,7 @@ static async<void> co_main(int argc, char** argv)
 		});
 	}
 	
-	if (!ch.create({ .prog=child[0], .argv=child.skip(1), .fds={ -1, 1, 2 } }))
+	if (!ch.create({ .prog=child[0], .argv=child, .fds={ -1, 1, 2 } }))
 	{
 		// TODO: failing launches occasionally don't print launch failed
 		// I have not been able to determine the cause; it disappears as soon as I look at it

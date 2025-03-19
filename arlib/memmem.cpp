@@ -18,61 +18,11 @@
 #ifdef runtime__SSE4_2__
 #include <immintrin.h>
 
-// Loads len (1 to 16) bytes from src to a __m128i. src doesn't need any particular alignment. The result's high bytes are undefined.
-__attribute__((target("sse2")))
-static forceinline __m128i load_sse2_small_highundef(const uint8_t * src, size_t len)
-{
-#ifndef ARLIB_OPT
-	// Valgrind *really* hates the fast version.
-	// To start with, reading out of bounds like this is all kinds of undefined behavior, and Valgrind rightfully complains.
-	// Worse, it also doesn't correctly track validity through the _mm_cmpestri instruction;
-	//  any undefined byte, including beyond the length, makes it claim the entire result is undefined,
-	//  and this incorrectly-undefined value is then propagated across the entire program, throwing errors everywhere,
-	//  so I can't just add a suppression to memmem.
-	// Judging by the incomplete cmpestri handler, fixing it is most likely not going to get prioritized.
-	// So I'll switch to a slower but safe version if unoptimized, and if optimized, just leave the errors.
-	// Valgrind doesn't work very well with optimizations anyways.
-	uint8_t tmp[16] __attribute__((aligned(16))) = {};
-	memcpy(tmp, src, len);
-	return _mm_load_si128((__m128i*)tmp);
-#else
-	// as disgusting as this optimization is, it ~doubles my score on some of the benchmarks
-	
-	// rule 1: do not touch a 4096-aligned page that the safe version does not
-	//  (4096 can safely be hardcoded, SSE2 is x86 only and x86 page size ain't changing anytime soon)
-	// rule 2: do not permit the compiler to prove any part of this program is UB
-	// rule 3: as fast as possible
-	
-	// doing two tests is usually slower, but the first half is true 99.6% of the time,
-	//  and simplifying the common case outweighs making the rare case more expensive
-	// combined test: ((4080-src)&4095) < 4080+len
-	// the obvious test: !(((src+15)^(src+len-1)) & 4096)
-	
-	// if a m128i load from here would not cross a page boundary, or if a len-sized load would touch both pages,
-	if (LIKELY(((uintptr_t(src)>>ilog2(sizeof(__m128i)))+1)&(4095>>ilog2(sizeof(__m128i)))) || ((-(uintptr_t)src)&(sizeof(__m128i)-1)) < len)
-	{
-		// then just load
-		return _mm_loadu_si128((__m128i*)launder(src));
-	}
-	else
-	{
-		// if an extended read would inappropriately hit the next page, copy it to the stack, then do an unaligned read
-		// going via memory is ugly, but the better instruction (_mm_alignr_epi8) only exists with constant offset
-		// machine-wise, it'd be safe to shrink tmp to 16 bytes, saving the higher 16 for return address or whatever,
-		//  but that saves nothing in practice, and would give gcc wider license to deem it UB and optimize it out
-		uint8_t tmp[32] __attribute__((aligned(16)));
-		__asm__("" : "+r"(src), "=m"(tmp)); // reading uninitialized variables is UB too, confuse gcc some more
-		_mm_store_si128((__m128i*)tmp, _mm_load_si128((__m128i*)(~15&(uintptr_t)src)));
-		return _mm_loadu_si128((__m128i*)(tmp+(15&(uintptr_t)src)));
-	}
-#endif
-}
-
 // Works on needles of length 2 through 16, but it gets slower for big ones.
 __attribute__((target("sse4.2")))
 static const uint8_t * memmem_sse42(const uint8_t * haystack, size_t haystacklen, const uint8_t * needle, size_t needlelen)
 {
-	__m128i needle_sse = load_sse2_small_highundef(needle, needlelen);
+	__m128i needle_sse = _mm_loadu_si128_highundef((__m128i*)needle, needlelen);
 	
 	__m128i firstbyte = needle_sse;
 	firstbyte = _mm_unpacklo_epi8(firstbyte, firstbyte); // duplicate bottom byte, ignore upper 14
@@ -104,7 +54,7 @@ static const uint8_t * memmem_sse42(const uint8_t * haystack, size_t haystacklen
 	
 	// load_sse2_small_highundef fails for len=0, but haystacklen is known >= 1
 	// the only way for it to be 0 is if step=16, which means needlelen=1, but that returns after memchr
-	__m128i haystack_sse = load_sse2_small_highundef(haystack, haystacklen);
+	__m128i haystack_sse = _mm_loadu_si128_highundef((__m128i*)haystack, haystacklen);
 	int pos = _mm_cmpestri(needle_sse, needlelen, haystack_sse, haystacklen, CMPSTR_FLAGS);
 	if (pos < (int)(haystacklen+1-needlelen))
 		return haystack + pos;
@@ -352,51 +302,5 @@ test("memmem", "", "string")
 	                "abababababababababababababababababababababababababababababababab"
 	                "abababababababababababababababababababababababababababababababab)10000", "ababababbbabababa"));
 }
-
-#ifdef __SSE2__
-test("load_sse2_small_highundef","","")
-{
-#ifndef _WIN32
-	uint8_t* page;
-	if (posix_memalign((void**)&page, 4096, 8192) != 0) abort();
-	autofree<uint8_t> holder = page;
-	
-	for (int i=0;i<8192;i++)
-		page[i] = i&31;
-	
-	auto test1 = [&](int start, int size) {
-		assert_gte(start, size);
-		uint8_t tmp[16];
-		_mm_storeu_si128((__m128i*)tmp, load_sse2_small_highundef(page+8192-start, size));
-		
-		bytesr expected(page+8192-start, size);
-		bytesr actual(tmp, size);
-		assert_eq(actual, expected);
-	};
-	
-	test1(13, 13);
-	test1(16, 16);
-	test1(16, 8);
-	test1(16, 11);
-	test1(27, 16);
-	test1(4100, 16);
-#endif
-	
-	// used to verify the condition in load_sse2_small_highundef
-	/*
-	int n=0;
-	for (int src=0;src<64;src++)
-	for (int len=1;len<=16;len++)
-	{
-		bool safe1 = LIKELY((63&(uintptr_t)src) <= 48) || ((48-(uintptr_t)src)&63) < 48+(uintptr_t)len;
-		bool safe2 = LIKELY((63&(uintptr_t)src) <= 48) || ((-src)&15) < len;
-		printf("%c", "uUSs"[safe1+safe1+safe2]);
-		if (len==16) printf(" src=%d\n",src);
-		if (safe1 != safe2) n++;
-	}
-	printf("%d failures\n",n);
-	*/
-}
-#endif
 #endif
 #endif

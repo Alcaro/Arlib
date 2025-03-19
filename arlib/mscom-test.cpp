@@ -10,9 +10,9 @@ namespace {
 DECL_DYLIB_T(ole32_t, CoInitializeEx, CoCreateInstance, CoTaskMemAlloc, CoTaskMemFree);
 ole32_t ole32;
 
-class my_filter : public CComObject<IBaseFilter> {
+class my_filter final : public CComObject<my_filter, IBaseFilter> {
 public:
-	class my_sink_pin : public CComContainedObject<my_sink_pin, IPin, IMemInputPin> {
+	class my_sink_pin final : public CComContainedObject<my_sink_pin, IPin, IMemInputPin> {
 	public:
 		my_filter* parent() { return container_of<&my_filter::sink>(this); }
 		
@@ -21,7 +21,12 @@ public:
 		HRESULT STDMETHODCALLTYPE Disconnect() override { return E_OUTOFMEMORY; }
 		HRESULT STDMETHODCALLTYPE ConnectedTo(IPin** pPin) override { return E_OUTOFMEMORY; }
 		HRESULT STDMETHODCALLTYPE ConnectionMediaType(AM_MEDIA_TYPE* pmt) override { return E_OUTOFMEMORY; }
-		HRESULT STDMETHODCALLTYPE QueryPinInfo(PIN_INFO* pInfo) override { return E_OUTOFMEMORY; }
+		HRESULT STDMETHODCALLTYPE QueryPinInfo(PIN_INFO* pInfo) override
+		{
+			// not used by tests, just used manually to check how well the compiler optimizes
+			parent()->QueryInterface(IID_PPV_ARGS(&pInfo->pFilter));
+			return E_OUTOFMEMORY;
+		}
 		HRESULT STDMETHODCALLTYPE QueryDirection(PIN_DIRECTION* pPinDir) override { return E_OUTOFMEMORY; }
 		HRESULT STDMETHODCALLTYPE QueryId(LPWSTR* Id) override { return E_OUTOFMEMORY; }
 		HRESULT STDMETHODCALLTYPE QueryAccept(const AM_MEDIA_TYPE* pmt) override { return E_OUTOFMEMORY; }
@@ -250,4 +255,5 @@ void the_test()
 
 test("Microsoft COM - implementation", "", "") { the_test<true>(); }
 test("Microsoft COM - the tests", "", "") { the_test<false>(); }
+//void a() { the_test<true>(); }
 #endif

@@ -714,6 +714,28 @@ bool cstring::isutf8() const
 	
 	while (bytes < end)
 	{
+#ifdef __SSE2__
+		if (bytes + 16 <= end)
+		{
+			if (LIKELY(_mm_movemask_epi8(_mm_loadu_si128((__m128i*)bytes)) == 0))
+			{
+				bytes += 16;
+				continue;
+			}
+		}
+#else
+		if (bytes + sizeof(size_t) <= end)
+		{
+			size_t bits;
+			memcpy(&bits, bytes, sizeof(size_t));
+			size_t mask = SIZE_MAX / 255 * 0x80;
+			if (LIKELY(!(bits & mask)))
+			{
+				bytes += sizeof(size_t);
+				continue;
+			}
+		}
+#endif
 		uint8_t head = *bytes++;
 		if (LIKELY(head < 0x80)) continue;
 		
@@ -1103,7 +1125,8 @@ test("string base", "array,memeq", "string")
 	{
 		assert(cstring().isutf8());
 		assert(cstring("abc").isutf8());
-		assert(cstring(bytesr((uint8_t*)"\0", 1)).isutf8());
+		assert(cstring("aaaabbbbccccdddd").isutf8());
+		assert(string::nul().isutf8());
 		assert(cstring("\xC2\xA9").isutf8());
 		assert(cstring("\xE2\x82\xAC").isutf8());
 		assert(cstring("\xF0\x9F\x80\xB0").isutf8());

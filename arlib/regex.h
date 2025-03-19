@@ -27,10 +27,13 @@
 //    For example, ()+ will crash with a stack overflow.
 
 // If you'd rather not compile the regex every time the expression is reached, you can call this instead.
-// This moves the initialization to before main.
+// This moves the initialization to before main().
 #define REGEX(str) (precompiled_regex<decltype([]{ return "" str ""; })>)
+#define REGEX_SEARCH(str) (precompiled_regex_search<decltype([]{ return "" str ""; })>)
 
 class regex {
+	friend class regex_search;
+	
 	enum insntype_t {
 		t_jump, // Target is 'data'.
 		t_accept, // Doesn't use 'data'. Sets the end of capture group 0.
@@ -64,9 +67,13 @@ class regex {
 		// match is 0x80000000 bit, no more matches is 0x7FFFFFFF
 		struct node_t {
 			uint32_t next[256];
+			bool operator==(const node_t& other) const { return arrayview<uint32_t>(next) == arrayview<uint32_t>(other.next); }
+			size_t hash() const { return ::hash(arrayview<uint32_t>(next).transmute<uint8_t>()); }
 		};
 		array<node_t> transitions;
 		uint32_t init_state; // either 0 or 0x80000000, depending on whether empty string matches
+		
+		void dump() const;
 	};
 	
 	uint32_t num_captures;
@@ -74,7 +81,8 @@ class regex {
 	array<bitset<256>> bytes; // Simply which bytes are legal at this position. Lots of things compile to this. (Most then become a DFA.)
 	array<dfa_t> dfas;
 	
-	class parser;
+public:
+	class parser; // not really public, since its implementation is hidden, but some pieces (like regex_search) need access to it
 	
 public:
 	regex() { set_fail(); }
@@ -142,26 +150,27 @@ public:
 		bool operator!() const { return !(bool)*this; }
 	};
 	
+private:
 	class matcher;
 	
-	void match(pair* ret, void** tmp, const char * start, const char * at, const char * end) const;
-	void match_alloc(size_t num_captures, pair* ret, void** tmp, const char * start, const char * at, const char * end) const;
+	void match(pair* ret, const char * start, const char * at, const char * end) const;
+	void match_alloc(size_t num_captures, pair* ret, const char * start, const char * at, const char * end) const;
 	
 public:
+	// While these match functions are const, they make use of internal caches; this object is not thread safe.
 	
 	template<size_t n = 5> match_t<n> match(const char * start, const char * at, const char * end) const
 	{
 		match_t<n> ret {};
-		void* tmp[n];
 		if (LIKELY(n >= this->num_captures))
 		{
 			ret.m_size = this->num_captures;
-			match(ret.group, tmp, start, at, end);
+			match(ret.group, start, at, end);
 		}
 		else
 		{
 			ret.m_size = n;
-			match_alloc(n, ret.group, tmp, start, at, end);
+			match_alloc(n, ret.group, start, at, end);
 		}
 		return ret;
 	}
@@ -170,6 +179,7 @@ public:
 	// funny type, to ensure it can't construct a temporary
 	template<size_t n = 5> match_t<n> match(cstring& str) const { return match<n>(str.ptr_raw(), str.ptr_raw_end()); }
 	
+	// search() is not recommended, it's slow.
 	template<size_t n = 5> match_t<n> search(const char * start, const char * at, const char * end) const
 	{
 		while (at < end)
@@ -189,12 +199,74 @@ public:
 	
 public:
 	// Prints the compiled regex to stdout. Only usable for debugging.
+#ifndef _WIN32
 	void dump() const { dump(insns); }
+#endif
 private:
 	void dump(arrayview<insn_t> insns) const;
 	static void dump_byte(const bitset<256>& byte);
 	static void dump_range(uint8_t first, uint8_t last);
 	static void dump_single_char(uint8_t ch);
+	
+private:
+	template<typename T>
+	static void required_substrs_recurse(regex* rgx, T& node, array<string>& ret);
+public:
+	// A string that matches the regex will always contain the returned substrings.
+	// Return value will not contain empty strings, but it can be empty.
+	// Callers can use this to speed up some operations.
+	static array<string> required_substrs(cstring rgx);
+};
+
+// A specialized regex class, used to tell the first location where a given regex would match, faster than the regular one.
+// However, it can't tell the length of the match, and can't handle captures, backreferences, boundary assertions, or lookarounds.
+// (It can tell the length of the match - but only of the shortest match, not the correct one in regex order.)
+class regex_search {
+	struct next_t {
+		uint8_t lowest_possible; // Lowest offset for which any subsequent input sequence can match, or 255 for none.
+		uint8_t lowest_match; // Which offset matches here, or 255 for none. If multiple matches, it's the lowest.
+		uint16_t next; // If lowest_possible is 255, this is garbage.
+		
+		bool operator==(const next_t&) const = default;
+	};
+	struct node_t {
+		next_t next[256];
+	};
+	array<node_t> transitions;
+	uint8_t unroll_count;
+	bool accept_empty;
+	
+	void set_fail()
+	{
+		unroll_count = 0;
+		accept_empty = false;
+		transitions.resize(1);
+		for (int i=0;i<256;i++)
+		{
+			transitions[0].next[0].lowest_possible = 255;
+			transitions[0].next[0].lowest_match = 255;
+		}
+	}
+	
+public:
+	regex_search() { set_fail(); }
+	regex_search(cstring rgx) { parse(rgx); }
+private:
+	uint16_t state_for_recurse(const bitset<256>& unique_bytes, const regex::dfa_t& dfa,
+	                           map<array<int32_t>, uint16_t, arrayview_hasher>& seen, arrayview<int32_t> in_states);
+public:
+	bool parse(cstring rgx);
+	operator bool() const { return unroll_count != 0; }
+	
+	const char * search(const char * start, const char * at, const char * end) const { return search(at, end); }
+	const char * search(const char * start, const char * end) const;
+	const char * search(const char * str) const { return search(str, str+strlen(str)); }
+	// funny type, to ensure it can't construct a temporary
+	const char * search(cstring& str) const { return search(str.ptr_raw(), str.ptr_raw_end()); }
+	
+	// Prints the compiled regex to stdout. Only usable for debugging.
+	void dump() const;
 };
 
 template<typename T> static const regex precompiled_regex { T()() };
+template<typename T> static const regex_search precompiled_regex_search { T()() };

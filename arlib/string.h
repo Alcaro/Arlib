@@ -38,16 +38,16 @@ extern const uint8_t char_props[256];
 // 0x04 - unused
 // 0x02 - unused
 // 0x01 - unused
-static inline bool isspace(uint8_t c) { return char_props[c] & 0x80; }
-static inline bool iscspace(uint8_t c) { return char_props[c] & 0x40; }
-static inline bool isdigit(uint8_t c) { return c >= '0' && c <= '9'; } // range check is cheaper than table lookup and bit check
-static inline bool isalpha(uint8_t c) { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'); } // optimized to bitand plus range check
-static inline bool islower(uint8_t c) { return c >= 'a' && c <= 'z'; }
-static inline bool isupper(uint8_t c) { return c >= 'A' && c <= 'Z'; }
-static inline bool isalnum(uint8_t c) { return char_props[c] & 0x10; } // multi range check is expensive
-static inline bool isxdigit(uint8_t c) { return char_props[c] & 0x08; }
-static inline uint8_t tolower(uint8_t c) { return c|(char_props[c]&0x20); }
-static inline uint8_t toupper(uint8_t c) { return c&~(char_props[c]&0x20); }
+static forceinline bool isspace(uint8_t c) { return char_props[c] & 0x80; }
+static forceinline bool iscspace(uint8_t c) { return char_props[c] & 0x40; }
+static forceinline bool isdigit(uint8_t c) { return c >= '0' && c <= '9'; } // range check is cheaper than table lookup and bit check
+static forceinline bool isalpha(uint8_t c) { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'); } // optimized to bitand plus range check
+static forceinline bool islower(uint8_t c) { return c >= 'a' && c <= 'z'; }
+static forceinline bool isupper(uint8_t c) { return c >= 'A' && c <= 'Z'; }
+static forceinline bool isalnum(uint8_t c) { return char_props[c] & 0x10; } // multi range check is expensive
+static forceinline bool isxdigit(uint8_t c) { return char_props[c] & 0x08; }
+static forceinline uint8_t tolower(uint8_t c) { return c|(char_props[c]&0x20); }
+static forceinline uint8_t toupper(uint8_t c) { return c&~(char_props[c]&0x20); }
 
 
 

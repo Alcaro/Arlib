@@ -80,9 +80,10 @@ void bitarray::resize(size_t len)
 //size_t bytes;
 //if (len > n_inline) bytes = alloc_size(len);
 //else bytes = sizeof(bits_inline);
+//const uint8_t * bits8 = (uint8_t*)bits();
 //for (size_t i=0;i<bitround(bytes);i++)
 //{
-//printf(" %.2X", bits()[i]);
+//printf(" %.2X", bits8[i]);
 //}
 //puts("");
 //bool fail=false;
@@ -340,7 +341,7 @@ test("bitarray", "", "array")
 	{
 		bitarray b;
 		b.resize(8);
-		assert_eq(tostring_dbg(array<size_t>(b.true_idxs())), "[]");
+		assert_eq(tostring_dbg(array<size_t>::from(b.true_idxs())), "[]");
 		b[0] = true;
 		b[1] = false;
 		b[2] = true;
@@ -351,7 +352,7 @@ test("bitarray", "", "array")
 		b[7] = true;
 		assert_eq(tostring_dbg(b), "10110111");
 		
-		array<size_t> trues = array<size_t>(b.true_idxs());
+		array<size_t> trues = array<size_t>::from(b.true_idxs());
 		assert_eq(tostring_dbg(trues), "[0,2,3,5,6,7]");
 		
 		b.reset();
@@ -365,9 +366,9 @@ test("bitarray", "", "array")
 		b.resize(64);
 		assert_eq(tostring_dbg(b), "0000000000000000000000000000000000000000000000000000000000000000");
 		
-		assert_eq(tostring_dbg(array<size_t>(b.true_idxs())), "[]");
+		assert_eq(tostring_dbg(array<size_t>::from(b.true_idxs())), "[]");
 		b[41] = true;
-		assert_eq(tostring_dbg(array<size_t>(b.true_idxs())), "[41]");
+		assert_eq(tostring_dbg(array<size_t>::from(b.true_idxs())), "[41]");
 	}
 	
 	{
@@ -380,6 +381,19 @@ test("bitarray", "", "array")
 		assert_eq(tostring_dbg(b), "00000000000");
 		memcpy(&bits_raw, &b, sizeof(bits_raw));
 		assert_eq(bits_raw, 0);
+	}
+	
+	{
+		bitarray a;
+		a.resize(256);
+		bitarray b;
+		b.resize(128);
+		a |= b;
+		assert_eq(a.size(), 256);
+		assert_eq(b.size(), 128);
+		b |= a;
+		assert_eq(a.size(), 256);
+		assert_eq(b.size(), 256);
 	}
 	
 	static_assert(sizeof(bitset<256>) == 256/8);

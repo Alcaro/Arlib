@@ -173,6 +173,20 @@ string tostring(timestamp val)
 		len--;
 	return ret.substr(0, len);
 }
+static uint32_t parse_nanos(const char * & at, const char * end)
+{
+	if (at == end || *at != '.')
+		return 0;
+	at++;
+	uint32_t ret = 0;
+	for (int i=0;i<9;i++)
+	{
+		ret *= 10;
+		if (at < end && isdigit(*at))
+			ret += *(at++) - '0';
+	}
+	return ret;
+}
 bool fromstring(cstring s, timestamp& out)
 {
 	out = {};
@@ -183,25 +197,25 @@ bool fromstring(cstring s, timestamp& out)
 		int_end++;
 	if (!fromstring(s.substr(0, int_end-start), out.sec))
 		return false;
-	if (int_end != end)
-	{
-		if (*int_end != '.')
-			return false;
-		int_end++;
-		size_t n_digits = end - int_end;
-		if (n_digits == 0 || n_digits > 9)
-			return false;
-		long ret = 0;
-		for (int i=0;i<9;i++)
-		{
-			ret *= 10;
-			if (int_end == end) {}
-			else if (!isdigit(*int_end)) return false;
-			else ret += *(int_end++) - '0';
-		}
-		out.nsec = ret;
-	}
-	return true;
+	
+	out.nsec = parse_nanos(int_end, end);
+	return (int_end == end);
+}
+
+timestamp timestamp::from_iso8601(cstring stamp)
+{
+	auto tmp = stamp.c_str();
+	const char * ptr = tmp.c_str();
+	const char * end = ptr + stamp.length();
+	int nano;
+	struct tm tm;
+	tm.tm_isdst = false;
+	int n = sscanf(ptr, "%d-%d-%dT%d:%d:%d%n", &tm.tm_year,&tm.tm_mon,&tm.tm_mday, &tm.tm_hour,&tm.tm_min,&tm.tm_sec, &nano);
+	if (n != 6) return {};
+	tm.tm_year -= 1900;
+	tm.tm_mon -= 1;
+	ptr += nano;
+	return { timegm(&tm), parse_nanos(ptr, end) };
 }
 
 #include "test.h"
@@ -240,4 +254,7 @@ test("timestamp serialization", "", "")
 	assert_eq(try_fromstring<timestamp>("123456789.123456"   ), (timestamp{123456789,123456000}));
 	assert_eq(try_fromstring<timestamp>("123456789"          ), (timestamp{123456789,000000000}));
 	assert_eq(try_fromstring<timestamp>(        "0.123456"   ), (timestamp{        0,123456000}));
+	
+	// needs to contain at least one 08 or 09 to ensure it's not octal
+	assert_eq(timestamp::from_iso8601("2018-10-25T08:45:09.245000+00:00"), (timestamp{1540457109,245000000}));
 }

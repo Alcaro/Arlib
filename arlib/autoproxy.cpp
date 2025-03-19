@@ -5,7 +5,6 @@
 #  define BACKEND_GSETTINGS
 # else
 #  define BACKEND_GVDB
-#  define NEED_RELOAD
 # endif
 #endif
 #include "autoproxy.h"
@@ -18,6 +17,7 @@
 namespace {
 #ifdef BACKEND_GVDB
 // this object trusts the input database, and does not protect against buffer overflows and other misbehavior
+// need to fix that before promoting to a proper Arlib class (if that's ever needed)
 class gvdb {
 	file2::mmap_t map;
 	
@@ -49,7 +49,7 @@ public:
 			return;
 		
 		uint32_t items_end = by.u32l();
-		uint32_t bloom = by.u32l() - 0x28000000; // no clue what this offset is
+		uint32_t bloom = by.u32l() - 0x28000000; // no clue what this offset is. Flags?
 		uint32_t buckets = by.u32l();
 		
 		size_t items_start = 0x20 + sizeof(uint32_t)*bloom + sizeof(uint32_t)*buckets;
@@ -57,14 +57,22 @@ public:
 		items = map.slice(items_start, items_end-items_start).transmute<gvdb_item>();
 	}
 	
+	uint32_t gvdb_hash(bytesr by)
+	{
+		uint32_t ret = 5381;
+		for (int8_t b : by)
+			ret = ret*33 + b;
+		return ret;
+	}
+	
 private:
 	// for type 'v', returns a G_VARIANT_TYPE_VARIANT serialized object
-	// for 'L', it seems to list the key's children in some format I didn't investigate
+	// for 'L', it lists the key's children, as indices into the hashmap
 	const gvdb_item * get_raw(cstring key, char type)
 	{
-		uint32_t exp_hash = 5381;
-		for (int8_t b : key.bytes())
-			exp_hash = exp_hash*33 + b;
+		// could use the bloom and buckets objects, but yawn
+		// I'll care when and if this becomes a perf hazard (aka most likely never)
+		uint32_t exp_hash = gvdb_hash(key.bytes());
 		
 		for (size_t n=0;n<items.size();n++)
 		{
@@ -87,8 +95,8 @@ private:
 			}
 			if (key_at != 0xFFFFFFFF)
 				goto not_this;
-			if (item.type != type)
-				goto not_this;
+			if (item.type != type) // type L always ends with slash, type v never does, and others don't exist
+				goto not_this; // but might as well check anyways
 			
 			return &item;
 			
@@ -166,6 +174,52 @@ public:
 	int32_t get_int(cstring key, int32_t fallback = 0) { return parse_int_variant(get(key), fallback); }
 	cstring get_str(cstring key, cstring fallback = "") { return parse_str_variant(get(key), fallback); }
 	bool get_str_array(cstring key, array<cstring>& out) { return parse_str_array_variant(get(key), out); }
+	
+private:
+	string full_name_for(const gvdb_item& item)
+	{
+		string ret;
+		const gvdb_item * iter = &item;
+		while (true)
+		{
+			ret = cstring(map.slice(iter->key_pos, iter->key_len))+ret;
+			if (iter->parent == 0xFFFFFFFF)
+				break;
+			iter = &items[iter->parent];
+		}
+		return ret;
+	}
+public:
+	// Just prints the entire thing to stdout.
+	void dump()
+	{
+		// could find the root node and iterate its children, so it sorts less randomly, but yawn
+		for (const gvdb_item& item : items)
+		{
+			printf("%s %c", full_name_for(item).c_str().c_str(), item.type);
+			bytesr by = map.slice(item.val_pos, item.val_end-item.val_pos);
+			if (item.type == 'v')
+			{
+				// todo
+				puts("");
+puts(tostringhex_dbg(by));
+			}
+			else if (item.type == 'L')
+			{
+				arrayview<uint32_t> children = by.transmute<uint32_t>();
+				for (size_t i=0;i<children.size();i++)
+				{
+					const gvdb_item& child = items[children[i]];
+					printf(" %.*s", child.key_len, map.ptr()+child.key_pos);
+				}
+				puts("");
+			}
+			else
+			{
+				puts(tostringhex_dbg(by));
+			}
+		}
+	}
 };
 #endif
 

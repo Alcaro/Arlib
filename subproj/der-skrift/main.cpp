@@ -66,7 +66,7 @@ static compiled recompile(cstring text_raw)
 		if (tokens[at].startswith("//"))
 		{
 			if (tokens[at].startswith("// CFLAGS: "))
-				ret.lflags += tokens[at].substr(strlen("// CFLAGS: "), ~0).strip();
+				ret.cflags += tokens[at].substr(strlen("// CFLAGS: "), ~0).strip();
 			if (tokens[at].startswith("// LFLAGS: "))
 				ret.lflags += tokens[at].substr(strlen("// LFLAGS: "), ~0).strip();
 			tokens.pop(at);

@@ -1,22 +1,46 @@
 #include "stringconv.h"
 
-size_t tostring_len(  signed long long val) { return ilog10(abs(val)|1) + (val < 0) + 1; }
 size_t tostring_len(unsigned long long val) { return ilog10(val|1) + 1; }
+size_t tostring_len(signed long long val)
+{
+	if (val < 0) return ilog10(-(unsigned long long)val) + 2; // tricky definition because abs(INT_MIN) and -INT_MIN are UB
+	else return ilog10(val|1) + 1;
+}
 
+static const char tostring_digitpairs[200] = { '0','0','0','1','0','2','0','3','0','4','0','5','0','6','0','7','0','8','0','9',
+                                               '1','0','1','1','1','2','1','3','1','4','1','5','1','6','1','7','1','8','1','9',
+                                               '2','0','2','1','2','2','2','3','2','4','2','5','2','6','2','7','2','8','2','9',
+                                               '3','0','3','1','3','2','3','3','3','4','3','5','3','6','3','7','3','8','3','9',
+                                               '4','0','4','1','4','2','4','3','4','4','4','5','4','6','4','7','4','8','4','9',
+                                               '5','0','5','1','5','2','5','3','5','4','5','5','5','6','5','7','5','8','5','9',
+                                               '6','0','6','1','6','2','6','3','6','4','6','5','6','6','6','7','6','8','6','9',
+                                               '7','0','7','1','7','2','7','3','7','4','7','5','7','6','7','7','7','8','7','9',
+                                               '8','0','8','1','8','2','8','3','8','4','8','5','8','6','8','7','8','8','8','9',
+                                               '9','0','9','1','9','2','9','3','9','4','9','5','9','6','9','7','9','8','9','9' };
 size_t tostring_ptr(char* buf, unsigned long long val, size_t len)
 {
-	char* iter = buf+len;
-	while (iter > buf)
+	size_t orig_len = len;
+	while (len > 1)
 	{
-		*--iter = '0'+val%10;
-		val /= 10;
+		len -= 2;
+		memcpy(buf+len, tostring_digitpairs+val%100*2, 2);
+		val /= 100;
 	}
-	return len;
+	// careful with this function, it's vulnerable to gcc bug 118316 and clang bug 121853
+	if (len)
+		buf[0] = '0'+val;
+	return orig_len;
 }
 size_t tostring_ptr(char* buf, signed long long val, size_t len)
 {
-	if (val < 0) { tostring_ptr(buf, (unsigned long long)-val, len); *buf = '-'; return len; }
-	else return tostring_ptr(buf, (unsigned long long)val, len);
+	if (val < 0)
+	{
+		tostring_ptr(buf, (unsigned long long)-val, len); // this looks weird, but it writes from the end so it works out properly
+		*buf = '-';
+		return len;
+	}
+	else
+		return tostring_ptr(buf, (unsigned long long)val, len);
 }
 
 template<typename T>
@@ -320,6 +344,14 @@ test("string conversion - integer", "", "string")
 	assert_eq(tostring((int64_t)-9223372036854775808u), "-9223372036854775808");
 	assert_eq(tostringhex<4>(0x0123), "0123");
 	assert_eq(tostringhex(18446744073709551615u), "FFFFFFFFFFFFFFFF");
+	
+	assert_eq(tostring_len((int64_t)0), strlen("0"));
+	assert_eq(tostring_len((int64_t)1), strlen("1"));
+	assert_eq(tostring_len((int64_t)123), strlen("123"));
+	assert_eq(tostring_len((int64_t)9223372036854775807), strlen("9223372036854775807"));
+	assert_eq(tostring_len((int64_t)-9), strlen("-9"));
+	assert_eq(tostring_len((int64_t)-10), strlen("-10"));
+	assert_eq(tostring_len((int64_t)-9223372036854775808u), strlen("-9223372036854775808"));
 	
 	assert(fromstringhex("87654321", arrayvieww<uint8_t>(foo)));
 	assert_eq(foo[0], 0x87); assert_eq(foo[1], 0x65); assert_eq(foo[2], 0x43); assert_eq(foo[3], 0x21);

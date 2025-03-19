@@ -12,7 +12,7 @@ public:
 		
 		t_close = 8,
 		t_ping = 9,
-		t_pong = 10
+		t_pong = 10,
 	};
 	
 	void wrap_socks(mksocket_t cb) { cb_mksock = cb; }

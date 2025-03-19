@@ -251,10 +251,9 @@ __asm__(R"(
 .globl _start
 _start:
 mov %rdi, %rsp
-push %rdx             # preserve %rdx because https://www.uclibc.org/docs/psABI-x86_64.pdf page 30 says so
-call bootstrap_start  # Linux doesn't use that feature (https://elixir.bootlin.com/linux/v5.9/source/arch/x86/include/asm/elf.h#L170),
-pop %rdx              # but userspace may react weirdly if %rdx starts out nonzero
-jmp %rax              # zeroing it by preserving via stack (rather than xor rdx,rdx) also ensures %rsp is aligned in bootstrap_start
+call bootstrap_start
+xor edx,edx  # zero rdx because Linux does so https://elixir.bootlin.com/linux/v5.9/source/arch/x86/include/asm/elf.h#L170
+jmp %rax     # I doubt anything reads it, but no reason not to
 )");
 
 

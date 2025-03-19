@@ -177,7 +177,11 @@ jsonparser::event jsonparser::next_inner()
 	const uint8_t * num_start = m_at;
 	
 	if ((json5 && *m_at == '+') || *m_at == '-')
+	{
 		m_at++;
+		if (m_at == end)
+			return { jsonparser::error };
+	}
 	
 	if (json5 && m_at+8 <= end && readu_le64(m_at) == 0x7974696E69666E49) m_at += 8; // Infinity
 	else if (json5 && m_at[0] == 'N' && m_at[1] == 'a' && m_at[2] == 'N') m_at += 3;
@@ -250,7 +254,7 @@ again:
 				m_at++;
 				if (*m_at == '\n' || *m_at == '\r' || *m_at == '\0')
 					break;
-				if (m_at[0] == '\xE2' && m_at[1] == '\x80' && (m_at[2] == '\xA8' || m_at[2] == '\xA9'))
+				if (m_at[0] == 0xE2 && m_at[1] == 0x80 && (m_at[2] == 0xA8 || m_at[2] == 0xA9))
 					break;
 			}
 			goto again;
@@ -366,13 +370,18 @@ cstring jsonparser::decode_backslashes(bytesw by)
 				in++;
 		}
 		else if (json5 && slash[1] == '\n') {}
-		else if (json5 && (memeq(slash+1, u8"\u2028", 3) || memeq(slash+1, u8"\u2029", 3)))
+		else if (json5 && end-slash >= 4 && (memeq(slash+1, u8"\u2028", 3) || memeq(slash+1, u8"\u2029", 3)))
 		{
 			in = slash+4;
 		}
 		else if (slash[1] == 'u' || (json5 && slash[1] == 'x'))
 		{
 			size_t n_digits = (slash[1] == 'u' ? 4 : 2);
+			if (in+n_digits > end)
+			{
+				m_need_error = true;
+				continue;
+			}
 			uint32_t codepoint;
 			if (!fromstringhex_ptr((char*)in, (char*)in+n_digits, codepoint))
 			{
@@ -931,7 +940,7 @@ static void testjson_error(cstring json)
 	assert_eq(events.contains(e_error), !valid); // any error is fine
 	
 	array<int> events1 = events;
-	for (ssize_t n=events.size()-1;n>=0;n--)
+	for (size_t n=events.size();n--;)
 	{
 		if (events[n] == e_error)
 			events.remove(n);
@@ -1019,6 +1028,7 @@ static void testjson_all()
 	testcall(testjson_error<T>("1e"));
 	testcall(testjson_error<T>("1e+"));
 	testcall(testjson_error<T>("1e-"));
+	testcall(testjson_error<T>("-"));
 	testcall(testjson_error<T>("z"));
 	testcall(testjson_error<T>("{ \"a\":1, \"b\":2, \"q\":*, \"a\":3, \"a\":4 }"));
 	testcall(testjson_error<T>("\""));
@@ -1117,6 +1127,7 @@ No \\n's!",
   "backwardsCompatible": "with JSON",
 }
 )"));
+	testcall(testjson_error<T,json5>("[1, \xE2\x80\xA8 2, // comment\xE2\x80\xA8 3]"));
 }
 
 test("JSON parser", "string", "json") { testjson_all<jsonparser, false>(); }

@@ -135,7 +135,7 @@ void websocket::send(bytesr by, int type)
 		head.u8(0x80 | 127);
 		head.u64b(by.size());
 	}
-	head.u32b(0); // mask key (spec says must be random, but screw that, it doesn't protect against any plausible threat)
+	head.u32b(0); // mask key (spec says must be random, but I'm not doing that until I find what threat it protects against)
 	
 	sock.send_buf(head.finish());
 	sock.send_buf(by);

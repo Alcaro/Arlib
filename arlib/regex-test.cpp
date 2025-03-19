@@ -7,6 +7,7 @@ static void testfn(const char * re, const char * input, Args... args)
 	regex rx;
 	assert(rx.parse(re));
 	regex::match_t<5> result = rx.match(input);
+	
 	const char * exp_capture_raw[] = { args... };
 	string exp_capture;
 	string capture;
@@ -43,7 +44,10 @@ test("regex", "string", "regex")
 	test1("[abc-]", "b", "b");
 	test1("[a-b-c-d]", "c", "c");
 	test1("[a-b-c-d]", "-", "-");
+	test1("[]", "a", nullptr);
+	test1("[^]", "a", "a");
 	test1("\xC3[\xB8\x98]", "ø", "ø");
+	test1("\\xC3\\xB8", "ø", "ø");
 	test1("(a){5}", "aaaaaa", "aaaaa", "a");
 	test1("(abc|def)", "abcx", "abc", "abc");
 	test1("(abc|def)", "defx", "def", "def");
@@ -195,6 +199,7 @@ test("regex", "string", "regex")
 	test1("(?:ab?c?)*(?:auth|author|axolotl|axe)", "abaabcaxolotl", "abaabcaxolotl");
 	test1("[abc]@[def]", "b@d", "b@d"); // try to tickle the unique_bytes cross-chunk case
 	test1("[abc]\\?[def]", "b?d", "b?d");
+	test1(R"(<(@[&!]?\d+|#\d+)>)", "<@12345>", "<@12345>", "@12345"); // caused some trouble with the DFA deduplicator
 	
 	assert_eq((cstring)(regex("bc").search("abc")[0].start), "bc");
 	assert_eq(regex("f(oo)").replace("foofoobarfoo", "\\1"), "oooobaroo");
@@ -220,4 +225,52 @@ test("regex", "string", "regex")
 	assert(!r);
 	assert(r.parse(""));
 	assert(r);
+	
+	assert_eq(regex::required_substrs("a"), array<string>{"a"});
+	assert_eq(regex::required_substrs("abc"), array<string>{"abc"});
+	assert_eq(regex::required_substrs("abc.def.ghi"), (array<string>{"abc","def","ghi"}));
+	assert_eq(regex::required_substrs("abc(def)ghi"), (array<string>{"abc","def","ghi"}));
+	assert_eq(regex::required_substrs("abc+"), (array<string>{"ab"})); // many of these could be improved, but no real point
+	assert_eq(regex::required_substrs("abc|abc"), (array<string>{}));
+	assert_eq(regex::required_substrs("(abc)+"), (array<string>{}));
+	
+	//test1("(?:)*?$", "a", ""); // infinite loop
+	//test1(".+a................................a", "b", ""); // stack overflow in nfa->dfa converter
+	test1("(?:|(a?){0,2})\\1b", "a", nullptr, nullptr); // segfault, negative length in memcmp
+}
+#undef test1
+#undef test1fail
+
+static void testfn_search(const char * exp, const char * str, int off)
+{
+	regex_search rs;
+	assert(rs.parse(exp));
+//rs.dump();
+	const char * ret = rs.search(str);
+	int off_act = (ret ? ret-str : -1);
+	assert_eq(off_act, off);
+}
+#define test1(exp, input, off) testcall(testfn_search(exp, input, off))
+#define test1fail(exp) do { regex_search rs; assert(!rs.parse(exp)); } while(0)
+test("regex search", "string", "regex")
+{
+	test1("a", "walrus", 1);
+	test1("[abc]", "walrus", 1);
+	test1("bcd", "abcdefg", 1);
+	test1("b|bcd|bc", "abcdefg", 1);
+	test1("bcde|cd[^]*", "abcdefg", 1);
+	test1("bcde|cd[^]*", "abcdZfg", 2);
+	test1("bcde|cd[^]*", "abcZefg", -1);
+	test1("abc|[^]*", "b", 0);
+	test1("a+a+a+", "abaabaaabaaaa", 5);
+	test1("a*a*", "abaabaaabaaaa", 0);
+	test1("bb", "bababababababababababb", 20);
+	test1("a*a*a*bc*c*c*d*e*e*e*", "abaabaaabaaaa", 0);
+	test1("a(?:b*b*c*c*|d*d*e*e*|f*f*g*g*|)*h", "haccededh", 1);
+	test1("(?:a*a*b*)*c", "abaabaaabaaaac", 0);
+	test1("", "walrus", 0);
+	test1fail("^");
+	test1fail("(a)");
+	test1fail("(?=a)");
+	test1(R"([^0-9A-Za-z\s\x80-\xBF\xC3-\xFF]|\n\n| {2,}\n|\w+:\S)", "k", -1);
 }

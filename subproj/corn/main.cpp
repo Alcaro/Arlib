@@ -149,8 +149,8 @@ textgrid grid;
 GtkWindow* mainwnd = NULL;
 GQuark q_fname;
 
-void enqueue(cstring fn);
-void enqueue_real(cstring fn);
+void enqueue(string fn);
+void enqueue_repeat(cstring fn);
 
 GtkButton* btn_toggle;
 #ifdef ARLIB_GUI_GTK3
@@ -213,9 +213,9 @@ struct column {
 	
 	bool add_raw(cstring display, cstring full)
 	{
-		if (items && full == items[items.size()-1].filename)
+		if (items && full == items.last().filename)
 		{
-			items[items.size()-1].total++;
+			items.last().total++;
 			render(items.size()-1);
 			return true;
 		}
@@ -294,71 +294,217 @@ void init_common()
 GtkEntry* search_line;
 size_t search_focus = 0;
 
-array<string> search_filenames;
-map<string,string> symlink_filenames;
-void init_search_recurse(cstring path)
-{
-	DIR* dir = opendir(MUSIC_DIR + path);
-	dirent* ent;
-	while ((ent = readdir(dir)))
-	{
-		// don't use strcmp, its constant overhead is suboptimal at best
-		if (UNLIKELY(ent->d_name[0] == '.'))
-		{
-			if (ent->d_name[1] == '\0') continue;
-			if (ent->d_name[1] == '.' && ent->d_name[2] == '\0') continue;
-		}
+class searcher {
+private:
+	struct music_file {
+		string raw;
+		string lower;
+		int base_penalty;
 		
-		string childpath = path + ent->d_name;
-		int type;
-		if (ent->d_type == DT_UNKNOWN)
+		music_file(cstring raw) : raw(raw), lower(raw.lower())
 		{
-			struct stat st;
-			lstat(MUSIC_DIR + childpath, &st);
-			type = (st.st_mode & S_IFMT);
+			int penalty = 0;
+			if (raw.contains("/x/") || raw.contains("/x-"))
+				penalty += 1000;
+			if (raw.iendswith(".png") || raw.iendswith(".jpg"))
+				penalty += 1000;
+			if (raw.iendswith(".txt") || raw.iendswith(".pdf"))
+				penalty += 1000;
+			if (raw.iendswith(".db") || raw.iendswith(".ini"))
+				penalty += 1000;
+			if (raw.iendswith(".zip") || raw.iendswith(".rar") || raw.iendswith(".7z"))
+				penalty += 1000;
+			if (raw.iendswith(".m3u") || raw.iendswith(".pls"))
+				penalty += 1000;
+			if (raw.iendswith(".htm") || raw.iendswith(".html") || raw.iendswith(".url") || raw.iendswith(".nfo"))
+				penalty += 1000;
+			if (raw.iendswith(".mid"))
+				penalty += 1000;
+			base_penalty = penalty;
 		}
-		else
-		{
-			static_assert(S_IFIFO == DT_FIFO<<12);
-			static_assert(S_IFCHR == DT_CHR<<12);
-			static_assert(S_IFDIR == DT_DIR<<12);
-			static_assert(S_IFBLK == DT_BLK<<12);
-			static_assert(S_IFREG == DT_REG<<12);
-			static_assert(S_IFLNK == DT_LNK<<12);
-			static_assert(S_IFSOCK == DT_SOCK<<12);
-			// DT_WHT is 14, but S_IFWHT doesn't exist
-			type = ent->d_type << 12;
-		}
-		
-		if(0);
-		else if (type == S_IFLNK)
-		{
-			search_filenames.append(childpath);
-			symlink_filenames.insert(childpath, file::resolve(file::dirname(childpath), file::readlink(MUSIC_DIR + childpath)));
-		}
-		else if (type == S_IFDIR) init_search_recurse(childpath+"/");
-		else if (type == S_IFREG) search_filenames.append(childpath);
-		else puts("unknown filetype "+childpath);
-	}
-	closedir(dir);
-}
-void init_search()
-{
-	search_filenames.reset();
-	symlink_filenames.reset();
-	init_search_recurse("");
-}
-
-class file_matcher {
-	array<string> words;
-	regex re;
+	};
+	array<music_file> m_files;
+	map<string,string> m_symlinks;
 public:
-	void init(cstring search)
+	searcher() { scan_music_dir(); }
+	
+private:
+	void scan_music_dir_recurse(cstring path)
 	{
-		words = search.split(" ");
-		re.parse(search);
+		DIR* dir = opendir(MUSIC_DIR + path);
+		dirent* ent;
+		while ((ent = readdir(dir)))
+		{
+			// don't use strcmp, its constant overhead is suboptimal at best
+			if (UNLIKELY(ent->d_name[0] == '.'))
+			{
+				if (ent->d_name[1] == '\0') continue;
+				if (ent->d_name[1] == '.' && ent->d_name[2] == '\0') continue;
+			}
+			
+			string childpath = path + ent->d_name;
+			int type;
+			if (ent->d_type == DT_UNKNOWN)
+			{
+				struct stat st;
+				lstat(MUSIC_DIR + childpath, &st);
+				type = (st.st_mode & S_IFMT);
+			}
+			else
+			{
+				static_assert(S_IFIFO == DT_FIFO<<12);
+				static_assert(S_IFCHR == DT_CHR<<12);
+				static_assert(S_IFDIR == DT_DIR<<12);
+				static_assert(S_IFBLK == DT_BLK<<12);
+				static_assert(S_IFREG == DT_REG<<12);
+				static_assert(S_IFLNK == DT_LNK<<12);
+				static_assert(S_IFSOCK == DT_SOCK<<12);
+				// DT_WHT is 14, but S_IFWHT doesn't exist
+				type = ent->d_type << 12;
+			}
+			
+			if(0);
+			else if (type == S_IFLNK)
+			{
+				m_files.append(childpath);
+				m_symlinks.insert(childpath, file::resolve(file::dirname(childpath), file::readlink(MUSIC_DIR + childpath)));
+			}
+			else if (type == S_IFDIR) scan_music_dir_recurse(childpath+"/");
+			else if (type == S_IFREG) m_files.append(childpath);
+			else puts("unknown filetype "+childpath);
+		}
+		closedir(dir);
 	}
-	int penalty_for(cstring fn)
+public:
+	void scan_music_dir()
+	{
+		m_files.reset();
+		m_symlinks.reset();
+		scan_music_dir_recurse("");
+		set_search("");
+	}
+	
+private:
+	struct result {
+		cstring fname;
+		int penalty;
+		
+		bool operator<(const result& other) const {
+			if (this->penalty != other.penalty) return this->penalty < other.penalty;
+			return string::inatless(this->fname.replace("/","\1"), other.fname.replace("/","\1"));
+		};
+	};
+	string m_search_raw;
+	array<result> m_results;
+	string m_next_search;
+	bool m_all;
+	bool m_shuffle;
+	size_t m_repeat;
+public:
+	void set_search(cstring text)
+	{
+		string prev_focus;
+		if (c_search.items) prev_focus = c_search.items[search_focus].filename;
+		search_focus = 0;
+		
+		m_results.reset();
+		if (grid.widget)
+			c_search.reset();
+		m_all = false;
+		m_shuffle = false;
+		m_repeat = 1;
+		m_next_search = "";
+		
+		if (text.contains(";"))
+		{
+			auto[a,b] = text.fcsplit<1>(";");
+			text = a;
+			while (b.startswith(" "))
+				b = b.substr(1, ~0);
+			m_next_search = b;
+		}
+		
+		m_search_raw = text;
+		
+		if (text == ".")
+			return;
+		
+		if (text.contains("*"))
+		{
+			auto[a,b] = text.fcsplit<1>("*");
+			text = a;
+			if (!b)
+				m_all = true;
+			else if (b == "?")
+				m_all = m_shuffle = true;
+			else if (!fromstring(b, m_repeat))
+				return;
+		}
+		
+		if (!text)
+			return;
+		
+		array<string> words = text.lower().split(" ");
+		
+		array<result> matches;
+		
+		for (music_file& file : m_files)
+		{
+			int penalty = penalty_for(file, words);
+			if (penalty >= 0)
+				matches.append({ file.raw, penalty });
+		}
+		
+		// heapsort allows me to stop after grabbing the first ~60 items, and not sort the entire 60000-element array
+		size_t n_matches_full = matches.size();
+		prioqueue<result> matches_q(std::move(matches));
+		set<cstring> seen_fns;
+		while (matches_q.size() && m_results.size() <= c_search.capacity)
+		{
+			result m = matches_q.pop();
+			cstring real_fn = m_symlinks.get_or(m.fname, m.fname);
+			if (seen_fns.contains(real_fn))
+				continue;
+			seen_fns.add(real_fn);
+			m_results.append(m);
+		}
+		
+		if (m_results.size() > c_search.capacity)
+		{
+			int max_penalty = m_results[c_search.capacity-1].penalty;
+			size_t trunc_to = 0;
+			while (m_results[trunc_to].penalty < max_penalty) trunc_to++;
+			m_results.resize(trunc_to);
+		}
+		if (!m_results)
+		{
+			c_search.add_raw("("+tostring(n_matches_full)+" matches)", "");
+			return;
+		}
+		
+		for (result& m : m_results)
+			c_search.add(MUSIC_DIR+m.fname);
+		c_search.focus(0);
+		if (n_matches_full != m_results.size())
+		{
+			c_search.add_raw("("+tostring(n_matches_full-m_results.size())+" more matches)", "");
+		}
+		
+		if (prev_focus)
+		{
+			for (size_t i=0;i<m_results.size();i++)
+			{
+				if (c_search.items[i].filename == prev_focus)
+				{
+					search_focus = i;
+					c_search.focus(i);
+				}
+			}
+		}
+	}
+	size_t multiplier() { return m_repeat; }
+private:
+	int penalty_for(const music_file& file, arrayview<string> words)
 	{
 		//rules:
 		// each potential match must contain every word in the filename (including directory, but not MUSIC_DIR), in order, case insensitive
@@ -375,24 +521,8 @@ public:
 		//exception: if input is blank, output is blank, not even the entry saying so
 		//(implementation doubles the penalty, so it's all integers)
 		
-		int penalty = 0;
-		
-		if (fn.contains("/x/") || fn.contains("/x-"))
-			penalty += 1000;
-		if (fn.iendswith(".png") || fn.iendswith(".jpg"))
-			penalty += 1000;
-		if (fn.iendswith(".txt") || fn.iendswith(".pdf"))
-			penalty += 1000;
-		if (fn.iendswith(".db") || fn.iendswith(".ini"))
-			penalty += 1000;
-		if (fn.iendswith(".zip") || fn.iendswith(".rar") || fn.iendswith(".7z"))
-			penalty += 1000;
-		if (fn.iendswith(".m3u") || fn.iendswith(".pls"))
-			penalty += 1000;
-		if (fn.iendswith(".htm") || fn.iendswith(".html") || fn.iendswith(".url") || fn.iendswith(".nfo"))
-			penalty += 1000;
-		if (fn.iendswith(".mid"))
-			penalty += 1000;
+		cstring fn = file.lower;
+		int penalty = file.base_penalty;
 		
 		size_t last_slash = fn.lastindexof("/");
 		if (last_slash != (size_t)-1)
@@ -404,9 +534,9 @@ public:
 			size_t min_idx = search_at;
 			if (word_at == words.size()-1 && last_slash != (size_t)-1)
 			{
-				if (fn.iindexof(words[word_at], last_slash) == (size_t)-1) penalty += 100;
+				if (fn.indexof(words[word_at], last_slash) == (size_t)-1) penalty += 100;
 			}
-			size_t next_start = fn.iindexof(words[word_at], min_idx);
+			size_t next_start = fn.indexof(words[word_at], min_idx);
 			if (next_start == (size_t)-1)
 				return -1;
 			
@@ -430,91 +560,53 @@ public:
 		
 		return penalty;
 	}
+public:
+	string actuate_search()
+	{
+		if (m_search_raw == ".")
+		{
+			scan_music_dir();
+			init_common();
+			return m_next_search;
+		}
+		for (size_t i=0;i<m_repeat;i++)
+		{
+			if (m_all)
+			{
+				array<cstring> results;
+				for (result& item : m_results)
+				{
+					// m_results is sorted by penalty
+					if (item.penalty >= 1000 && m_results[0].penalty < 1000)
+						break;
+					results.append(item.fname);
+				}
+				if (m_shuffle)
+				{
+					for (size_t n=1;n<results.size();n++)
+					{
+						results.swap(g_rand(n+1), n);
+					}
+				}
+				for (cstring fn : results)
+					enqueue(MUSIC_DIR+fn);
+			}
+			else if (c_search.items)
+				enqueue(c_search.items[search_focus].filename);
+		}
+		return m_next_search;
+	}
 };
+searcher g_search;
 
 void update_search()
 {
-	string prev_focus;
-	if (c_search.items) prev_focus = c_search.items[search_focus].filename;
-	if (prev_focus) prev_focus = prev_focus.substr(strlen(MUSIC_DIR), ~0);
-	
 #ifdef ARLIB_GUI_GTK3
 	string key = gtk_entry_get_text(search_line);
 #else
 	string key = gtk_editable_get_text(GTK_EDITABLE(search_line));
 #endif
-	key = key.csplit<1>("*")[0];
-	
-	c_search.reset();
-	search_focus = 0;
-	if (!key) return;
-	
-	struct match_t {
-		cstring fn;
-		int penalty;
-		bool operator<(const match_t& other) const {
-			if (this->penalty != other.penalty) return this->penalty < other.penalty;
-			return string::inatless(this->fn.replace("/","\1"), other.fn.replace("/","\1"));
-		};
-	};
-	array<match_t> matches;
-	file_matcher matcher;
-	matcher.init(key);
-	
-	for (cstring fn : search_filenames)
-	{
-		int penalty = matcher.penalty_for(fn);
-		if (penalty >= 0)
-			matches.append({ fn, penalty });
-	}
-	
-	// heapsort allows me to stop after grabbing the first ~60 items, and not sort the entire 20000-element array
-	size_t n_matches_full = matches.size();
-	prioqueue<match_t> matches_q(std::move(matches));
-	set<cstring> seen_fns;
-	while (matches_q.size() && matches.size() <= c_search.capacity)
-	{
-		match_t m = matches_q.pop();
-		cstring real_fn = symlink_filenames.get_or(m.fn, m.fn);
-		if (seen_fns.contains(real_fn))
-			continue;
-		seen_fns.add(real_fn);
-		matches.append(m);
-	}
-	
-	c_search.reset();
-	if (matches.size() > c_search.capacity)
-	{
-		int max_penalty = matches[c_search.capacity-1].penalty;
-		size_t trunc_to = 0;
-		while (matches[trunc_to].penalty < max_penalty) trunc_to++;
-		matches.resize(trunc_to);
-	}
-	if (!matches)
-	{
-		c_search.add_raw("("+tostring(n_matches_full)+" matches)", "");
-		return;
-	}
-	
-	for (match_t& m : matches)
-		c_search.add(MUSIC_DIR+m.fn);
-	c_search.focus(0);
-	if (n_matches_full != matches.size())
-	{
-		c_search.add_raw("("+tostring(n_matches_full-matches.size())+" more matches)", "");
-	}
-	
-	if (prev_focus)
-	{
-		for (size_t i=0;i<matches.size();i++)
-		{
-			if (matches[i].fn == prev_focus)
-			{
-				search_focus = i;
-				c_search.focus(i);
-			}
-		}
-	}
+	g_search.set_search(key);
 }
 
 static gboolean search_kb(GtkEventControllerKey* self, guint keyval, guint keycode, GdkModifierType state, void* user_data)
@@ -539,56 +631,13 @@ static gboolean search_kb(GtkEventControllerKey* self, guint keyval, guint keyco
 	}
 	if (keyval == GDK_KEY_Return || keyval == GDK_KEY_KP_Enter)
 	{
-#ifdef ARLIB_GUI_GTK3
-		cstring search_text = gtk_entry_get_text(search_line);
-#else
-		cstring search_text = gtk_editable_get_text(GTK_EDITABLE(search_line));
-#endif
-		if (search_text == ".")
-		{
-			init_search();
-			init_common();
-		}
-		else if (search_text.endswith("*") || search_text.endswith("*?"))
-		{
-			array<cstring> results;
-			
-			bool any_good = false;
-			file_matcher matcher;
-			matcher.init(search_text.crsplit<1>("*")[0]);
-			
-			for (column::node& item : c_search.items)
-			{
-				int penalty = matcher.penalty_for(item.filename);
-				if (penalty < 1000)
-					any_good = true;
-				if (penalty < 1000 || !any_good)
-					results.append(item.filename);
-			}
-			if (search_text.endswith("*?"))
-			{
-				for (size_t n=1;n<results.size();n++)
-				{
-					results.swap(g_rand(n+1), n);
-				}
-			}
-			for (cstring fn : results)
-				enqueue_real(fn);
-		}
-		else if (search_text.startswith("$"))
-		{
-			enqueue_real(search_text);
-		}
-		else if (c_search.items)
-		{
-			enqueue(c_search.items[search_focus].filename);
-		}
+		string new_text = g_search.actuate_search();
 		if ((state&GDK_SHIFT_MASK) == 0)
 		{
 #ifdef ARLIB_GUI_GTK3
-			gtk_entry_set_text(search_line, "");
+			gtk_entry_set_text(search_line, new_text);
 #else
-			gtk_editable_set_text(GTK_EDITABLE(search_line), ""); // calls remove_cb
+			gtk_editable_set_text(GTK_EDITABLE(search_line), new_text); // calls remove_cb
 #endif
 		}
 		return GDK_EVENT_STOP;
@@ -606,8 +655,6 @@ static gboolean search_kb(GtkEventControllerKey* self, guint keyval, guint keyco
 }
 GtkWidget* make_search()
 {
-	init_search();
-	
 	search_line = GTK_ENTRY(gtk_entry_new());
 #ifdef ARLIB_GUI_GTK3
 	auto key_cb = decompose_lambda([](GdkEvent* event, GtkWidget* widget)->gboolean
@@ -641,16 +688,16 @@ size_t playlist_cur_idx = 0;
 
 void playlist_run()
 {
-again:
+//again:
 	c_playlist.focus(-1);
 	if (playlist_cur_idx == c_playlist.items.size()) { stop(); return; }
 	const string& next = c_playlist.items[playlist_cur_idx].filename;
-	if (next.startswith("$"))
-	{
-		(void)! system(1+(const char*)next);
-		playlist_cur_idx++;
-		goto again;
-	}
+	//if (next.startswith("$"))
+	//{
+	//	(void)! system(1+(const char*)next);
+	//	playlist_cur_idx++;
+	//	goto again;
+	//}
 	c_playlist.focus(playlist_cur_idx);
 	xz_finish = []() {
 		column::node& n = c_playlist.items[playlist_cur_idx];
@@ -676,7 +723,7 @@ again:
 	xz_progress = progress_tick;
 	xz_play(next);
 }
-void enqueue_real(cstring fn)
+void enqueue(string fn) // needs to copy, in case the argument is the topmost element in the playlist
 {
 	if (!fn) return;
 	if (playlist_cur_idx && playlist_cur_idx == c_playlist.items.size() && fn == c_playlist.items[playlist_cur_idx-1].filename)
@@ -699,19 +746,10 @@ void enqueue_real(cstring fn)
 	if (!xz_active)
 		playlist_run();
 }
-void enqueue(cstring fn)
+void enqueue_repeat(cstring fn)
 {
-	int multiple = 1;
-#ifdef ARLIB_GUI_GTK3
-	const char * mul_str = strchr(gtk_entry_get_text(search_line), '*');
-#else
-	const char * mul_str = strchr(gtk_editable_get_text(GTK_EDITABLE(search_line)), '*');
-#endif
-	if (mul_str) fromstring(mul_str+1, multiple);
-	if (!multiple) multiple = 1;
-	string fn_copy = fn; // in case fn points to the first playlist entry
-	for (int i=0;i<multiple;i++)
-		enqueue_real(fn_copy);
+	for (size_t i=0;i<g_search.multiplier();i++)
+		enqueue(fn);
 }
 
 
@@ -869,9 +907,9 @@ void make_gui(GApplication* application)
 	gtk_box_append(box_upper, make_button("media-skip-forward", playlist_next));
 #endif
 	
-	c_common.init(0,2, enqueue);
-	c_search.init(2,1, enqueue);
-	c_playlist.init(3,1, enqueue);
+	c_common.init(0,2, enqueue_repeat);
+	c_search.init(2,1, enqueue_repeat);
+	c_playlist.init(3,1, enqueue_repeat);
 	grid.init();
 	
 	GtkBox* box_main = GTK_BOX(gtk_box_new(GTK_ORIENTATION_VERTICAL, 0));
@@ -915,7 +953,7 @@ void app_open(GApplication* application, GFile* * files, int n_files, char* hint
 	{
 		const char * fn = g_file_peek_path(files[i]);
 		if (fn)
-			enqueue_real(fn);
+			enqueue(fn);
 	}
 }
 
@@ -1035,9 +1073,20 @@ int main(int argc, char** argv)
 	{
 		make_gui(NULL);
 		char** arg = argv+2;
-		while (*arg) enqueue_real(*arg++);
+		while (*arg) enqueue(*arg++);
 		while (true)
 			g_main_context_iteration(nullptr, true);
+		return 0;
+	}
+	if (argv[1] && (cstring)argv[1] == "--perf")
+	{
+		timer t;
+		t.reset(); g_search.set_search("a"); printf("%luus\n", t.us());
+		t.reset(); g_search.set_search("aa"); printf("%luus\n", t.us());
+		t.reset(); g_search.set_search("aaa"); printf("%luus\n", t.us());
+		t.reset(); g_search.set_search("aaaa"); printf("%luus\n", t.us());
+		t.reset(); g_search.set_search("aaaaa"); printf("%luus\n", t.us());
+		t.reset(); g_search.set_search("aaaaaa"); printf("%luus\n", t.us());
 		return 0;
 	}
 	

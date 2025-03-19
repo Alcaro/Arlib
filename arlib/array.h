@@ -27,6 +27,7 @@ protected:
 	
 public:
 	const T& operator[](size_t n) const { return items[n]; }
+	const T& last() const { return items[count-1]; }
 	
 	//if out of range, returns 'def'
 	const T& get_or(size_t n, const T& def) const
@@ -219,6 +220,8 @@ public:
 	
 	T& operator[](size_t n) { return this->items[n]; }
 	const T& operator[](size_t n) const { return this->items[n]; }
+	T& last() { return this->items[this->count-1]; }
+	const T& last() const { return this->items[this->count-1]; }
 	
 	T* ptr() { return this->items; }
 	const T* ptr() const { return this->items; }
@@ -627,16 +630,19 @@ public:
 		clone(arrayview<T>(ptr, N));
 	}
 	
+	// do not change to constructor, it allows casts from array<int> to array<uint8_t>
 	template<typename Titer>
-	array(Titer&& iter) requires requires { { *iter.begin() } -> std::convertible_to<T>; }
+	static array<T> from(Titer&& iter) requires requires { { *iter.begin() } -> std::convertible_to<T>; }
 	{
+		array<T> ret;
 		auto a = iter.begin();
 		auto b = iter.end();
 		while (a != b)
 		{
-			append(*a);
+			ret.append(*a);
 			++a;
 		}
+		return ret;
 	}
 	
 	array<T>& operator=(array<T> other)
@@ -913,7 +919,7 @@ public:
 	~fifo()
 	{
 		for (size_t n=0;n<wr;n++)
-			items[rd+n].~T();
+			items[n].~T();
 		free(items);
 	}
 };
@@ -1150,7 +1156,7 @@ public:
 	bitarray& operator|=(const bitarray& other)
 	{
 		if (other.nbits >= nbits) resize(other.nbits);
-		for (size_t n=0;n*chunk_size < nbits;n++)
+		for (size_t n=0;n*chunk_size < other.nbits;n++)
 			bits()[n] |= other.bits()[n];
 		return *this;
 	}
@@ -1283,6 +1289,13 @@ public:
 				return true;
 		}
 		return false;
+	}
+	constexpr bool popcount() const
+	{
+		size_t ret = 0;
+		for (size_t i=0;i<ARRAY_SIZE(bits);i++)
+			ret += __builtin_popcount(bits[i]);
+		return ret;
 	}
 	
 private:

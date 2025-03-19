@@ -32,44 +32,56 @@ class heap {
 		swap(ptr+dst, ptr+src);
 	}
 	
+	// given an almost-heap, where 'elem' may need to be pushed down, turns it into a real heap
+	// - find the smaller (or only) child
+	// - compare to the parent
+	// - if larger, swap, and repeat these steps for the now-child
+	template<typename T, typename Tless>
+	static void push_down(T* body, size_t elem, size_t len, const Tless& less)
+	{
+		if (child2(elem) >= len)
+		{
+			if (child1(elem) < len)
+			{
+				if (less(body[child1(elem)], body[elem]))
+					swap(body, child1(elem), elem);
+			}
+			return;
+		}
+		size_t par = elem;
+		size_t ch1 = child1(elem);
+		size_t ch2 = child2(elem);
+		size_t min_ch = (less(body[ch1], body[ch2]) ? ch1 : ch2);
+		if (less(body[min_ch], body[par]))
+		{
+			swap(body, min_ch, par);
+			push_down(body, min_ch, len, less);
+		}
+	}
+	
 public:
 	template<typename T, typename Tless>
 	static void heapify(T* body, size_t len, const Tless& less)
 	{
 		if (len <= 1)
 			return;
-		// for each node that has any children, backwards:
-		// - find the smaller (or only) child
-		// - compare to the parent
-		// - if larger, swap, and repeat these steps for the now-child
-		// this is O(n); while the higher nodes have log(n) levels of children, each level also has fewer members
+		// - a single node is a heap
+		// - given two heaps and an extra node, turning them into a bigger heap is simply placing the extra node as the root,
+		//     then pushing it down until it's a heap
+		// - the bottom half takes no time, nothing to do
+		// - the bottom half of the remainder must be combined with the 1-heaps at the bottom to create 3-heaps
+		// - the bottom half of the remainder must be combined with the 3-heaps to create 7-heaps
+		// - etc
+		// - a 3-heap is created with at most 1 swap
+		// - a 7-heap is created with at most 2 swaps, plus the 2 in the children = 4
+		// - a 15-heap is created with at most 3 swaps, plus the 8 in the children = 11
+		// - a 31-heap is created with at most 4 swaps, plus the 22 in the children = 26
+		// - this is equal to heap size minus heap height, and cannot go above heap size
+		// - therefore, heap creation is O(n)
 		size_t i = parent(len-1);
 		while (true)
 		{
-			size_t j = i;
-			while (true)
-			{
-				if (child2(j) >= len)
-				{
-					if (child1(j) < len)
-					{
-						if (less(body[child1(j)], body[j]))
-							swap(body, child1(j), j);
-					}
-					break;
-				}
-				size_t par = j;
-				size_t ch1 = child1(j);
-				size_t ch2 = child2(j);
-				size_t min_ch = (less(body[ch1], body[ch2]) ? ch1 : ch2);
-				if (less(body[min_ch], body[par]))
-				{
-					swap(body, min_ch, par);
-					j = min_ch;
-					continue;
-				}
-				break;
-			}
+			push_down(body, i, len, less);
 			if (!i)
 				break;
 			i--;
@@ -131,5 +143,19 @@ public:
 	static void pop(T* body, size_t len, T* ret)
 	{
 		pop(body, len, ret, [](const T& a, const T& b) { return a < b; });
+	}
+	
+	// Combines the above two. ret may not be equal to new_elem.
+	template<typename T, typename Tless>
+	static void poppush(T* body, size_t len, T* ret, T* new_elem, const Tless& less)
+	{
+		move(ret, body);
+		move(body, new_elem);
+		push_down(body, 0, len, less);
+	}
+	template<typename T>
+	static void poppush(T* body, size_t len, T* ret, T* new_elem)
+	{
+		poppush(body, len, ret, new_elem, [](const T& a, const T& b) { return a < b; });
 	}
 };

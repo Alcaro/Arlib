@@ -44,22 +44,26 @@ void* xcalloc_inner(size_t size, size_t count)
 }
 
 // Loads len bytes from the pointer, native endian. The high part is zero. load_small<uint64_t>("\x11\x22\x33", 3) is 0x112233 or 0x332211.
-// Equivalent to T ret = 0; memcpy(&ret, ptr, len);, but faster.
-// T must be an unsigned builtin integer type, and len must be <= sizeof(T).
+// On little endian, equivalent to T ret = 0; memcpy(&ret, ptr, len);, but faster.
+// T must be an unsigned builtin integer type, and len must be <= sizeof(T) and >= 1.
 template<typename T>
 T load_small(const uint8_t * ptr, size_t len)
 {
+	static_assert(std::is_unsigned_v<T>);
 #if !defined(ARLIB_OPT)
 	if (RUNNING_ON_VALGRIND)
 	{
 		// like memmem.cpp load_sse2_small_highundef, Valgrind does not like the below one
 		T ret = 0;
 		memcpy(&ret, ptr, len);
+#if END_BIG
+		if (len == 0)
+			return 0;
+		ret >>= (sizeof(T)-len)*8;
+#endif
 		return ret;
 	}
 #endif
-	if (len == 0)
-		return 0;
 	
 	if (uintptr_t(ptr) & sizeof(T))
 	{
@@ -89,8 +93,75 @@ T load_small(const uint8_t * ptr, size_t len)
 	}
 }
 
+#ifdef runtime__AES__
+#include <immintrin.h>
+#endif
+
 size_t hash(const uint8_t * val, size_t n)
 {
+	if (n == 0)
+		return 0;
+	
+#ifdef runtime__SSE2__
+	if (runtime__SSE2__ && sizeof(size_t) == 8 && true)
+	{
+		auto digest1616_16 = [](__m128i a, __m128i b)
+		{
+			return _mm_xor_si128(_mm_madd_epi16(a, _mm_set1_epi32(0xF7D3857B)), b); // two random 16bit primes, concatenated
+		};
+		auto digest16_8 = [](__m128i a)
+		{
+			return _mm_cvtsi128_si64(_mm_sub_epi64(a, _mm_shuffle_epi32(a, _MM_SHUFFLE(0,1,2,3))));
+		};
+		
+		if (n < 16)
+		{
+			__m128i ret = _mm_loadu_si128_highzero((__m128i*)val, n);
+			return digest16_8(ret);
+		}
+#ifdef runtime__AES__
+		if (runtime__AES__ && n >= 16)
+		{
+			auto hash_sseaes = [](const uint8_t * val, size_t n) __attribute__((target("aes"))) -> size_t
+			{
+				auto digest1616_16 = [](__m128i a, __m128i b) __attribute__((target("aes"), always_inline))
+				{
+					// I don't care about AES in particular, but it's faster than most other two-input insns
+					return _mm_aesdec_si128(a, b);
+				};
+				auto digest16_8 = [](__m128i a) __attribute__((target("aes"), always_inline))
+				{
+					a = _mm_aesenc_si128(a, a); // AES output bytes only depend on a few input bytes
+					a = _mm_aesenc_si128(a, a); // run a few more rounds so it diffuses properly
+					return _mm_cvtsi128_si64(a);
+				};
+				__m128i ret = _mm_setzero_si128();
+				while (n > 16)
+				{
+					ret = digest1616_16(ret, _mm_loadu_si128((__m128i*)val));
+					val += 16;
+					n -= 16;
+				}
+				val -= 16-n;
+				ret = digest1616_16(ret, _mm_loadu_si128((__m128i*)val));
+				return digest16_8(ret);
+			};
+			return hash_sseaes(val, n);
+		}
+#endif
+		__m128i ret = _mm_setzero_si128();
+		while (n > 16)
+		{
+			ret = digest1616_16(ret, _mm_loadu_si128((__m128i*)val));
+			val += 16;
+			n -= 16;
+		}
+		val -= 16-n;
+		ret = digest1616_16(ret, _mm_loadu_si128((__m128i*)val));
+		return digest16_8(ret);
+	}
+#endif
+	
 	if (n < sizeof(size_t))
 		return load_small<size_t>(val, n);
 	
@@ -100,14 +171,14 @@ size_t hash(const uint8_t * val, size_t n)
 		size_t tmp;
 		memcpy(&tmp, val, sizeof(size_t));
 		if constexpr (sizeof(size_t) == 8)
-			hash = (hash^(hash>>45)^tmp) * 2546270801; // extra >>45 because otherwise bottom byte of output would
-		else                                           //  only be affected by every 8th byte of input
-			hash = (hash^(hash>>21)^tmp) * 2546270801; // the number is just a random prime between 2^31 and 2^32
+			hash = (__builtin_bswap64(hash)^tmp) * 0xca7c2633f12ae399; // extra swap because otherwise bottom byte of output would
+		else                                                           //  only be affected by every 8th byte of input
+			hash = (__builtin_bswap32(hash)^tmp) * 0x97c50251;         // the numbers are just random primes above SIZE_MAX/2
 		val += sizeof(size_t);
 		n -= sizeof(size_t);
 	}
 	
-	// do a final size_t load overlapping with the previous bytes (or not overlapping, if size is a multiple of 8)
+	// do a final size_t load overlapping with the previous bytes (or not overlapping, if n is a multiple of sizeof(size_t))
 	val -= (sizeof(size_t)-n);
 	size_t tmp;
 	memcpy(&tmp, val, sizeof(size_t));
@@ -180,32 +251,32 @@ extern "C" void __cxa_pure_virtual() { __builtin_trap(); }
 // pseudo relocs are disabled, and its handler takes ~1KB; better stub it out
 extern "C" void _pei386_runtime_relocator();
 extern "C" void _pei386_runtime_relocator() {}
-
-/*
-int asprintf(char ** strp, const char * fmt, ...)
-{
-	char buf[1200];
-	va_list args;
-	int len;
-	va_start(args, fmt);
-	len = vsnprintf(buf, sizeof(buf), fmt, args);
-	va_end(args);
-	*strp = malloc(len+1);
-	if (!*strp) return -1;
-	if (len < sizeof(buf))
-	{
-		memcpy(*strp, buf, len+1);
-	}
-	else
-	{
-		va_start(args, fmt);
-		len = vsnprintf(*strp, len+1, fmt, args);
-		va_end(args);
-	}
-	return 0;
-}
-*/
 #endif
+
+// don't know where to put this, and nothing uses it anyways
+// may return weird results if there is no modular inverse, i.e. gcd(a,b) != 1 (happens if b != 1 when a = 0)
+template<typename T>
+T modular_inv_inner(T a, T b, T c, T x, T y)
+{
+	if (a != 0)
+		return modular_inv_inner(b%a, a, c, y, x-y*(b/a));
+	if (x > c) // not interested in the negative result
+		return c+x;
+	return x;
+}
+template<typename T, typename T2>
+auto modular_inv(T a, T2 b)
+{
+	return modular_inv_inner<std::make_unsigned_t<decltype(a+b)>>(a, b, b, 0, 1);
+}
+template<typename T>
+auto modular_inv(T a) // modulo the number of unique values in T
+{
+	using T2 = std::make_unsigned_t<T>;
+	T2 a2 = a;
+	return modular_inv_inner<T2>(-a2%a2, a2, 0, 1, -(-a2/a2)-1);
+}
+
 
 test("bitround", "", "")
 {
@@ -245,7 +316,9 @@ test("bitround", "", "")
 	assert_eq(bitround<uint64_t>(2), 2);
 	assert_eq(bitround<uint64_t>(3), 4);
 	assert_eq(bitround<uint64_t>(4), 4);
-	
+}
+test("ilog2", "", "")
+{
 	//assert_eq(ilog2(0), -1);
 	assert_eq(ilog2(1), 0);
 	assert_eq(ilog2(2), 1);
@@ -262,7 +335,9 @@ test("bitround", "", "")
 	assert_eq(ilog2(127), 6);
 	assert_eq(ilog2(128), 7);
 	assert_eq(ilog2(255), 7);
-	
+}
+test("ilog10", "", "")
+{
 	auto test1 = [](uint64_t n)
 	{
 		testctx(tostring(n))
@@ -283,6 +358,11 @@ test("bitround", "", "")
 		test1(i-1);
 		test1(i);
 	}
+}
+test("modular_inv", "", "")
+{
+	assert_eq(modular_inv(0x12345)*0x12345, 1);
+	assert_eq(modular_inv(123, 1234567)*123%1234567, 1);
 }
 
 test("test_nomalloc", "", "")
@@ -330,6 +410,21 @@ test("array_size", "", "")
 	//static_assert(ARRAY_SIZE(b) == 0);
 }
 
+test("tuple", "", "")
+{
+	tuple<int,short,short,int> a;
+	a = { 1, 2, 3, 4 };
+	tuple<int,short,short,int> b = a;
+	b = a;
+	tuple<int,short,short,int> c(1, 2, 3, 4);
+	tuple<int,short,short,int> d { 1, 2, 3, 4 };
+	
+	auto[e,f,g,h] = a;
+	
+	assert_eq(f, 2);
+	static_assert(sizeof(a) == sizeof(int)*2+sizeof(short)+2);
+}
+
 #ifdef __unix__
 #include <sys/mman.h>
 #include <unistd.h>
@@ -349,15 +444,41 @@ test("load_small", "", "")
 	
 	memset(pages+pagesize, 0xA5, pagesize);
 	
-	assert_eq(load_small<uint32_t>(pages+pagesize/2, 0), 0);
-	
 	auto test2 = [&](uint8_t* ptr, const char * bytes, size_t len) {
-		uint32_t expect;
-		memcpy(&expect, bytes, sizeof(uint32_t));
-		if (END_BIG)
-			expect >>= (sizeof(uint32_t)-len)*8;
 		memcpy(ptr, bytes, len);
-		assert_eq(load_small<uint32_t>(ptr, len), expect);
+		{
+			uint32_t expect;
+			memcpy(&expect, bytes, sizeof(uint32_t));
+			if (END_BIG)
+				expect >>= (sizeof(uint32_t)-len)*8;
+			assert_eq(load_small<uint32_t>(ptr, len), expect);
+		}
+#ifdef __SSE2__
+		{
+			__m128i actual = _mm_loadu_si128_highundef((__m128i*)ptr, len);
+			assert(!memcmp(&actual, bytes, len));
+			
+			__m128i expect = _mm_setzero_si128();
+			memcpy(&expect, bytes, sizeof(uint32_t));
+			actual = _mm_loadu_si128_highzero((__m128i*)ptr, len);
+			assert(!memcmp(&actual, &expect, 16));
+			
+			// used to verify the condition in _mm_loadu_si128_highundef
+			/*
+			int n=0;
+			for (int src=0;src<64;src++)
+			for (int len=1;len<=16;len++)
+			{
+				bool safe1 = LIKELY((63&(uintptr_t)src) <= 48) || ((48-(uintptr_t)src)&63) < 48+(uintptr_t)len;
+				bool safe2 = LIKELY((63&(uintptr_t)src) <= 48) || ((-src)&15) < len;
+				printf("%c", "uUSs"[safe1+safe1+safe2]);
+				if (len==16) printf(" src=%d\n",src);
+				if (safe1 != safe2) n++;
+			}
+			printf("%d failures\n",n);
+			*/
+		}
+#endif
 	};
 	auto test1 = [&](const char * bytes, size_t len) {
 		test2(pages+pagesize, bytes, len);
@@ -377,6 +498,30 @@ test("load_small", "", "")
 #endif
 }
 
+test("hash", "", "")
+{
+	uint8_t buf[64];
+	for (size_t len=0;len<=64;len++)
+	{
+		if (len != 0)
+			buf[len-1] = 0;
+		set<size_t> hashes;
+		size_t max_byte = (len <= sizeof(size_t) ? 255 : 1);
+		for (size_t by=0;by<len;by++)
+		{
+			for (size_t val=1;val<=max_byte;val++)
+			{
+				buf[by] = val;
+				hashes.add(hash(bytesr(buf, len)));
+			}
+			buf[by] = 0;
+		}
+		hashes.add(hash(bytesr(buf, len)));
+		testctx(tostring(len))
+			assert_eq(hashes.size(), len*max_byte+1);
+	}
+}
+
 #if 0
 static void bench(const uint8_t * buf, int len)
 {
@@ -388,7 +533,7 @@ static void bench(const uint8_t * buf, int len)
 	printf("size %d - %f/s - %fGB/s\n", len, b.per_second(), b.per_second()*len/1024/1024/1024);
 }
 
-test("hash", "", "crc32")
+test("hash bench", "", "")
 {
 	assert(!RUNNING_ON_VALGRIND);
 	
@@ -408,6 +553,7 @@ test("hash", "", "crc32")
 	bench(buf, 31);
 	bench(buf, 24);
 	bench(buf, 16);
+	bench(buf, 12);
 	bench(buf, 8);
 	bench(buf, 7);
 	bench(buf, 6);

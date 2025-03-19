@@ -66,6 +66,73 @@ _mm_storeatomic_pd(const __m128d * p, __m128d v)
 	__asm__("vmovapd {%0,%1|%1,%0}" :: "x"(v), "m"(*p) : "memory");
 }
 
+// Loads len bytes from src, without segfaulting if that would cross a page; the high bytes are undefined.
+// len must be 1 to 16.
+__m128i inline __attribute__((target("sse2")))
+_mm_loadu_si128_highundef(const __m128i * src, size_t len)
+{
+#ifndef ARLIB_OPT
+	// Valgrind *really* hates the fast version.
+	// To start with, reading out of bounds like this is all kinds of undefined behavior, and Valgrind rightfully complains.
+	// Worse, it also doesn't correctly track validity through the _mm_cmpestri instruction;
+	//  any undefined byte, including beyond the length, makes it claim the entire result is undefined,
+	//  and this incorrectly-undefined value is then propagated across the entire program, throwing errors everywhere,
+	//  so I can't just add a suppression to memmem.
+	// Judging by the incomplete cmpestri handler, fixing it is most likely not going to get prioritized.
+	// So I'll switch to a slower but safe version if unoptimized, and if optimized, just leave the errors.
+	// Valgrind doesn't work very well with optimizations anyways.
+	uint8_t tmp[16] __attribute__((aligned(16))) = {};
+	memcpy(tmp, src, len);
+	return _mm_load_si128((__m128i*)tmp);
+#else
+	// as disgusting as this optimization is, it ~doubles my score on some of the benchmarks
+	
+	// rule 1: do not touch a 4096-aligned page that the safe version does not
+	//  (4096 can safely be hardcoded, SSE2 is x86 only and x86 page size ain't changing anytime soon)
+	// rule 2: do not permit the compiler to prove any part of this program is UB
+	// rule 3: as fast as possible
+	
+	// doing two tests is usually slower, but the first half is true 99.6% of the time,
+	//  and simplifying the common case outweighs making the rare case more expensive
+	// combined test: ((4080-src)&4095) < 4080+len
+	// the obvious test: !(((src+15)^(src+len-1)) & 4096)
+	
+	// if a m128i load from here would not cross a page boundary, or if a len-sized load would touch both pages,
+	if (LIKELY(((uintptr_t(src)>>ilog2(sizeof(__m128i)))+1)&(4095>>ilog2(sizeof(__m128i)))) || ((-(uintptr_t)src)&(sizeof(__m128i)-1)) < len)
+	{
+		// then just load
+		return _mm_loadu_si128((__m128i*)launder(src));
+	}
+	else
+	{
+		// if an extended read would inappropriately hit the next page, copy it to the stack, then do an unaligned read
+		// going via memory is ugly, but the better instruction (_mm_alignr_epi8) only exists with constant offset
+		// machine-wise, it'd be safe to shrink tmp to 16 bytes, saving the higher 16 for return address or whatever,
+		//  but that saves nothing in practice, and would give gcc wider license to deem it UB and optimize it out
+		uint8_t tmp[32] __attribute__((aligned(16)));
+		__asm__("" : "+r"(src), "=m"(tmp)); // reading uninitialized variables is UB too, confuse gcc some more
+		_mm_store_si128((__m128i*)tmp, _mm_load_si128((__m128i*)(~15&(uintptr_t)src)));
+		return _mm_loadu_si128((__m128i*)(tmp+(15&(uintptr_t)src)));
+	}
+#endif
+}
+
+// Loads len bytes from src, without segfaulting if that would cross a page; the high bytes are zero.
+// len must be 1 to 16.
+__m128i inline __attribute__((target("sse2")))
+_mm_loadu_si128_highzero(const __m128i * src, size_t len)
+{
+#ifndef ARLIB_OPT
+	uint8_t tmp[16] __attribute__((aligned(16))) = {};
+	memcpy(tmp, src, len);
+	return _mm_load_si128((__m128i*)tmp);
+#else
+	__m128i ret = _mm_loadu_si128_highundef(src, len);
+	static const uint8_t mask[31] = { 255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255, 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 };
+	return _mm_and_si128(ret, _mm_loadu_si128((__m128i*)(mask+16-len)));
+#endif
+}
+
 # ifdef __i386__
 // malloc is guaranteed to have 16-byte alignment on 64bit, but only 8 on 32bit
 // I want to use the aligned instructions on 64bit, not ifdef it any further, not rewrite array<>, and not invent custom names,

@@ -2,9 +2,10 @@
 #include "global.h"
 #include "array.h"
 
-//Hash values are guaranteed stable within the process, but nothing else. Do not persist them outside the process.
-//They are allowed to change along with the build target, Arlib version, build time, kernel version, etc.
-//Don't rely on them for any security-related purpose either.
+// Hash values are guaranteed stable within the process, but nothing else. Do not persist them outside the process.
+// They are allowed to change along with the build target, Arlib version, build time, kernel version, etc.
+// They are only expected to be unique, not high entropy; entropy can be improved with hash_shuffle.
+// Don't rely on them for any security-related purpose either.
 
 template<typename T>
 auto hash(T val) requires (std::is_integral_v<T>)
@@ -43,28 +44,17 @@ public:
 	template<typename T>
 	static size_t hash(T* ptr) { return (uintptr_t)ptr; }
 };
+class arrayview_hasher {
+	arrayview_hasher() = delete;
+public:
+	template<typename T>
+	static size_t hash(arrayview<T> arr) requires (std::is_integral_v<T>) { return ::hash(arr.template transmute<uint8_t>()); }
+};
 
 
-
-//implementation from https://stackoverflow.com/a/263416
-static inline size_t hashall() { return 2166136261; }
-template<typename T, typename... Tnext> static inline size_t hashall(T first, Tnext... next)
-{
-	size_t tail = hash(first);
-	size_t heads = hashall(next...);
-	return (heads ^ tail) * 16777619;
-}
-
-
-//these are reversible, but I have no usecase for a reverser so I didn't implement one
-inline uint32_t hash_shuffle(uint32_t val)
-{
-	return __builtin_bswap32(val * 1086221891); // just a random prime
-}
-inline uint64_t hash_shuffle(uint64_t val)
-{
-	return __builtin_bswap64(val * 8040991081842494123);
-}
+// the regular ones give weak entropy in the higher bits; the strong ones give high entropy everywhere
+inline uint32_t hash_shuffle(uint32_t val) { return __builtin_bswap32(val * 1086221891); } // just a random prime
+inline uint64_t hash_shuffle(uint64_t val) { return __builtin_bswap64(val * 8040991081842494123); }
 inline uint32_t hash_shuffle_strong(uint32_t val)
 {
 	//https://code.google.com/p/smhasher/wiki/MurmurHash3
@@ -83,5 +73,26 @@ inline uint64_t hash_shuffle_strong(uint64_t val)
 	val ^= val >> 27;
 	val *= 0x94d049bb133111eb;
 	val ^= val >> 31;
+	return val;
+}
+// nothing uses these, but why not
+inline uint32_t hash_shuffle_inv(uint32_t val) { return __builtin_bswap32(val) * 498781803; } // multiplicative inverse mod 2**32
+inline uint64_t hash_shuffle_inv(uint64_t val) { return __builtin_bswap64(val) * 4738224585390907395; }
+inline uint32_t hash_shuffle_strong_inv(uint32_t val)
+{
+	val ^= val >> 16;
+	val *= 0x7ed1b41d;
+	val ^= val >> 13; val ^= val >> 26;
+	val *= 0xa5cb9243;
+	val ^= val >> 16;
+	return val;
+}
+inline uint64_t hash_shuffle_strong_inv(uint64_t val)
+{
+	val ^= val >> 31; val ^= val >> 62;
+	val *= 0x319642b2d24d8ec3;
+	val ^= val >> 27; val ^= val >> 54;
+	val *= 0x96de1b173f119089;
+	val ^= val >> 30; val ^= val >> 60;
 	return val;
 }

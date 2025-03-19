@@ -165,24 +165,44 @@ if use_incbin and asm: body += 'ASM_INCLUDE_LIST(\n'+asm+');\n'
 # PNG-style .ico requires Vista or higher, but BMP-style requires messing with PIL or zlib (and BMP is bigger), so let's just use PNG
 # (also not supported in GdkPixbuf, though Wine supports it since 2010. https://github.com/wine-mirror/wine/commit/666940902db2c693
 #    https://gitlab.gnome.org/GNOME/gdk-pixbuf/-/issues/16 https://gitlab.gnome.org/GNOME/gdk-pixbuf/-/blob/master/gdk-pixbuf/io-ico.c)
-for icoid in sorted(icon_paths):
-	import struct
+def make_ico(pngs, convert_to_bmp=False):
+	for png in pngs:
+		assert png[:16] == b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+	# I can't find a spec for what order to use; I'll pick ascending, it seems more common
+	pngs = sorted(pngs, key=(lambda png: png[16:24]))  # width/height from the IHDR
 	
-	w32_res += str(icoid)+' ICON DISCARDABLE "obj/ico'+str(icoid)+'.ico"\n'
-	
-	ico_head = struct.pack("<HHH", 0, 1, len(icon_paths[icoid]))
+	ico_head = struct.pack("<HHH", 0, 1, len(pngs))
 	ico_body = bytearray()
-	ico_head_size = 6+16*len(icon_paths[icoid])
+	ico_head_size = 6+16*len(pngs)
 	
-	for icosize in sorted(icon_paths[icoid], reverse=True):
-		with open(icon_paths[icoid][icosize], "rb") as f:
-			b = bytearray(f.read())
-			ico_head += struct.pack("<BBBBHHII", icosize&255, icosize&255, 0, 0, 1, 0, len(b), ico_head_size+len(ico_body))
-			ico_body += b
-	
+	for png in pngs:
+		w,h = struct.unpack(">II", png[16:24])
+		assert w <= 256
+		assert h <= 256
+		if (w > 48 or h > 48) and convert_to_bmp:
+			# from what I can google, XP doesn't use icons bigger than 48x48, so bigger ones can safely be png
+			# (though XP may misbehave if a window icon is PNG, it's unclear. May depend on whether the ico contains multiple sizes.)
+			1/0
+			# todo: implement
+			# format is somewhat documented at
+			# https://devblogs.microsoft.com/oldnewthing/20101018-00/?p=12513
+			# https://devblogs.microsoft.com/oldnewthing/20101019-00/?p=12503
+			# https://devblogs.microsoft.com/oldnewthing/20101021-00/?p=12483
+			# https://devblogs.microsoft.com/oldnewthing/20101022-00/?p=12473
+			# https://en.wikipedia.org/wiki/ICO_(file_format)
+			# https://gitlab.gnome.org/GNOME/gdk-pixbuf/-/blob/master/gdk-pixbuf/io-ico.c
+			# with various sample files found at
+			# https://gitlab.gnome.org/GNOME/gdk-pixbuf/-/issues/16#note_181162
+		else:
+			img = png
+		ico_head += struct.pack("<BBBBHHII", w&255, h&255, 0, 0, 1, 0, len(img), ico_head_size+len(ico_body))
+		ico_body += img
+	return ico_head + ico_body
+
+for icoid in sorted(icon_paths):
+	w32_res += str(icoid)+' ICON DISCARDABLE "obj/ico'+str(icoid)+'.ico"\n'
 	with open('obj/ico'+str(icoid)+'.ico',"wb") as f:
-		f.write(ico_head)
-		f.write(ico_body)
+		f.write(make_ico([open(fn,"rb").read() for fn in icon_paths[icoid].values()]))
 
 with open("obj/resources.h", "wt") as f: f.write(header)
 with open("obj/resources.cpp", "wt") as f: f.write(body)

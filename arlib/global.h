@@ -20,10 +20,14 @@ clang: error: unknown argument: '-fcoroutines'
 // silencing the #error with a -D__cpp_impl_coroutine returns a bunch of
 // error: std::experimental::coroutine_traits type was not found; include <experimental/coroutine> before defining a coroutine
 #error "unsupported clang version; if you're feeling brave, you're welcome to remove this check, but no complaining if it breaks"
+#elif __clang_major__ < 14
+#warning "untested clang version; feel free to try, but no complaining if it breaks"
 #endif
 #elif defined(__GNUC__)
 #if __GNUC__ < 11
 #error "unsupported gcc version; if you're feeling brave, you're welcome to remove this check, but no complaining if it breaks"
+#elif __GNUC__ < 11
+#warning "untested gcc version; feel free to try, but no complaining if it breaks"
 #endif
 #else
 #warning "unknown or unsupported compiler; feel free to try, but no complaining if it breaks"
@@ -283,6 +287,7 @@ public:
 	template<typename T> anyptr(T* data_) { data = (void*)data_; }
 	template<typename T> operator T*() { return (T*)data; }
 	template<typename T> operator const T*() const { return (const T*)data; }
+	bool operator==(nullptr_t) const { return data == nullptr; }
 };
 #else
 typedef void* anyptr;

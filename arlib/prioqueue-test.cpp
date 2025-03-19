@@ -42,8 +42,26 @@ static void test_queue(array<T> items)
 	}
 	
 	items.ssort();
-	assert_eq(extracted, items);
-	assert_eq(extracted2, items);
+	assert_eq(tostring_dbg(extracted), tostring_dbg(items));
+	assert_eq(tostring_dbg(extracted2), tostring_dbg(items));
+}
+
+template<typename T>
+static void test_queue_poppush(array<T> a, array<T> b, array<T> c)
+{
+	prioqueue<T> q = a;
+	array<T> extracted;
+	for (T& it : b)
+	{
+		extracted.append(q.poppush(it));
+		validate(q);
+	}
+	while (q.size())
+	{
+		extracted.append(q.pop());
+		validate(q);
+	}
+	assert_eq(tostring_dbg(extracted), tostring_dbg(c));
 }
 
 test("priority queue", "array", "prioqueue")
@@ -64,6 +82,9 @@ test("priority queue", "array", "prioqueue")
 	test_queue<int>({ 3,1,4,1,5,9,2,6,5 });
 	test_queue<int>({ 0,1,7,2,5,8,9,3,4 });
 	test_queue<int>({ 0,4,1,7,5,3,2,9,8 });
+	
+	test_queue_poppush<int>({ 3,1,4,1,5 }, { 9,2,6,5,3,5,8,9,7,9,3,2,3,8,4 },
+	                                     { 1,1,2,3,4,3,5,5,5,6,7,3,2,3,8,4,8,9,9,9 });
 	
 	class nontrivial {
 		int* body;

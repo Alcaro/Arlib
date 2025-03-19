@@ -108,6 +108,7 @@ struct timestamp {
 	{
 		return now() + duration::ms(ms);
 	}
+	static timestamp from_iso8601(cstring stamp);
 	
 	using serialize_as = string;
 };

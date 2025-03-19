@@ -44,6 +44,8 @@ struct group {
 			real_path = real_path.substr(0, ~1);
 		if (real_path.endswith("/.git"))
 			return true;
+		if (real_path.endswith("/__pycache__"))
+			return true;
 		for (cstring sub : dirs)
 		{
 			if (sub[0] != '!')
@@ -391,11 +393,13 @@ static bool sync_dir(group& g, cstring dir)
 		{
 			puts("mksymlink "+fullpath_wrong);
 			if (cfg_cli.dry_run) continue;
+			
 			char buf[1024];
 			ssize_t buflen = readlink(fullpath_correct, buf, sizeof(buf)-1);
 			if (buflen <= 0)
 				goto dont_know;
 			buf[buflen] = '\0';
+			
 			unlink(fullpath_wrong);
 			symlink(buf, fullpath_wrong);
 			utimensat(AT_FDCWD, fullpath_wrong, new_times, AT_SYMLINK_NOFOLLOW);

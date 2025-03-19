@@ -59,6 +59,17 @@ public:
 		auto tmp = dtor([&](){ ((T*)buf)->~T(); });
 		return std::move(*(T*)buf);
 	}
+	T poppush(T item)
+	{
+		alignas(T) char buf1[sizeof(T)];
+		alignas(T) char buf2[sizeof(T)];
+		new((T*)buf2) T(std::move(item));
+		
+		heap::poppush(items, count, (T*)buf1, (T*)buf2);
+		
+		auto tmp = dtor([&](){ ((T*)buf1)->~T(); });
+		return std::move(*(T*)buf1);
+	}
 	size_t size() const { return count; }
 	
 #ifdef ARLIB_TEST

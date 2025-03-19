@@ -272,7 +272,7 @@ bool test_rethrow();
 
 struct assert_reached_t;
 __attribute__((unused))
-static assert_reached_t* first = nullptr;
+static assert_reached_t* assert_reached_first = nullptr;
 struct assert_reached_t {
 	assert_reached_t * next;
 	const char * file;
@@ -284,8 +284,8 @@ struct assert_reached_t {
 		this->file = file;
 		this->line = line;
 		this->reached = false;
-		this->next = first;
-		first = this;
+		this->next = assert_reached_first;
+		assert_reached_first = this;
 	}
 };
 template<typename file, int line> assert_reached_t assert_reached_node { file()(), line };
@@ -293,7 +293,7 @@ template<typename file, int line> assert_reached_t assert_reached_node { file()(
 __attribute__((unused))
 static void assert_all_reached()
 {
-	assert_reached_t* link = first;
+	assert_reached_t* link = assert_reached_first;
 	assert(link);
 	while (link)
 	{

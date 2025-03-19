@@ -62,6 +62,8 @@ bool debug_break(const char * text)
 
 void debug_log_stack(const char * text)
 {
+	if (RUNNING_ON_VALGRIND) VALGRIND_PRINTF_BACKTRACE("%s", text);
+	
 	debug_log(text);
 	
 	char buf[64];
