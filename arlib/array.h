@@ -935,7 +935,6 @@ protected:
 	static const size_t chunk_size = sizeof(chunk_t)*8;
 	static const size_t n_inline = chunk_size*sizeof(chunk_t*)/sizeof(chunk_t); // rearranging this may provoke -Wsizeof-pointer-div
 	
-	
 	static constexpr size_t n_chunks_for(size_t bits)
 	{
 		return (bits + chunk_size - 1) / chunk_size;

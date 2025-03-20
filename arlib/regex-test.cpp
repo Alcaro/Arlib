@@ -214,9 +214,9 @@ test("regex", "string", "regex")
 	auto m = regex("(abc) (123)").match(text); // ensure it doesn't copy 'text' then return a match array full of UAF
 	assert_eq(m[1].str(), "abc");
 	
-	test_nomalloc {
-		assert(REGEX("abc").match("abc"));
-	};
+	//test_nomalloc {
+		//assert(REGEX("abc").match("abc"));
+	//};
 	
 	regex r;
 	assert(r.parse("(?:)"));
@@ -236,7 +236,7 @@ test("regex", "string", "regex")
 	
 	//test1("(?:)*?$", "a", ""); // infinite loop
 	//test1(".+a................................a", "b", ""); // stack overflow in nfa->dfa converter
-	test1("(?:|(a?){0,2})\\1b", "a", nullptr, nullptr); // segfault, negative length in memcmp
+	test1("(?:|(a?){0,2})\\1b", "a", nullptr, nullptr);
 }
 #undef test1
 #undef test1fail

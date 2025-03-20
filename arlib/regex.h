@@ -153,6 +153,38 @@ public:
 private:
 	class matcher;
 	
+	enum checktype_t {
+		ct_jump,
+		ct_dfa_shortest,
+		ct_dfa_longest,
+		ct_setcapture_start,
+		ct_setcapture_end,
+		ct_lookahead_pos,
+		ct_lookahead_neg,
+	};
+	struct checkpoint_t {
+		checktype_t ty;
+		uint32_t state;
+		const uint8_t * at;
+		size_t extra;
+	};
+	class my_stack {
+		array<checkpoint_t> data;
+		size_t size = 0;
+	public:
+		operator bool() { return size; }
+		void reset() { size = 0; }
+		forceinline checkpoint_t& pop() { return data[--size]; }
+		forceinline void push(checkpoint_t elem)
+		{
+			if (data.size() == size)
+				data.resize((data.size() | 16) * 2);
+			data[size++] = elem;
+		}
+	};
+	mutable my_stack checkpoints;
+	mutable bitarray dfa_matches;
+	
 	void match(pair* ret, const char * start, const char * at, const char * end) const;
 	void match_alloc(size_t num_captures, pair* ret, const char * start, const char * at, const char * end) const;
 	

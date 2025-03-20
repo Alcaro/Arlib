@@ -1124,7 +1124,7 @@ public:
 				rgx->insns.append(node.subtype);
 				for (node_t& n : node.children)
 					to_insns(n);
-				rgx->insns.append({ t_accept });
+				rgx->insns.append({ t_accept, node.subtype.type });
 				rgx->insns[start].data = rgx->insns.size();
 			}
 			else
@@ -1178,7 +1178,7 @@ public:
 		p.optimize_to_nfas(target);
 		
 		p.to_insns(target);
-		rgx->insns.append({ t_accept });
+		rgx->insns.append({ t_accept, t_accept });
 		return true;
 	}
 	
@@ -1284,142 +1284,169 @@ public:
 	
 	regex::pair* result;
 	
-	// rewinding after a match means one of
-	// - alt_first - go to this bytecode state and input pointer, then continue
-	// - alt_second - go to this bytecode state and input pointer, then continue
-	// - dfa_shortest - continue DFA matching
-	// - dfa_longest - continue reading DFA matches
-	// - capture_start/end/discard - restore start, end, or both to previous state
-	// - lookahead_positive - go to this bytecode state and input pointer, then continue
-	// - lookahead_negative - go to this bytecode state and input pointer, then continue, but only if the contents did NOT match
-	// dfa_shortest requires { bytecode state, input pointer, DFA state } to resume
-	// dfa_longest requires { bytecode state, input pointer, input pointer at DFA start }, and also a bitarray as long as the input,
-	//    but said bitarray can be shared with every other dfa_longest
-	// captures require { bytecode state, start pointer, end pointer } (index of which capture to write can be read from bytecode)
-	// alt just needs { bytecode state, input pointer }
-	// lookaheads need the same, and also special cases to do something else when matching is complete
-	//    (can be done by setting a flag on the accept instruction)
-	// I think the max stack depth is bytecode size + input string size + O(1), but I haven't proven that
-	// probably a waste of time to try, probably better do bounds check on every push
-	
-	bool match(size_t state, const uint8_t * at)
+#ifdef ARLIB_OPT
+	forceinline // if unoptimized, it won't understand that the recursion is actually tail calls
+#endif
+	bool match(checktype_t ty, uint32_t state, const uint8_t * at, size_t extra)
 	{
+		auto[type, data] = parent->insns[state];
+		switch (ty)
+		{
+		case ct_jump:
+			break;
+		case ct_dfa_shortest:
+			goto cont_dfa_shortest;
+		case ct_dfa_longest:
+			goto cont_dfa_longest;
+		case ct_setcapture_start:
+			goto cont_setcapture_start;
+		case ct_setcapture_end:
+			goto cont_setcapture_end;
+		case ct_lookahead_pos:
+			return false;
+		case ct_lookahead_neg:
+			break;
+		default: __builtin_unreachable();
+		}
 		while (true)
 		{
-			auto[type, data] = parent->insns[state++];
 			switch (type)
 			{
 			case t_jump:
 				state = data;
 				break;
 			case t_accept:
-				result[0].end = (char*)at;
-				return true;
+				if (data == t_accept)
+				{
+					result[0].end = (char*)at;
+					return true;
+				}
+				if (data == t_lookahead_positive)
+				{
+					while (true)
+					{
+						auto pt = parent->checkpoints.pop();
+						if (pt.ty == ct_lookahead_pos)
+							return match(ct_jump, pt.state, pt.at, 0);
+					}
+				}
+				if (data == t_lookahead_negative)
+				{
+					while (true)
+					{
+						auto pt = parent->checkpoints.pop();
+						if (pt.ty == ct_lookahead_neg)
+							return false;
+					}
+				}
+				__builtin_unreachable();
 			case t_alternative_first:
-				if (match(data, at))
-					return true;
-				break;
+				parent->checkpoints.push({ ct_jump, state+1, at, 0 });
+				return match(ct_jump, data, at, 0);
 			case t_alternative_second:
-				if (match(state, at))
-					return true;
-				state = data;
-				break;
+				parent->checkpoints.push({ ct_jump, data, at, 0 });
+				return match(ct_jump, state+1, at, 0);
 			
 			case t_byte:
 				if (at == end)
 					return false;
 				if (!parent->bytes[data][*at++])
 					return false;
+				state++;
 				break;
 			
 			case t_dfa_shortest:
 			{
-				const dfa_t& dfa = parent->dfas[data];
-				uint32_t dfa_state = dfa.init_state;
+				const dfa_t* dfa;
+				dfa = &parent->dfas[data];
+				uint32_t dfa_state;
+				dfa_state = dfa->init_state;
 				while (true)
 				{
 					if (dfa_state & 0x80000000)
 					{
-						if (match(state, at))
-							return true;
-						dfa_state &= 0x7FFFFFFF;
+						extra = dfa_state & 0x7FFFFFFF;
+						parent->checkpoints.push({ ct_dfa_shortest, state, at, extra });
+						return match(ct_jump, state+1, at, 0);
+					cont_dfa_shortest:
+						dfa = &parent->dfas[data];
+						dfa_state = extra;
 					}
 					if (dfa_state == 0x7FFFFFFF || at == end)
 						return false;
 					
-					dfa_state = dfa.transitions[dfa_state].next[*at++];
+					dfa_state = dfa->transitions[dfa_state].next[*at++];
 				}
 			}
 			case t_dfa_longest:
 			{
-				const dfa_t& dfa = parent->dfas[data];
-				uint32_t dfa_state = dfa.init_state;
-				bitarray matches;
-				size_t match_len = 0;
-				while (true)
 				{
-					if (dfa_state & 0x80000000)
+					const dfa_t& dfa = parent->dfas[data];
+					uint32_t dfa_state = dfa.init_state;
+					extra = at-start;
+					while (true)
 					{
-						matches.set_resize(match_len, true);
+						parent->dfa_matches.set(at-start, (dfa_state & 0x80000000));
 						dfa_state &= 0x7FFFFFFF;
+						if (dfa_state == 0x7FFFFFFF || at == end)
+							break;
+						dfa_state = dfa.transitions[dfa_state].next[*at++];
 					}
-					if (dfa_state == 0x7FFFFFFF || at+match_len == end)
-						break;
-					
-					dfa_state = dfa.transitions[dfa_state].next[at[match_len++]];
 				}
-				for (size_t i=matches.size();i--;)
+				while (at >= start+extra)
 				{
-					if (matches[i] && match(state, at+i))
-						return true;
+					if (parent->dfa_matches.get(at-start))
+					{
+						parent->checkpoints.push({ ct_dfa_longest, state, at, extra });
+						return match(ct_jump, state+1, at, 0);
+					cont_dfa_longest: ;
+					}
+					at--;
 				}
 				return false;
 			}
 			
 			case t_capture_start:
 			{
-				const char * prev_start = result[data].start;
+				parent->checkpoints.push({ ct_setcapture_start, state, at, (size_t)result[data].start });
 				result[data].start = (char*)at;
-				if (match(state, at))
-					return true;
-				result[data].start = prev_start;
+				return match(ct_jump, state+1, at, 0);
+			cont_setcapture_start:
+				result[data].start = (char*)extra;
 				return false;
 			}
 			case t_capture_end:
 			{
-				const char * prev_end = result[data].end;
+				parent->checkpoints.push({ ct_setcapture_end, state, at, (size_t)result[data].end });
 				result[data].end = (char*)at;
-				if (match(state, at))
-					return true;
-				result[data].end = prev_end;
+				return match(ct_jump, state+1, at, 0);
+			cont_setcapture_end:
+				result[data].end = (char*)extra;
 				return false;
 			}
 			case t_capture_discard:
 			{
-				if (!result[data].start)
-					break;
-				const char * prev_start = result[data].start;
-				const char * prev_end = result[data].end;
-				result[data].start = nullptr;
-				result[data].end = nullptr;
-				if (match(state, at))
-					return true;
-				result[data].start = prev_start;
-				result[data].end = prev_end;
-				return false;
+				if (result[data].start)
+				{
+					parent->checkpoints.push({ ct_setcapture_start, state, at, (size_t)result[data].start });
+					parent->checkpoints.push({ ct_setcapture_end, state, at, (size_t)result[data].end });
+					result[data].start = nullptr;
+					result[data].end = nullptr;
+				}
+				return match(ct_jump, state+1, at, 0);
 			}
 			case t_capture_backref:
 			{
 				size_t len = result[data].end - result[data].start;
-#ifdef ARLIB_TEST
-				if (len > SIZE_MAX/2)
-					abort();
+#ifdef ARLIB_TESTRUNNER
+				assert_lt(len, SIZE_MAX/2);
 #endif
 				if (at+len > end)
 					return false;
 				if (memcmp(at, result[data].start, len) != 0)
 					return false;
 				at += len;
+				state++;
 				break;
 			}
 			
@@ -1431,32 +1458,48 @@ public:
 				auto chs = CHAR_SET("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_");
 				if ((chs.contains(prev) == chs.contains(next)) == (type == t_assert_boundary))
 					return false;
+				state++;
 				break;
 			}
 			case t_assert_start:
 				if (at != start)
 					return false;
+				state++;
 				break;
 			case t_assert_end:
 				if (at != end)
 					return false;
+				state++;
 				break;
 			
 			case t_lookahead_positive:
-				if (match(state, at) == true)
-					state = data;
-				else
-					return false;
-				break;
+				parent->checkpoints.push({ ct_lookahead_pos, data, at, 0 });
+				return match(ct_jump, state+1, at, 0);
 			case t_lookahead_negative:
-				if (match(state, at) == false)
-					state = data;
-				else
-					return false;
-				break;
+				parent->checkpoints.push({ ct_lookahead_neg, data, at, 0 });
+				return match(ct_jump, state+1, at, 0);
 			
 			default: __builtin_unreachable();
 			}
+			type = parent->insns[state].type;
+			data = parent->insns[state].data;
+		}
+	}
+	
+	bool match_outer(const uint8_t * at)
+	{
+		parent->checkpoints.reset();
+		size_t dfa_matches_size = end-start+1;
+		if (dfa_matches_size >= parent->dfa_matches.size())
+			parent->dfa_matches.resize(end-start+1);
+		checkpoint_t pt = { ct_jump, 0, at, 0 };
+		while (true)
+		{
+			if (match(pt.ty, pt.state, pt.at, pt.extra))
+				return true;
+			if (!parent->checkpoints)
+				return false;
+			pt = parent->checkpoints.pop();
 		}
 	}
 };
@@ -1465,7 +1508,7 @@ void regex::match(pair* ret, const char * start, const char * at, const char * e
 {
 	ret[0].start = at;
 	matcher m { this, (uint8_t*)start, (uint8_t*)end, ret };
-	if (!m.match(0, (uint8_t*)at))
+	if (!m.match_outer((uint8_t*)at))
 	{
 		// must wipe everything, not just result[0], to avoid bugs where (?!(a)) + "a" leaves trash
 		memset(ret, 0, sizeof(pair)*num_captures);
@@ -1499,7 +1542,7 @@ string regex::replace(cstring str, const char * replacement) const
 	const char * iter = start;
 	while (iter < end)
 	{
-		if (m.match(0, (uint8_t*)iter) && m.result[0].end > iter)
+		if (m.match_outer((uint8_t*)iter) && m.result[0].end > iter)
 		{
 			for (size_t i=0;replacement[i];i++)
 			{
